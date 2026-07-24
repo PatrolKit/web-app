@@ -12,6 +12,9 @@ import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
+import { PermissionsModule } from './permissions/permissions.module';
+import { MeModule } from './me/me.module';
+import { OrgsModule } from './orgs/orgs.module';
 import appConfig from './config/app.config';
 
 @Module({
@@ -37,6 +40,9 @@ import appConfig from './config/app.config';
     PrismaModule,
     MailModule,
     AuthModule,
+    PermissionsModule,
+    MeModule,
+    OrgsModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
     HealthModule,
   ],
