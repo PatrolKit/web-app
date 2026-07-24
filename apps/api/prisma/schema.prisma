@@ -1,0 +1,159 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  status       String   @default("active") // active | disabled
+  isSuperAdmin Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships   Membership[]
+  magicLinks    MagicLink[]
+  refreshTokens RefreshToken[]
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  status    String   @default("active") // active | suspended
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  orgModules  OrgModule[]
+  devices     Device[]
+}
+
+model Membership {
+  id       String   @id @default(cuid())
+  userId   String
+  orgId    String
+  status   String   @default("active")
+  joinedAt DateTime @default(now())
+
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org         Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  permissions MembershipPermission[]
+
+  @@unique([userId, orgId])
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  description String
+  createdAt   DateTime @default(now())
+
+  memberships MembershipPermission[]
+  devices     DevicePermission[]
+}
+
+model MembershipPermission {
+  membershipId String
+  permissionId String
+  grantedAt    DateTime @default(now())
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, permissionId])
+}
+
+model ModuleCatalog {
+  key         String @id
+  name        String
+  description String
+  isCore      Boolean @default(false)
+
+  orgModules OrgModule[]
+}
+
+model OrgModule {
+  id        String    @id @default(cuid())
+  orgId     String
+  moduleKey String
+  enabled   Boolean   @default(false)
+  enabledAt DateTime?
+  enabledBy String?
+  updatedAt DateTime  @updatedAt
+
+  org    Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  module ModuleCatalog @relation(fields: [moduleKey], references: [key])
+
+  @@unique([orgId, moduleKey])
+}
+
+model MagicLink {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  ipAddress String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Device {
+  id         String    @id @default(cuid())
+  orgId      String
+  name       String
+  clientId   String    @unique
+  secretHash String
+  status     String    @default("active") // active | revoked
+  lastSeenAt DateTime?
+  createdBy  String?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  permissions DevicePermission[]
+}
+
+model DevicePermission {
+  deviceId     String
+  permissionId String
+
+  device     Device     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([deviceId, permissionId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorType  String   // user | device | system
+  actorId    String?
+  orgId      String?
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([orgId, createdAt])
+}
