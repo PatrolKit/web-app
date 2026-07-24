@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Vite config compiled output (tsconfig.node.json composite build)
+apps/web/vite.config.js
+apps/web/vite.config.d.ts
+
+# Environment files (never commit secrets)
+.env
+.env.local
+.env.staging
+.env.production
+
+# pnpm
+.pnpm-debug.log
+
+# TypeScript
+*.tsbuildinfo
+
+# Prisma generated
+apps/api/src/generated/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+
+# CDK
+infra/cdk.out/
+
+# Test coverage
+coverage/
