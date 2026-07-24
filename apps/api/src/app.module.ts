@@ -15,6 +15,8 @@ import { AuthModule } from './auth/auth.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { MeModule } from './me/me.module';
 import { OrgsModule } from './orgs/orgs.module';
+import { MembersModule } from './members/members.module';
+import { PlatformModule } from './platform/platform.module';
 import appConfig from './config/app.config';
 
 @Module({
@@ -43,6 +45,8 @@ import appConfig from './config/app.config';
     PermissionsModule,
     MeModule,
     OrgsModule,
+    MembersModule,
+    PlatformModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
     HealthModule,
   ],
