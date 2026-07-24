@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
+import { ServeStaticModule } from '@nestjs/serve-static';
 import { ZodValidationPipe } from 'nestjs-zod';
+import { join } from 'path';
+import { existsSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -29,8 +31,17 @@ import appConfig from './config/app.config';
       load: [appConfig],
       envFilePath: ['.env'],
     }),
+    // Serve the pre-built web SPA (production only — skipped if dist not present)
+    ...(existsSync(join(process.cwd(), 'web', 'dist'))
+      ? [ServeStaticModule.forRoot({
+          rootPath: join(process.cwd(), 'web', 'dist'),
+          exclude: ['/api/v1/(.*)', '/healthz', '/readyz'],
+          serveStaticOptions: { index: false },
+        })]
+      : []),
     LoggerModule.forRoot({
       pinoHttp: {
+        level: process.env['LOG_LEVEL'] ?? 'info',
         genReqId: (req) => req.headers['x-request-id'] ?? uuidv4(),
         transport:
           process.env.NODE_ENV !== 'production'
