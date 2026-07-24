@@ -13,10 +13,11 @@ import { PrismaClient } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
 import { createHash, randomBytes } from 'crypto';
 
-const prisma = new PrismaClient();
+let prisma: PrismaClient;
 
 beforeAll(async () => {
   await setupIntegrationSuite();
+  prisma = new PrismaClient();   // create AFTER DATABASE_URL is set
   await prisma.$connect();
 }, 120_000);
 
