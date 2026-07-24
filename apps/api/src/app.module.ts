@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { HealthModule } from './health/health.module';
+import { PrismaModule } from './prisma/prisma.module';
 import appConfig from './config/app.config';
 
 @Module({
@@ -28,6 +29,7 @@ import appConfig from './config/app.config';
         },
       },
     }),
+    PrismaModule,
     HealthModule,
   ],
   providers: [
