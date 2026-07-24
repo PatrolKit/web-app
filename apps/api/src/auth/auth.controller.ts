@@ -8,8 +8,9 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { MagicLinkRequestDto, MagicLinkVerifyDto } from '../contracts/auth.contracts';
+import { MagicLinkRequestDto, MagicLinkVerifyDto, DeviceTokenRequestDto } from '../contracts/auth.contracts';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import type { DeviceTokenResponse } from '../contracts/devices.contracts';
 
 @Controller('auth')
 export class AuthController {
@@ -59,5 +60,14 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
     await this.authService.logout(req, res);
+  }
+
+  // ─── Device token ────────────────────────────────────────────────────────────
+
+  @Post('device/token')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  deviceToken(@Body() body: DeviceTokenRequestDto): Promise<DeviceTokenResponse> {
+    return this.authService.getDeviceToken(body.clientId, body.clientSecret);
   }
 }

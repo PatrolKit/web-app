@@ -17,6 +17,9 @@ import { MeModule } from './me/me.module';
 import { OrgsModule } from './orgs/orgs.module';
 import { MembersModule } from './members/members.module';
 import { PlatformModule } from './platform/platform.module';
+import { OrgModulesModule } from './modules/modules.module';
+import { DevicesModule } from './devices/devices.module';
+import { AuditModule } from './common/audit/audit.module';
 import appConfig from './config/app.config';
 
 @Module({
@@ -47,6 +50,9 @@ import appConfig from './config/app.config';
     OrgsModule,
     MembersModule,
     PlatformModule,
+    OrgModulesModule,
+    DevicesModule,
+    AuditModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
     HealthModule,
   ],

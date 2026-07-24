@@ -6,6 +6,7 @@ import { MailService } from '../mail/mail.service';
 import { createId } from '@paralleldrive/cuid2';
 import { createHash, randomBytes } from 'crypto';
 import type { Request, Response } from 'express';
+import type { DeviceTokenResponse } from '../contracts/devices.contracts';
 
 const REFRESH_COOKIE = 'refresh_token';
 
@@ -164,5 +165,38 @@ export class AuthService {
       path: '/api/v1/auth',
       ...(cookieDomain ? { domain: cookieDomain } : {}),
     });
+  }
+
+  // ─── Device token (delegated from controller) ────────────────────────────────
+
+  async getDeviceToken(clientId: string, clientSecret: string): Promise<DeviceTokenResponse> {
+    // Dynamic import to avoid circular dependency at module init time
+    const argon2 = await import('argon2');
+    const device = await this.prisma.device.findUnique({
+      where: { clientId },
+      include: { permissions: { include: { permission: true } } },
+    });
+
+    const hash = device?.secretHash ?? '$argon2id$v=19$m=65536,t=3,p=4$placeholder';
+    const valid = await argon2.verify(hash, clientSecret).catch(() => false);
+
+    if (!device || !valid || device.status !== 'active') {
+      throw new UnauthorizedException('Invalid device credentials');
+    }
+
+    const permissions = device.permissions.map((dp) => dp.permission.key);
+    const accessToken = await this.jwtService.signDeviceToken({
+      sub: clientId,
+      deviceId: device.id,
+      orgId: device.orgId,
+      permissions,
+    });
+
+    await this.prisma.device.update({
+      where: { id: device.id },
+      data: { lastSeenAt: new Date() },
+    });
+
+    return { accessToken, tokenType: 'Bearer' };
   }
 }
