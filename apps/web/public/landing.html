@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PatrolKit — Patrol management for ski patrol organizations</title>
+  <meta name="description" content="PatrolKit streamlines ski patrol administration — duty scheduling, incident reporting, training records, and equipment management in one place." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Plus Jakarta Sans', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50:  '#fff1f1',
+              100: '#ffdfdf',
+              200: '#ffc5c5',
+              300: '#ff9d9d',
+              400: '#ff6464',
+              500: '#ef4444',
+              600: '#dc2626',
+              700: '#b91c1c',
+              800: '#991b1b',
+              900: '#7f1d1d',
+            },
+            surface: {
+              900: '#0f0f0f',
+              800: '#1a1a1a',
+              700: '#2d2d2d',
+              600: '#3d3d3d',
+              500: '#525252',
+              400: '#737373',
+              300: '#a3a3a3',
+              200: '#d4d4d4',
+              100: '#f5f5f5',
+            }
+          },
+          animation: {
+            'fade-up': 'fadeUp 0.6s ease-out forwards',
+            'fade-in': 'fadeIn 0.4s ease-out forwards',
+          },
+          keyframes: {
+            fadeUp: {
+              '0%': { opacity: '0', transform: 'translateY(24px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #1a1a1a; color: #f5f5f5; }
+    .fade-hidden { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; }
+    .fade-visible { opacity: 1; transform: translateY(0); }
+    .stagger-1 { transition-delay: 0.1s; }
+    .stagger-2 { transition-delay: 0.2s; }
+    .stagger-3 { transition-delay: 0.3s; }
+    .stagger-4 { transition-delay: 0.4s; }
+    .stagger-5 { transition-delay: 0.5s; }
+    .stagger-6 { transition-delay: 0.6s; }
+
+    /* Dropdown */
+    #signin-dropdown {
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      transform-origin: top right;
+    }
+    #signin-dropdown.hidden {
+      opacity: 0;
+      transform: scale(0.95) translateY(-8px);
+      pointer-events: none;
+    }
+    #signin-dropdown:not(.hidden) {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+
+    /* Grid lines on hero */
+    .grid-overlay {
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    /* Red glow */
+    .red-glow {
+      box-shadow: 0 0 40px rgba(220, 38, 38, 0.15);
+    }
+
+    /* Feature card hover */
+    .feature-card {
+      transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .feature-card:hover {
+      border-color: rgba(220, 38, 38, 0.4);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    /* Tab active state */
+    .tab-btn.active {
+      color: white;
+      border-color: #dc2626;
+    }
+    .tab-btn:not(.active) {
+      color: #a3a3a3;
+      border-color: transparent;
+    }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Step number gradient */
+    .step-num {
+      background: linear-gradient(135deg, #dc2626, #ff6464);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Navbar scroll effect */
+    .navbar-scrolled {
+      background-color: rgba(15, 15, 15, 0.95) !important;
+      backdrop-filter: blur(12px);
+      border-bottom-color: rgba(61, 61, 61, 0.8) !important;
+    }
+  </style>
+</head>
+<body class="font-sans antialiased">
+
+<!-- ═══════════════════════════════════════════
+     NAVBAR
+═══════════════════════════════════════════ -->
+<nav id="navbar" class="fixed top-0 left-0 right-0 z-50 border-b border-transparent transition-all duration-300" style="background-color: rgba(15,15,15,0.6); backdrop-filter: blur(8px);">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex items-center justify-between h-16">
+
+      <!-- Logo -->
+      <a href="/" class="flex items-center gap-2.5 group">
+        <div class="flex-shrink-0">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Shield shape -->
+            <path d="M16 2L4 7V16C4 22.627 9.373 29 16 30C22.627 29 28 22.627 28 16V7L16 2Z" fill="#1a1a1a" stroke="#dc2626" stroke-width="1.5"/>
+            <!-- Patrol cross -->
+            <rect x="14" y="10" width="4" height="12" rx="1" fill="#dc2626"/>
+            <rect x="10" y="14" width="12" height="4" rx="1" fill="#dc2626"/>
+          </svg>
+        </div>
+        <span class="font-display font-700 text-lg text-white tracking-tight group-hover:text-brand-400 transition-colors" style="font-weight: 700;">PatrolKit</span>
+      </a>
+
+      <!-- Sign In Button -->
+      <div class="relative">
+        <button
+          id="signin-btn"
+          class="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-surface-900"
+          aria-expanded="false"
+          aria-haspopup="true"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+            <polyline points="10 17 15 12 10 7"/>
+            <line x1="15" y1="12" x2="3" y2="12"/>
+          </svg>
+          Sign In
+        </button>
+
+        <!-- Dropdown Panel -->
+        <div
+          id="signin-dropdown"
+          class="hidden absolute right-0 mt-2 w-80 rounded-xl border border-surface-600 shadow-2xl overflow-hidden"
+          style="background: #1a1a1a;"
+          role="dialog"
+          aria-label="Sign in"
+        >
+          <!-- Tabs -->
+          <div class="flex border-b border-surface-700">
+            <button class="tab-btn active flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors" data-tab="password">
+              Password
+            </button>
+            <button class="tab-btn flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors" data-tab="magic">
+              Magic Link
+            </button>
+          </div>
+
+          <!-- Password Form -->
+          <div id="tab-password" class="p-5 space-y-4">
+            <div>
+              <label for="pw-email" class="block text-xs font-medium text-surface-300 mb-1.5">Email address</label>
+              <input
+                id="pw-email"
+                type="email"
+                autocomplete="email"
+                placeholder="you@yourpatrol.com"
+                class="w-full px-3 py-2.5 bg-surface-700 border border-surface-600 rounded-lg text-sm text-white placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent transition-all"
+              />
+            </div>
+            <div>
+              <label for="pw-password" class="block text-xs font-medium text-surface-300 mb-1.5">Password</label>
+              <input
+                id="pw-password"
+                type="password"
+                autocomplete="current-password"
+                placeholder="••••••••"
+                class="w-full px-3 py-2.5 bg-surface-700 border border-surface-600 rounded-lg text-sm text-white placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent transition-all"
+              />
+            </div>
+            <div id="pw-error" class="hidden text-xs text-red-400 bg-red-950 border border-red-800 rounded-lg px-3 py-2"></div>
+            <button
+              id="pw-submit"
+              class="w-full py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all duration-150 flex items-center justify-center gap-2"
+            >
+              Sign In
+            </button>
+          </div>
+
+          <!-- Magic Link Form -->
+          <div id="tab-magic" class="hidden p-5 space-y-4">
+            <p class="text-xs text-surface-400">Enter your email and we'll send you a sign-in link. No password needed.</p>
+            <div>
+              <label for="ml-email" class="block text-xs font-medium text-surface-300 mb-1.5">Email address</label>
+              <input
+                id="ml-email"
+                type="email"
+                autocomplete="email"
+                placeholder="you@yourpatrol.com"
+                class="w-full px-3 py-2.5 bg-surface-700 border border-surface-600 rounded-lg text-sm text-white placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent transition-all"
+              />
+            </div>
+            <div id="ml-error" class="hidden text-xs text-red-400 bg-red-950 border border-red-800 rounded-lg px-3 py-2"></div>
+            <div id="ml-success" class="hidden text-xs text-green-400 bg-green-950 border border-green-800 rounded-lg px-3 py-2">
+              Check your email for a sign-in link.
+            </div>
+            <button
+              id="ml-submit"
+              class="w-full py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all duration-150 flex items-center justify-center gap-2"
+            >
+              Send Magic Link
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</nav>
+
+
+<!-- ═══════════════════════════════════════════
+     HERO
+═══════════════════════════════════════════ -->
+<section class="relative min-h-screen flex items-center overflow-hidden" style="background: linear-gradient(180deg, #0f0f0f 0%, #1a1a1a 100%);">
+
+  <!-- Grid overlay -->
+  <div class="absolute inset-0 grid-overlay pointer-events-none"></div>
+
+  <!-- Hero SVG Illustration -->
+  <div class="absolute inset-0 flex items-end justify-center overflow-hidden pointer-events-none">
+    <svg viewBox="0 0 1200 600" xmlns="http://www.w3.org/2000/svg" class="w-full h-full object-cover opacity-40" preserveAspectRatio="xMidYMax slice">
+      <!-- Stars / sky -->
+      <circle cx="120" cy="60" r="1.5" fill="rgba(255,255,255,0.6)"/>
+      <circle cx="240" cy="30" r="1" fill="rgba(255,255,255,0.4)"/>
+      <circle cx="380" cy="80" r="1.5" fill="rgba(255,255,255,0.5)"/>
+      <circle cx="520" cy="20" r="1" fill="rgba(255,255,255,0.6)"/>
+      <circle cx="650" cy="50" r="2" fill="rgba(255,255,255,0.3)"/>
+      <circle cx="780" cy="35" r="1.5" fill="rgba(255,255,255,0.5)"/>
+      <circle cx="900" cy="75" r="1" fill="rgba(255,255,255,0.4)"/>
+      <circle cx="1020" cy="25" r="1.5" fill="rgba(255,255,255,0.6)"/>
+      <circle cx="1140" cy="55" r="1" fill="rgba(255,255,255,0.4)"/>
+      <circle cx="60" cy="120" r="1" fill="rgba(255,255,255,0.3)"/>
+      <circle cx="450" cy="110" r="1.5" fill="rgba(255,255,255,0.4)"/>
+      <circle cx="850" cy="100" r="1" fill="rgba(255,255,255,0.5)"/>
+      <circle cx="1100" cy="130" r="1.5" fill="rgba(255,255,255,0.3)"/>
+      <circle cx="200" cy="150" r="1" fill="rgba(255,255,255,0.4)"/>
+      <circle cx="700" cy="140" r="2" fill="rgba(255,255,255,0.2)"/>
+      <!-- Aurora-like glow -->
+      <defs>
+        <radialGradient id="aurora" cx="50%" cy="0%" r="70%">
+          <stop offset="0%" stop-color="#dc2626" stop-opacity="0.08"/>
+          <stop offset="50%" stop-color="#7c3aed" stop-opacity="0.04"/>
+          <stop offset="100%" stop-color="transparent"/>
+        </radialGradient>
+        <linearGradient id="mountainGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#3d3d3d"/>
+          <stop offset="100%" stop-color="#1a1a1a"/>
+        </linearGradient>
+        <linearGradient id="snowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#e5e7eb"/>
+          <stop offset="100%" stop-color="#9ca3af" stop-opacity="0.6"/>
+        </linearGradient>
+      </defs>
+      <rect width="1200" height="600" fill="url(#aurora)"/>
+
+      <!-- Far mountains (darkest) -->
+      <polygon points="0,480 150,280 300,380 450,200 600,320 750,180 900,300 1050,220 1200,350 1200,600 0,600" fill="#1f1f1f"/>
+
+      <!-- Mid mountains -->
+      <polygon points="0,520 100,350 250,430 400,260 550,380 700,240 850,360 1000,280 1150,400 1200,380 1200,600 0,600" fill="#262626"/>
+
+      <!-- Front range (main mountains) -->
+      <polygon points="-50,600 100,360 200,440 350,200 480,340 600,160 720,320 860,200 980,320 1100,240 1250,400 1250,600" fill="url(#mountainGrad)"/>
+
+      <!-- Snow caps -->
+      <!-- Left peak -->
+      <polygon points="350,200 320,280 380,260" fill="url(#snowGrad)" opacity="0.9"/>
+      <polygon points="350,200 335,240 365,235" fill="white" opacity="0.7"/>
+      <!-- Center peak (main) -->
+      <polygon points="600,160 560,260 640,240" fill="url(#snowGrad)" opacity="0.9"/>
+      <polygon points="600,160 578,210 622,205" fill="white" opacity="0.8"/>
+      <!-- Right peak -->
+      <polygon points="860,200 830,280 890,265" fill="url(#snowGrad)" opacity="0.9"/>
+      <polygon points="860,200 845,240 875,235" fill="white" opacity="0.7"/>
+
+      <!-- Patrol cross glow on main peak -->
+      <g opacity="0.6" transform="translate(594, 180)">
+        <rect x="-2" y="-16" width="4" height="32" rx="1.5" fill="#dc2626"/>
+        <rect x="-16" y="-2" width="32" height="4" rx="1.5" fill="#dc2626"/>
+        <!-- Glow -->
+        <rect x="-2" y="-16" width="4" height="32" rx="1.5" fill="#dc2626" filter="blur(4px)" opacity="0.5"/>
+        <rect x="-16" y="-2" width="32" height="4" rx="1.5" fill="#dc2626" filter="blur(4px)" opacity="0.5"/>
+      </g>
+
+      <!-- Technical grid lines on foreground -->
+      <g opacity="0.06" stroke="white" stroke-width="0.5">
+        <line x1="0" y1="540" x2="1200" y2="540"/>
+        <line x1="0" y1="560" x2="1200" y2="560"/>
+        <line x1="0" y1="580" x2="1200" y2="580"/>
+        <line x1="200" y1="400" x2="200" y2="600"/>
+        <line x1="400" y1="400" x2="400" y2="600"/>
+        <line x1="600" y1="380" x2="600" y2="600"/>
+        <line x1="800" y1="400" x2="800" y2="600"/>
+        <line x1="1000" y1="400" x2="1000" y2="600"/>
+      </g>
+
+      <!-- Red accent line at horizon -->
+      <line x1="0" y1="460" x2="1200" y2="460" stroke="#dc2626" stroke-width="0.5" opacity="0.2"/>
+    </svg>
+  </div>
+
+  <!-- Red radial glow bottom center -->
+  <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] pointer-events-none" style="background: radial-gradient(ellipse at center bottom, rgba(220,38,38,0.12) 0%, transparent 70%);"></div>
+
+  <!-- Hero Content -->
+  <div class="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20 text-center">
+    <!-- Badge -->
+    <div class="fade-hidden inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-brand-800 bg-brand-950 text-brand-400 text-xs font-medium mb-6" style="background: rgba(127,29,29,0.2);">
+      <span class="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse"></span>
+      Invite-only access
+    </div>
+
+    <!-- Headline -->
+    <h1 class="fade-hidden stagger-1 font-display font-800 text-white leading-tight tracking-tight mb-6" style="font-size: clamp(2.5rem, 6vw, 5rem); font-weight: 800; letter-spacing: -0.03em;">
+      Your patrol,<br/>
+      <span style="background: linear-gradient(135deg, #ef4444, #dc2626); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">organized.</span>
+    </h1>
+
+    <!-- Subheadline -->
+    <p class="fade-hidden stagger-2 text-surface-300 leading-relaxed max-w-2xl mx-auto mb-10" style="font-size: clamp(1rem, 2vw, 1.2rem);">
+      PatrolKit brings duty scheduling, incident reporting, training records, and equipment management together in one place — built for the people who keep the mountain safe.
+    </p>
+
+    <!-- CTA -->
+    <div class="fade-hidden stagger-3 flex flex-col sm:flex-row items-center justify-center gap-3">
+      <button
+        onclick="document.getElementById('signin-btn').click()"
+        class="px-8 py-3.5 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-xl transition-all duration-150 text-base shadow-lg red-glow flex items-center gap-2"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+          <polyline points="10 17 15 12 10 7"/>
+          <line x1="15" y1="12" x2="3" y2="12"/>
+        </svg>
+        Sign In to PatrolKit
+      </button>
+      <a href="#features" class="px-6 py-3.5 text-surface-300 hover:text-white font-medium transition-colors text-base flex items-center gap-2">
+        See features
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <polyline points="19 12 12 19 5 12"/>
+        </svg>
+      </a>
+    </div>
+
+    <!-- Trust line -->
+    <p class="fade-hidden stagger-4 mt-12 text-xs text-surface-500 flex items-center justify-center gap-2">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-brand-600">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+      Access by invitation only — contact your patrol director
+    </p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     FEATURES GRID
+═══════════════════════════════════════════ -->
+<section id="features" class="py-24" style="background: #1a1a1a;">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+
+    <!-- Section header -->
+    <div class="text-center mb-16 fade-hidden">
+      <h2 class="font-display font-700 text-white mb-4" style="font-size: clamp(1.75rem, 4vw, 2.75rem); font-weight: 700; letter-spacing: -0.02em;">
+        Everything your patrol needs
+      </h2>
+      <p class="text-surface-400 max-w-xl mx-auto">
+        One platform to replace the spreadsheets, group texts, and paper forms. Built for how ski patrol actually works.
+      </p>
+    </div>
+
+    <!-- Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+
+      <!-- Card 1: Duty Scheduling -->
+      <div class="feature-card fade-hidden stagger-1 p-6 rounded-xl border border-surface-700 bg-surface-800">
+        <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+            <line x1="8" y1="14" x2="8" y2="14" stroke-width="3" stroke-linecap="round"/>
+            <line x1="12" y1="14" x2="12" y2="14" stroke-width="3" stroke-linecap="round"/>
+            <line x1="16" y1="14" x2="16" y2="14" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Duty Scheduling</h3>
+        <p class="text-surface-400 text-sm leading-relaxed">
+          Create shifts, manage sign-ups, and track patrol coverage across the whole season. Know exactly who's on hill every single day.
+        </p>
+      </div>
+
+      <!-- Card 2: Incident Reporting -->
+      <div class="feature-card fade-hidden stagger-2 p-6 rounded-xl border border-surface-700 bg-surface-800">
+        <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+        </div>
+        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Incident Reporting</h3>
+        <p class="text-surface-400 text-sm leading-relaxed">
+          Log and track incidents with structured reports. Search, filter, and close reports from any device — no paper required.
+        </p>
+      </div>
+
+      <!-- Card 3: Training & Certs -->
+      <div class="feature-card fade-hidden stagger-3 p-6 rounded-xl border border-surface-700 bg-surface-800">
+        <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="6"/>
+            <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>
+          </svg>
+        </div>
+        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Training &amp; Certifications</h3>
+        <p class="text-surface-400 text-sm leading-relaxed">
+          Track OEC, CPR, avalanche certs and more. Get proactive alerts before certifications expire so no one gets caught off guard.
+        </p>
+      </div>
+
+      <!-- Card 4: Equipment -->
+      <div class="feature-card fade-hidden stagger-4 p-6 rounded-xl border border-surface-700 bg-surface-800">
+        <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          </svg>
+        </div>
+        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Equipment Management</h3>
+        <p class="text-surface-400 text-sm leading-relaxed">
+          Catalog your patrol gear, track condition, and log inspections. Always know what needs attention before it becomes a problem.
+        </p>
+      </div>
+
+      <!-- Card 5: Announcements -->
+      <div class="feature-card fade-hidden stagger-5 p-6 rounded-xl border border-surface-700 bg-surface-800">
+        <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+        </div>
+        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Announcements</h3>
+        <p class="text-surface-400 text-sm leading-relaxed">
+          Keep your patrol informed with pinned announcements. No more lost group texts or important updates buried in email threads.
+        </p>
+      </div>
+
+      <!-- Card 6: Member Roster -->
+      <div class="feature-card fade-hidden stagger-6 p-6 rounded-xl border border-surface-700 bg-surface-800">
+        <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </div>
+        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Member Roster</h3>
+        <p class="text-surface-400 text-sm leading-relaxed">
+          Manage your patrol roster, assign roles, and invite new members via email. Plus run multiple patrols from a single account.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     HOW IT WORKS
+═══════════════════════════════════════════ -->
+<section class="py-24 relative overflow-hidden" style="background: #141414;">
+  <!-- Subtle red gradient left edge -->
+  <div class="absolute left-0 top-0 bottom-0 w-1 pointer-events-none" style="background: linear-gradient(180deg, transparent, #dc2626, transparent); opacity: 0.2;"></div>
+
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+
+    <!-- Section header -->
+    <div class="text-center mb-16 fade-hidden">
+      <h2 class="font-display font-700 text-white mb-4" style="font-size: clamp(1.75rem, 4vw, 2.75rem); font-weight: 700; letter-spacing: -0.02em;">
+        How it works
+      </h2>
+      <p class="text-surface-400 max-w-lg mx-auto">
+        PatrolKit is invite-only. Your patrol director controls access, keeping your patrol's data secure and your team in sync.
+      </p>
+    </div>
+
+    <!-- Steps -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-12">
+
+      <!-- Step 1 -->
+      <div class="fade-hidden stagger-1 relative">
+        <div class="flex flex-col items-start">
+          <div class="step-num font-display mb-4 leading-none" style="font-size: 5rem; font-weight: 800; line-height: 1;">01</div>
+          <h3 class="font-display font-600 text-white text-xl mb-3" style="font-weight: 600;">Get invited</h3>
+          <p class="text-surface-400 text-sm leading-relaxed">
+            Your patrol director adds you to PatrolKit. You'll receive an email invitation to create your account and join your patrol.
+          </p>
+        </div>
+        <!-- Connector line (hidden on mobile, visible on md+) -->
+        <div class="hidden md:block absolute top-10 right-0 w-12 h-px" style="background: linear-gradient(90deg, #3d3d3d, transparent);"></div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="fade-hidden stagger-2 relative">
+        <div class="flex flex-col items-start">
+          <div class="step-num font-display mb-4 leading-none" style="font-size: 5rem; font-weight: 800; line-height: 1;">02</div>
+          <h3 class="font-display font-600 text-white text-xl mb-3" style="font-weight: 600;">Get organized</h3>
+          <p class="text-surface-400 text-sm leading-relaxed">
+            Access your patrol's schedule, report incidents, and manage your certifications from any device — phone, tablet, or desktop.
+          </p>
+        </div>
+        <div class="hidden md:block absolute top-10 right-0 w-12 h-px" style="background: linear-gradient(90deg, #3d3d3d, transparent);"></div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="fade-hidden stagger-3">
+        <div class="flex flex-col items-start">
+          <div class="step-num font-display mb-4 leading-none" style="font-size: 5rem; font-weight: 800; line-height: 1;">03</div>
+          <h3 class="font-display font-600 text-white text-xl mb-3" style="font-weight: 600;">Stay connected</h3>
+          <p class="text-surface-400 text-sm leading-relaxed">
+            Announcements, shift reminders, and expiring cert alerts keep your whole patrol on the same page all season long.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     FEATURE SPOTLIGHT
+═══════════════════════════════════════════ -->
+<section class="py-24" style="background: #1a1a1a;">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-24">
+
+    <!-- Row 1: Text left, Visual right -->
+    <div class="flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
+      <div class="flex-1 fade-hidden">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium mb-5" style="background: rgba(220,38,38,0.12); color: #ef4444; border: 1px solid rgba(220,38,38,0.2);">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          Duty Scheduling
+        </div>
+        <h2 class="font-display font-700 text-white mb-4" style="font-size: clamp(1.5rem, 3.5vw, 2.25rem); font-weight: 700; letter-spacing: -0.02em;">
+          Always know who's on hill
+        </h2>
+        <p class="text-surface-400 leading-relaxed mb-6">
+          Build your patrol schedule once and let patrollers sign up for shifts. Track coverage across every zone, every day. No more calling around to fill spots last-minute.
+        </p>
+        <ul class="space-y-3">
+          <li class="flex items-start gap-3 text-sm text-surface-300">
+            <svg class="mt-0.5 flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Create recurring and one-off shift templates
+          </li>
+          <li class="flex items-start gap-3 text-sm text-surface-300">
+            <svg class="mt-0.5 flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Patrollers self-sign-up with one click
+          </li>
+          <li class="flex items-start gap-3 text-sm text-surface-300">
+            <svg class="mt-0.5 flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Director oversight with coverage gaps highlighted
+          </li>
+        </ul>
+      </div>
+
+      <!-- Schedule SVG Mockup -->
+      <div class="flex-1 w-full fade-hidden stagger-2">
+        <div class="rounded-2xl overflow-hidden border border-surface-600 shadow-2xl" style="background: #141414;">
+          <svg viewBox="0 0 480 300" xmlns="http://www.w3.org/2000/svg" class="w-full">
+            <!-- App chrome -->
+            <rect width="480" height="300" fill="#141414"/>
+            <!-- Header bar -->
+            <rect width="480" height="44" fill="#1e1e1e"/>
+            <text x="16" y="27" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#f5f5f5">Weekly Schedule</text>
+            <rect x="380" y="12" width="84" height="22" rx="6" fill="#dc2626"/>
+            <text x="396" y="27" font-family="Inter, sans-serif" font-size="11" fill="white" font-weight="500">+ New Shift</text>
+
+            <!-- Day headers -->
+            <g font-family="Inter, sans-serif" font-size="10" fill="#737373" font-weight="500">
+              <text x="72" y="62" text-anchor="middle">MON</text>
+              <text x="132" y="62" text-anchor="middle">TUE</text>
+              <text x="192" y="62" text-anchor="middle">WED</text>
+              <text x="252" y="62" text-anchor="middle">THU</text>
+              <text x="312" y="62" text-anchor="middle">FRI</text>
+              <text x="372" y="62" text-anchor="middle">SAT</text>
+              <text x="432" y="62" text-anchor="middle">SUN</text>
+            </g>
+
+            <!-- Row 1: AM Patrol -->
+            <text x="12" y="88" font-family="Inter, sans-serif" font-size="9" fill="#525252">AM Patrol</text>
+            <!-- Filled shifts -->
+            <rect x="52" y="74" width="40" height="22" rx="4" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.5"/>
+            <text x="72" y="89" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">J.Smith</text>
+            <rect x="112" y="74" width="40" height="22" rx="4" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.5"/>
+            <text x="132" y="89" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">M.Lee</text>
+            <rect x="172" y="74" width="40" height="22" rx="4" fill="rgba(45,45,45,0.8)" stroke="#3d3d3d" stroke-width="0.5" stroke-dasharray="3,2"/>
+            <text x="192" y="89" font-family="Inter, sans-serif" font-size="9" fill="#525252" text-anchor="middle">Open</text>
+            <rect x="232" y="74" width="40" height="22" rx="4" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.5"/>
+            <text x="252" y="89" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">K.Park</text>
+            <rect x="292" y="74" width="40" height="22" rx="4" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.5"/>
+            <text x="312" y="89" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">A.Jones</text>
+            <rect x="352" y="74" width="40" height="22" rx="4" fill="rgba(220,38,38,0.2)" stroke="#dc2626" stroke-width="1"/>
+            <text x="372" y="89" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">R.Chen</text>
+            <rect x="412" y="74" width="40" height="22" rx="4" fill="rgba(220,38,38,0.2)" stroke="#dc2626" stroke-width="1"/>
+            <text x="432" y="89" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">T.Walsh</text>
+
+            <!-- Row 2: PM Patrol -->
+            <text x="12" y="118" font-family="Inter, sans-serif" font-size="9" fill="#525252">PM Patrol</text>
+            <rect x="52" y="104" width="40" height="22" rx="4" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.5"/>
+            <text x="72" y="119" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">D.Ross</text>
+            <rect x="112" y="104" width="40" height="22" rx="4" fill="rgba(45,45,45,0.8)" stroke="#3d3d3d" stroke-width="0.5" stroke-dasharray="3,2"/>
+            <text x="132" y="119" font-family="Inter, sans-serif" font-size="9" fill="#525252" text-anchor="middle">Open</text>
+            <rect x="172" y="104" width="40" height="22" rx="4" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.5"/>
+            <text x="192" y="119" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">S.Kim</text>
+            <rect x="232" y="104" width="40" height="22" rx="4" fill="rgba(45,45,45,0.8)" stroke="#3d3d3d" stroke-width="0.5" stroke-dasharray="3,2"/>
+            <text x="252" y="119" font-family="Inter, sans-serif" font-size="9" fill="#525252" text-anchor="middle">Open</text>
+            <rect x="292" y="104" width="40" height="22" rx="4" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.5"/>
+            <text x="312" y="119" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">L.Patel</text>
+            <rect x="352" y="104" width="40" height="22" rx="4" fill="rgba(220,38,38,0.2)" stroke="#dc2626" stroke-width="1"/>
+            <text x="372" y="119" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">M.Hart</text>
+            <rect x="412" y="104" width="40" height="22" rx="4" fill="rgba(220,38,38,0.2)" stroke="#dc2626" stroke-width="1"/>
+            <text x="432" y="119" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">J.Cruz</text>
+
+            <!-- Row 3: Sweep -->
+            <text x="12" y="148" font-family="Inter, sans-serif" font-size="9" fill="#525252">Sweep</text>
+            <rect x="52" y="134" width="40" height="22" rx="4" fill="rgba(45,45,45,0.8)" stroke="#3d3d3d" stroke-width="0.5" stroke-dasharray="3,2"/>
+            <text x="72" y="149" font-family="Inter, sans-serif" font-size="9" fill="#525252" text-anchor="middle">Open</text>
+            <rect x="112" y="134" width="40" height="22" rx="4" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.5"/>
+            <text x="132" y="149" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">N.Brooks</text>
+            <rect x="172" y="134" width="40" height="22" rx="4" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.5"/>
+            <text x="192" y="149" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">W.Ford</text>
+            <rect x="232" y="134" width="40" height="22" rx="4" fill="rgba(220,38,38,0.15)" stroke="#dc2626" stroke-width="0.5"/>
+            <text x="252" y="149" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">A.Min</text>
+            <rect x="292" y="134" width="40" height="22" rx="4" fill="rgba(45,45,45,0.8)" stroke="#3d3d3d" stroke-width="0.5" stroke-dasharray="3,2"/>
+            <text x="312" y="149" font-family="Inter, sans-serif" font-size="9" fill="#525252" text-anchor="middle">Open</text>
+            <rect x="352" y="134" width="40" height="22" rx="4" fill="rgba(220,38,38,0.2)" stroke="#dc2626" stroke-width="1"/>
+            <text x="372" y="149" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">P.Reed</text>
+            <rect x="412" y="134" width="40" height="22" rx="4" fill="rgba(220,38,38,0.2)" stroke="#dc2626" stroke-width="1"/>
+            <text x="432" y="149" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle">C.Vega</text>
+
+            <!-- Coverage summary bar -->
+            <rect x="12" y="172" width="456" height="1" fill="#2d2d2d"/>
+            <text x="12" y="189" font-family="Inter, sans-serif" font-size="9" fill="#525252" font-weight="500">COVERAGE THIS WEEK</text>
+            <!-- Progress bar bg -->
+            <rect x="12" y="196" width="200" height="6" rx="3" fill="#2d2d2d"/>
+            <!-- Progress fill -->
+            <rect x="12" y="196" width="154" height="6" rx="3" fill="#dc2626"/>
+            <text x="220" y="203" font-family="Inter, sans-serif" font-size="9" fill="#a3a3a3">77% filled</text>
+
+            <!-- Open slots warning -->
+            <rect x="12" y="215" width="220" height="30" rx="6" fill="rgba(220,38,38,0.08)" stroke="rgba(220,38,38,0.2)" stroke-width="0.5"/>
+            <text x="24" y="233" font-family="Inter, sans-serif" font-size="9" fill="#ef4444">⚠ 4 open slots this week — send reminders</text>
+
+            <!-- Mini stat boxes -->
+            <rect x="250" y="215" width="60" height="30" rx="6" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
+            <text x="280" y="227" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="white" text-anchor="middle">17</text>
+            <text x="280" y="238" font-family="Inter, sans-serif" font-size="8" fill="#525252" text-anchor="middle">Signed up</text>
+
+            <rect x="320" y="215" width="60" height="30" rx="6" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
+            <text x="350" y="227" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#ef4444" text-anchor="middle">4</text>
+            <text x="350" y="238" font-family="Inter, sans-serif" font-size="8" fill="#525252" text-anchor="middle">Open</text>
+
+            <rect x="390" y="215" width="78" height="30" rx="6" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
+            <text x="429" y="227" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="white" text-anchor="middle">21</text>
+            <text x="429" y="238" font-family="Inter, sans-serif" font-size="8" fill="#525252" text-anchor="middle">Total slots</text>
+
+            <!-- Bottom accent -->
+            <rect x="0" y="265" width="480" height="1" fill="#2d2d2d"/>
+            <text x="16" y="284" font-family="Inter, sans-serif" font-size="8" fill="#3d3d3d">Jan 13 – Jan 19, 2026  ·  Sunrise Mountain Patrol</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Row 2: Visual left, Text right -->
+    <div class="flex flex-col lg:flex-row-reverse items-center gap-12 lg:gap-16">
+      <div class="flex-1 fade-hidden">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium mb-5" style="background: rgba(220,38,38,0.12); color: #ef4444; border: 1px solid rgba(220,38,38,0.2);">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="6"/>
+            <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>
+          </svg>
+          Training &amp; Certifications
+        </div>
+        <h2 class="font-display font-700 text-white mb-4" style="font-size: clamp(1.5rem, 3.5vw, 2.25rem); font-weight: 700; letter-spacing: -0.02em;">
+          Never miss a recert
+        </h2>
+        <p class="text-surface-400 leading-relaxed mb-6">
+          Track every patroller's OEC, CPR, avalanche training, and other certifications in one place. PatrolKit alerts you well before anything expires so you're never scrambling at the last minute.
+        </p>
+        <ul class="space-y-3">
+          <li class="flex items-start gap-3 text-sm text-surface-300">
+            <svg class="mt-0.5 flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Track OEC, CPR, WFR, avalanche and custom certs
+          </li>
+          <li class="flex items-start gap-3 text-sm text-surface-300">
+            <svg class="mt-0.5 flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Expiry alerts sent to patrollers and directors
+          </li>
+          <li class="flex items-start gap-3 text-sm text-surface-300">
+            <svg class="mt-0.5 flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Full certification history for every member
+          </li>
+        </ul>
+      </div>
+
+      <!-- Certs SVG Mockup -->
+      <div class="flex-1 w-full fade-hidden stagger-2">
+        <div class="rounded-2xl overflow-hidden border border-surface-600 shadow-2xl" style="background: #141414;">
+          <svg viewBox="0 0 480 300" xmlns="http://www.w3.org/2000/svg" class="w-full">
+            <rect width="480" height="300" fill="#141414"/>
+            <!-- Header -->
+            <rect width="480" height="44" fill="#1e1e1e"/>
+            <text x="16" y="27" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#f5f5f5">My Certifications</text>
+            <!-- Status pill -->
+            <rect x="388" y="12" width="76" height="22" rx="11" fill="rgba(220,38,38,0.15)" stroke="rgba(220,38,38,0.3)" stroke-width="0.5"/>
+            <circle cx="401" cy="23" r="3" fill="#dc2626"/>
+            <text x="408" y="27" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" font-weight="500">1 Expiring</text>
+
+            <!-- Cert card 1: OEC - Good -->
+            <rect x="12" y="56" width="216" height="72" rx="8" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
+            <rect x="12" y="56" width="4" height="72" rx="2" fill="#22c55e"/>
+            <text x="28" y="76" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#f5f5f5">OEC — Outdoor Emergency Care</text>
+            <text x="28" y="91" font-family="Inter, sans-serif" font-size="9" fill="#525252">National Ski Patrol  ·  Cert #4892-A</text>
+            <!-- Progress -->
+            <rect x="28" y="100" width="175" height="4" rx="2" fill="#2d2d2d"/>
+            <rect x="28" y="100" width="158" height="4" rx="2" fill="#22c55e"/>
+            <text x="28" y="118" font-family="Inter, sans-serif" font-size="8" fill="#22c55e">Valid</text>
+            <text x="160" y="118" font-family="Inter, sans-serif" font-size="8" fill="#525252">Expires Mar 2027</text>
+
+            <!-- Cert card 2: CPR - Expiring soon -->
+            <rect x="12" y="138" width="216" height="72" rx="8" fill="#1e1e1e" stroke="rgba(220,38,38,0.3)" stroke-width="0.8"/>
+            <rect x="12" y="138" width="4" height="72" rx="2" fill="#dc2626"/>
+            <text x="28" y="158" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#f5f5f5">CPR / AED Certification</text>
+            <text x="28" y="173" font-family="Inter, sans-serif" font-size="9" fill="#525252">American Heart Association</text>
+            <!-- Progress -->
+            <rect x="28" y="182" width="175" height="4" rx="2" fill="#2d2d2d"/>
+            <rect x="28" y="182" width="26" height="4" rx="2" fill="#dc2626"/>
+            <text x="28" y="200" font-family="Inter, sans-serif" font-size="8" fill="#ef4444">⚠ Expires in 23 days</text>
+
+            <!-- Cert card 3: Avy 1 - Good -->
+            <rect x="12" y="220" width="216" height="68" rx="8" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
+            <rect x="12" y="220" width="4" height="68" rx="2" fill="#22c55e"/>
+            <text x="28" y="240" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#f5f5f5">Avalanche Level 1</text>
+            <text x="28" y="255" font-family="Inter, sans-serif" font-size="9" fill="#525252">AIARE  ·  Recert every 3 years</text>
+            <rect x="28" y="264" width="175" height="4" rx="2" fill="#2d2d2d"/>
+            <rect x="28" y="264" width="130" height="4" rx="2" fill="#22c55e"/>
+            <text x="28" y="280" font-family="Inter, sans-serif" font-size="8" fill="#22c55e">Valid  ·  Expires Jan 2026</text>
+
+            <!-- Right panel: Patrol cert summary -->
+            <rect x="240" y="56" width="228" height="72" rx="8" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
+            <text x="256" y="76" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="#a3a3a3" text-transform="uppercase" letter-spacing="0.5">Patrol Overview</text>
+
+            <!-- Mini stat grid -->
+            <text x="256" y="96" font-family="Inter, sans-serif" font-size="22" font-weight="700" fill="white">24</text>
+            <text x="256" y="109" font-family="Inter, sans-serif" font-size="8" fill="#525252">Members total</text>
+
+            <text x="336" y="96" font-family="Inter, sans-serif" font-size="22" font-weight="700" fill="#22c55e">21</text>
+            <text x="336" y="109" font-family="Inter, sans-serif" font-size="8" fill="#525252">Fully certified</text>
+
+            <text x="404" y="96" font-family="Inter, sans-serif" font-size="22" font-weight="700" fill="#dc2626">3</text>
+            <text x="404" y="109" font-family="Inter, sans-serif" font-size="8" fill="#525252">Need action</text>
+
+            <!-- Upcoming alerts list -->
+            <rect x="240" y="138" width="228" height="150" rx="8" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
+            <text x="256" y="156" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#737373">UPCOMING EXPIRATIONS</text>
+
+            <!-- Alert row 1 -->
+            <circle cx="256" cy="173" r="3" fill="#dc2626"/>
+            <text x="265" y="176" font-family="Inter, sans-serif" font-size="9" fill="#f5f5f5">J. Smith — CPR</text>
+            <text x="388" y="176" font-family="Inter, sans-serif" font-size="8" fill="#ef4444" text-anchor="end">23 days</text>
+
+            <line x1="256" y1="183" x2="456" y2="183" stroke="#2d2d2d" stroke-width="0.5"/>
+
+            <!-- Alert row 2 -->
+            <circle cx="256" cy="195" r="3" fill="#f59e0b"/>
+            <text x="265" y="198" font-family="Inter, sans-serif" font-size="9" fill="#f5f5f5">M. Lee — OEC recert</text>
+            <text x="388" y="198" font-family="Inter, sans-serif" font-size="8" fill="#f59e0b" text-anchor="end">45 days</text>
+
+            <line x1="256" y1="207" x2="456" y2="207" stroke="#2d2d2d" stroke-width="0.5"/>
+
+            <!-- Alert row 3 -->
+            <circle cx="256" cy="219" r="3" fill="#f59e0b"/>
+            <text x="265" y="222" font-family="Inter, sans-serif" font-size="9" fill="#f5f5f5">K. Park — Avy 1</text>
+            <text x="388" y="222" font-family="Inter, sans-serif" font-size="8" fill="#f59e0b" text-anchor="end">62 days</text>
+
+            <line x1="256" y1="231" x2="456" y2="231" stroke="#2d2d2d" stroke-width="0.5"/>
+
+            <!-- Alert row 4 -->
+            <circle cx="256" cy="243" r="3" fill="#22c55e"/>
+            <text x="265" y="246" font-family="Inter, sans-serif" font-size="9" fill="#737373">A. Jones — CPR</text>
+            <text x="388" y="246" font-family="Inter, sans-serif" font-size="8" fill="#525252" text-anchor="end">4 months</text>
+
+            <line x1="256" y1="255" x2="456" y2="255" stroke="#2d2d2d" stroke-width="0.5"/>
+
+            <!-- Alert row 5 -->
+            <circle cx="256" cy="267" r="3" fill="#22c55e"/>
+            <text x="265" y="270" font-family="Inter, sans-serif" font-size="9" fill="#737373">R. Chen — WFR</text>
+            <text x="388" y="270" font-family="Inter, sans-serif" font-size="8" fill="#525252" text-anchor="end">5 months</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     CTA SECTION
+═══════════════════════════════════════════ -->
+<section class="py-20 relative overflow-hidden" style="background: linear-gradient(180deg, #141414 0%, #0f0f0f 100%);">
+  <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse at 50% 50%, rgba(220,38,38,0.08) 0%, transparent 70%);"></div>
+  <div class="relative max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center fade-hidden">
+    <!-- Shield icon -->
+    <div class="flex justify-center mb-6">
+      <div class="w-16 h-16 rounded-2xl flex items-center justify-center" style="background: rgba(220,38,38,0.12); border: 1px solid rgba(220,38,38,0.2);">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 2L4 7V16C4 22.627 9.373 29 16 30C22.627 29 28 22.627 28 16V7L16 2Z" fill="transparent" stroke="#dc2626" stroke-width="1.5"/>
+          <rect x="14" y="10" width="4" height="12" rx="1" fill="#dc2626"/>
+          <rect x="10" y="14" width="12" height="4" rx="1" fill="#dc2626"/>
+        </svg>
+      </div>
+    </div>
+    <h2 class="font-display font-700 text-white mb-4" style="font-size: clamp(1.5rem, 3.5vw, 2.5rem); font-weight: 700; letter-spacing: -0.02em;">
+      Ready to get organized?
+    </h2>
+    <p class="text-surface-400 mb-8 leading-relaxed">
+      PatrolKit is invite-only. Talk to your patrol director about getting access, or sign in if you've already been invited.
+    </p>
+    <button
+      onclick="document.getElementById('signin-btn').click()"
+      class="inline-flex items-center gap-2 px-8 py-3.5 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-xl transition-all duration-150 text-base shadow-lg red-glow"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+        <polyline points="10 17 15 12 10 7"/>
+        <line x1="15" y1="12" x2="3" y2="12"/>
+      </svg>
+      Sign In to PatrolKit
+    </button>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     FOOTER
+═══════════════════════════════════════════ -->
+<footer style="background: #0f0f0f; border-top: 1px solid #2d2d2d;">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+
+      <!-- Logo + tagline -->
+      <div class="flex flex-col items-center md:items-start gap-2">
+        <div class="flex items-center gap-2.5">
+          <svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M16 2L4 7V16C4 22.627 9.373 29 16 30C22.627 29 28 22.627 28 16V7L16 2Z" fill="#1a1a1a" stroke="#dc2626" stroke-width="1.5"/>
+            <rect x="14" y="10" width="4" height="12" rx="1" fill="#dc2626"/>
+            <rect x="10" y="14" width="12" height="4" rx="1" fill="#dc2626"/>
+          </svg>
+          <span class="font-display font-700 text-white text-sm" style="font-weight: 700;">PatrolKit</span>
+        </div>
+        <p class="text-surface-500 text-xs">Built for the people who keep the mountain safe.</p>
+      </div>
+
+      <!-- Links + copyright -->
+      <div class="flex flex-col items-center md:items-end gap-3">
+        <div class="flex items-center gap-5">
+          <a href="#" class="text-surface-500 hover:text-surface-300 text-xs transition-colors">Privacy Policy</a>
+          <a href="#" class="text-surface-500 hover:text-surface-300 text-xs transition-colors">Terms of Service</a>
+        </div>
+        <p class="text-surface-600 text-xs">&copy; 2026 PatrolKit. All rights reserved.</p>
+      </div>
+
+    </div>
+  </div>
+</footer>
+
+
+<!-- ═══════════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════════ -->
+<script>
+// ─── Navbar scroll effect ───────────────────
+const navbar = document.getElementById('navbar');
+window.addEventListener('scroll', () => {
+  if (window.scrollY > 20) {
+    navbar.classList.add('navbar-scrolled');
+  } else {
+    navbar.classList.remove('navbar-scrolled');
+  }
+}, { passive: true });
+
+
+// ─── Sign-in Dropdown ──────────────────────
+const signinBtn = document.getElementById('signin-btn');
+const dropdown = document.getElementById('signin-dropdown');
+let dropdownOpen = false;
+
+function openDropdown() {
+  dropdown.classList.remove('hidden');
+  signinBtn.setAttribute('aria-expanded', 'true');
+  dropdownOpen = true;
+  // Focus first input
+  setTimeout(() => {
+    const activeTab = dropdown.querySelector('[data-tab].active');
+    if (activeTab) {
+      const tabName = activeTab.getAttribute('data-tab');
+      const input = document.getElementById(tabName === 'password' ? 'pw-email' : 'ml-email');
+      if (input) input.focus();
+    }
+  }, 50);
+}
+
+function closeDropdown() {
+  dropdown.classList.add('hidden');
+  signinBtn.setAttribute('aria-expanded', 'false');
+  dropdownOpen = false;
+}
+
+signinBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (dropdownOpen) {
+    closeDropdown();
+  } else {
+    openDropdown();
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (dropdownOpen && !dropdown.contains(e.target) && !signinBtn.contains(e.target)) {
+    closeDropdown();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && dropdownOpen) {
+    closeDropdown();
+    signinBtn.focus();
+  }
+});
+
+
+// ─── Tabs ──────────────────────────────────
+const tabBtns = dropdown.querySelectorAll('.tab-btn');
+const tabPanels = {
+  password: document.getElementById('tab-password'),
+  magic: document.getElementById('tab-magic'),
+};
+
+tabBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.getAttribute('data-tab');
+    // Update buttons
+    tabBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // Update panels
+    Object.keys(tabPanels).forEach(key => {
+      if (key === tab) {
+        tabPanels[key].classList.remove('hidden');
+      } else {
+        tabPanels[key].classList.add('hidden');
+      }
+    });
+    // Focus input
+    const input = document.getElementById(tab === 'password' ? 'pw-email' : 'ml-email');
+    if (input) setTimeout(() => input.focus(), 10);
+  });
+});
+
+
+// ─── Helper functions ──────────────────────
+function setLoading(btn, loading) {
+  if (loading) {
+    btn.disabled = true;
+    btn.dataset.originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span>';
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = btn.dataset.originalText;
+  }
+}
+
+function showError(el, msg) {
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+function hideError(el) {
+  el.classList.add('hidden');
+}
+
+
+// ─── Password Login ─────────────────────────
+const pwSubmit = document.getElementById('pw-submit');
+const pwError = document.getElementById('pw-error');
+
+async function handlePasswordLogin() {
+  const email = document.getElementById('pw-email').value.trim();
+  const password = document.getElementById('pw-password').value;
+
+  hideError(pwError);
+
+  if (!email) { showError(pwError, 'Please enter your email address.'); return; }
+  if (!password) { showError(pwError, 'Please enter your password.'); return; }
+
+  setLoading(pwSubmit, true);
+
+  try {
+    const res = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const result = await res.json();
+
+    if (!res.ok) {
+      throw new Error(result.error || result.message || 'Invalid email or password.');
+    }
+
+    const { accessToken, refreshToken } = result.data;
+
+    // Store tokens — React AuthContext reads refreshToken from localStorage
+    if (accessToken) sessionStorage.setItem('accessToken', accessToken);
+    if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
+
+    // Redirect to the app — AuthContext handles routing to the right dashboard
+    window.location.href = '/app/';
+  } catch (err) {
+    showError(pwError, err.message || 'Something went wrong. Please try again.');
+    setLoading(pwSubmit, false);
+  }
+}
+
+pwSubmit.addEventListener('click', handlePasswordLogin);
+document.getElementById('pw-password').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') handlePasswordLogin();
+});
+document.getElementById('pw-email').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('pw-password').focus();
+});
+
+
+// ─── Magic Link ─────────────────────────────
+const mlSubmit = document.getElementById('ml-submit');
+const mlError = document.getElementById('ml-error');
+const mlSuccess = document.getElementById('ml-success');
+
+async function handleMagicLink() {
+  const email = document.getElementById('ml-email').value.trim();
+
+  hideError(mlError);
+  mlSuccess.classList.add('hidden');
+
+  if (!email) { showError(mlError, 'Please enter your email address.'); return; }
+
+  setLoading(mlSubmit, true);
+
+  try {
+    const res = await fetch('/api/v1/auth/magic-link/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'Failed to send magic link.');
+    }
+
+    mlSuccess.classList.remove('hidden');
+    setLoading(mlSubmit, false);
+    // Reset button text to something friendly
+    mlSubmit.innerHTML = 'Resend Link';
+  } catch (err) {
+    showError(mlError, err.message || 'Something went wrong. Please try again.');
+    setLoading(mlSubmit, false);
+  }
+}
+
+mlSubmit.addEventListener('click', handleMagicLink);
+document.getElementById('ml-email').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') handleMagicLink();
+});
+
+
+// ─── Intersection Observer: scroll animations ───
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('fade-visible');
+      observer.unobserve(entry.target);
+    }
+  });
+}, {
+  threshold: 0.1,
+  rootMargin: '0px 0px -40px 0px',
+});
+
+document.querySelectorAll('.fade-hidden').forEach(el => {
+  observer.observe(el);
+});
+</script>
+
+</body>
+</html>

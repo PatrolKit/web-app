@@ -1,10 +1,6 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-
+import { createId } from '@paralleldrive/cuid2';
 export interface ModuleResponse {
   key: string;
   name: string;
@@ -54,7 +50,7 @@ export class ModulesService {
         enabledBy: enabled ? actorUserId : null,
       },
       create: {
-        id: require('@paralleldrive/cuid2').createId(),
+        id: createId(),
         orgId,
         moduleKey,
         enabled,

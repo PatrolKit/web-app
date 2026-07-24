@@ -1,5 +1,4 @@
 import { generateKeyPairSync } from 'crypto';
-import { importPKCS8, importSPKI } from 'jose';
 import { JwtService } from './jwt.service';
 
 async function buildService(): Promise<JwtService> {

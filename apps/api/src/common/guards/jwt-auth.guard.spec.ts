@@ -1,7 +1,6 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { generateKeyPairSync } from 'crypto';
-import { importPKCS8, importSPKI, SignJWT } from 'jose';
 import { JwtService } from '../../auth/jwt.service';
 
 async function makeJwtService() {
@@ -22,11 +21,6 @@ async function makeJwtService() {
     },
   } as never);
   await svc.onModuleInit();
-  // expose private key for test-only tampered-token generation
-  (svc as unknown as { _privateKey: unknown })._privateKey = await importPKCS8(
-    privateKey,
-    'EdDSA',
-  );
   return { svc, privateKey, publicKey };
 }
 
