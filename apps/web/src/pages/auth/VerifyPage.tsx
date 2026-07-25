@@ -15,7 +15,7 @@ export default function VerifyPage() {
 
     api.auth.verifyMagicLink(token)
       .then(({ accessToken }) => login(accessToken))
-      .then(() => navigate('/app', { replace: true }))
+      .then(() => navigate('/dashboard', { replace: true }))
       .catch((err) => {
         setError(err instanceof ApiError ? err.message : 'Sign-in failed');
       });

@@ -46,16 +46,16 @@ export default function AppShell() {
         {/* Nav */}
         <nav className="flex-1 p-4 space-y-1 text-sm">
           {perms.has('users:read') && (
-            <a href="/app/members" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Members</a>
+            <a href="/app/dashboard/members" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Members</a>
           )}
           {perms.has('org:read') && (
-            <a href="/app/modules" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Modules</a>
+            <a href="/app/dashboard/modules" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Modules</a>
           )}
           {perms.has('devices:read') && (
-            <a href="/app/devices" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Devices</a>
+            <a href="/app/dashboard/devices" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Devices</a>
           )}
           {user.isSuperAdmin && (
-            <a href="/app/admin" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Platform Admin</a>
+            <a href="/app/dashboard/admin" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Platform Admin</a>
           )}
         </nav>
 

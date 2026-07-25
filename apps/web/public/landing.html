@@ -1182,5 +1182,25 @@ document.querySelectorAll('.fade-hidden').forEach(el => {
 });
 </script>
 
+<!-- PatrolKit app integration: wire Sign In to the magic-link login screen -->
+<script>
+  (function () {
+    // Replace the dropdown-based sign-in with a direct link to the app login page
+    const signinBtn = document.getElementById('signin-btn');
+    if (signinBtn) {
+      signinBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        window.location.href = '/app/auth/login';
+      }, true);
+    }
+    // Also wire any "Sign In to PatrolKit" links/buttons in the page body
+    document.querySelectorAll('[id^="signin"], .signin-link').forEach(function (el) {
+      el.addEventListener('click', function () {
+        window.location.href = '/app/auth/login';
+      });
+    });
+  })();
+</script>
+
 </body>
 </html>

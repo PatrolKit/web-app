@@ -7,23 +7,22 @@ import MembersPage from './pages/members/MembersPage';
 import ModulesPage from './pages/modules/ModulesPage';
 import DevicesPage from './pages/devices/DevicesPage';
 import AdminPage from './pages/admin/AdminPage';
-import Home from './pages/Home';
 
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/auth/login" element={<LoginPage />} />
-        <Route path="/auth/verify" element={<VerifyPage />} />
-        <Route path="/app" element={<AppShell />}>
+        <Route index element={<Navigate to="auth/login" replace />} />
+        <Route path="auth/login" element={<LoginPage />} />
+        <Route path="auth/verify" element={<VerifyPage />} />
+        <Route path="dashboard" element={<AppShell />}>
           <Route index element={<Navigate to="members" replace />} />
           <Route path="members" element={<MembersPage />} />
           <Route path="modules" element={<ModulesPage />} />
           <Route path="devices" element={<DevicesPage />} />
           <Route path="admin" element={<AdminPage />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="auth/login" replace />} />
       </Routes>
     </AuthProvider>
   );
