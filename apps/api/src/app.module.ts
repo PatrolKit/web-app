@@ -29,6 +29,9 @@ import appConfig from './config/app.config';
     ConfigModule.forRoot({
       isGlobal: true,
       load: [appConfig],
+      // In test mode, process.env is already set by the test setup (e.g. Testcontainers URL).
+      // Ignore the .env file so it doesn't overwrite the container DATABASE_URL.
+      ignoreEnvFile: process.env['NODE_ENV'] === 'test',
       envFilePath: ['.env'],
     }),
     // Serve the pre-built web SPA (production only — skipped if dist not present)
