@@ -44,7 +44,7 @@ export class AuthService {
     });
 
     const appUrl = this.config.get<string>('app.appUrl', 'http://localhost:3000');
-    const magicLinkUrl = `${appUrl}/auth/verify?token=${rawToken}`;
+    const magicLinkUrl = `${appUrl}/app/auth/verify?token=${rawToken}`;
 
     // Fire-and-forget — never throw back to caller
     this.mailService.sendMagicLink(user.email, magicLinkUrl).catch((err) => {
