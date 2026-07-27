@@ -5,16 +5,20 @@ import fs from 'fs';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/app/',
   plugins: [
     react(),
-    // Serve landing.html at the root URL in dev
+    // Serve landing.html for the root URL in dev, bypassing the SPA entry point
     {
       name: 'root-landing-page',
       configureServer(server) {
-        server.middlewares.use((req, _res, next) => {
+        server.middlewares.use((req, res, next) => {
           if (req.url === '/' || req.url === '') {
-            req.url = '/landing.html';
+            const landingPath = path.resolve(__dirname, 'public/landing.html');
+            const content = fs.readFileSync(landingPath, 'utf-8');
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.statusCode = 200;
+            res.end(content);
+            return;
           }
           next();
         });
