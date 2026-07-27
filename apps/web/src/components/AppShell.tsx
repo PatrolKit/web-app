@@ -1,5 +1,8 @@
-import { Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+
+const navClass = ({ isActive }: { isActive: boolean }) =>
+  `block px-3 py-2 rounded text-sm transition ${isActive ? 'bg-surface-100 text-white' : 'text-gray-300 hover:bg-surface-100 hover:text-white'}`;
 
 export default function AppShell() {
   const { user, activeOrgId, setActiveOrgId, logout } = useAuth();
@@ -43,19 +46,19 @@ export default function AppShell() {
           </div>
         )}
 
-        {/* Nav */}
-        <nav className="flex-1 p-4 space-y-1 text-sm">
+        {/* Nav — use NavLink so navigation stays in-app (no full reload) */}
+        <nav className="flex-1 p-4 space-y-1">
           {perms.has('users:read') && (
-            <a href="/app/dashboard/members" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Members</a>
+            <NavLink to="members" className={navClass}>Members</NavLink>
           )}
           {perms.has('org:read') && (
-            <a href="/app/dashboard/modules" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Modules</a>
+            <NavLink to="modules" className={navClass}>Modules</NavLink>
           )}
           {perms.has('devices:read') && (
-            <a href="/app/dashboard/devices" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Devices</a>
+            <NavLink to="devices" className={navClass}>Devices</NavLink>
           )}
           {user.isSuperAdmin && (
-            <a href="/app/dashboard/admin" className="block px-3 py-2 rounded hover:bg-surface-100 text-gray-300 hover:text-white">Platform Admin</a>
+            <NavLink to="admin" className={navClass}>Platform Admin</NavLink>
           )}
         </nav>
 
