@@ -8,20 +8,17 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
-import type { OrgMembership } from '../common/guards/org-context.guard';
 import { MembersService } from './members.service';
 import { InviteMemberDto, UpdateMemberDto } from '../contracts/members.contracts';
 import type { MemberResponse, ImportOutcome } from '../contracts/members.contracts';
@@ -67,11 +64,9 @@ export class MembersController {
     @Param('orgId') orgId: string,
     @Param('userId') userId: string,
     @Body() body: UpdateMemberDto,
-    @Req() req: Request & { membership?: OrgMembership },
+    @CurrentUser() actor: AuthenticatedUser,
   ): Promise<MemberResponse> {
-    // Permission check is done inside the service (dual permission check)
-    const actorPerms = (req as unknown as { _actorPerms?: string[] })._actorPerms ?? [];
-    return this.membersService.updateMember(orgId, userId, body, actorPerms);
+    return this.membersService.updateMember(orgId, userId, body, actor.userId);
   }
 
   @Delete(':userId')

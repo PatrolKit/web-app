@@ -1,11 +1,17 @@
 import { useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { api, ApiError } from '../../lib/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function LoginPage() {
+  const { user, isLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // If the silent refresh already restored a session, skip the login page
+  if (!isLoading && user) return <Navigate to="/dashboard" replace />;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

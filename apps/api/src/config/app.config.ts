@@ -27,4 +27,7 @@ export default registerAs('app', () => ({
 
   // Seed
   seedSuperAdminEmail: process.env.SEED_SUPERADMIN_EMAIL ?? '',
+
+  // Ski Swap
+  squareEncryptionKey: process.env.SQUARE_ENCRYPTION_KEY ?? '',
 }));

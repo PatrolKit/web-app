@@ -72,3 +72,73 @@ export interface PlatformOrg {
   status: string;
   createdAt: string;
 }
+
+// ─── Ski Swap ─────────────────────────────────────────────────────────────────
+
+export interface SwapResponse {
+  id: string;
+  orgId: string;
+  title: string;
+  squareCategoryId: string;
+  locationId: string;
+  active: boolean;
+  skuPrefix: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SellerResponse {
+  id: string;
+  orgId: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ItemResponse {
+  squareItemId: string;
+  squareVariationId: string;
+  swapId: string;
+  name: string;
+  description: string | null;
+  sku: string;
+  priceCents: number;
+  inStock: number;
+  soldCount: number;
+  seller: { id: string; name: string; phone: string } | null;
+  squareImageIds: string[];
+}
+
+export interface SwapStats {
+  totalItems: number;
+  totalSellers: number;
+  itemsSold: number;
+  grossRevenueCents: number;
+}
+
+export interface SquareConfigResponse {
+  orgId: string;
+  accessToken: '***';
+  environment: 'sandbox' | 'production';
+  updatedAt: string;
+}
+
+export interface PublicSellerItem {
+  squareItemId: string;
+  name: string;
+  priceCents: number;
+  originalQuantity: number;
+  inStock: number;
+  soldCount: number;
+}
+
+export interface PublicSellerLookupResponse {
+  sellerName: string;
+  items: PublicSellerItem[];
+}

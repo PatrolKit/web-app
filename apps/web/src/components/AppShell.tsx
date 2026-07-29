@@ -1,17 +1,40 @@
 import { Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
+import { api } from '../lib/api';
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `block px-3 py-2 rounded text-sm transition ${isActive ? 'bg-surface-100 text-white' : 'text-gray-300 hover:bg-surface-100 hover:text-white'}`;
 
 export default function AppShell() {
-  const { user, activeOrgId, setActiveOrgId, logout } = useAuth();
+  const { user, activeOrgId, setActiveOrgId, logout, isLoading } = useAuth();
   const navigate = useNavigate();
 
+  const activeMembership = user?.memberships.find((m) => m.orgId === activeOrgId);
+  const perms = new Set(activeMembership?.permissions ?? []);
+
+  // All hooks must be called before any conditional return (Rules of Hooks).
+  const { data: org } = useQuery({
+    queryKey: ['org', activeOrgId],
+    queryFn: () => api.orgs.get(activeOrgId!),
+    enabled: !!user && !!activeOrgId && perms.has('org:read'),
+    staleTime: 60_000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
   if (!user) return <Navigate to="/auth/login" replace />;
 
-  const activeMembership = user.memberships.find((m) => m.orgId === activeOrgId);
-  const perms = new Set(activeMembership?.permissions ?? []);
+  function isModuleEnabled(key: string) {
+    // If org data isn't loaded (user lacks org:read), assume enabled so the nav shows.
+    if (!org) return perms.has(`${key}:report` as never) || perms.has(`${key}:manage` as never) || perms.has(`${key}:admin` as never);
+    return org.modules.find((m) => m.key === key)?.enabled === true;
+  }
 
   async function handleLogout() {
     await logout();
@@ -56,6 +79,9 @@ export default function AppShell() {
           )}
           {perms.has('devices:read') && (
             <NavLink to="devices" className={navClass}>Devices</NavLink>
+          )}
+          {perms.has('ski_swap:report') && isModuleEnabled('ski_swap') && (
+            <NavLink to="ski-swap" className={navClass}>Ski Swap</NavLink>
           )}
           {user.isSuperAdmin && (
             <NavLink to="admin" className={navClass}>Platform Admin</NavLink>

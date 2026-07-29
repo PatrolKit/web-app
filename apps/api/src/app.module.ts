@@ -22,6 +22,7 @@ import { PlatformModule } from './platform/platform.module';
 import { OrgModulesModule } from './modules/modules.module';
 import { DevicesModule } from './devices/devices.module';
 import { AuditModule } from './common/audit/audit.module';
+import { SkiSwapModule } from './ski-swap/ski-swap.module';
 import appConfig from './config/app.config';
 
 @Module({
@@ -67,6 +68,7 @@ import appConfig from './config/app.config';
     OrgModulesModule,
     DevicesModule,
     AuditModule,
+    SkiSwapModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
     HealthModule,
   ],

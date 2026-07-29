@@ -185,12 +185,14 @@ export class MembersService {
     orgId: string,
     userId: string,
     data: UpdateMemberRequest,
-    actorPerms: string[],
+    actorUserId: string,
   ): Promise<MemberResponse> {
     const membership = await this.prisma.membership.findUnique({
       where: { userId_orgId: { userId, orgId } },
     });
     if (!membership) throw new NotFoundException('Membership not found');
+
+    const actorPerms = await this.permissionsService.getPermissions(actorUserId, orgId);
 
     if (data.status !== undefined) {
       if (!actorPerms.includes('users:manage')) {

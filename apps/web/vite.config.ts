@@ -7,7 +7,6 @@ import fs from 'fs';
 export default defineConfig({
   plugins: [
     react(),
-    // Serve landing.html for the root URL in dev, bypassing the SPA entry point
     {
       name: 'root-landing-page',
       configureServer(server) {
@@ -19,6 +18,13 @@ export default defineConfig({
             res.statusCode = 200;
             res.end(content);
             return;
+          }
+          // SPA fallback: rewrite /app/* to /index.html so Vite's pipeline
+          // processes the file (injects HMR preamble, etc.) rather than us
+          // serving raw bytes that bypass plugin transforms.
+          const url = req.url ?? '';
+          if (url.startsWith('/app') && !url.includes('.')) {
+            req.url = '/index.html';
           }
           next();
         });

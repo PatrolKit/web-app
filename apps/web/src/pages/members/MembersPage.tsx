@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../../lib/api';
@@ -13,6 +13,8 @@ export default function MembersPage() {
   const [sendInvites, setSendInvites] = useState(false);
   const [importResults, setImportResults] = useState<ImportOutcome[] | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [editingPermsFor, setEditingPermsFor] = useState<string | null>(null);
+  const [draftPerms, setDraftPerms] = useState<string[]>([]);
 
   const { data: members = [], isLoading } = useQuery({
     queryKey: ['members', orgId],
@@ -20,15 +22,37 @@ export default function MembersPage() {
     enabled: !!orgId,
   });
 
+  const { data: allPerms = [] } = useQuery({
+    queryKey: ['permissions', orgId],
+    queryFn: () => api.members.permissions(orgId),
+    enabled: !!orgId && perms.has('permissions:assign'),
+  });
+
   const inviteMutation = useMutation({
     mutationFn: () => api.members.invite(orgId, { email: inviteEmail, name: inviteName || undefined, permissions: [] }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['members', orgId] }); setInviteEmail(''); setInviteName(''); },
+  });
+
+  const updatePermsMutation = useMutation({
+    mutationFn: (userId: string) => api.members.update(orgId, userId, { permissions: draftPerms }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['members', orgId] }); setEditingPermsFor(null); },
   });
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) => api.members.remove(orgId, userId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['members', orgId] }),
   });
+
+  function startEditPerms(m: MemberResponse) {
+    setEditingPermsFor(m.userId);
+    setDraftPerms(m.permissions);
+  }
+
+  function togglePerm(key: string) {
+    setDraftPerms((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  }
 
   async function handleImport(e: React.FormEvent) {
     e.preventDefault();
@@ -103,23 +127,52 @@ export default function MembersPage() {
           <thead><tr className="text-left text-gray-500 border-b border-gray-800">
             <th className="py-2 pr-4">Name</th><th className="py-2 pr-4">Email</th>
             <th className="py-2 pr-4">Status</th><th className="py-2 pr-4">Permissions</th>
-            {perms.has('users:manage') && <th className="py-2">Actions</th>}
+            {(perms.has('users:manage') || perms.has('permissions:assign')) && <th className="py-2">Actions</th>}
           </tr></thead>
           <tbody>{members.map((m: MemberResponse) => (
-            <tr key={m.userId} className="border-b border-gray-800">
-              <td className="py-2 pr-4 text-white">{m.name}</td>
-              <td className="py-2 pr-4 text-gray-400">{m.email}</td>
-              <td className="py-2 pr-4">
-                <span className={`text-xs px-2 py-0.5 rounded-full ${m.status === 'active' ? 'bg-green-900 text-green-400' : 'bg-gray-800 text-gray-400'}`}>{m.status}</span>
-              </td>
-              <td className="py-2 pr-4 text-xs text-gray-500">{m.permissions.join(', ') || '—'}</td>
-              {perms.has('users:manage') && (
-                <td className="py-2">
-                  <button onClick={() => removeMutation.mutate(m.userId)}
-                    className="text-xs text-red-500 hover:underline">Remove</button>
+            <React.Fragment key={m.userId}>
+              <tr className="border-b border-gray-800">
+                <td className="py-2 pr-4 text-white">{m.name}</td>
+                <td className="py-2 pr-4 text-gray-400">{m.email}</td>
+                <td className="py-2 pr-4">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${m.status === 'active' ? 'bg-green-900 text-green-400' : 'bg-gray-800 text-gray-400'}`}>{m.status}</span>
                 </td>
+                <td className="py-2 pr-4 text-xs text-gray-500 max-w-xs truncate">{m.permissions.join(', ') || '—'}</td>
+                <td className="py-2 flex gap-3">
+                  {perms.has('permissions:assign') && (
+                    <button onClick={() => editingPermsFor === m.userId ? setEditingPermsFor(null) : startEditPerms(m)}
+                      className="text-xs text-brand-500 hover:underline">
+                      {editingPermsFor === m.userId ? 'Cancel' : 'Edit permissions'}
+                    </button>
+                  )}
+                  {perms.has('users:manage') && (
+                    <button onClick={() => removeMutation.mutate(m.userId)}
+                      className="text-xs text-red-500 hover:underline">Remove</button>
+                  )}
+                </td>
+              </tr>
+              {editingPermsFor === m.userId && (
+                <tr className="border-b border-gray-800 bg-surface-50">
+                  <td colSpan={5} className="px-4 py-3">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1.5 mb-3">
+                      {allPerms.map((p) => (
+                        <label key={p.key} className="flex items-center gap-2 text-xs cursor-pointer">
+                          <input type="checkbox" checked={draftPerms.includes(p.key)}
+                            onChange={() => togglePerm(p.key)}
+                            className="accent-brand-600" />
+                          <span className="text-gray-300 font-mono">{p.key}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <button onClick={() => updatePermsMutation.mutate(m.userId)}
+                      disabled={updatePermsMutation.isPending}
+                      className="bg-brand-600 hover:bg-brand-700 text-white text-xs px-3 py-1.5 rounded font-medium">
+                      Save permissions
+                    </button>
+                  </td>
+                </tr>
               )}
-            </tr>
+            </React.Fragment>
           ))}</tbody>
         </table>
       </div>

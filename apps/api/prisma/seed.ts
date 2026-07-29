@@ -16,6 +16,10 @@ const PERMISSIONS = [
   { key: 'devices:read', description: 'View provisioned devices.' },
   { key: 'devices:provision', description: 'Create/provision devices + rotate secrets.' },
   { key: 'devices:revoke', description: 'Revoke devices.' },
+  // Ski Swap module permissions
+  { key: 'ski_swap:report', description: 'View ski swap items, stats, and seller records.' },
+  { key: 'ski_swap:manage', description: 'Read/write ski swap items and sellers.' },
+  { key: 'ski_swap:admin', description: 'Manage ski swaps and configure Square credentials.' },
 ] as const;
 
 async function main() {
@@ -29,13 +33,18 @@ async function main() {
   }
   console.log(`✓ ${PERMISSIONS.length} permissions seeded`);
 
-  // 2. Upsert core module
+  // 2. Upsert modules
   await prisma.moduleCatalog.upsert({
     where: { key: 'user_management' },
     update: { name: 'User Management', description: 'Core user and membership management.', isCore: true },
     create: { key: 'user_management', name: 'User Management', description: 'Core user and membership management.', isCore: true },
   });
-  console.log('✓ user_management core module seeded');
+  await prisma.moduleCatalog.upsert({
+    where: { key: 'ski_swap' },
+    update: { name: 'Ski Swap', description: 'Consignment ski swap management powered by Square POS.' },
+    create: { key: 'ski_swap', name: 'Ski Swap', description: 'Consignment ski swap management powered by Square POS.', isCore: false },
+  });
+  console.log('✓ modules seeded');
 
   // 3. Upsert super admin
   const superAdminEmail = process.env.SEED_SUPERADMIN_EMAIL;
@@ -91,7 +100,50 @@ async function main() {
           },
         });
 
+        // Enable ski_swap for dev so the module is accessible out of the box
+        await prisma.orgModule.upsert({
+          where: { orgId_moduleKey: { orgId: demoOrg.id, moduleKey: 'ski_swap' } },
+          update: {},
+          create: {
+            id: createId(),
+            orgId: demoOrg.id,
+            moduleKey: 'ski_swap',
+            enabled: true,
+            enabledAt: new Date(),
+            enabledBy: owner.id,
+          },
+        });
+
         console.log(`✓ Demo org seeded with owner membership (all permissions)`);
+
+        // Dev users with escalating ski-swap permission levels for testing
+        const swapUsers = [
+          { email: 'swap-reporter@example.com', name: 'Swap Reporter', perms: ['ski_swap:report'] },
+          { email: 'swap-manager@example.com',  name: 'Swap Manager',  perms: ['ski_swap:report', 'ski_swap:manage'] },
+          { email: 'swap-admin@example.com',    name: 'Swap Admin',    perms: ['ski_swap:report', 'ski_swap:manage', 'ski_swap:admin'] },
+        ] as const;
+
+        for (const u of swapUsers) {
+          const devUser = await prisma.user.upsert({
+            where: { email: u.email },
+            update: {},
+            create: { id: createId(), email: u.email, name: u.name },
+          });
+          const devMembership = await prisma.membership.upsert({
+            where: { userId_orgId: { userId: devUser.id, orgId: demoOrg.id } },
+            update: {},
+            create: { id: createId(), userId: devUser.id, orgId: demoOrg.id },
+          });
+          for (const permKey of u.perms) {
+            const perm = await prisma.permission.findUniqueOrThrow({ where: { key: permKey } });
+            await prisma.membershipPermission.upsert({
+              where: { membershipId_permissionId: { membershipId: devMembership.id, permissionId: perm.id } },
+              update: {},
+              create: { membershipId: devMembership.id, permissionId: perm.id },
+            });
+          }
+        }
+        console.log(`✓ Ski-swap dev users seeded (reporter / manager / admin)`);
       }
     }
   }

@@ -29,9 +29,12 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships Membership[]
-  orgModules  OrgModule[]
-  devices     Device[]
+  memberships  Membership[]
+  orgModules   OrgModule[]
+  devices      Device[]
+  squareConfig SquareConfig?
+  skiSwaps     SkiSwap[]
+  swapSellers  SwapSeller[]
 }
 
 model Membership {
@@ -156,4 +159,72 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   @@index([orgId, createdAt])
+}
+
+// ─── Ski Swap ─────────────────────────────────────────────────────────────────
+
+model SquareConfig {
+  id             String   @id @default(cuid())
+  orgId          String   @unique
+  accessTokenEnc String   @db.Text // AES-256-GCM JSON: { iv, tag, ct }
+  environment    String   @default("production") // "sandbox" | "production"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model SkiSwap {
+  id               String   @id @default(cuid())
+  orgId            String
+  title            String
+  squareCategoryId String
+  locationId       String   @default("") // Square Location ID for inventory ops
+  active           Boolean  @default(false)
+  skuPrefix        String
+  skuCounter       Int      @default(0)
+  createdBy        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  org         Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  sellerItems SwapItemSeller[]
+
+  @@unique([orgId, title])
+  @@index([orgId, active])
+}
+
+model SwapSeller {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  phone     String
+  email     String?
+  street    String?
+  city      String?
+  state     String?
+  zip       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org       Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  swapItems SwapItemSeller[]
+
+  @@index([orgId, phone])
+}
+
+model SwapItemSeller {
+  id                String   @id @default(cuid())
+  swapId            String
+  sellerId          String
+  squareItemId      String
+  squareVariationId String
+  originalQuantity  Int
+  createdAt         DateTime @default(now())
+
+  swap   SkiSwap    @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  seller SwapSeller @relation(fields: [sellerId], references: [id])
+
+  @@unique([swapId, squareItemId])
+  @@index([sellerId])
 }

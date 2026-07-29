@@ -176,4 +176,93 @@ export const api = {
         body: JSON.stringify(data),
       }),
   },
+
+  skiSwap: {
+    // Square config
+    getConfig: (orgId: string) =>
+      request<import('./api.types').SquareConfigResponse>(`/orgs/${orgId}/ski-swap/config`),
+    upsertConfig: (orgId: string, data: { accessToken: string; environment: 'sandbox' | 'production' }) =>
+      request<import('./api.types').SquareConfigResponse>(`/orgs/${orgId}/ski-swap/config`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    deleteConfig: (orgId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/config`, { method: 'DELETE' }),
+    testConnection: (orgId: string) =>
+      request<{ success: boolean; message: string }>(`/orgs/${orgId}/ski-swap/config/test`, { method: 'POST' }),
+    getStatus: (orgId: string) =>
+      request<{ squareConfigured: boolean }>(`/orgs/${orgId}/ski-swap/config/status`),
+    listLocations: (orgId: string) =>
+      request<{ locations: { id: string; name: string }[] }>(`/orgs/${orgId}/ski-swap/config/locations`),
+
+    // Swaps
+    listSwaps: (orgId: string, active?: boolean) =>
+      request<import('./api.types').SwapResponse[]>(`/orgs/${orgId}/ski-swap/swaps${active !== undefined ? `?active=${active}` : ''}`),
+    createSwap: (orgId: string, title: string, locationId: string) =>
+      request<import('./api.types').SwapResponse>(`/orgs/${orgId}/ski-swap/swaps`, {
+        method: 'POST', body: JSON.stringify({ title, locationId }),
+      }),
+    patchSwap: (orgId: string, swapId: string, data: { title?: string; active?: boolean; locationId?: string }) =>
+      request<import('./api.types').SwapResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    deleteSwap: (orgId: string, swapId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}`, { method: 'DELETE' }),
+
+    // Stats
+    getStats: (orgId: string, swapId: string) =>
+      request<import('./api.types').SwapStats>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats`),
+
+    // Items
+    listItems: (orgId: string, swapId: string, opts?: { cursor?: string; query?: string }) => {
+      const params = new URLSearchParams();
+      if (opts?.cursor) params.set('cursor', opts.cursor);
+      if (opts?.query) params.set('query', opts.query);
+      const qs = params.toString();
+      return request<{ items: import('./api.types').ItemResponse[]; cursor?: string }>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/items${qs ? `?${qs}` : ''}`
+      );
+    },
+    createItem: (orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string }) =>
+      request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items`, {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    patchItem: (orgId: string, swapId: string, squareItemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null }) =>
+      request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    deleteItem: (orgId: string, swapId: string, squareItemId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}`, { method: 'DELETE' }),
+    uploadImage: (orgId: string, swapId: string, squareItemId: string, file: File) => {
+      const form = new FormData();
+      form.append('image', file);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      return fetch(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}/images`, {
+        method: 'POST', credentials: 'include', headers, body: form,
+      }).then((r) => r.json() as Promise<{ success: boolean; data: { imageId: string; imageUrl?: string } }>);
+    },
+    deleteImage: (orgId: string, swapId: string, squareItemId: string, imageId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}/images/${imageId}`, { method: 'DELETE' }),
+    assignSeller: (orgId: string, swapId: string, squareItemId: string, sellerId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}/seller`, {
+        method: 'PUT', body: JSON.stringify({ sellerId }),
+      }),
+    unassignSeller: (orgId: string, swapId: string, squareItemId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}/seller`, { method: 'DELETE' }),
+
+    // Sellers
+    listSellers: (orgId: string, query?: string) =>
+      request<import('./api.types').SellerResponse[]>(`/orgs/${orgId}/ski-swap/sellers${query ? `?query=${encodeURIComponent(query)}` : ''}`),
+    createSeller: (orgId: string, data: { name: string; phone: string; email?: string; street?: string; city?: string; state?: string; zip?: string }) =>
+      request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers`, {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    patchSeller: (orgId: string, sellerId: string, data: Partial<{ name: string; phone: string; email: string | null; street: string | null; city: string | null; state: string | null; zip: string | null }>) =>
+      request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    deleteSeller: (orgId: string, sellerId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, { method: 'DELETE' }),
+  },
 };
