@@ -12,6 +12,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { randomBytes } from 'crypto';
 import type {
   DeviceListItem,
+  DeviceMeResponse,
   ProvisionDeviceRequest,
   ProvisionDeviceResponse,
   DeviceTokenResponse,
@@ -42,6 +43,7 @@ export class DevicesService {
         id: createId(),
         orgId,
         name: data.name,
+        role: data.role ?? null,
         clientId,
         secretHash,
         createdBy: actorUserId,
@@ -67,6 +69,7 @@ export class DevicesService {
       clientId,
       clientSecret, // returned ONCE, not stored
       name: device.name,
+      role: device.role,
       orgId,
       status: device.status,
       permissions: data.permissions as PermissionKey[],
@@ -87,6 +90,7 @@ export class DevicesService {
       id: d.id,
       clientId: d.clientId,
       name: d.name,
+      role: d.role,
       orgId: d.orgId,
       status: d.status,
       permissions: d.permissions.map((dp) => dp.permission.key as PermissionKey),
@@ -177,5 +181,69 @@ export class DevicesService {
       data: perms.map((p) => ({ deviceId, permissionId: p.id })),
       skipDuplicates: true,
     });
+  }
+
+  // ─── Device me ───────────────────────────────────────────────────────────────
+
+  async getDeviceMe(deviceId: string): Promise<DeviceMeResponse> {
+    const device = await this.prisma.device.findUnique({
+      where: { id: deviceId },
+      include: {
+        org: true,
+        permissions: { include: { permission: true } },
+      },
+    });
+
+    if (!device || device.status === 'revoked') {
+      throw new UnauthorizedException('Device not found or revoked');
+    }
+
+    await this.prisma.device.update({
+      where: { id: deviceId },
+      data: { lastSeenAt: new Date() },
+    });
+
+    return {
+      id: device.id,
+      name: device.name,
+      role: device.role,
+      orgId: device.orgId,
+      orgName: device.org.name,
+      status: device.status,
+      permissions: device.permissions.map((dp) => dp.permission.key),
+    };
+  }
+
+  // ─── Update role ─────────────────────────────────────────────────────────────
+
+  async updateDeviceRole(
+    orgId: string,
+    deviceId: string,
+    role: string | null,
+  ): Promise<DeviceListItem> {
+    const device = await this.prisma.device.findUnique({
+      where: { id: deviceId },
+      include: { permissions: { include: { permission: true } } },
+    });
+
+    if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
+
+    const updated = await this.prisma.device.update({
+      where: { id: deviceId },
+      data: { role },
+      include: { permissions: { include: { permission: true } } },
+    });
+
+    return {
+      id: updated.id,
+      clientId: updated.clientId,
+      name: updated.name,
+      role: updated.role,
+      orgId: updated.orgId,
+      status: updated.status,
+      permissions: updated.permissions.map((dp) => dp.permission.key as PermissionKey),
+      lastSeenAt: updated.lastSeenAt,
+      createdAt: updated.createdAt,
+    };
   }
 }

@@ -54,6 +54,7 @@ export interface DeviceItem {
   id: string;
   clientId: string;
   name: string;
+  role: string | null;
   orgId: string;
   status: string;
   permissions: string[];
@@ -90,6 +91,7 @@ export interface SwapResponse {
 export interface SellerResponse {
   id: string;
   orgId: string;
+  type: 'individual' | 'business';
   name: string;
   phone: string;
   email: string | null;
@@ -97,22 +99,29 @@ export interface SellerResponse {
   city: string | null;
   state: string | null;
   zip: string | null;
+  payoutMethod: 'PAYPAL' | 'VENMO' | 'CHECK' | 'DONATE' | null;
+  payoutIdentifierType: 'EMAIL' | 'PHONE' | 'USER_HANDLE' | null;
+  payoutIdentifier: string | null;
+  payoutIdentifierConfirmedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface ItemResponse {
-  squareItemId: string;
-  squareVariationId: string;
+  id: string;
   swapId: string;
+  orgId: string;
   name: string;
   description: string | null;
   sku: string;
   priceCents: number;
+  originalQuantity: number;
   inStock: number;
   soldCount: number;
+  squareSynced: boolean;
+  donateProceeds: boolean;
   seller: { id: string; name: string; phone: string } | null;
-  squareImageIds: string[];
+  photos: { id: string; url: string }[];
 }
 
 export interface SwapStats {
@@ -130,7 +139,7 @@ export interface SquareConfigResponse {
 }
 
 export interface PublicSellerItem {
-  squareItemId: string;
+  itemId: string;
   name: string;
   priceCents: number;
   originalQuantity: number;

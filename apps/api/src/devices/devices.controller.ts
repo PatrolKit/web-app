@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards,
+  Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
@@ -8,7 +8,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { DevicesService } from './devices.service';
-import { ProvisionDeviceDto } from '../contracts/devices.contracts';
+import { ProvisionDeviceDto, UpdateDeviceDto } from '../contracts/devices.contracts';
 import type { DeviceListItem, ProvisionDeviceResponse } from '../contracts/devices.contracts';
 
 @Controller('orgs/:orgId/devices')
@@ -53,5 +53,16 @@ export class DevicesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     return this.devicesService.revokeDevice(orgId, id, user.userId);
+  }
+
+  @Patch(':id')
+  @HttpCode(200)
+  @RequirePermissions('devices:provision')
+  updateDevice(
+    @Param('orgId') orgId: string,
+    @Param('id') id: string,
+    @Body() body: UpdateDeviceDto,
+  ): Promise<DeviceListItem> {
+    return this.devicesService.updateDeviceRole(orgId, id, body.role);
   }
 }

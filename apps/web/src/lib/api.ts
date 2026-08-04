@@ -157,10 +157,15 @@ export const api = {
 
   devices: {
     list: (orgId: string) => request<import('./api.types').DeviceItem[]>(`/orgs/${orgId}/devices`),
-    provision: (orgId: string, data: { name: string; permissions: string[] }) =>
+    provision: (orgId: string, data: { name: string; role?: string | null; permissions: string[] }) =>
       request<import('./api.types').ProvisionedDevice>(`/orgs/${orgId}/devices`, {
         method: 'POST',
         body: JSON.stringify(data),
+      }),
+    updateRole: (orgId: string, id: string, role: string | null) =>
+      request<import('./api.types').DeviceItem>(`/orgs/${orgId}/devices/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role }),
       }),
     rotateSecret: (orgId: string, id: string) =>
       request<{ clientSecret: string }>(`/orgs/${orgId}/devices/${id}/rotate-secret`, { method: 'POST' }),
@@ -192,6 +197,8 @@ export const api = {
       request<{ success: boolean; message: string }>(`/orgs/${orgId}/ski-swap/config/test`, { method: 'POST' }),
     getStatus: (orgId: string) =>
       request<{ squareConfigured: boolean }>(`/orgs/${orgId}/ski-swap/config/status`),
+    resetOrgData: (orgId: string) =>
+      request<{ deletedItems: number; deletedSellers: number }>(`/orgs/${orgId}/ski-swap/config/reset-data`, { method: 'DELETE' }),
     listLocations: (orgId: string) =>
       request<{ locations: { id: string; name: string }[] }>(`/orgs/${orgId}/ski-swap/config/locations`),
 
@@ -214,55 +221,72 @@ export const api = {
       request<import('./api.types').SwapStats>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats`),
 
     // Items
-    listItems: (orgId: string, swapId: string, opts?: { cursor?: string; query?: string }) => {
+    listItems: (orgId: string, swapId: string, opts?: { query?: string; sellerId?: string; skip?: number; take?: number }) => {
       const params = new URLSearchParams();
-      if (opts?.cursor) params.set('cursor', opts.cursor);
       if (opts?.query) params.set('query', opts.query);
+      if (opts?.sellerId) params.set('sellerId', opts.sellerId);
+      if (opts?.skip !== undefined) params.set('skip', String(opts.skip));
+      if (opts?.take !== undefined) params.set('take', String(opts.take));
       const qs = params.toString();
-      return request<{ items: import('./api.types').ItemResponse[]; cursor?: string }>(
+      return request<{ items: import('./api.types').ItemResponse[]; total: number }>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items${qs ? `?${qs}` : ''}`
       );
     },
-    createItem: (orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string }) =>
+    createItem: (orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean }) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items`, {
         method: 'POST', body: JSON.stringify(data),
       }),
-    patchItem: (orgId: string, swapId: string, squareItemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null }) =>
-      request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}`, {
+    patchItem: (orgId: string, swapId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean }) =>
+      request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
-    deleteItem: (orgId: string, swapId: string, squareItemId: string) =>
-      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}`, { method: 'DELETE' }),
-    uploadImage: (orgId: string, swapId: string, squareItemId: string, file: File) => {
+    deleteItem: (orgId: string, swapId: string, itemId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}`, { method: 'DELETE' }),
+    uploadPhoto: (orgId: string, swapId: string, itemId: string, file: File) => {
       const form = new FormData();
       form.append('image', file);
       const headers: Record<string, string> = {};
       if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-      return fetch(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}/images`, {
+      return fetch(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/photos`, {
         method: 'POST', credentials: 'include', headers, body: form,
-      }).then((r) => r.json() as Promise<{ success: boolean; data: { imageId: string; imageUrl?: string } }>);
+      }).then((r) => r.json() as Promise<{ success: boolean; data: { id: string; url: string } }>);
     },
-    deleteImage: (orgId: string, swapId: string, squareItemId: string, imageId: string) =>
-      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}/images/${imageId}`, { method: 'DELETE' }),
-    assignSeller: (orgId: string, swapId: string, squareItemId: string, sellerId: string) =>
-      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}/seller`, {
-        method: 'PUT', body: JSON.stringify({ sellerId }),
-      }),
-    unassignSeller: (orgId: string, swapId: string, squareItemId: string) =>
-      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${squareItemId}/seller`, { method: 'DELETE' }),
+    deletePhoto: (orgId: string, swapId: string, itemId: string, photoId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/photos/${photoId}`, { method: 'DELETE' }),
 
     // Sellers
     listSellers: (orgId: string, query?: string) =>
       request<import('./api.types').SellerResponse[]>(`/orgs/${orgId}/ski-swap/sellers${query ? `?query=${encodeURIComponent(query)}` : ''}`),
-    createSeller: (orgId: string, data: { name: string; phone: string; email?: string; street?: string; city?: string; state?: string; zip?: string }) =>
+    createSeller: (orgId: string, data: { name: string; phone: string; email?: string; type?: 'individual' | 'business'; street?: string; city?: string; state?: string; zip?: string; payoutMethod?: string; payoutIdentifierType?: string; payoutIdentifier?: string }) =>
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers`, {
         method: 'POST', body: JSON.stringify(data),
       }),
-    patchSeller: (orgId: string, sellerId: string, data: Partial<{ name: string; phone: string; email: string | null; street: string | null; city: string | null; state: string | null; zip: string | null }>) =>
+    patchSeller: (orgId: string, sellerId: string, data: Partial<{ name: string; phone: string; email: string | null; type: 'individual' | 'business'; street: string | null; city: string | null; state: string | null; zip: string | null; payoutMethod: string | null; payoutIdentifierType: string | null; payoutIdentifier: string | null }>) =>
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
     deleteSeller: (orgId: string, sellerId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, { method: 'DELETE' }),
+    downloadSellerTemplate: (orgId: string) => `/api/v1/orgs/${orgId}/ski-swap/sellers/import/template`,
+    parseSellerCsv: (orgId: string, file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      return fetch(`/api/v1/orgs/${orgId}/ski-swap/sellers/import/parse`, {
+        method: 'POST', credentials: 'include', headers, body: form,
+      }).then((r) => r.json() as Promise<{ success: boolean; data: { headers: string[]; mapping: Record<string, string>; preview: Record<string, string>[]; totalRows: number } }>);
+    },
+    importSellers: (orgId: string, file: File, mapping: Record<string, string>, duplicateStrategy: 'overwrite' | 'preserve') => {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('mapping', JSON.stringify(mapping));
+      form.append('duplicateStrategy', duplicateStrategy);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      return fetch(`/api/v1/orgs/${orgId}/ski-swap/sellers/import`, {
+        method: 'POST', credentials: 'include', headers, body: form,
+      }).then((r) => r.json() as Promise<{ success: boolean; data: { row: number; outcome: string; name?: string; phone?: string; error?: string }[] }>);
+    },
   },
 };

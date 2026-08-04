@@ -35,6 +35,7 @@ model Organization {
   squareConfig SquareConfig?
   skiSwaps     SkiSwap[]
   swapSellers  SwapSeller[]
+  swapItems    SwapItem[]
 }
 
 model Membership {
@@ -126,6 +127,7 @@ model Device {
   name       String
   clientId   String    @unique
   secretHash String
+  role       String?   @db.VarChar(100)
   status     String    @default("active") // active | revoked
   lastSeenAt DateTime?
   createdBy  String?
@@ -188,7 +190,7 @@ model SkiSwap {
   updatedAt        DateTime @updatedAt
 
   org         Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  sellerItems SwapItemSeller[]
+  items       SwapItem[]
 
   @@unique([orgId, title])
   @@index([orgId, active])
@@ -197,6 +199,7 @@ model SkiSwap {
 model SwapSeller {
   id        String   @id @default(cuid())
   orgId     String
+  type      String   @default("individual") // "individual" | "business"
   name      String
   phone     String
   email     String?
@@ -204,27 +207,62 @@ model SwapSeller {
   city      String?
   state     String?
   zip       String?
+
+  // Payout info
+  payoutMethod              String?   @default("CHECK") // "PAYPAL" | "VENMO" | "CHECK" | "DONATE"
+  payoutIdentifierType      String?   // "EMAIL" | "PHONE" | "USER_HANDLE"
+  payoutIdentifier          String?
+  payoutIdentifierConfirmedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   org       Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  swapItems SwapItemSeller[]
+  swapItems SwapItem[]
 
   @@index([orgId, phone])
 }
 
-model SwapItemSeller {
-  id                String   @id @default(cuid())
-  swapId            String
-  sellerId          String
-  squareItemId      String
-  squareVariationId String
-  originalQuantity  Int
-  createdAt         DateTime @default(now())
+model SwapItem {
+  id               String    @id @default(cuid())
+  swapId           String
+  orgId            String
+  sellerId         String?
+  name             String
+  description      String?   @db.Text
+  priceCents       Int
+  sku              String
+  originalQuantity Int
+
+  // Square sync state — null when Square is not configured
+  squareItemId      String?
+  squareVariationId String?
+  lastSyncedAt      DateTime?
+  donateProceeds    Boolean  @default(false)
+
+  createdBy  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   swap   SkiSwap    @relation(fields: [swapId], references: [id], onDelete: Cascade)
-  seller SwapSeller @relation(fields: [sellerId], references: [id])
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  seller SwapSeller?  @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  photos SwapItemPhoto[]
 
-  @@unique([swapId, squareItemId])
+  @@unique([swapId, sku])
+  @@index([orgId])
   @@index([sellerId])
+}
+
+model SwapItemPhoto {
+  id            String   @id @default(cuid())
+  itemId        String
+  s3Key         String   @default("") // empty when S3 not configured
+  url           String
+  squareImageId String?
+  displayOrder  Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  item SwapItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
 }
