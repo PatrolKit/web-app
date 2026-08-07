@@ -11,9 +11,10 @@ interface ItemFormData {
   priceDollars: string;
   quantity: string;
   sellerId: string;
+  donateProceeds: boolean;
 }
 
-const emptyForm: ItemFormData = { name: '', description: '', priceDollars: '', quantity: '1', sellerId: '' };
+const emptyForm: ItemFormData = { name: '', description: '', priceDollars: '', quantity: '1', sellerId: '', donateProceeds: false };
 
 export default function ItemsPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
@@ -45,23 +46,25 @@ export default function ItemsPage() {
       priceCents: Math.round(parseFloat(form.priceDollars) * 100),
       quantity: parseInt(form.quantity, 10),
       sellerId: form.sellerId || undefined,
+      donateProceeds: form.donateProceeds,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId, swapId] }); setShowForm(false); setForm(emptyForm); },
   });
 
   const patchMutation = useMutation({
-    mutationFn: (item: ItemResponse) => api.skiSwap.patchItem(orgId, swapId, item.squareItemId, {
+    mutationFn: (item: ItemResponse) => api.skiSwap.patchItem(orgId, swapId, item.id, {
       name: form.name,
       description: form.description || null,
       priceCents: Math.round(parseFloat(form.priceDollars) * 100),
       quantity: parseInt(form.quantity, 10),
       sellerId: form.sellerId || null,
+      donateProceeds: form.donateProceeds,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId, swapId] }); setEditItem(null); setForm(emptyForm); },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (squareItemId: string) => api.skiSwap.deleteItem(orgId, swapId, squareItemId),
+    mutationFn: (itemId: string) => api.skiSwap.deleteItem(orgId, swapId, itemId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId, swapId] }),
   });
 
@@ -71,8 +74,9 @@ export default function ItemsPage() {
       name: item.name,
       description: item.description ?? '',
       priceDollars: (item.priceCents / 100).toFixed(2),
-      quantity: String(item.inStock + item.soldCount),
+      quantity: String(item.originalQuantity),
       sellerId: item.seller?.id ?? '',
+      donateProceeds: item.donateProceeds,
     });
   }
 
@@ -145,6 +149,10 @@ export default function ItemsPage() {
               <option value="">No seller assigned</option>
               {sellers.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.phone})</option>)}
             </select>
+            <label className="col-span-2 flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input type="checkbox" checked={form.donateProceeds} onChange={(e) => setForm({ ...form, donateProceeds: e.target.checked })} className="accent-brand-600" />
+              <span className="text-gray-300">❤️ Donate proceeds to ski patrol</span>
+            </label>
           </div>
           <div className="flex gap-2">
             <button type="submit" disabled={createMutation.isPending || patchMutation.isPending}
@@ -178,9 +186,12 @@ export default function ItemsPage() {
               <tr><td colSpan={7} className="py-6 text-center text-gray-500 text-sm">No items found.</td></tr>
             )}
             {items.map((item) => (
-              <tr key={item.squareItemId} className="border-b border-gray-900 hover:bg-surface-50">
+              <tr key={item.id} className="border-b border-gray-900 hover:bg-surface-50">
                 <td className="py-2 pr-4 font-mono text-gray-400 text-xs">{item.sku}</td>
-                <td className="py-2 pr-4 text-white">{item.name}</td>
+                <td className="py-2 pr-4 text-white">
+                  {item.name}
+                  {item.donateProceeds && <span className="ml-1.5 text-xs" title="Donating proceeds to ski patrol">❤️</span>}
+                </td>
                 <td className="py-2 pr-4 text-gray-300">${(item.priceCents / 100).toFixed(2)}</td>
                 <td className="py-2 pr-4 text-gray-400">{item.seller?.name ?? '—'}</td>
                 <td className="py-2 pr-4 text-gray-300">{item.inStock}</td>
@@ -189,7 +200,7 @@ export default function ItemsPage() {
                   <td className="py-2 flex gap-2">
                     <button onClick={() => openEdit(item)} className="text-xs text-brand-500 hover:underline">Edit</button>
                     <button
-                      onClick={() => { if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.squareItemId); }}
+                      onClick={() => { if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id); }}
                       className="text-xs text-red-500 hover:underline"
                     >
                       Delete

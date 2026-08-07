@@ -32,6 +32,7 @@ export default defineConfig({
     },
   ],
   server: {
+    host: true, // bind to 0.0.0.0 so LAN devices (e.g. iOS) can reach the dev server
     port: 3000,
     proxy: {
       '/api': {

@@ -80,7 +80,7 @@ export default function SellerStatusPage() {
                 )}
                 <div className="space-y-2">
                   {result.items.map((item) => (
-                    <div key={item.squareItemId} className="bg-surface-50 border border-gray-700 rounded-lg p-3 flex justify-between items-center">
+                    <div key={item.itemId} className="bg-surface-50 border border-gray-700 rounded-lg p-3 flex justify-between items-center">
                       <div>
                         <p className="text-white text-sm font-medium">{item.name}</p>
                         <p className="text-gray-400 text-xs">${(item.priceCents / 100).toFixed(2)}</p>

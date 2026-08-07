@@ -4,450 +4,174 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SquareClientService } from './square-client.service';
+import { PosAdapterFactory } from './pos/pos.adapter';
 import { SellerService } from './seller.service';
+import { S3Service } from './s3.service';
 import { formatSku } from './sku.util';
 import { createId } from '@paralleldrive/cuid2';
-import { v4 as uuidv4 } from 'uuid';
-import type { Square } from 'square';
-import type { ItemResponse } from '../contracts/ski-swap.contracts';
+import { extname } from 'path';
 
-// ─── Type helpers ─────────────────────────────────────────────────────────────
+export interface ItemPhotoResponse { id: string; url: string; }
 
-/** Narrow CatalogObject to Item variant; returns null if not an item. */
-function asItem(obj: Square.CatalogObject | undefined | null) {
-  if (obj?.type === 'ITEM') return obj as Square.CatalogObject.Item;
-  return null;
+export interface ItemResponse {
+  id: string; swapId: string; orgId: string;
+  name: string; description: string | null;
+  sku: string; priceCents: number; originalQuantity: number;
+  inStock: number; soldCount: number; squareSynced: boolean;
+  donateProceeds: boolean;
+  seller: { id: string; name: string; phone: string } | null;
+  photos: ItemPhotoResponse[];
 }
 
-/** Narrow CatalogObject to ItemVariation variant; returns null if not a variation. */
-function asVariation(obj: Square.CatalogObject | undefined | null) {
-  if (obj?.type === 'ITEM_VARIATION') return obj as Square.CatalogObject.ItemVariation;
-  return null;
-}
-
-// ─── Service ──────────────────────────────────────────────────────────────────
+type SwapShape = { id: string; squareCategoryId: string; locationId: string; skuPrefix: string; skuCounter: number };
 
 @Injectable()
 export class ItemService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly squareClient: SquareClientService,
+    private readonly posFactory: PosAdapterFactory,
     private readonly sellerService: SellerService,
+    private readonly s3: S3Service,
   ) {}
 
-  // ─── List ─────────────────────────────────────────────────────────────────
-
-  async list(
-    orgId: string,
-    swapId: string,
-    opts: { cursor?: string; limit?: number; query?: string },
-  ): Promise<{ items: ItemResponse[]; cursor?: string }> {
+  async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number }): Promise<{ items: ItemResponse[]; total: number }> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    
-    const client = await this.squareClient.forOrg(orgId);
-
-    const searchRes = await client.catalog.searchItems({
-      categoryIds: [swap.squareCategoryId],
-      ...(opts.query ? { textFilter: opts.query } : {}),
-      limit: opts.limit ?? 50,
-      ...(opts.cursor ? { cursor: opts.cursor } : {}),
-    });
-
-    const squareItems = (searchRes.items ?? []).map(asItem).filter((i): i is Square.CatalogObject.Item => i !== null);
-    if (squareItems.length === 0) return { items: [] };
-
-    // Collect all variation IDs for a batch inventory fetch
-    const variationIds = squareItems
-      .flatMap((item) => item.itemData?.variations ?? [])
-      .map((v) => v.id)
-      .filter((id): id is string => Boolean(id));
-
-    const inventoryMap = await this.fetchInventoryMap(client, variationIds, swap.locationId);
-
-    const squareItemIds = squareItems.map((i) => i.id).filter((id): id is string => Boolean(id));
-    const assignments = await this.prisma.swapItemSeller.findMany({
-      where: { swapId, squareItemId: { in: squareItemIds } },
-      include: { seller: true },
-    });
-    const assignmentMap = new Map(assignments.map((a) => [a.squareItemId, a]));
-
-    const items: ItemResponse[] = squareItems.map((item) => {
-      const firstVariation = asVariation(item.itemData?.variations?.[0]);
-      const squareVariationId = item.itemData?.variations?.[0]?.id ?? '';
-      const priceCents = Number(firstVariation?.itemVariationData?.priceMoney?.amount ?? 0);
-      const inStock = inventoryMap.get(squareVariationId) ?? 0;
-      const assignment = assignmentMap.get(item.id);
-      const soldCount = Math.max(0, (assignment?.originalQuantity ?? 0) - inStock);
-
-      return {
-        squareItemId: item.id,
-        squareVariationId,
-        swapId,
-        name: item.itemData?.name ?? '',
-        description: item.itemData?.description ?? null,
-        sku: firstVariation?.itemVariationData?.sku ?? '',
-        priceCents,
-        inStock,
-        soldCount,
-        seller: assignment?.seller
-          ? { id: assignment.seller.id, name: assignment.seller.name, phone: assignment.seller.phone }
-          : null,
-        squareImageIds: item.itemData?.imageIds ?? [],
-      };
-    });
-
-    return { items, cursor: searchRes.cursor };
-  }
-
-  // ─── Get single ───────────────────────────────────────────────────────────
-
-  async get(orgId: string, swapId: string, squareItemId: string): Promise<ItemResponse> {
-    const swap = await this.findSwapOrThrow(orgId, swapId);
-    
-    const client = await this.squareClient.forOrg(orgId);
-
-    const objRes = await client.catalog.object.get({ objectId: squareItemId });
-    const item = asItem(objRes.object);
-    if (!item) throw new NotFoundException('Item not found in Square');
-
-    if (item.itemData?.categoryId !== swap.squareCategoryId) {
-      throw new NotFoundException('Item does not belong to this swap');
-    }
-
-    const firstVariation = asVariation(item.itemData?.variations?.[0]);
-    const squareVariationId = item.itemData?.variations?.[0]?.id ?? '';
-    const inventoryMap = await this.fetchInventoryMap(client, squareVariationId ? [squareVariationId] : [], swap.locationId);
-
-    const assignment = await this.prisma.swapItemSeller.findUnique({
-      where: { swapId_squareItemId: { swapId, squareItemId } },
-      include: { seller: true },
-    });
-
-    const priceCents = Number(firstVariation?.itemVariationData?.priceMoney?.amount ?? 0);
-    const inStock = inventoryMap.get(squareVariationId) ?? 0;
-    const soldCount = Math.max(0, (assignment?.originalQuantity ?? 0) - inStock);
-
-    return {
-      squareItemId,
-      squareVariationId,
-      swapId,
-      name: item.itemData?.name ?? '',
-      description: item.itemData?.description ?? null,
-      sku: firstVariation?.itemVariationData?.sku ?? '',
-      priceCents,
-      inStock,
-      soldCount,
-      seller: assignment?.seller
-        ? { id: assignment.seller.id, name: assignment.seller.name, phone: assignment.seller.phone }
-        : null,
-      squareImageIds: item.itemData?.imageIds ?? [],
+    const where = {
+      swapId, orgId,
+      ...(opts.query ? { OR: [{ name: { contains: opts.query } }, { sku: { contains: opts.query } }] } : {}),
+      ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
     };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.swapItem.findMany({ where, include: { seller: true, photos: { orderBy: { displayOrder: 'asc' } } }, orderBy: { createdAt: 'desc' }, skip: opts.skip ?? 0, take: opts.take ?? 50 }),
+      this.prisma.swapItem.count({ where }),
+    ]);
+    const inventoryMap = await this.fetchInventoryMap(orgId, swap, items);
+    return { total, items: items.map((i) => this.toResponse(i, inventoryMap)) };
   }
 
-  // ─── Create ───────────────────────────────────────────────────────────────
-
-  async create(
-    orgId: string,
-    swapId: string,
-    data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string },
-  ): Promise<ItemResponse> {
+  async get(orgId: string, swapId: string, itemId: string): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    
-    const client = await this.squareClient.forOrg(orgId);
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId }, include: { seller: true, photos: { orderBy: { displayOrder: 'asc' } } } });
+    if (!item) throw new NotFoundException('Item not found');
+    const inventoryMap = await this.fetchInventoryMap(orgId, swap, [item]);
+    return this.toResponse(item, inventoryMap);
+  }
 
+  async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean }): Promise<ItemResponse> {
+    const swap = await this.findSwapOrThrow(orgId, swapId);
     if (data.sellerId) await this.sellerService.findOrThrow(orgId, data.sellerId);
 
-    // Atomically claim the next SKU counter value
-    const updatedSwap = await this.prisma.skiSwap.update({
-      where: { id: swapId },
-      data: { skuCounter: { increment: 1 } },
-    });
-    const sku = formatSku(swap.skuPrefix, updatedSwap.skuCounter);
+    const updatedSwap = await this.prisma.skiSwap.update({ where: { id: swapId }, data: { skuCounter: { increment: 1 } } });
+    const sku = formatSku(updatedSwap.skuPrefix, updatedSwap.skuCounter);
 
-    const upsertRes = await client.catalog.object.upsert({
-      idempotencyKey: uuidv4(),
-      object: {
-        type: 'ITEM',
-        id: '#item',
-        itemData: {
-          name: data.name,
-          description: data.description,
-          categoryId: swap.squareCategoryId,
-          variations: [
-            {
-              type: 'ITEM_VARIATION',
-              id: '#variation',
-              itemVariationData: {
-                name: 'Regular',
-                sku,
-                pricingType: 'FIXED_PRICING',
-                priceMoney: { amount: BigInt(data.priceCents), currency: 'USD' },
-                stockable: true,
-                trackInventory: true,
-                inventoryAlertType: 'LOW_QUANTITY',
-                inventoryAlertThreshold: BigInt(1),
-              },
-            },
-          ],
-        },
-      },
+    const item = await this.prisma.swapItem.create({
+      data: { id: createId(), swapId, orgId, sellerId: data.sellerId ?? null, name: data.name, description: data.description ?? null, priceCents: data.priceCents, sku, originalQuantity: data.quantity, donateProceeds: data.donateProceeds ?? false },
+      include: { seller: true, photos: true },
     });
 
-    const squareItemId = upsertRes.catalogObject?.id;
-    if (!squareItemId) throw new BadRequestException('Square did not return an item ID');
+    await this.syncItemToPos(orgId, swap, item);
 
-    // Prefer idMappings for the variation ID (most reliable after batch creation)
-    const idMappings = upsertRes.idMappings ?? [];
-    const squareVariationId =
-      idMappings.find((m) => m.clientObjectId === '#variation')?.objectId ??
-      asItem(upsertRes.catalogObject)?.itemData?.variations?.[0]?.id;
-
-    if (!squareVariationId) throw new BadRequestException('Square did not return a variation ID');
-
-    // Set initial inventory via RECEIVE_STOCK adjustment
-    await client.inventory.batchCreateChanges({
-      idempotencyKey: uuidv4(),
-      changes: [
-        {
-          type: 'ADJUSTMENT',
-          adjustment: {
-            catalogObjectId: squareVariationId,
-            fromState: 'NONE',
-            toState: 'IN_STOCK',
-            toLocationId: swap.locationId,
-            quantity: String(data.quantity),
-            occurredAt: new Date().toISOString(),
-          },
-        },
-      ],
-    });
-
-    if (data.sellerId) {
-      await this.prisma.swapItemSeller.create({
-        data: {
-          id: createId(),
-          swapId,
-          sellerId: data.sellerId,
-          squareItemId,
-          squareVariationId,
-          originalQuantity: data.quantity,
-        },
-      });
-    }
-
-    return this.get(orgId, swapId, squareItemId);
+    const refreshed = await this.prisma.swapItem.findUniqueOrThrow({ where: { id: item.id }, include: { seller: true, photos: true } });
+    const inventoryMap = await this.fetchInventoryMap(orgId, swap, [refreshed]);
+    return this.toResponse(refreshed, inventoryMap);
   }
 
-  // ─── Patch ────────────────────────────────────────────────────────────────
-
-  async patch(
-    orgId: string,
-    swapId: string,
-    squareItemId: string,
-    data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null },
-  ): Promise<ItemResponse> {
+  async patch(orgId: string, swapId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean }): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    
-    const client = await this.squareClient.forOrg(orgId);
+    const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId } });
+    if (!existing) throw new NotFoundException('Item not found');
+    if (data.sellerId) await this.sellerService.findOrThrow(orgId, data.sellerId);
 
-    const needsCatalogUpdate = data.name !== undefined || data.description !== undefined || data.priceCents !== undefined;
+    const updated = await this.prisma.swapItem.update({
+      where: { id: itemId },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.description !== undefined ? { description: data.description } : {}),
+        ...(data.priceCents !== undefined ? { priceCents: data.priceCents } : {}),
+        ...(data.quantity !== undefined ? { originalQuantity: data.quantity } : {}),
+        ...(data.sellerId !== undefined ? { sellerId: data.sellerId } : {}),
+        ...(data.donateProceeds !== undefined ? { donateProceeds: data.donateProceeds } : {}),
+      },
+      include: { seller: true, photos: { orderBy: { displayOrder: 'asc' } } },
+    });
 
-    if (needsCatalogUpdate) {
-      // Fetch current item for version (optimistic locking)
-      const current = await client.catalog.object.get({ objectId: squareItemId });
-      const currentItem = asItem(current.object);
-      if (!currentItem) throw new NotFoundException('Item not found in Square');
+    await this.syncItemToPos(orgId, swap, updated);
 
-      const updatedVariations = currentItem.itemData?.variations?.map((v) => {
-        const variation = asVariation(v);
-        if (!variation) return v;
-        return {
-          ...variation,
-          type: 'ITEM_VARIATION' as const,
-          itemVariationData: {
-            ...variation.itemVariationData,
-            ...(data.priceCents !== undefined
-              ? { pricingType: 'FIXED_PRICING' as const, priceMoney: { amount: BigInt(data.priceCents), currency: 'USD' as const } }
-              : {}),
-          },
-        };
-      });
-
-      await client.catalog.object.upsert({
-        idempotencyKey: uuidv4(),
-        object: {
-          type: 'ITEM',
-          id: currentItem.id,
-          version: currentItem.version,
-          itemData: {
-            ...currentItem.itemData,
-            ...(data.name !== undefined ? { name: data.name } : {}),
-            ...(data.description !== undefined ? { description: data.description ?? undefined } : {}),
-            variations: updatedVariations,
-          },
-        },
-      });
+    if (data.quantity !== undefined && updated.squareVariationId && swap.locationId) {
+      const pos = await this.posFactory.forOrg(orgId);
+      if (pos) await pos.setInventoryPhysicalCount(updated.squareVariationId, swap.locationId, data.quantity).catch(() => {});
     }
 
-    // Quantity change → physical count + update originalQuantity locally
-    if (data.quantity !== undefined) {
-      const assignment = await this.prisma.swapItemSeller.findUnique({
-        where: { swapId_squareItemId: { swapId, squareItemId } },
-      });
-      if (assignment) {
-        await client.inventory.batchCreateChanges({
-          idempotencyKey: uuidv4(),
-          changes: [
-            {
-              type: 'PHYSICAL_COUNT',
-              physicalCount: {
-                catalogObjectId: assignment.squareVariationId,
-                state: 'IN_STOCK',
-                locationId: swap.locationId,
-                quantity: String(data.quantity),
-                occurredAt: new Date().toISOString(),
-              },
-            },
-          ],
-        });
-        await this.prisma.swapItemSeller.update({
-          where: { id: assignment.id },
-          data: { originalQuantity: data.quantity },
-        });
+    const inventoryMap = await this.fetchInventoryMap(orgId, swap, [updated]);
+    return this.toResponse(updated, inventoryMap);
+  }
+
+  async remove(orgId: string, swapId: string, itemId: string): Promise<void> {
+    await this.findSwapOrThrow(orgId, swapId);
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId }, include: { photos: true } });
+    if (!item) throw new NotFoundException('Item not found');
+
+    for (const photo of item.photos) {
+      await this.s3.delete(photo.s3Key).catch(() => {});
+      if (photo.squareImageId) {
+        const pos = await this.posFactory.forOrg(orgId);
+        if (pos) await pos.deleteImage(photo.squareImageId).catch(() => {});
+      }
+    }
+    if (item.squareItemId) {
+      const pos = await this.posFactory.forOrg(orgId);
+      if (pos) await pos.deleteItem(item.squareItemId).catch(() => {});
+    }
+    await this.prisma.swapItem.delete({ where: { id: itemId } });
+  }
+
+  async uploadPhoto(orgId: string, swapId: string, itemId: string, file: { buffer: Buffer; mimetype: string; originalname: string }): Promise<{ id: string; url: string }> {
+    await this.findSwapOrThrow(orgId, swapId);
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId } });
+    if (!item) throw new NotFoundException('Item not found');
+
+    const ext = extname(file.originalname) || '.jpg';
+    const s3Key = `${orgId}/${swapId}/${itemId}/${createId()}${ext}`;
+    let url = '';
+    let s3KeyStored = '';
+
+    if (this.s3.configured) {
+      url = await this.s3.upload(s3Key, file.buffer, file.mimetype);
+      s3KeyStored = s3Key;
+    }
+
+    let squareImageId: string | undefined;
+    if (item.squareItemId) {
+      const pos = await this.posFactory.forOrg(orgId);
+      if (pos) {
+        const res = await pos.uploadImage(item.squareItemId, file.buffer, file.mimetype).catch(() => null);
+        if (res) { squareImageId = res.posImageId; if (!url) url = res.imageUrl; }
       }
     }
 
-    // Seller assignment change
-    if (data.sellerId !== undefined) {
-      if (data.sellerId === null) {
-        await this.prisma.swapItemSeller.deleteMany({ where: { swapId, squareItemId } });
-      } else {
-        await this.sellerService.findOrThrow(orgId, data.sellerId);
-        const existing = await this.prisma.swapItemSeller.findUnique({
-          where: { swapId_squareItemId: { swapId, squareItemId } },
-        });
+    if (!url) throw new BadRequestException('No photo storage is configured');
 
-        let squareVariationId = existing?.squareVariationId;
-        if (!squareVariationId) {
-          const objRes = await client.catalog.object.get({ objectId: squareItemId });
-          squareVariationId = asItem(objRes.object)?.itemData?.variations?.[0]?.id;
-        }
+    const displayOrder = await this.prisma.swapItemPhoto.count({ where: { itemId } });
+    const photo = await this.prisma.swapItemPhoto.create({
+      data: { id: createId(), itemId, s3Key: s3KeyStored, url, squareImageId, displayOrder },
+    });
+    return { id: photo.id, url: photo.url };
+  }
 
-        if (existing) {
-          await this.prisma.swapItemSeller.update({ where: { id: existing.id }, data: { sellerId: data.sellerId } });
-        } else if (squareVariationId) {
-          const inventoryMap = await this.fetchInventoryMap(client, [squareVariationId], swap.locationId);
-          await this.prisma.swapItemSeller.create({
-            data: {
-              id: createId(),
-              swapId,
-              sellerId: data.sellerId,
-              squareItemId,
-              squareVariationId,
-              originalQuantity: inventoryMap.get(squareVariationId) ?? 0,
-            },
-          });
-        }
-      }
+  async deletePhoto(orgId: string, swapId: string, itemId: string, photoId: string): Promise<void> {
+    await this.findSwapOrThrow(orgId, swapId);
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId } });
+    if (!item) throw new NotFoundException('Item not found');
+    const photo = await this.prisma.swapItemPhoto.findFirst({ where: { id: photoId, itemId } });
+    if (!photo) throw new NotFoundException('Photo not found');
+
+    await this.s3.delete(photo.s3Key).catch(() => {});
+    if (photo.squareImageId) {
+      const pos = await this.posFactory.forOrg(orgId);
+      if (pos) await pos.deleteImage(photo.squareImageId).catch(() => {});
     }
-
-    return this.get(orgId, swapId, squareItemId);
+    await this.prisma.swapItemPhoto.delete({ where: { id: photoId } });
   }
-
-  // ─── Delete ───────────────────────────────────────────────────────────────
-
-  async remove(orgId: string, swapId: string, squareItemId: string): Promise<void> {
-    await this.findSwapOrThrow(orgId, swapId);
-    const client = await this.squareClient.forOrg(orgId);
-    await client.catalog.object.delete({ objectId: squareItemId });
-    await this.prisma.swapItemSeller.deleteMany({ where: { swapId, squareItemId } });
-  }
-
-  // ─── Seller assignment (standalone endpoints) ─────────────────────────────
-
-  async assignSeller(orgId: string, swapId: string, squareItemId: string, sellerId: string): Promise<void> {
-    const swap = await this.findSwapOrThrow(orgId, swapId);
-    await this.sellerService.findOrThrow(orgId, sellerId);
-    const client = await this.squareClient.forOrg(orgId);
-    
-
-    const objRes = await client.catalog.object.get({ objectId: squareItemId });
-    const squareVariationId = asItem(objRes.object)?.itemData?.variations?.[0]?.id;
-    if (!squareVariationId) throw new NotFoundException('Item or variation not found in Square');
-
-    const inventoryMap = await this.fetchInventoryMap(client, [squareVariationId], swap.locationId);
-
-    await this.prisma.swapItemSeller.upsert({
-      where: { swapId_squareItemId: { swapId, squareItemId } },
-      update: { sellerId },
-      create: {
-        id: createId(),
-        swapId,
-        sellerId,
-        squareItemId,
-        squareVariationId,
-        originalQuantity: inventoryMap.get(squareVariationId) ?? 0,
-      },
-    });
-  }
-
-  async unassignSeller(orgId: string, swapId: string, squareItemId: string): Promise<void> {
-    await this.findSwapOrThrow(orgId, swapId);
-    await this.prisma.swapItemSeller.deleteMany({ where: { swapId, squareItemId } });
-  }
-
-  // ─── Photos ───────────────────────────────────────────────────────────────
-
-  async uploadImage(
-    orgId: string,
-    swapId: string,
-    squareItemId: string,
-    file: { buffer: Buffer; mimetype: string; originalname: string },
-  ): Promise<{ imageId: string; imageUrl: string | undefined }> {
-    await this.findSwapOrThrow(orgId, swapId);
-    const client = await this.squareClient.forOrg(orgId);
-
-    const blob = new Blob([file.buffer], { type: file.mimetype });
-
-    const res = await client.catalog.images.create({
-      request: {
-        idempotencyKey: uuidv4(),
-        objectId: squareItemId,
-        image: {
-          type: 'IMAGE',
-          id: '#image',
-          imageData: { name: file.originalname },
-        },
-      },
-      imageFile: blob,
-    });
-
-    const imageId = res.image?.id;
-    if (!imageId) throw new BadRequestException('Square did not return an image ID');
-
-    const imageUrl =
-      res.image?.type === 'IMAGE' ? ((res.image as Square.CatalogObject.Image).imageData?.url ?? undefined) : undefined;
-
-    return { imageId, imageUrl };
-  }
-
-  async deleteImage(orgId: string, swapId: string, squareItemId: string, imageId: string): Promise<void> {
-    await this.findSwapOrThrow(orgId, swapId);
-    const client = await this.squareClient.forOrg(orgId);
-
-    // Verify the image is attached to this item before deleting
-    const objRes = await client.catalog.object.get({ objectId: squareItemId });
-    const item = asItem(objRes.object);
-    if (!item) throw new NotFoundException('Item not found in Square');
-
-    const isAttached = item.itemData?.imageIds?.includes(imageId);
-    if (!isAttached) throw new NotFoundException('Image not found on this item');
-
-    await client.catalog.object.delete({ objectId: imageId });
-  }
-
-  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private async findSwapOrThrow(orgId: string, swapId: string) {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId } });
@@ -455,25 +179,40 @@ export class ItemService {
     return swap;
   }
 
-  private async fetchInventoryMap(
-    client: Awaited<ReturnType<SquareClientService['forOrg']>>,
-    variationIds: string[],
-    locationId: string,
-  ): Promise<Map<string, number>> {
-    if (variationIds.length === 0) return new Map();
+  private async syncItemToPos(orgId: string, swap: Pick<SwapShape, 'squareCategoryId' | 'locationId'>, item: { id: string; name: string; description: string | null; priceCents: number; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null }): Promise<void> {
+    if (!swap.locationId) return;
+    const pos = await this.posFactory.forOrg(orgId);
+    if (!pos) return;
+    try {
+      const result = await pos.syncItem(
+        { posItemId: item.squareItemId ?? undefined, posVariationId: item.squareVariationId ?? undefined, name: item.name, description: item.description ?? undefined, priceCents: item.priceCents, sku: item.sku, categoryId: swap.squareCategoryId },
+        swap.locationId,
+        item.originalQuantity,
+      );
+      await this.prisma.swapItem.update({ where: { id: item.id }, data: { squareItemId: result.posItemId, squareVariationId: result.posVariationId, lastSyncedAt: new Date() } });
+    } catch { /* POS sync failures are non-fatal */ }
+  }
 
-    const page = await client.inventory.batchGetCounts({
-      catalogObjectIds: variationIds,
-      locationIds: [locationId],
-    });
+  private async fetchInventoryMap(orgId: string, swap: { locationId: string }, items: { squareVariationId: string | null }[]): Promise<Map<string, number>> {
+    if (!swap.locationId) return new Map();
+    const ids = items.map((i) => i.squareVariationId).filter((id): id is string => !!id);
+    if (!ids.length) return new Map();
+    const pos = await this.posFactory.forOrg(orgId);
+    if (!pos) return new Map();
+    return pos.getInventoryCounts(ids, swap.locationId).catch(() => new Map());
+  }
 
-    const map = new Map<string, number>();
-    for (const count of page.data) {
-      if (count.state === 'IN_STOCK' && count.catalogObjectId && count.quantity) {
-        map.set(count.catalogObjectId, Math.floor(parseFloat(count.quantity)));
-      }
-    }
-    return map;
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; seller: { id: string; name: string; phone: string } | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>): ItemResponse {
+    const inStock = item.squareVariationId ? (inventoryMap.get(item.squareVariationId) ?? 0) : 0;
+    return {
+      id: item.id, swapId: item.swapId, orgId: item.orgId,
+      name: item.name, description: item.description,
+      sku: item.sku, priceCents: item.priceCents, originalQuantity: item.originalQuantity,
+      inStock, soldCount: Math.max(0, item.originalQuantity - inStock),
+      squareSynced: !!item.squareItemId,
+      donateProceeds: item.donateProceeds,
+      seller: item.seller ? { id: item.seller.id, name: item.seller.name, phone: item.seller.phone } : null,
+      photos: item.photos.map((p) => ({ id: p.id, url: p.url })),
+    };
   }
 }
-

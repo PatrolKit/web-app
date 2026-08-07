@@ -9,8 +9,12 @@ export default function DevicesPage() {
   const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
   const qc = useQueryClient();
   const [provisionName, setProvisionName] = useState('');
-  const [provisionRole, setProvisionRole] = useState('');
-  const [editingRole, setEditingRole] = useState<{ id: string; value: string } | null>(null);
+  const [provisionRole, setProvisionRole] = useState<'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller'>('Ski Swap - Check-In');
+  const [showProvisionForm, setShowProvisionForm] = useState(false);
+  const [editingRole, setEditingRole] = useState<{
+    id: string;
+    value: 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller';
+  } | null>(null);
   const [revealedSecret, setRevealedSecret] = useState<{
     id: string;
     clientId: string;
@@ -27,13 +31,14 @@ export default function DevicesPage() {
     mutationFn: () =>
       api.devices.provision(orgId, {
         name: provisionName,
-        role: provisionRole.trim() || null,
+        role: provisionRole,
         permissions: [],
       }),
     onSuccess: (d) => {
       setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret });
       setProvisionName('');
-      setProvisionRole('');
+      setProvisionRole('Ski Swap - Check-In');
+      setShowProvisionForm(false);
       qc.invalidateQueries({ queryKey: ['devices', orgId] });
     },
   });
@@ -66,22 +71,55 @@ export default function DevicesPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white">Devices</h1>
+      <div className="flex items-end justify-between">
+        <h1 className="text-2xl font-bold text-white">Devices</h1>
+        {perms.has('devices:provision') && (
+          <button
+            onClick={() => { setShowProvisionForm(true); setProvisionName(''); setProvisionRole('Ski Swap - Check-In'); }}
+            className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
+          >
+            + Provision Device
+          </button>
+        )}
+      </div>
 
-      {perms.has('devices:provision') && (
-        <form onSubmit={(e) => { e.preventDefault(); provisionMutation.mutate(); }} className="space-y-2">
-          <div className="flex gap-2">
-            <input value={provisionName} onChange={(e) => setProvisionName(e.target.value)}
-              placeholder="Device name" required
-              className="flex-1 bg-surface-50 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
-            <button type="submit" disabled={provisionMutation.isPending}
-              className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm">
-              Provision
+      {showProvisionForm && perms.has('devices:provision') && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); provisionMutation.mutate(); }}
+          className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3"
+        >
+          <h3 className="text-white font-medium">New Device</h3>
+          <input
+            value={provisionName}
+            onChange={(e) => setProvisionName(e.target.value)}
+            placeholder="Device name"
+            required
+            className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+          />
+          <select
+            value={provisionRole}
+            onChange={(e) => setProvisionRole(e.target.value as typeof provisionRole)}
+            className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+          >
+            <option value="Ski Swap - Check-In">Ski Swap - Check-In</option>
+            <option value="Ski Swap - Bulk Seller">Ski Swap - Bulk Seller</option>
+          </select>
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => setShowProvisionForm(false)}
+              className="text-sm text-gray-400 hover:text-white px-3 py-2"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={provisionMutation.isPending}
+              className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm"
+            >
+              {provisionMutation.isPending ? 'Provisioning…' : 'Provision'}
             </button>
           </div>
-          <input value={provisionRole} onChange={(e) => setProvisionRole(e.target.value)}
-            placeholder='Role — e.g. "SkiSwap Check-in"'
-            className="w-full bg-surface-50 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
         </form>
       )}
 
@@ -98,7 +136,7 @@ export default function DevicesPage() {
                     v: 1,
                     cid: revealedSecret.clientId,
                     sec: revealedSecret.secret,
-                    api: 'https://patrolkit.io/api/v1',
+                    api: `${window.location.protocol}//${window.location.host}/api/v1`,
                   })}
                   size={200}
                 />
@@ -124,20 +162,24 @@ export default function DevicesPage() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-medium text-white">{d.name}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${d.status === 'active' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>{d.status}</span>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">Client ID: {d.clientId}</p>
               {d.lastSeenAt && <p className="text-xs text-gray-500">Last seen: {new Date(d.lastSeenAt).toLocaleString()}</p>}
               {editingRole?.id === d.id ? (
                 <div className="flex items-center gap-1 mt-1">
-                  <input
+                  <select
                     autoFocus
                     value={editingRole.value}
-                    onChange={(e) => setEditingRole({ id: d.id, value: e.target.value })}
-                    className="text-xs bg-surface-100 border border-gray-600 rounded px-2 py-0.5 text-white w-40"
-                  />
+                    onChange={(e) =>
+                      setEditingRole({ id: d.id, value: e.target.value as typeof editingRole.value })
+                    }
+                    className="text-xs bg-surface-100 border border-gray-600 rounded px-2 py-0.5 text-white"
+                  >
+                    <option value="Ski Swap - Check-In">Ski Swap - Check-In</option>
+                    <option value="Ski Swap - Bulk Seller">Ski Swap - Bulk Seller</option>
+                  </select>
                   <button
-                    onClick={() => updateRoleMutation.mutate({ id: d.id, role: editingRole.value.trim() || null })}
+                    onClick={() => updateRoleMutation.mutate({ id: d.id, role: editingRole.value })}
                     disabled={updateRoleMutation.isPending}
                     className="text-xs text-green-400 hover:underline"
                   >Save</button>
@@ -145,21 +187,25 @@ export default function DevicesPage() {
                 </div>
               ) : (
                 <div className="flex items-center gap-1 mt-1">
-                  <span className={`text-xs ${d.role ? 'text-gray-400' : 'text-gray-600'}`}>{d.role ?? 'No role'}</span>
-                  {perms.has('devices:provision') && d.status === 'active' && (
-                    <button onClick={() => setEditingRole({ id: d.id, value: d.role ?? '' })}
+                  <span className="text-xs text-gray-400">{d.role}</span>
+                  {perms.has('devices:provision') && (
+                    <button onClick={() => setEditingRole({ id: d.id, value: d.role })}
                       className="text-xs text-gray-600 hover:text-gray-400" aria-label="Edit role">✎</button>
                   )}
                 </div>
               )}
             </div>
             <div className="flex gap-2">
-              {perms.has('devices:provision') && d.status === 'active' && (
+              {perms.has('devices:provision') && (
                 <button onClick={() => rotateMutation.mutate(d.id)}
                   className="text-xs text-yellow-500 hover:underline">Rotate</button>
               )}
-              {perms.has('devices:revoke') && d.status === 'active' && (
-                <button onClick={() => revokeMutation.mutate(d.id)}
+              {perms.has('devices:revoke') && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Revoke "${d.name}"? This will permanently remove the device and it will need to be re-provisioned.`))
+                      revokeMutation.mutate(d.id);
+                  }}
                   className="text-xs text-red-500 hover:underline">Revoke</button>
               )}
             </div>

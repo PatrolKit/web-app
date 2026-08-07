@@ -13,6 +13,9 @@ import { StatsService } from './stats.service';
 import { StatsController } from './stats.controller';
 import { PublicLookupService } from './public-lookup.service';
 import { PublicLookupController } from './public-lookup.controller';
+import { S3Service } from './s3.service';
+import { SquarePosAdapterFactory } from './pos/square.pos.adapter';
+import { PosAdapterFactory } from './pos/pos.adapter';
 
 @Module({
   controllers: [
@@ -27,6 +30,8 @@ import { PublicLookupController } from './public-lookup.controller';
     SquareCryptoService,
     SquareClientService,
     SquareConfigService,
+    S3Service,
+    { provide: PosAdapterFactory, useClass: SquarePosAdapterFactory },
     SwapService,
     SellerService,
     ItemService,

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -13,6 +12,7 @@ import { randomBytes } from 'crypto';
 import type {
   DeviceListItem,
   DeviceMeResponse,
+  DeviceRole,
   ProvisionDeviceRequest,
   ProvisionDeviceResponse,
   DeviceTokenResponse,
@@ -43,7 +43,7 @@ export class DevicesService {
         id: createId(),
         orgId,
         name: data.name,
-        role: data.role ?? null,
+        role: data.role,
         clientId,
         secretHash,
         createdBy: actorUserId,
@@ -69,9 +69,8 @@ export class DevicesService {
       clientId,
       clientSecret, // returned ONCE, not stored
       name: device.name,
-      role: device.role,
+      role: device.role as DeviceRole,
       orgId,
-      status: device.status,
       permissions: data.permissions as PermissionKey[],
       createdAt: device.createdAt,
     };
@@ -90,9 +89,8 @@ export class DevicesService {
       id: d.id,
       clientId: d.clientId,
       name: d.name,
-      role: d.role,
+      role: d.role as DeviceRole,
       orgId: d.orgId,
-      status: d.status,
       permissions: d.permissions.map((dp) => dp.permission.key as PermissionKey),
       lastSeenAt: d.lastSeenAt,
       createdAt: d.createdAt,
@@ -111,7 +109,7 @@ export class DevicesService {
     const hash = device?.secretHash ?? '$argon2id$v=19$m=65536,t=3,p=4$placeholder';
     const valid = await argon2.verify(hash, clientSecret).catch(() => false);
 
-    if (!device || !valid || device.status !== 'active') {
+    if (!device || !valid) {
       throw new UnauthorizedException('Invalid device credentials');
     }
 
@@ -141,7 +139,6 @@ export class DevicesService {
   ): Promise<{ clientSecret: string }> {
     const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
     if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
-    if (device.status === 'revoked') throw new BadRequestException('Cannot rotate a revoked device');
 
     const newSecret = randomBytes(32).toString('hex');
     const newHash = await argon2.hash(newSecret, { type: argon2.argon2id });
@@ -162,10 +159,7 @@ export class DevicesService {
     const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
     if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
 
-    await this.prisma.device.update({
-      where: { id: deviceId },
-      data: { status: 'revoked', revokedAt: new Date() },
-    });
+    await this.prisma.device.delete({ where: { id: deviceId } });
 
     await this.auditService.log({
       actorType: 'user', actorId: actorUserId, orgId,
@@ -194,8 +188,8 @@ export class DevicesService {
       },
     });
 
-    if (!device || device.status === 'revoked') {
-      throw new UnauthorizedException('Device not found or revoked');
+    if (!device) {
+      throw new UnauthorizedException('Device not found');
     }
 
     await this.prisma.device.update({
@@ -206,10 +200,9 @@ export class DevicesService {
     return {
       id: device.id,
       name: device.name,
-      role: device.role,
+      role: device.role as DeviceRole,
       orgId: device.orgId,
       orgName: device.org.name,
-      status: device.status,
       permissions: device.permissions.map((dp) => dp.permission.key),
     };
   }
@@ -219,7 +212,7 @@ export class DevicesService {
   async updateDeviceRole(
     orgId: string,
     deviceId: string,
-    role: string | null,
+    role: DeviceRole,
   ): Promise<DeviceListItem> {
     const device = await this.prisma.device.findUnique({
       where: { id: deviceId },
@@ -238,9 +231,8 @@ export class DevicesService {
       id: updated.id,
       clientId: updated.clientId,
       name: updated.name,
-      role: updated.role,
+      role: updated.role as DeviceRole,
       orgId: updated.orgId,
-      status: updated.status,
       permissions: updated.permissions.map((dp) => dp.permission.key as PermissionKey),
       lastSeenAt: updated.lastSeenAt,
       createdAt: updated.createdAt,

@@ -180,7 +180,7 @@ export class AuthService {
     const hash = device?.secretHash ?? '$argon2id$v=19$m=65536,t=3,p=4$placeholder';
     const valid = await argon2.verify(hash, clientSecret).catch(() => false);
 
-    if (!device || !valid || device.status !== 'active') {
+    if (!device || !valid) {
       throw new UnauthorizedException('Invalid device credentials');
     }
 

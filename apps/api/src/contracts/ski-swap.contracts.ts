@@ -55,33 +55,67 @@ export type SwapResponse = z.infer<typeof SwapResponseSchema>;
 
 // ─── Sellers ─────────────────────────────────────────────────────────────────
 
+const PAYOUT_METHODS = ['PAYPAL', 'VENMO', 'CHECK', 'DONATE'] as const;
+const PAYOUT_ID_TYPES = ['EMAIL', 'PHONE', 'USER_HANDLE'] as const;
+
+// Validates identifier format against the selected type
+function validatePayoutIdentifier(
+  method: string | undefined,
+  idType: string | undefined,
+  identifier: string | undefined,
+  ctx: z.RefinementCtx,
+) {
+  if (!method || method === 'DONATE' || method === 'CHECK') return; // no identifier needed
+  if (!idType || !identifier) return; // optional overall
+  if (idType === 'EMAIL' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) {
+    ctx.addIssue({ code: 'custom', message: `Payout identifier must be a valid email for type EMAIL`, path: ['payoutIdentifier'] });
+  }
+  if (idType === 'PHONE' && !/^\d{7,}$/.test(identifier.replace(/\D/g, ''))) {
+    ctx.addIssue({ code: 'custom', message: `Payout identifier must be a valid phone number for type PHONE`, path: ['payoutIdentifier'] });
+  }
+}
+
+const PayoutFields = {
+  payoutMethod: z.enum(PAYOUT_METHODS).nullable().optional(),
+  payoutIdentifierType: z.enum(PAYOUT_ID_TYPES).nullable().optional(),
+  payoutIdentifier: z.string().max(200).nullable().optional(),
+  payoutIdentifierConfirmedAt: z.string().datetime().nullable().optional(),
+};
+
 export const CreateSellerSchema = z
   .object({
     name: z.string().min(1).max(100),
     phone: z.string().min(1).max(20),
     email: z.string().email().optional(),
+    type: z.enum(['individual', 'business']).default('individual'),
     street: z.string().max(200).optional(),
     city: z.string().max(100).optional(),
     state: z.string().max(50).optional(),
     zip: z.string().max(20).optional(),
+    ...PayoutFields,
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => validatePayoutIdentifier(v.payoutMethod ?? undefined, v.payoutIdentifierType ?? undefined, v.payoutIdentifier ?? undefined, ctx));
 
 export const PatchSellerSchema = z
   .object({
     name: z.string().min(1).max(100).optional(),
     phone: z.string().min(1).max(20).optional(),
     email: z.string().email().nullable().optional(),
+    type: z.enum(['individual', 'business']).optional(),
     street: z.string().max(200).nullable().optional(),
     city: z.string().max(100).nullable().optional(),
     state: z.string().max(50).nullable().optional(),
     zip: z.string().max(20).nullable().optional(),
+    ...PayoutFields,
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => validatePayoutIdentifier(v.payoutMethod ?? undefined, v.payoutIdentifierType ?? undefined, v.payoutIdentifier ?? undefined, ctx));
 
 export const SellerResponseSchema = z.object({
   id: z.string(),
   orgId: z.string(),
+  type: z.enum(['individual', 'business']),
   name: z.string(),
   phone: z.string(),
   email: z.string().nullable(),
@@ -89,6 +123,10 @@ export const SellerResponseSchema = z.object({
   city: z.string().nullable(),
   state: z.string().nullable(),
   zip: z.string().nullable(),
+  payoutMethod: z.enum(PAYOUT_METHODS).nullable(),
+  payoutIdentifierType: z.enum(PAYOUT_ID_TYPES).nullable(),
+  payoutIdentifier: z.string().nullable(),
+  payoutIdentifierConfirmedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -106,6 +144,7 @@ export const CreateItemSchema = z
     priceCents: z.number().int().positive(),
     quantity: z.number().int().positive(),
     sellerId: z.string().optional(),
+    donateProceeds: z.boolean().default(false),
   })
   .strict();
 
@@ -116,29 +155,39 @@ export const PatchItemSchema = z
     priceCents: z.number().int().positive().optional(),
     quantity: z.number().int().nonnegative().optional(),
     sellerId: z.string().nullable().optional(),
+    donateProceeds: z.boolean().optional(),
   })
   .strict();
 
 export const ItemResponseSchema = z.object({
-  squareItemId: z.string(),
-  squareVariationId: z.string(),
+  id: z.string(),
   swapId: z.string(),
+  orgId: z.string(),
   name: z.string(),
   description: z.string().nullable(),
   sku: z.string(),
   priceCents: z.number().int(),
+  originalQuantity: z.number().int(),
   inStock: z.number().int(),
   soldCount: z.number().int(),
+  squareSynced: z.boolean(),
+  donateProceeds: z.boolean(),
   seller: SellerResponseSchema.pick({ id: true, name: true, phone: true }).nullable(),
-  squareImageIds: z.array(z.string()),
+  photos: z.array(z.object({ id: z.string(), url: z.string() })),
 });
 
 export class CreateItemDto extends createZodDto(CreateItemSchema) {}
 export class PatchItemDto extends createZodDto(PatchItemSchema) {}
 export type ItemResponse = z.infer<typeof ItemResponseSchema>;
 
-// ─── Seller–item assignment ───────────────────────────────────────────────────
+// ─── Public seller lookup ─────────────────────────────────────────────────────
 
-export const AssignSellerSchema = z.object({ sellerId: z.string().min(1) }).strict();
-export class AssignSellerDto extends createZodDto(AssignSellerSchema) {}
+export const PublicSellerItemSchema = z.object({
+  itemId: z.string(),
+  name: z.string(),
+  priceCents: z.number().int(),
+  originalQuantity: z.number().int(),
+  inStock: z.number().int(),
+  soldCount: z.number().int(),
+});
 

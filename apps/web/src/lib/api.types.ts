@@ -54,9 +54,8 @@ export interface DeviceItem {
   id: string;
   clientId: string;
   name: string;
-  role: string | null;
+  role: 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller';
   orgId: string;
-  status: string;
   permissions: string[];
   lastSeenAt: string | null;
   createdAt: string;

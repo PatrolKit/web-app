@@ -74,4 +74,11 @@ export class SquareConfigController {
     const exists = await this.configService.exists(orgId);
     return { squareConfigured: exists };
   }
+
+  @Delete('reset-data')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  async resetData(@Param('orgId') orgId: string) {
+    return this.configService.resetOrgData(orgId);
+  }
 }

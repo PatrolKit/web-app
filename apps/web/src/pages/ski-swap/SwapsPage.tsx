@@ -13,12 +13,20 @@ interface SwapForm { title: string; locationId: string; }
 const emptyForm: SwapForm = { title: '', locationId: '' };
 
 export default function SwapsPage() {
-  const { orgId, perms, swaps, setSelectedSwapId } = useOutletContext<SkiSwapContext>();
+  const { orgId, perms, setSelectedSwapId } = useOutletContext<SkiSwapContext>();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [editSwap, setEditSwap] = useState<SwapResponse | null>(null);
   const [form, setForm] = useState<SwapForm>(emptyForm);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [titleSort, setTitleSort] = useState<'creation' | 'asc' | 'desc'>('creation');
 
+  // Fetch ALL swaps (including inactive) for the management view
+  const { data: allSwaps = [] } = useQuery({
+    queryKey: ['ski-swap/swaps-all', orgId],
+    queryFn: () => api.skiSwap.listSwaps(orgId),
+    enabled: !!orgId,
+  });
   const { data: locationsData, isLoading: locationsLoading, error: locationsError } = useQuery({
     queryKey: ['ski-swap/locations', orgId],
     queryFn: () => api.skiSwap.listLocations(orgId),
@@ -36,7 +44,7 @@ export default function SwapsPage() {
   const createMutation = useMutation({
     mutationFn: () => api.skiSwap.createSwap(orgId, form.title, form.locationId),
     onSuccess: (swap) => {
-      qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] });
+      qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] }); qc.invalidateQueries({ queryKey: ['ski-swap/swaps-all', orgId] });
       setSelectedSwapId(swap.id);
       setShowForm(false);
       setForm(emptyForm);
@@ -49,7 +57,7 @@ export default function SwapsPage() {
       locationId: form.locationId !== s.locationId ? form.locationId : undefined,
     }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] });
+      qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] }); qc.invalidateQueries({ queryKey: ['ski-swap/swaps-all', orgId] });
       setEditSwap(null);
       setForm(emptyForm);
       setShowForm(false);
@@ -59,7 +67,7 @@ export default function SwapsPage() {
   const toggleMutation = useMutation({
     mutationFn: ({ id, active }: { id: string; active: boolean }) =>
       api.skiSwap.patchSwap(orgId, id, { active }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] }); qc.invalidateQueries({ queryKey: ['ski-swap/swaps-all', orgId] }); },
   });
 
   function openCreate() {
@@ -85,12 +93,26 @@ export default function SwapsPage() {
 
   return (
     <div className="space-y-4">
-      {perms.has('ski_swap:admin') && !showForm && (
-        <button onClick={openCreate}
-          className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">
-          + New Swap
-        </button>
-      )}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-2">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+            className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
+          >
+            <option value="all">All swaps</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+
+        </div>
+        {perms.has('ski_swap:admin') && !showForm && (
+          <button onClick={openCreate}
+            className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">
+            + New Swap
+          </button>
+        )}
+      </div>
 
       {mutError && <p className="text-red-400 text-sm">{mutationError(mutError)}</p>}
 
@@ -143,20 +165,38 @@ export default function SwapsPage() {
         </form>
       )}
 
-      {swaps.length === 0 ? (
+      {allSwaps.length === 0 ? (
         <p className="text-gray-400 text-sm">No swaps yet.</p>
       ) : (
         <table className="w-full text-sm">
           <thead>
             <tr className="text-gray-400 text-left border-b border-gray-800">
-              <th className="pb-2 pr-4">Title</th>
+              <th
+                className="pb-2 pr-4 cursor-pointer select-none whitespace-nowrap"
+                onClick={() => {
+                  const cycle: typeof titleSort[] = ['creation', 'asc', 'desc'];
+                  setTitleSort(cycle[(cycle.indexOf(titleSort) + 1) % cycle.length]);
+                }}
+              >
+                <span className={titleSort !== 'creation' ? 'text-white' : ''}>Title</span>
+                <span className="ml-1 text-gray-600">
+                  {titleSort === 'asc' ? '↑' : titleSort === 'desc' ? '↓' : '↕'}
+                </span>
+              </th>
               <th className="pb-2 pr-4">SKU Prefix</th>
               <th className="pb-2 pr-4">Status</th>
               {perms.has('ski_swap:admin') && <th className="pb-2">Actions</th>}
             </tr>
           </thead>
           <tbody>
-            {swaps.map((s) => (
+            {[...allSwaps]
+              .filter((s) => statusFilter === 'all' || (statusFilter === 'active' ? s.active : !s.active))
+              .sort((a, b) => {
+                if (titleSort === 'asc') return a.title.localeCompare(b.title);
+                if (titleSort === 'desc') return b.title.localeCompare(a.title);
+                return 0; // 'creation' — preserve server order (createdAt desc)
+              })
+              .map((s) => (
               <tr key={s.id} className="border-b border-gray-900">
                 <td className="py-2 pr-4 text-white">{s.title}</td>
                 <td className="py-2 pr-4 text-gray-400 font-mono">{s.skuPrefix}</td>

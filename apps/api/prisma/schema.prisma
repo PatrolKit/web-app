@@ -127,12 +127,10 @@ model Device {
   name       String
   clientId   String    @unique
   secretHash String
-  role       String?   @db.VarChar(100)
-  status     String    @default("active") // active | revoked
+  role       String    @db.VarChar(100)
   lastSeenAt DateTime?
   createdBy  String?
   createdAt  DateTime  @default(now())
-  revokedAt  DateTime?
 
   org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   permissions DevicePermission[]

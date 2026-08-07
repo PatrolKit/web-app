@@ -8,6 +8,7 @@ export default function SquareConfigPage() {
   const { orgId, perms } = useOutletContext<SkiSwapContext>();
   const qc = useQueryClient();
   const [accessToken, setAccessToken] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showForm, setShowForm] = useState(false);
 
@@ -117,6 +118,49 @@ export default function SquareConfigPage() {
             </p>
           )}
         </form>
+      )}
+
+      {/* Danger zone */}
+      <div className="border border-red-900 rounded-lg p-4 space-y-3">
+        <h3 className="text-red-400 font-medium text-sm uppercase tracking-wide">Danger Zone</h3>
+        <p className="text-gray-400 text-sm">
+          Permanently delete all items and sellers for this organisation from the PatrolKit database.
+          This does <strong className="text-white">not</strong> remove anything from Square.
+        </p>
+        <label className="block">
+          <span className="text-gray-400 text-xs">Type <span className="text-white font-mono">RESET</span> to confirm</span>
+          <input
+            value={resetConfirm}
+            onChange={(e) => setResetConfirm(e.target.value)}
+            placeholder="RESET"
+            className="mt-1 w-full bg-surface-100 border border-red-900 rounded px-3 py-2 text-sm text-white font-mono"
+          />
+        </label>
+        <ResetButton orgId={orgId} disabled={resetConfirm !== 'RESET'} onDone={() => { setResetConfirm(''); qc.invalidateQueries(); }} />
+      </div>
+    </div>
+  );
+}
+
+function ResetButton({ orgId, disabled, onDone }: { orgId: string; disabled: boolean; onDone: () => void }) {
+  const mutation = useMutation({
+    mutationFn: () => api.skiSwap.resetOrgData(orgId),
+    onSuccess: (result) => {
+      alert(`Reset complete. Deleted ${result.deletedItems} item(s) and ${result.deletedSellers} seller(s).`);
+      onDone();
+    },
+  });
+  return (
+    <div className="space-y-1">
+      <button
+        onClick={() => mutation.mutate()}
+        disabled={disabled || mutation.isPending}
+        className="bg-red-700 hover:bg-red-800 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
+      >
+        {mutation.isPending ? 'Resetting…' : 'Delete all items & sellers'}
+      </button>
+      {mutation.isError && (
+        <p className="text-red-400 text-xs">{mutation.error instanceof ApiError ? mutation.error.message : 'Reset failed'}</p>
       )}
     </div>
   );

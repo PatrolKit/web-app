@@ -27,7 +27,7 @@ export default function SkiSwapLayout() {
 
   const { data: swaps = [] } = useQuery({
     queryKey: ['ski-swap/swaps', orgId],
-    queryFn: () => api.skiSwap.listSwaps(orgId),
+    queryFn: () => api.skiSwap.listSwaps(orgId, true),
     enabled: !!orgId,
   });
 
@@ -68,11 +68,10 @@ export default function SkiSwapLayout() {
     if (storageKey) localStorage.setItem(storageKey, id);
   }
 
-  // Default to first active swap when none is stored
+  // Default to first swap when nothing is stored
   useEffect(() => {
     if (!selectedSwapId && swaps.length > 0) {
-      const active = swaps.find((s) => s.active) ?? swaps[0];
-      setSelectedSwapId(active.id);
+      setSelectedSwapId(swaps[0].id);
     }
   }, [swaps, selectedSwapId]);
 
@@ -97,24 +96,40 @@ export default function SkiSwapLayout() {
 
   const disabledTabClass = 'text-sm px-3 py-1.5 rounded text-gray-600 cursor-not-allowed';
 
+  // Swap-scoped routes show the picker; org-scoped routes don't
+  const isSwapScopedTab = !location.pathname.match(/\/(sellers|swaps|config)$/);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-white">Ski Swap</h1>
 
-      {/* Sub-navigation + swap selector in the same bar */}
+      {/* Nav bar: swap-scoped tabs | org-scoped tabs, with swap picker on the right for swap tabs */}
       <nav className="flex items-center gap-1 border-b border-gray-800 pb-1">
-        <div className="flex gap-1 flex-1">
+        <div className="flex items-center gap-1 flex-1">
+          {/* Swap-scoped group */}
           {tabsDisabled ? (
             <>
               <span className={disabledTabClass}>Dashboard</span>
               <span className={disabledTabClass}>Items</span>
-              <span className={disabledTabClass}>Sellers</span>
-              <span className={disabledTabClass}>Swaps</span>
             </>
           ) : (
             <>
               <NavLink to="" end className={navClass}>Dashboard</NavLink>
               <NavLink to="items" className={navClass}>Items</NavLink>
+            </>
+          )}
+
+          {/* Divider */}
+          <span className="mx-2 text-gray-700 select-none">|</span>
+
+          {/* Org-scoped group */}
+          {tabsDisabled ? (
+            <>
+              <span className={disabledTabClass}>Sellers</span>
+              <span className={disabledTabClass}>Swaps</span>
+            </>
+          ) : (
+            <>
               {perms.has('ski_swap:report') && (
                 <NavLink to="sellers" className={navClass}>Sellers</NavLink>
               )}
@@ -125,14 +140,16 @@ export default function SkiSwapLayout() {
           )}
           {perms.has('ski_swap:admin') && (
             <NavLink to="config" className={navClass}>
-              Square Config
+              Administration
               {squareConfigured === false && (
                 <span className="ml-1.5 inline-block w-2 h-2 rounded-full bg-yellow-400 align-middle" />
               )}
             </NavLink>
           )}
         </div>
-        {swaps.length > 0 && !location.pathname.endsWith('/config') && (
+
+        {/* Swap picker — only shown on swap-scoped tabs */}
+        {isSwapScopedTab && swaps.length > 0 && (
           <select
             value={selectedSwapId ?? ''}
             onChange={(e) => setSelectedSwapId(e.target.value)}
@@ -140,7 +157,7 @@ export default function SkiSwapLayout() {
           >
             {swaps.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.title}{s.active ? '' : ' (inactive)'}
+                {s.title}
               </option>
             ))}
           </select>

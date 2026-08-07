@@ -3,13 +3,19 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Param,
   Patch,
   Post,
   Query,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
@@ -58,5 +64,37 @@ export class SellerController {
   @RequirePermissions('ski_swap:manage')
   async remove(@Param('orgId') orgId: string, @Param('sellerId') sellerId: string) {
     await this.sellerService.remove(orgId, sellerId);
+  }
+
+  @Get('import/template')
+  @RequirePermissions('ski_swap:manage')
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="sellers-template.csv"')
+  downloadTemplate(@Res() res: Response) {
+    res.send('name,phone,email,street,city,state,zip\n');
+  }
+
+  @Post('import/parse')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:manage')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  parseImport(@UploadedFile() file: Express.Multer.File) {
+    const { headers, rows, mapping } = this.sellerService.parseImportFile(file.buffer);
+    const preview = rows.slice(0, 5);
+    return { headers, mapping, preview, totalRows: rows.length };
+  }
+
+  @Post('import')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:manage')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  importSellers(
+    @Param('orgId') orgId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('mapping') mappingJson: string,
+    @Body('duplicateStrategy') duplicateStrategy: 'overwrite' | 'preserve',
+  ) {
+    const mapping = JSON.parse(mappingJson) as Record<string, string>;
+    return this.sellerService.importSellers(orgId, file.buffer, mapping, duplicateStrategy);
   }
 }

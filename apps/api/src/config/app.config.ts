@@ -30,4 +30,6 @@ export default registerAs('app', () => ({
 
   // Ski Swap
   squareEncryptionKey: process.env.SQUARE_ENCRYPTION_KEY ?? '',
+  photoBucket: process.env.PHOTO_BUCKET ?? '',
+  photoBaseUrl: process.env.PHOTO_BASE_URL ?? '',
 }));

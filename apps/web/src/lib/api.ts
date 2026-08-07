@@ -157,12 +157,12 @@ export const api = {
 
   devices: {
     list: (orgId: string) => request<import('./api.types').DeviceItem[]>(`/orgs/${orgId}/devices`),
-    provision: (orgId: string, data: { name: string; role?: string | null; permissions: string[] }) =>
+    provision: (orgId: string, data: { name: string; role: 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller'; permissions: string[] }) =>
       request<import('./api.types').ProvisionedDevice>(`/orgs/${orgId}/devices`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    updateRole: (orgId: string, id: string, role: string | null) =>
+    updateRole: (orgId: string, id: string, role: 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller') =>
       request<import('./api.types').DeviceItem>(`/orgs/${orgId}/devices/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ role }),

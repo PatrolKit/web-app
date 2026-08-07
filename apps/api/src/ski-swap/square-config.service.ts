@@ -18,6 +18,16 @@ export class SquareConfigService {
     return count > 0;
   }
 
+  async resetOrgData(orgId: string): Promise<{ deletedItems: number; deletedSellers: number }> {
+    const [deletedItems, deletedSellers] = await this.prisma.$transaction([
+      this.prisma.swapItem.deleteMany({ where: { orgId } }),
+      this.prisma.swapSeller.deleteMany({ where: { orgId } }),
+    ]);
+    // Reset all SKU counters so numbering starts fresh
+    await this.prisma.skiSwap.updateMany({ where: { orgId }, data: { skuCounter: 0 } });
+    return { deletedItems: deletedItems.count, deletedSellers: deletedSellers.count };
+  }
+
   async get(orgId: string): Promise<SquareConfigResponse> {
     const config = await this.prisma.squareConfig.findUnique({ where: { orgId } });
     if (!config) throw new NotFoundException('Square configuration not found');
