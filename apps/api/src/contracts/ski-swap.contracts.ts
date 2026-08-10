@@ -191,3 +191,57 @@ export const PublicSellerItemSchema = z.object({
   soldCount: z.number().int(),
 });
 
+// ─── Business seller invite (admin) ──────────────────────────────────────────
+
+export const InviteBusinessSellerSchema = z
+  .object({ name: z.string().min(1).max(100), email: z.string().email() })
+  .strict();
+
+export const UpdateBusinessSellerStatusSchema = z
+  .object({ status: z.enum(['active', 'disabled']) })
+  .strict();
+
+export const BusinessSellerMemberResponseSchema = z.object({
+  userId: z.string(),
+  email: z.string(),
+  name: z.string(),
+  status: z.string(),
+  joinedAt: z.string().datetime(),
+  seller: z
+    .object({ id: z.string(), name: z.string(), email: z.string().nullable(), phone: z.string() })
+    .nullable(),
+});
+
+export class InviteBusinessSellerDto extends createZodDto(InviteBusinessSellerSchema) {}
+export class UpdateBusinessSellerStatusDto extends createZodDto(UpdateBusinessSellerStatusSchema) {}
+export type BusinessSellerMemberResponse = z.infer<typeof BusinessSellerMemberResponseSchema>;
+
+// ─── Seller self-service ──────────────────────────────────────────────────────
+
+export const SellerSwapSummarySchema = z.object({ id: z.string(), title: z.string() });
+
+export const SellerItemCreateSchema = z
+  .object({
+    swapId: z.string(),
+    name: z.string().min(1).max(200),
+    description: z.string().max(2000).optional(),
+    priceCents: z.number().int().positive(),
+    quantity: z.number().int().positive(),
+    donateProceeds: z.boolean().default(false),
+  })
+  .strict();
+
+export const SellerItemUpdateSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(2000).nullable().optional(),
+    priceCents: z.number().int().positive().optional(),
+    quantity: z.number().int().nonnegative().optional(),
+    donateProceeds: z.boolean().optional(),
+  })
+  .strict();
+
+export class SellerItemCreateDto extends createZodDto(SellerItemCreateSchema) {}
+export class SellerItemUpdateDto extends createZodDto(SellerItemUpdateSchema) {}
+export type SellerSwapSummary = z.infer<typeof SellerSwapSummarySchema>;
+

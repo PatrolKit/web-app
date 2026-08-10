@@ -32,7 +32,7 @@ export default function AppShell() {
 
   function isModuleEnabled(key: string) {
     // If org data isn't loaded (user lacks org:read), assume enabled so the nav shows.
-    if (!org) return perms.has(`${key}:report` as never) || perms.has(`${key}:manage` as never) || perms.has(`${key}:admin` as never);
+    if (!org) return perms.has(`${key}:report` as never) || perms.has(`${key}:manage` as never) || perms.has(`${key}:admin` as never) || (key === 'ski_swap' && perms.has('business_seller'));
     return org.modules.find((m) => m.key === key)?.enabled === true;
   }
 
@@ -80,8 +80,11 @@ export default function AppShell() {
           {perms.has('devices:read') && (
             <NavLink to="devices" className={navClass}>Devices</NavLink>
           )}
-          {perms.has('ski_swap:report') && isModuleEnabled('ski_swap') && (
-            <NavLink to="ski-swap" className={navClass}>Ski Swap</NavLink>
+          {(perms.has('ski_swap:report') || perms.has('business_seller')) && isModuleEnabled('ski_swap') && (
+            <NavLink
+              to={perms.has('ski_swap:report') ? 'ski-swap' : 'ski-swap/my-items'}
+              className={navClass}
+            >Ski Swap</NavLink>
           )}
           {user.isSuperAdmin && (
             <NavLink to="admin" className={navClass}>Platform Admin</NavLink>

@@ -14,6 +14,8 @@ import SwapsPage from './pages/ski-swap/SwapsPage';
 import ItemsPage from './pages/ski-swap/ItemsPage';
 import SellersPage from './pages/ski-swap/SellersPage';
 import SquareConfigPage from './pages/ski-swap/SquareConfigPage';
+import BusinessSellerPage from './pages/ski-swap/BusinessSellerPage';
+import SellerProfilePage from './pages/ski-swap/SellerProfilePage';
 import SellerStatusPage from './pages/public/SellerStatusPage';
 
 function DefaultDashboardRedirect() {
@@ -22,6 +24,7 @@ function DefaultDashboardRedirect() {
   const perms = new Set(membership?.permissions ?? []);
   if (perms.has('users:read')) return <Navigate to="members" replace />;
   if (perms.has('ski_swap:report')) return <Navigate to="ski-swap" replace />;
+  if (perms.has('business_seller')) return <Navigate to="ski-swap/my-items" replace />;
   if (perms.has('org:read')) return <Navigate to="modules" replace />;
   return <Navigate to="members" replace />;
 }
@@ -47,6 +50,8 @@ export default function App() {
             <Route path="items" element={<ItemsPage />} />
             <Route path="sellers" element={<SellersPage />} />
             <Route path="config" element={<SquareConfigPage />} />
+            <Route path="my-items" element={<BusinessSellerPage />} />
+            <Route path="seller-profile" element={<SellerProfilePage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="auth/login" replace />} />

@@ -18,6 +18,7 @@ export const PermissionKeySchema = z.enum([
   'ski_swap:report',
   'ski_swap:manage',
   'ski_swap:admin',
+  'business_seller',
 ]);
 
 export type PermissionKey = z.infer<typeof PermissionKeySchema>;

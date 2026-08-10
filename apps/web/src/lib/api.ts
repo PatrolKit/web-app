@@ -288,5 +288,52 @@ export const api = {
         method: 'POST', credentials: 'include', headers, body: form,
       }).then((r) => r.json() as Promise<{ success: boolean; data: { row: number; outcome: string; name?: string; phone?: string; error?: string }[] }>);
     },
+
+    // Business sellers (admin)
+    inviteBusinessSeller: (orgId: string, data: { name: string; email: string }) =>
+      request<import('./api.types').BusinessSellerMember>(`/orgs/${orgId}/ski-swap/business-sellers`, {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    listBusinessSellers: (orgId: string) =>
+      request<import('./api.types').BusinessSellerMember[]>(`/orgs/${orgId}/ski-swap/business-sellers`),
+    setBusinessSellerStatus: (orgId: string, userId: string, status: 'active' | 'disabled') =>
+      request<import('./api.types').BusinessSellerMember>(`/orgs/${orgId}/ski-swap/business-sellers/${userId}/status`, {
+        method: 'PATCH', body: JSON.stringify({ status }),
+      }),
+
+    // Seller self-service
+    sellerGetProfile: (orgId: string) =>
+      request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/seller/me`),
+    sellerUpdateProfile: (orgId: string, data: Partial<{ name: string; phone: string; email: string | null; street: string | null; city: string | null; state: string | null; zip: string | null; payoutMethod: string | null; payoutIdentifierType: string | null; payoutIdentifier: string | null }>) =>
+      request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/seller/me`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    sellerListSwaps: (orgId: string) =>
+      request<{ id: string; title: string }[]>(`/orgs/${orgId}/ski-swap/seller/me/swaps`),
+    sellerListItems: (orgId: string, swapId?: string) =>
+      request<{ items: import('./api.types').ItemResponse[]; total: number }>(
+        `/orgs/${orgId}/ski-swap/seller/me/items${swapId ? `?swapId=${swapId}` : ''}`
+      ),
+    sellerCreateItem: (orgId: string, data: { swapId: string; name: string; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean }) =>
+      request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items`, {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    sellerPatchItem: (orgId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; donateProceeds?: boolean }) =>
+      request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    sellerDeleteItem: (orgId: string, itemId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}`, { method: 'DELETE' }),
+    sellerUploadPhoto: (orgId: string, itemId: string, file: File) => {
+      const form = new FormData();
+      form.append('image', file);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      return fetch(`/api/v1/orgs/${orgId}/ski-swap/seller/me/items/${itemId}/photos`, {
+        method: 'POST', credentials: 'include', headers, body: form,
+      }).then((r) => r.json() as Promise<{ success: boolean; data: { id: string; url: string } }>);
+    },
+    sellerDeletePhoto: (orgId: string, itemId: string, photoId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}/photos/${photoId}`, { method: 'DELETE' }),
   },
 };

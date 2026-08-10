@@ -20,6 +20,7 @@ const PERMISSIONS = [
   { key: 'ski_swap:report', description: 'View ski swap items, stats, and seller records.' },
   { key: 'ski_swap:manage', description: 'Read/write ski swap items and sellers.' },
   { key: 'ski_swap:admin', description: 'Manage ski swaps and configure Square credentials.' },
+  { key: 'business_seller', description: 'Self-service access to own consignment items in ski swaps.' },
 ] as const;
 
 async function main() {

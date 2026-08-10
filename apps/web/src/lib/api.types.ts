@@ -106,6 +106,15 @@ export interface SellerResponse {
   updatedAt: string;
 }
 
+export interface BusinessSellerMember {
+  userId: string;
+  email: string;
+  name: string;
+  status: string;
+  joinedAt: string;
+  seller: { id: string; name: string; email: string | null; phone: string } | null;
+}
+
 export interface ItemResponse {
   id: string;
   swapId: string;

@@ -16,8 +16,15 @@ import { PublicLookupController } from './public-lookup.controller';
 import { S3Service } from './s3.service';
 import { SquarePosAdapterFactory } from './pos/square.pos.adapter';
 import { PosAdapterFactory } from './pos/pos.adapter';
+import { SellerSelfService } from './seller-self.service';
+import { SellerSelfController } from './seller-self.controller';
+import { BusinessSellerService } from './business-seller.service';
+import { BusinessSellerController } from './business-seller.controller';
+import { AuthModule } from '../auth/auth.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 
 @Module({
+  imports: [AuthModule, PermissionsModule],
   controllers: [
     SquareConfigController,
     SwapController,
@@ -25,6 +32,8 @@ import { PosAdapterFactory } from './pos/pos.adapter';
     ItemController,
     StatsController,
     PublicLookupController,
+    SellerSelfController,
+    BusinessSellerController,
   ],
   providers: [
     SquareCryptoService,
@@ -37,6 +46,8 @@ import { PosAdapterFactory } from './pos/pos.adapter';
     ItemService,
     StatsService,
     PublicLookupService,
+    SellerSelfService,
+    BusinessSellerService,
   ],
   exports: [SquareCryptoService, SquareClientService],
 })

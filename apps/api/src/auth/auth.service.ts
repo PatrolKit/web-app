@@ -32,9 +32,7 @@ export class AuthService {
     if (!user || user.status !== 'active') {
       // Uniform 200 — no account enumeration
       return;
-    }
-
-    const rawToken = randomBytes(32).toString('hex');
+    }    const rawToken = randomBytes(32).toString('hex');
     const tokenHash = sha256(rawToken);
     const ttl = this.config.get<number>('app.magicLinkTtl', 900);
     const expiresAt = new Date(Date.now() + ttl * 1000);
@@ -50,6 +48,18 @@ export class AuthService {
     this.mailService.sendMagicLink(user.email, magicLinkUrl).catch((err) => {
       this.logger.error({ err }, 'Magic-link email delivery failed');
     });
+  }
+
+  /** Creates a 30-day magic-link token for a seller invitation. Returns the full verify URL. */
+  async createInviteMagicLink(userId: string): Promise<string> {
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = sha256(rawToken);
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await this.prisma.magicLink.create({
+      data: { id: createId(), userId, tokenHash, expiresAt },
+    });
+    const appUrl = this.config.get<string>('app.appUrl', 'http://localhost:3000');
+    return `${appUrl}/app/auth/verify?token=${rawToken}`;
   }
 
   async verifyMagicLink(

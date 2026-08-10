@@ -7,15 +7,15 @@ import {
 
 describe('Org contracts', () => {
   describe('PermissionKeySchema', () => {
-    it('accepts all 14 permission keys', () => {
+    it('accepts all 15 permission keys', () => {
       const keys = [
         'org:read', 'org:manage', 'modules:manage',
         'users:read', 'users:invite', 'users:import', 'users:manage',
         'permissions:assign', 'devices:read', 'devices:provision', 'devices:revoke',
-        'ski_swap:report', 'ski_swap:manage', 'ski_swap:admin',
+        'ski_swap:report', 'ski_swap:manage', 'ski_swap:admin', 'business_seller',
       ];
       keys.forEach((k) => expect(PermissionKeySchema.safeParse(k).success).toBe(true));
-      expect(ALL_PERMISSION_KEYS).toHaveLength(14);
+      expect(ALL_PERMISSION_KEYS).toHaveLength(15);
     });
 
     it('rejects an unknown key', () => {

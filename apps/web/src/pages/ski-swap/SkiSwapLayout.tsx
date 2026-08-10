@@ -14,6 +14,9 @@ export interface SkiSwapContext {
   selectedSwap: SwapResponse | null;
   setSelectedSwapId: (id: string) => void;
   swaps: SwapResponse[];
+  sellerSelectedSwapId: string | null;
+  setSellerSelectedSwapId: (id: string) => void;
+  sellerSwaps: { id: string; title: string }[];
 }
 
 export default function SkiSwapLayout() {
@@ -23,18 +26,20 @@ export default function SkiSwapLayout() {
   const location = useLocation();
 
   const storageKey = user ? `patrolkit:${user.id}:${orgId}:selectedSwap` : null;
+  const sellerStorageKey = user ? `patrolkit:${user.id}:${orgId}:sellerSelectedSwap` : null;
   const isAdmin = perms.has('ski_swap:admin');
+  const isSellerOnly = perms.has('business_seller') && !perms.has('ski_swap:report');
 
   const { data: swaps = [] } = useQuery({
     queryKey: ['ski-swap/swaps', orgId],
     queryFn: () => api.skiSwap.listSwaps(orgId, true),
-    enabled: !!orgId,
+    enabled: !!orgId && perms.has('ski_swap:report'),
   });
 
   const { data: status, isLoading: statusLoading } = useQuery({
     queryKey: ['ski-swap/status', orgId],
     queryFn: () => api.skiSwap.getStatus(orgId),
-    enabled: !!orgId,
+    enabled: !!orgId && perms.has('ski_swap:report'),
     staleTime: 30_000,
   });
 
@@ -75,7 +80,25 @@ export default function SkiSwapLayout() {
     }
   }, [swaps, selectedSwapId]);
 
-  if (!perms.has('ski_swap:report')) return <Navigate to="/dashboard" replace />;
+  // ─── Seller swap state (business_seller users) ────────────────────────────
+  const { data: sellerSwaps = [] } = useQuery({
+    queryKey: ['seller/swaps', orgId],
+    queryFn: () => api.skiSwap.sellerListSwaps(orgId),
+    enabled: !!orgId && isSellerOnly,
+  });
+
+  const [sellerSelectedSwapId, setSellerSelectedSwapIdState] = useState<string | null>(() =>
+    sellerStorageKey ? (localStorage.getItem(sellerStorageKey) ?? null) : null
+  );
+  function setSellerSelectedSwapId(id: string) {
+    setSellerSelectedSwapIdState(id);
+    if (sellerStorageKey) localStorage.setItem(sellerStorageKey, id);
+  }
+  useEffect(() => {
+    if (!sellerSelectedSwapId && sellerSwaps.length > 0) setSellerSelectedSwapId(sellerSwaps[0].id);
+  }, [sellerSwaps, sellerSelectedSwapId]);
+
+  if (!perms.has('ski_swap:report') && !perms.has('business_seller')) return <Navigate to="/dashboard" replace />;
 
   const selectedSwap = swaps.find((s) => s.id === selectedSwapId) ?? null;
 
@@ -97,7 +120,7 @@ export default function SkiSwapLayout() {
   const disabledTabClass = 'text-sm px-3 py-1.5 rounded text-gray-600 cursor-not-allowed';
 
   // Swap-scoped routes show the picker; org-scoped routes don't
-  const isSwapScopedTab = !location.pathname.match(/\/(sellers|swaps|config)$/);
+  const isSwapScopedTab = !location.pathname.match(/\/(sellers|swaps|config|my-items|seller-profile)$/);
 
   return (
     <div className="space-y-6">
@@ -114,8 +137,10 @@ export default function SkiSwapLayout() {
             </>
           ) : (
             <>
-              <NavLink to="" end className={navClass}>Dashboard</NavLink>
-              <NavLink to="items" className={navClass}>Items</NavLink>
+              {perms.has('ski_swap:report') && <NavLink to="" end className={navClass}>Dashboard</NavLink>}
+              {perms.has('ski_swap:report') && <NavLink to="items" className={navClass}>Items</NavLink>}
+              {perms.has('business_seller') && <NavLink to="my-items" className={navClass}>My Items</NavLink>}
+              {perms.has('business_seller') && <NavLink to="seller-profile" className={navClass}>Seller Profile</NavLink>}
             </>
           )}
 
@@ -148,7 +173,7 @@ export default function SkiSwapLayout() {
           )}
         </div>
 
-        {/* Swap picker — only shown on swap-scoped tabs */}
+        {/* Manager swap picker — shown on swap-scoped tabs */}
         {isSwapScopedTab && swaps.length > 0 && (
           <select
             value={selectedSwapId ?? ''}
@@ -156,15 +181,25 @@ export default function SkiSwapLayout() {
             className="bg-surface-100 border border-gray-700 rounded px-2 py-1 text-sm text-white"
           >
             {swaps.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.title}
-              </option>
+              <option key={s.id} value={s.id}>{s.title}</option>
             ))}
+          </select>
+        )}
+        {/* Seller swap picker — shown on my-items only */}
+        {isSellerOnly && location.pathname.endsWith('/my-items') && (
+          <select
+            value={sellerSelectedSwapId ?? ''}
+            onChange={(e) => setSellerSelectedSwapId(e.target.value)}
+            className="bg-surface-100 border border-gray-700 rounded px-2 py-1 text-sm text-white"
+          >
+            {sellerSwaps.length === 0
+              ? <option value="">No active swaps</option>
+              : sellerSwaps.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
           </select>
         )}
       </nav>
 
-      <Outlet context={{ orgId, perms, selectedSwap, setSelectedSwapId, swaps } satisfies SkiSwapContext} />
+      <Outlet context={{ orgId, perms, selectedSwap, setSelectedSwapId, swaps, sellerSelectedSwapId, setSellerSelectedSwapId, sellerSwaps } satisfies SkiSwapContext} />
     </div>
   );
 }
