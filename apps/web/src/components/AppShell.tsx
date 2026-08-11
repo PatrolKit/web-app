@@ -1,6 +1,10 @@
 import { Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faPrint as faPrintDuo, faPrintSlash as faPrintSlashDuo, faCircleXmark as faCircleXmarkDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { PrinterProvider, usePrinter } from '../contexts/PrinterContext';
 import { api } from '../lib/api';
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -9,6 +13,14 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 export default function AppShell() {
   const { user, activeOrgId, setActiveOrgId, logout, isLoading } = useAuth();
   const navigate = useNavigate();
+
+  const { isError: serverDown } = useQuery({
+    queryKey: ['healthz'],
+    queryFn: () => fetch('/api/v1/healthz').then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
+    refetchInterval: 10_000,
+    retry: false,
+    staleTime: 5_000,
+  });
 
   const activeMembership = user?.memberships.find((m) => m.orgId === activeOrgId);
   const perms = new Set(activeMembership?.permissions ?? []);
@@ -42,7 +54,18 @@ export default function AppShell() {
   }
 
   return (
+    <PrinterProvider
+      orgId={activeOrgId ?? ''}
+      userId={user?.id ?? ''}
+      isSeller={perms.has('business_seller') && !perms.has('ski_swap:report')}
+      canPrint={perms.has('ski_swap:manage') || perms.has('business_seller')}
+    >
     <div className="min-h-screen bg-surface flex">
+      {serverDown && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-red-950 border-b border-red-800 text-red-300 text-xs text-center py-1.5">
+          Server unreachable — data shown may be stale
+        </div>
+      )}
       {/* Sidebar */}
       <aside className="w-64 bg-surface-50 flex flex-col border-r border-gray-800">
         <div className="p-4 border-b border-gray-800">
@@ -93,6 +116,7 @@ export default function AppShell() {
 
         {/* User */}
         <div className="p-4 border-t border-gray-800 text-xs text-gray-500">
+          <PrinterStatusBar />
           <div className="mb-1 truncate">{user.email}</div>
           <button onClick={handleLogout} className="text-brand-600 hover:underline">Sign out</button>
         </div>
@@ -102,6 +126,42 @@ export default function AppShell() {
       <main className="flex-1 p-8 overflow-auto">
         <Outlet context={{ orgId: activeOrgId, perms }} />
       </main>
+    </div>
+    </PrinterProvider>
+  );
+}
+
+function PrinterStatusBar() {
+  const { preferredPrinter, isPreferredConnected, connectPreferred, disconnectPreferred, isSupported } = usePrinter();
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  if (!isSupported || !preferredPrinter) return null;
+
+  async function handleConnect() {
+    setIsConnecting(true);
+    try { await connectPreferred(); } catch { /* user cancelled */ } finally { setIsConnecting(false); }
+  }
+
+  return (
+    <div className="mb-2 pb-2 border-b border-gray-800 flex items-center gap-1.5 text-xs">
+      {isConnecting
+        ? <span className="w-3 h-3 border border-gray-500 border-t-transparent rounded-full animate-spin shrink-0" />
+        : isPreferredConnected
+          ? <FontAwesomeIcon icon={faPrintDuo} className="shrink-0 text-green-500" />
+          : <FontAwesomeIcon icon={faPrintSlashDuo} className="shrink-0 text-red-600" />}
+      <button
+        onClick={isPreferredConnected || isConnecting ? undefined : handleConnect}
+        disabled={isConnecting}
+        className={`truncate text-left min-w-0 ${!isPreferredConnected && !isConnecting ? 'hover:text-gray-300 cursor-pointer' : 'cursor-default'} ${isPreferredConnected ? 'text-gray-400' : 'text-gray-500'} disabled:opacity-40`}
+        title={isPreferredConnected ? preferredPrinter.name + ' — connected' : preferredPrinter.name + ' — click to connect'}
+      >
+        {isConnecting ? 'Connecting…' : preferredPrinter.name}
+      </button>
+      {isPreferredConnected && (
+        <button onClick={disconnectPreferred} className="text-gray-700 hover:text-red-500 shrink-0 ml-auto" title="Disconnect printer">
+          <FontAwesomeIcon icon={faCircleXmarkDuo} />
+        </button>
+      )}
     </div>
   );
 }

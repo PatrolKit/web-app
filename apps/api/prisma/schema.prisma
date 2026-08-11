@@ -37,6 +37,7 @@ model Organization {
   skiSwaps     SkiSwap[]
   swapSellers  SwapSeller[]
   swapItems    SwapItem[]
+  swapPrinters SwapPrinter[]
 }
 
 model Membership {
@@ -219,6 +220,7 @@ model SwapSeller {
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user      User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   swapItems SwapItem[]
+  assignedPrinters SwapPrinter[]
 
   @@unique([orgId, userId])
   @@index([orgId, phone])
@@ -241,6 +243,7 @@ model SwapItem {
   squareVariationId String?
   lastSyncedAt      DateTime?
   donateProceeds    Boolean  @default(false)
+  hasPrintedTag     Boolean  @default(false)
 
   createdBy  String?
   createdAt  DateTime @default(now())
@@ -268,4 +271,21 @@ model SwapItemPhoto {
   item SwapItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@index([itemId])
+}
+
+model SwapPrinter {
+  id               String   @id @default(cuid())
+  orgId            String
+  name             String
+  bluetoothName    String
+  assignedSellerId String?
+  createdBy        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  seller SwapSeller?  @relation(fields: [assignedSellerId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([assignedSellerId])
 }

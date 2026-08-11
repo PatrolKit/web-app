@@ -128,6 +128,7 @@ export interface ItemResponse {
   soldCount: number;
   squareSynced: boolean;
   donateProceeds: boolean;
+  hasPrintedTag: boolean;
   seller: { id: string; name: string; phone: string } | null;
   photos: { id: string; url: string }[];
 }
@@ -158,4 +159,12 @@ export interface PublicSellerItem {
 export interface PublicSellerLookupResponse {
   sellerName: string;
   items: PublicSellerItem[];
+}
+
+export interface SwapPrinterRecord {
+  id: string;
+  name: string;
+  bluetoothName: string;
+  assignedSellerId: string | null;
+  assignedSellerName: string | null;
 }

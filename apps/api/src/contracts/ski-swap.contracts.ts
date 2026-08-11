@@ -156,6 +156,7 @@ export const PatchItemSchema = z
     quantity: z.number().int().nonnegative().optional(),
     sellerId: z.string().nullable().optional(),
     donateProceeds: z.boolean().optional(),
+    hasPrintedTag: z.boolean().optional(),
   })
   .strict();
 
@@ -172,6 +173,7 @@ export const ItemResponseSchema = z.object({
   soldCount: z.number().int(),
   squareSynced: z.boolean(),
   donateProceeds: z.boolean(),
+  hasPrintedTag: z.boolean(),
   seller: SellerResponseSchema.pick({ id: true, name: true, phone: true }).nullable(),
   photos: z.array(z.object({ id: z.string(), url: z.string() })),
 });
@@ -238,10 +240,43 @@ export const SellerItemUpdateSchema = z
     priceCents: z.number().int().positive().optional(),
     quantity: z.number().int().nonnegative().optional(),
     donateProceeds: z.boolean().optional(),
+    hasPrintedTag: z.boolean().optional(),
   })
   .strict();
 
 export class SellerItemCreateDto extends createZodDto(SellerItemCreateSchema) {}
 export class SellerItemUpdateDto extends createZodDto(SellerItemUpdateSchema) {}
 export type SellerSwapSummary = z.infer<typeof SellerSwapSummarySchema>;
+
+// ─── Printers ─────────────────────────────────────────────────────────────────
+
+export const CreatePrinterSchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    bluetoothName: z.string().min(1).max(100),
+  })
+  .strict();
+
+export const PatchPrinterSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    bluetoothName: z.string().min(1).max(100).optional(),
+    assignedSellerId: z.string().nullable().optional(),
+  })
+  .strict()
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: 'At least one field must be provided',
+  });
+
+export const SwapPrinterResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  bluetoothName: z.string(),
+  assignedSellerId: z.string().nullable(),
+  assignedSellerName: z.string().nullable(),
+});
+
+export class CreatePrinterDto extends createZodDto(CreatePrinterSchema) {}
+export class PatchPrinterDto extends createZodDto(PatchPrinterSchema) {}
+export type SwapPrinterResponse = z.infer<typeof SwapPrinterResponseSchema>;
 

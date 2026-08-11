@@ -189,12 +189,21 @@ importers:
       '@fortawesome/free-solid-svg-icons':
         specifier: ^7.3.1
         version: 7.3.1
+      '@fortawesome/pro-duotone-svg-icons':
+        specifier: ^7.3.1
+        version: 7.3.1
+      '@fortawesome/pro-solid-svg-icons':
+        specifier: ^7.3.1
+        version: 7.3.1
       '@fortawesome/react-fontawesome':
         specifier: ^3.5.0
         version: 3.5.0(@fortawesome/fontawesome-svg-core@7.3.1)(react@18.3.1)
       '@tanstack/react-query':
         specifier: ^5.0.0
         version: 5.101.4(react@18.3.1)
+      '@types/web-bluetooth':
+        specifier: ^0.0.21
+        version: 0.0.21
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -865,6 +874,14 @@ packages:
 
   '@fortawesome/free-solid-svg-icons@7.3.1':
     resolution: {integrity: sha512-v0BLa0eqg7ubvVWeNSHVBs8fWH/GJicERZoJaxJ3FE/lj67VSqzoMg9pzfZVOfLMX10y0pGwQAuxoRVVH2patg==}
+    engines: {node: '>=6'}
+
+  '@fortawesome/pro-duotone-svg-icons@7.3.1':
+    resolution: {integrity: sha512-W7rZTV+VCfS+7jiCx9dyHQ/mG3DkXUDMZ6PTVx9JMGt8ZbB2CJyWCU6p+e2WnfpFAVVdGbEK1T/z+AsrbMRv8w==}
+    engines: {node: '>=6'}
+
+  '@fortawesome/pro-solid-svg-icons@7.3.1':
+    resolution: {integrity: sha512-GIpB5nFXFtHJwMSRfNPOP0HekDAUdMi0RgKmMIebXtB8bcPA+vpLmzEryYhdnEpnMRp099u44ewLZ8IIIy9Psw==}
     engines: {node: '>=6'}
 
   '@fortawesome/react-fontawesome@3.5.0':
@@ -1568,6 +1585,9 @@ packages:
 
   '@types/uuid@9.0.8':
     resolution: {integrity: sha512-jg+97EGIcY9AGHJJRaaPVgetKDsrTgbRjQ5Msgjh/DQKEFl0DtyRr/VCOyD1T2R1MNeWPK/u7JoGhlDZnKBAfA==}
+
+  '@types/web-bluetooth@0.0.21':
+    resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
 
   '@types/yargs-parser@21.0.3':
     resolution: {integrity: sha512-I4q9QU9MQv4oEOz4tAHJtNz1cwuLxn2F3xcc2iV5WdqLPpUnj30aUuxt1mAxYTG+oe8CZMV/+6rU4S4gRDzqtQ==}
@@ -5439,6 +5459,14 @@ snapshots:
     dependencies:
       '@fortawesome/fontawesome-common-types': 7.3.1
 
+  '@fortawesome/pro-duotone-svg-icons@7.3.1':
+    dependencies:
+      '@fortawesome/fontawesome-common-types': 7.3.1
+
+  '@fortawesome/pro-solid-svg-icons@7.3.1':
+    dependencies:
+      '@fortawesome/fontawesome-common-types': 7.3.1
+
   '@fortawesome/react-fontawesome@3.5.0(@fortawesome/fontawesome-svg-core@7.3.1)(react@18.3.1)':
     dependencies:
       '@fortawesome/fontawesome-svg-core': 7.3.1
@@ -6266,6 +6294,8 @@ snapshots:
       '@types/superagent': 8.1.11
 
   '@types/uuid@9.0.8': {}
+
+  '@types/web-bluetooth@0.0.21': {}
 
   '@types/yargs-parser@21.0.3': {}
 

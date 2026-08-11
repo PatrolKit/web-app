@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
 import type { ItemResponse, SellerResponse } from '../../lib/api.types';
+import { usePrinter } from '../../contexts/PrinterContext';
+import { isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
 
 // ─── API adapter interface ────────────────────────────────────────────────────
 
@@ -29,6 +33,7 @@ export interface PatchItemInput {
   quantity?: number;
   sellerId?: string | null;
   donateProceeds?: boolean;
+  hasPrintedTag?: boolean;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -66,8 +71,13 @@ export default function SwapItemsPanel({
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
   const [sellerFilter, setSellerFilter] = useState('');
+  const [printFilter, setPrintFilter] = useState<'' | 'not_printed' | 'printed'>('');
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ItemResponse | null>(null);
+  const [printingItem, setPrintingItem] = useState(false);
+  const [showUnsupportedModal, setShowUnsupportedModal] = useState(false);
+
+  const { printItem } = usePrinter();
   const [form, setForm] = useState<ItemFormData>(emptyForm);
 
   const queryKey = [queryKeyPrefix, orgId, swapId, query];
@@ -104,7 +114,7 @@ export default function SwapItemsPanel({
 
   const deleteMutation = useMutation({
     mutationFn: (itemId: string) => panelApi.deleteItem(itemId),
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onSettled: () => qc.invalidateQueries({ queryKey }),
   });
 
   const uploadPhotoMutation = useMutation({
@@ -114,7 +124,7 @@ export default function SwapItemsPanel({
 
   const deletePhotoMutation = useMutation({
     mutationFn: ({ itemId, photoId }: { itemId: string; photoId: string }) => panelApi.deletePhoto!(itemId, photoId),
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onSettled: () => qc.invalidateQueries({ queryKey }),
   });
 
   function openEdit(item: ItemResponse) {
@@ -131,8 +141,25 @@ export default function SwapItemsPanel({
 
   function closeForm() { setShowForm(false); setEditItem(null); setForm(emptyForm); }
 
+  async function handlePrint(item: ItemResponse) {
+    if (!isWebBluetoothSupported()) { setShowUnsupportedModal(true); return; }
+    setPrintingItem(true);
+    try {
+      await printItem(item);
+      await panelApi.patchItem(item.id, { hasPrintedTag: true });
+      qc.invalidateQueries({ queryKey });
+    } catch (err: unknown) {
+      if ((err as { name?: string })?.name !== 'NotFoundError')
+        console.error('Print failed:', err);
+    } finally {
+      setPrintingItem(false);
+    }
+  }
+
   const isFormOpen = showForm || editItem !== null;
-  const items = (data?.items ?? []).filter((i) => !sellerFilter || i.seller?.id === sellerFilter);
+  const items = (data?.items ?? [])
+    .filter((i) => !sellerFilter || i.seller?.id === sellerFilter)
+    .filter((i) => printFilter === 'printed' ? i.hasPrintedTag : printFilter === 'not_printed' ? !i.hasPrintedTag : true);
 
   if (!swapId) return null;
   if (isLoading) return <p className="text-gray-400 text-sm">Loading…</p>;
@@ -160,6 +187,15 @@ export default function SwapItemsPanel({
               {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
+          <select
+            value={printFilter}
+            onChange={(e) => setPrintFilter(e.target.value as '' | 'not_printed' | 'printed')}
+            className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
+          >
+            <option value="">All tags</option>
+            <option value="not_printed">Not printed</option>
+            <option value="printed">Printed</option>
+          </select>
         </div>
         {canManage && (
           <button
@@ -182,12 +218,13 @@ export default function SwapItemsPanel({
               {sellers && <th className="pb-2 pr-4">Seller</th>}
               <th className="pb-2 pr-4">In Stock</th>
               <th className="pb-2 pr-4">Sold</th>
+              <th className="pb-2 pr-4" title="Tag printed"><FontAwesomeIcon icon={faTagDuo} /></th>
               {canManage && <th className="pb-2">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {items.length === 0 && (
-              <tr><td colSpan={sellers ? 7 : 6} className="py-6 text-center text-gray-500 text-sm">{emptyMessage}</td></tr>
+              <tr><td colSpan={sellers ? 8 : 7} className="py-6 text-center text-gray-500 text-sm">{emptyMessage}</td></tr>
             )}
             {items.map((item) => (
               <tr key={item.id} className="border-b border-gray-900 hover:bg-surface-50">
@@ -200,13 +237,37 @@ export default function SwapItemsPanel({
                 {sellers && <td className="py-2 pr-4 text-gray-400">{item.seller?.name ?? '—'}</td>}
                 <td className="py-2 pr-4 text-gray-300">{item.inStock}</td>
                 <td className="py-2 pr-4 text-gray-300">{item.soldCount}</td>
+                <td className="py-2 pr-4">
+                  {item.hasPrintedTag
+                    ? <FontAwesomeIcon icon={faTagDuo} className="text-green-500" title="Printed" />
+                    : <FontAwesomeIcon icon={faTagDuo} className="text-amber-400" title="Not printed" />}
+                </td>
                 {canManage && (
-                  <td className="py-2 flex gap-2">
+                  <td className="py-2 flex gap-2 items-center">
                     <button onClick={() => openEdit(item)} className="text-xs text-brand-500 hover:underline">Edit</button>
                     <button
                       onClick={() => { if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id); }}
                       className="text-xs text-red-500 hover:underline"
                     >Delete</button>
+                    {item.hasPrintedTag ? (
+                      <button
+                        onClick={() => handlePrint(item)}
+                        disabled={printingItem}
+                        className="text-xs text-gray-400 hover:text-white flex items-center gap-1 disabled:opacity-40"
+                        title="Reprint tag"
+                      >
+                        <FontAwesomeIcon icon={faRotateRightDuo} /> Reprint
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handlePrint(item)}
+                        disabled={printingItem}
+                        className="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1 disabled:opacity-40"
+                        title="Print tag"
+                      >
+                        <FontAwesomeIcon icon={faPrintDuo} /> Print
+                      </button>
+                    )}
                   </td>
                 )}
               </tr>
@@ -326,6 +387,31 @@ export default function SwapItemsPanel({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Printer selector modal */}
+      {/* (removed — browser picker handles selection via PrinterContext) */}
+
+      {/* Unsupported browser modal */}
+      {showUnsupportedModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-surface-200 rounded-lg p-6 w-full max-w-sm space-y-4">
+            <h2 className="text-white font-semibold flex items-center gap-2">
+              <FontAwesomeIcon icon={faTriangleExclamationDuo} className="text-amber-400" /> Printing Not Available
+            </h2>
+            <p className="text-gray-400 text-sm">
+              Price tag printing requires <strong className="text-white">Chrome</strong> or{' '}
+              <strong className="text-white">Edge</strong>. Firefox and Safari do not support
+              WebBluetooth.
+            </p>
+            <button
+              onClick={() => setShowUnsupportedModal(false)}
+              className="w-full bg-surface-100 text-gray-300 text-sm rounded py-1.5"
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>

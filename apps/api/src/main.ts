@@ -19,7 +19,7 @@ async function bootstrap() {
   app.use(urlencoded({ limit: '1mb', extended: true }));
 
   app.setGlobalPrefix('api/v1', {
-    exclude: ['healthz', 'readyz'],
+    exclude: ['readyz'],
   });
 
   const port = process.env.PORT ?? 4000;

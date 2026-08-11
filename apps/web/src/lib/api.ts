@@ -236,7 +236,7 @@ export const api = {
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items`, {
         method: 'POST', body: JSON.stringify(data),
       }),
-    patchItem: (orgId: string, swapId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean }) =>
+    patchItem: (orgId: string, swapId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean }) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
@@ -318,7 +318,7 @@ export const api = {
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items`, {
         method: 'POST', body: JSON.stringify(data),
       }),
-    sellerPatchItem: (orgId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; donateProceeds?: boolean }) =>
+    sellerPatchItem: (orgId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; donateProceeds?: boolean; hasPrintedTag?: boolean }) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
@@ -335,5 +335,21 @@ export const api = {
     },
     sellerDeletePhoto: (orgId: string, itemId: string, photoId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}/photos/${photoId}`, { method: 'DELETE' }),
+
+    // Printers
+    listPrinters: (orgId: string) =>
+      request<import('./api.types').SwapPrinterRecord[]>(`/orgs/${orgId}/ski-swap/printers`),
+    createPrinter: (orgId: string, data: { name: string; bluetoothName: string }) =>
+      request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers`, {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    patchPrinter: (orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null }) =>
+      request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers/${printerId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    deletePrinter: (orgId: string, printerId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/printers/${printerId}`, { method: 'DELETE' }),
+    sellerListPrinters: (orgId: string) =>
+      request<import('./api.types').SwapPrinterRecord[]>(`/orgs/${orgId}/ski-swap/seller/me/printers`),
   },
 };

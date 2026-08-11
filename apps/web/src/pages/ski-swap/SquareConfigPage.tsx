@@ -32,7 +32,7 @@ export default function SquareConfigPage() {
 
   const deleteMutation = useMutation({
     mutationFn: () => api.skiSwap.deleteConfig(orgId),
-    onSuccess: () => {
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['ski-swap/config', orgId] });
       qc.invalidateQueries({ queryKey: ['ski-swap/status', orgId] });
     },

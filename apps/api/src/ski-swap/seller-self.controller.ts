@@ -23,13 +23,17 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { SellerSelfService } from './seller-self.service';
 import { PatchSellerDto, SellerItemCreateDto, SellerItemUpdateDto } from '../contracts/ski-swap.contracts';
+import { PrinterService } from './printer.service';
 
 @Controller('orgs/:orgId/ski-swap/seller/me')
 @UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireModule('ski_swap')
 @RequirePermissions('business_seller')
 export class SellerSelfController {
-  constructor(private readonly sellerSelfService: SellerSelfService) {}
+  constructor(
+    private readonly sellerSelfService: SellerSelfService,
+    private readonly printerService: PrinterService,
+  ) {}
 
   // ─── Profile ──────────────────────────────────────────────────────────────
 
@@ -128,5 +132,12 @@ export class SellerSelfController {
     @Param('photoId') photoId: string,
   ) {
     return this.sellerSelfService.deletePhoto(orgId, user.userId, itemId, photoId);
+  }
+
+  // ─── Printers ─────────────────────────────────────────────────────────────
+
+  @Get('printers')
+  listPrinters(@Param('orgId') orgId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.printerService.listForSeller(orgId, user.userId);
   }
 }

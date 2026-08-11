@@ -18,7 +18,7 @@ export interface ItemResponse {
   name: string; description: string | null;
   sku: string; priceCents: number; originalQuantity: number;
   inStock: number; soldCount: number; squareSynced: boolean;
-  donateProceeds: boolean;
+  donateProceeds: boolean; hasPrintedTag: boolean;
   seller: { id: string; name: string; phone: string } | null;
   photos: ItemPhotoResponse[];
 }
@@ -76,7 +76,7 @@ export class ItemService {
     return this.toResponse(refreshed, inventoryMap);
   }
 
-  async patch(orgId: string, swapId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean }): Promise<ItemResponse> {
+  async patch(orgId: string, swapId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean }): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId } });
     if (!existing) throw new NotFoundException('Item not found');
@@ -91,6 +91,7 @@ export class ItemService {
         ...(data.quantity !== undefined ? { originalQuantity: data.quantity } : {}),
         ...(data.sellerId !== undefined ? { sellerId: data.sellerId } : {}),
         ...(data.donateProceeds !== undefined ? { donateProceeds: data.donateProceeds } : {}),
+        ...(data.hasPrintedTag !== undefined ? { hasPrintedTag: data.hasPrintedTag } : {}),
       },
       include: { seller: true, photos: { orderBy: { displayOrder: 'asc' } } },
     });
@@ -202,7 +203,7 @@ export class ItemService {
     return pos.getInventoryCounts(ids, swap.locationId).catch(() => new Map());
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; seller: { id: string; name: string; phone: string } | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>): ItemResponse {
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; seller: { id: string; name: string; phone: string } | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>): ItemResponse {
     const inStock = item.squareVariationId ? (inventoryMap.get(item.squareVariationId) ?? 0) : 0;
     return {
       id: item.id, swapId: item.swapId, orgId: item.orgId,
@@ -211,6 +212,7 @@ export class ItemService {
       inStock, soldCount: Math.max(0, item.originalQuantity - inStock),
       squareSynced: !!item.squareItemId,
       donateProceeds: item.donateProceeds,
+      hasPrintedTag: item.hasPrintedTag,
       seller: item.seller ? { id: item.seller.id, name: item.seller.name, phone: item.seller.phone } : null,
       photos: item.photos.map((p) => ({ id: p.id, url: p.url })),
     };

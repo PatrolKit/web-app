@@ -20,6 +20,8 @@ import { SellerSelfService } from './seller-self.service';
 import { SellerSelfController } from './seller-self.controller';
 import { BusinessSellerService } from './business-seller.service';
 import { BusinessSellerController } from './business-seller.controller';
+import { PrinterService } from './printer.service';
+import { PrinterController } from './printer.controller';
 import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 
@@ -34,6 +36,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
     PublicLookupController,
     SellerSelfController,
     BusinessSellerController,
+    PrinterController,
   ],
   providers: [
     SquareCryptoService,
@@ -48,6 +51,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
     PublicLookupService,
     SellerSelfService,
     BusinessSellerService,
+    PrinterService,
   ],
   exports: [SquareCryptoService, SquareClientService],
 })

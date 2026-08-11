@@ -40,7 +40,7 @@ export default function MembersPage() {
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) => api.members.remove(orgId, userId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['members', orgId] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['members', orgId] }),
   });
 
   function startEditPerms(m: MemberResponse) {

@@ -114,7 +114,7 @@ export default function SellersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (sellerId: string) => api.skiSwap.deleteSeller(orgId, sellerId),
-    onSuccess: (_, sellerId) => {
+    onSettled: (_, __, sellerId) => {
       qc.setQueryData<SellerResponse[]>(['ski-swap/sellers', orgId], (old) =>
         old?.filter((s) => s.id !== sellerId) ?? [],
       );

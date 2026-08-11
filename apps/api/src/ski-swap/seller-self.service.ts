@@ -96,7 +96,7 @@ export class SellerSelfService {
     orgId: string,
     userId: string,
     itemId: string,
-    data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; donateProceeds?: boolean },
+    data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; donateProceeds?: boolean; hasPrintedTag?: boolean },
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
     await this.requireOwnership(orgId, seller.id, itemId);
