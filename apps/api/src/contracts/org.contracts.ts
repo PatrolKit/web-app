@@ -59,6 +59,7 @@ export const OrgResponseSchema = z.object({
   name: z.string(),
   slug: z.string(),
   status: z.string(),
+  logoUrl: z.string().url().nullable(),
   modules: z.array(OrgModuleSummarySchema),
 });
 

@@ -67,7 +67,7 @@ export default function AppShell() {
         </div>
       )}
       {/* Sidebar */}
-      <aside className="w-64 bg-surface-50 flex flex-col border-r border-gray-800">
+      <aside className="w-64 bg-surface-50 flex flex-col border-r border-gray-800 h-screen sticky top-0 shrink-0">
         <div className="p-4 border-b border-gray-800">
           <span className="text-xl font-bold"><span className="text-brand-600">Patrol</span>Kit</span>
         </div>

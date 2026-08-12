@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser, faBuilding } from '@fortawesome/free-solid-svg-icons';
+import { faUser, faBuilding, faQrcode } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
 import type { SellerResponse, BusinessSellerMember } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SellerImportModal from './SellerImportModal';
+import SellerQrModal from './SellerQrModal';
 
 interface SellerForm {
   type: 'individual' | 'business' | '';
@@ -31,6 +32,7 @@ export default function SellersPage() {
   const [editSeller, setEditSeller] = useState<SellerResponse | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [qrSeller, setQrSeller] = useState<SellerResponse | null>(null);
   const [form, setForm] = useState<SellerForm>(emptyForm);
   const [sortKey, setSortKey] = useState<keyof SellerResponse>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -343,12 +345,19 @@ export default function SellersPage() {
               <td className="py-2 pr-4 text-gray-400">{s.state ?? '—'}</td>
               <td className="py-2 pr-4 text-gray-400 font-mono text-xs">{s.zip ?? '—'}</td>
               {canManage && (
-                <td className="py-2 flex gap-2">
+                <td className="py-2 flex gap-2 items-center">
                   <button onClick={() => openEdit(s)} className="text-xs text-brand-500 hover:underline">Edit</button>
                   {s.type !== 'business' && (
                     <button onClick={() => { if (confirm(`Delete "${s.name}"?`)) deleteMutation.mutate(s.id); }}
                       className="text-xs text-red-500 hover:underline">Delete</button>
                   )}
+                  <button
+                    onClick={() => setQrSeller(s)}
+                    title="Print QR code"
+                    className="text-xs text-gray-400 hover:text-white"
+                  >
+                    <FontAwesomeIcon icon={faQrcode} />
+                  </button>
                 </td>
               )}
               {showingBusinessFilter && isAdmin && (() => {
@@ -378,6 +387,10 @@ export default function SellersPage() {
           onClose={() => setShowImport(false)}
           onDone={() => { qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] }); }}
         />
+      )}
+
+      {qrSeller && (
+        <SellerQrModal seller={qrSeller} onClose={() => setQrSeller(null)} />
       )}
     </div>
   );

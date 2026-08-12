@@ -19,11 +19,11 @@ export default defineConfig({
             res.end(content);
             return;
           }
-          // SPA fallback: rewrite /app/* to /index.html so Vite's pipeline
-          // processes the file (injects HMR preamble, etc.) rather than us
-          // serving raw bytes that bypass plugin transforms.
+          // SPA fallback: rewrite known SPA paths so Vite's pipeline processes
+          // index.html (injects HMR preamble) rather than returning a 404.
           const url = req.url ?? '';
-          if (url.startsWith('/app') && !url.includes('.')) {
+          const NON_SPA = /^\/(api|@|node_modules|__vite|\.)/;
+          if (!url.includes('.') && !NON_SPA.test(url)) {
             req.url = '/index.html';
           }
           next();

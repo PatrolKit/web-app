@@ -13,6 +13,8 @@ import { StatsService } from './stats.service';
 import { StatsController } from './stats.controller';
 import { PublicLookupService } from './public-lookup.service';
 import { PublicLookupController } from './public-lookup.controller';
+import { PublicSellerService } from './public-seller.service';
+import { PublicSellerController } from './public-seller.controller';
 import { S3Service } from './s3.service';
 import { SquarePosAdapterFactory } from './pos/square.pos.adapter';
 import { PosAdapterFactory } from './pos/pos.adapter';
@@ -36,6 +38,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
     ItemController,
     StatsController,
     PublicLookupController,
+    PublicSellerController,
     SellerSelfController,
     BusinessSellerController,
     PrinterController,
@@ -52,6 +55,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
     ItemService,
     StatsService,
     PublicLookupService,
+    PublicSellerService,
     SellerSelfService,
     BusinessSellerService,
     PrinterService,

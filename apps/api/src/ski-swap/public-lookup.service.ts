@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PosAdapterFactory } from './pos/pos.adapter';
 import { normalizePhone } from './seller.service';
+import type { SellerFindResponse } from '../contracts/ski-swap.contracts';
 
 export interface PublicSellerItem {
   itemId: string;
@@ -74,5 +75,24 @@ export class PublicLookupService {
     });
 
     return { sellerName: seller.name, items };
+  }
+
+  async findByEmailAndLast4(orgSlug: string, email: string, last4: string): Promise<SellerFindResponse> {
+    const org = await this.prisma.organization.findFirst({ where: { slug: orgSlug.toLowerCase() } });
+    if (!org) throw new NotFoundException('No seller found.');
+
+    const orgModule = await this.prisma.orgModule.findUnique({
+      where: { orgId_moduleKey: { orgId: org.id, moduleKey: 'ski_swap' } },
+    });
+    if (!orgModule?.enabled) throw new NotFoundException('No seller found.');
+
+    const sellers = await this.prisma.swapSeller.findMany({
+      where: { orgId: org.id, email: email.toLowerCase() },
+    });
+
+    const seller = sellers.find((s) => normalizePhone(s.phone).slice(-4) === last4);
+    if (!seller) throw new NotFoundException('No seller found.');
+
+    return { sellerId: seller.id };
   }
 }

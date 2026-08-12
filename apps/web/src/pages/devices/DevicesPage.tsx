@@ -5,8 +5,8 @@ import QRCode from 'react-qr-code';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBluetooth, faPrint as faPrintDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../../lib/api';
-import { connectFromDevice, DEFAULT_PRINTER_MARGINS, generateCalibrationPattern, generatePrinterLabel, isWebBluetoothSupported, previewCalibrationPattern, previewPrinterLabel } from '../../lib/printing/PhomemoPrinterService';
-import type { PaperSize, PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
+import { connectFromDevice, DEFAULT_PRINTER_MARGINS, isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
+import type { PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
 import { usePrinter } from '../../contexts/PrinterContext';
 import type { DeviceItem, OrgResponse, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 
@@ -18,12 +18,11 @@ const tabClass = (active: boolean) =>
 export default function DevicesPage() {
   const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
   const qc = useQueryClient();
-  const { connections, connectPrinterById, registerConnection, previewMode } = usePrinter();
+  const { connections, connectPrinterById, registerConnection, printPrinterIdLabel, printCalibration } = usePrinter();
   const canManagePrinters = perms.has('ski_swap:admin');
   const [activeTab, setActiveTab] = useState<Tab>('tablets');
   const [pendingTestPrint, setPendingTestPrint] = useState<SwapPrinterRecord | null>(null);
   const [isPrintingId, setIsPrintingId] = useState<string | null>(null);
-  const [printerPreview, setPrinterPreview] = useState<string | null>(null);
 
   const { data: org } = useQuery<OrgResponse>({
     queryKey: ['org', orgId],
@@ -140,30 +139,13 @@ export default function DevicesPage() {
   async function handleTestPrint(printer: SwapPrinterRecord) {
     if (!isWebBluetoothSupported()) { alert('Printing requires Chrome or Edge.'); return; }
     setIsPrintingId(printer.id);
-    const ps = (printer.paperSize ?? '40x30') as PaperSize;
-    const margins: PrinterMargins = {
-      marginTop:    printer.marginTop    ?? DEFAULT_PRINTER_MARGINS.marginTop,
-      marginBottom: printer.marginBottom ?? DEFAULT_PRINTER_MARGINS.marginBottom,
-      marginLeft:   printer.marginLeft   ?? DEFAULT_PRINTER_MARGINS.marginLeft,
-      marginRight:  printer.marginRight  ?? DEFAULT_PRINTER_MARGINS.marginRight,
-    };
     try {
-      if (previewMode) {
-        // Show preview without connecting to the printer
-        // (preview is shown via pendingPreview in AppShell)
-        // We generate it here via a direct API call since DevicesPage is outside SkiSwap context
-        const dataUrl = previewPrinterLabel(printer.name, org?.name ?? orgId, ps, margins);
-        setPrinterPreview(dataUrl);
-        return;
+      if (scannedDeviceRef.current) {
+        const conn = await connectFromDevice(scannedDeviceRef.current);
+        scannedDeviceRef.current = null;
+        registerConnection(printer, conn);
       }
-      // Use the held device ref (no picker) if available, otherwise fall back to context
-      const conn = scannedDeviceRef.current
-        ? await connectFromDevice(scannedDeviceRef.current)
-        : (connections.get(printer.id) ?? await connectPrinterById(printer));
-      scannedDeviceRef.current = null;
-      registerConnection(printer, conn);
-      const rows = generatePrinterLabel(printer.name, org?.name ?? orgId, ps, margins);
-      await conn.print(rows);
+      await printPrinterIdLabel(printer, org?.name ?? orgId);
     } catch (err: unknown) {
       if ((err as { name?: string })?.name !== 'NotFoundError')
         alert(`Print failed: ${(err as Error)?.message ?? String(err)}`);
@@ -175,17 +157,8 @@ export default function DevicesPage() {
   async function handleCalibrationPrint(printer: SwapPrinterRecord) {
     if (!isWebBluetoothSupported()) { alert('Printing requires Chrome or Edge.'); return; }
     setIsPrintingId(`cal-${printer.id}`);
-    const ps = (printer.paperSize ?? '40x30') as PaperSize;
-    const margins: PrinterMargins = {
-      marginTop:    printer.marginTop    ?? DEFAULT_PRINTER_MARGINS.marginTop,
-      marginBottom: printer.marginBottom ?? DEFAULT_PRINTER_MARGINS.marginBottom,
-      marginLeft:   printer.marginLeft   ?? DEFAULT_PRINTER_MARGINS.marginLeft,
-      marginRight:  printer.marginRight  ?? DEFAULT_PRINTER_MARGINS.marginRight,
-    };
     try {
-      if (previewMode) { setPrinterPreview(previewCalibrationPattern(ps, margins)); return; }
-      const conn = connections.get(printer.id) ?? await connectPrinterById(printer);
-      await conn.print(generateCalibrationPattern(ps, margins));
+      await printCalibration(printer);
     } catch (err: unknown) {
       if ((err as { name?: string })?.name !== 'NotFoundError')
         alert(`Print failed: ${(err as Error)?.message ?? String(err)}`);
@@ -577,22 +550,6 @@ export default function DevicesPage() {
           </div>
         </div>
       )}
-      {/* Print preview modal for test prints */}
-      {printerPreview && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setPrinterPreview(null)}>
-          <div className="bg-surface-200 rounded-lg p-4 space-y-3 max-w-xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h2 className="text-white font-semibold text-sm">Print Preview</h2>
-              <button onClick={() => setPrinterPreview(null)} className="text-gray-500 hover:text-white text-xs">✕ Close</button>
-            </div>
-            <div className="flex justify-center bg-gray-100 rounded p-3">
-              <img src={printerPreview} alt="Label preview" style={{ imageRendering: 'pixelated' }} className="max-w-full" />
-            </div>
-            <p className="text-gray-500 text-xs text-center">Preview only — not sent to printer</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
-

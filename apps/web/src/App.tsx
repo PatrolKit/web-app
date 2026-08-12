@@ -18,6 +18,8 @@ import AdministrationPage from './pages/ski-swap/AdministrationPage';
 import BusinessSellerPage from './pages/ski-swap/BusinessSellerPage';
 import SellerProfilePage from './pages/ski-swap/SellerProfilePage';
 import SellerStatusPage from './pages/public/SellerStatusPage';
+import SellerItemsPage from './pages/public/SellerItemsPage';
+import OrgSellerLookupPage from './pages/public/OrgSellerLookupPage';
 
 function DefaultDashboardRedirect() {
   const { user, activeOrgId } = useAuth();
@@ -39,6 +41,8 @@ export default function App() {
         <Route path="auth/verify" element={<VerifyPage />} />
         {/* Public seller-status page (no auth required) */}
         <Route path=":orgSlug/ski-swap/status" element={<SellerStatusPage />} />
+        {/* Seller website public routes */}
+        <Route path="s/:sellerId" element={<SellerItemsPage />} />
         <Route path="dashboard" element={<AppShell />}>
           <Route index element={<DefaultDashboardRedirect />} />
           <Route path="members" element={<MembersPage />} />
@@ -55,6 +59,8 @@ export default function App() {
             <Route path="seller-profile" element={<SellerProfilePage />} />
           </Route>
         </Route>
+        {/* Org seller lookup — broad catch-all; must be before the * redirect */}
+        <Route path=":orgSlug" element={<OrgSellerLookupPage />} />
         <Route path="*" element={<Navigate to="auth/login" replace />} />
       </Routes>
     </AuthProvider>

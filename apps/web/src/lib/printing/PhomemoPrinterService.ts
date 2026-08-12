@@ -1,5 +1,6 @@
 // WebBluetooth driver and label renderer for the Phomemo M110.
 // Port of printer_prototype/Sources/PhomemoPrinter/.
+import QRCode from 'qrcode';
 
 // ─── BLE constants ────────────────────────────────────────────────────────────
 
@@ -14,6 +15,8 @@ const HEAD_WIDTH_BYTES = 40;
 const RASTER_FEED_TOP    = 8; // blank rows prepended to every raster block
 const RASTER_FEED_BOTTOM = 8; // blank rows appended  (matches original Swift prototype)
 const CHUNK_SIZE       = 182;
+const BRANDING_STRIP_W    = 29; // rotated block footprint: PB_SIZE 11 + gap 2 + LOGO_SIZE 16
+const CONTENT_BRANDING_GAP = 4; // hardcoded gap between content right edge and branding left edge
 
 // ─── Default margins (dots) — adjust in DevicesPage for each physical printer ─
 
@@ -118,34 +121,77 @@ export function generateLabel(
   paperSize: PaperSize = '40x30',
   margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
 ): boolean[][] {
-  const W = HEAD_WIDTH_DOTS;
-  const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
-  _drawPriceTagToCanvas(ctx, W, H, margins, item);
-  return rasterise(ctx, W, H);
+  return _compose((ctx, W, H) => _drawPriceTag(ctx, W, H, item), margins, paperSize);
 }
 
 export function generatePrinterLabel(
-  printerName: string,
-  orgName: string,
+  printerName: string, orgName: string,
   paperSize: PaperSize = '40x30',
   margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
 ): boolean[][] {
-  const W = HEAD_WIDTH_DOTS;
-  const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
-  _drawPrinterLabelToCanvas(ctx, W, H, margins, printerName, orgName);
-  return rasterise(ctx, W, H);
+  return _compose((ctx, W, H) => _drawPrinterLabel(ctx, W, H, printerName, orgName), margins, paperSize);
 }
 
-/** Calibration pattern:
- *  – full-canvas X diagonals showing absolute printable extents
- *  – rectangle outline at the configured margin boundaries
- *  – crosshair at the centre of the margin box */
+export async function generateQrLabel(
+  sellerName: string, url: string,
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): Promise<boolean[][]> {
+  return _composeAsync((ctx, W, H) => _drawQrLabel(ctx, W, H, sellerName, url), margins, paperSize);
+}
+
+export function previewLabel(
+  item: { name: string; priceCents: number; sku: string },
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): string {
+  return _composePreview((ctx, W, H) => _drawPriceTag(ctx, W, H, item), margins, paperSize);
+}
+
+export function previewPrinterLabel(
+  printerName: string, orgName: string,
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): string {
+  return _composePreview((ctx, W, H) => _drawPrinterLabel(ctx, W, H, printerName, orgName), margins, paperSize);
+}
+
+export async function previewQrLabel(
+  sellerName: string, url: string,
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): Promise<string> {
+  return _composePreviewAsync((ctx, W, H) => _drawQrLabel(ctx, W, H, sellerName, url), margins, paperSize);
+}
+
+async function _drawQrLabel(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  sellerName: string, url: string,
+) {
+  const SANS = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+  const CX   = W / 2;
+  const y    = (frac: number) => Math.floor(H * frac);
+
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  ctx.font = `bold 14px ${SANS}`;
+  ctx.fillText('Scan this code to track', CX, y(0), W);
+  ctx.fillText('the status of your items:', CX, y(0.065), W);
+
+  const QR_SIZE = Math.min(144, W);
+  const QR_TOP  = y(0.155);
+  const qrCanvas = document.createElement('canvas');
+  await QRCode.toCanvas(qrCanvas, url, { width: QR_SIZE, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+  ctx.drawImage(qrCanvas, Math.round(CX - QR_SIZE / 2), QR_TOP, QR_SIZE, QR_SIZE);
+
+  ctx.font = `bold 13px ${SANS}`;
+  ctx.fillText(sellerName, CX, QR_TOP + QR_SIZE + 4, W);
+}
+
 export function generateCalibrationPattern(paperSize: PaperSize = '40x30', margins: PrinterMargins = DEFAULT_PRINTER_MARGINS): boolean[][] {
   const W = HEAD_WIDTH_DOTS;
   const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
@@ -189,26 +235,24 @@ export function generateCalibrationPattern(paperSize: PaperSize = '40x30', margi
   return rows;
 }
 
-function _drawPriceTagToCanvas(
+function _drawPriceTag(
   ctx: CanvasRenderingContext2D, W: number, H: number,
-  m: PrinterMargins, item: { name: string; priceCents: number; sku: string },
+  item: { name: string; priceCents: number; sku: string },
 ) {
-  const CX      = m.marginLeft + (W - m.marginLeft - m.marginRight) / 2;
-  const W_INNER = W - m.marginLeft - m.marginRight;
-  const H_INNER = H - m.marginTop - m.marginBottom;
-  const halfH   = m.marginTop + Math.floor(H_INNER / 2);
+  const CX    = W / 2;
+  const halfH = Math.floor(H / 2);
 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#000';
 
-  const modules = code128BModules(item.sku);
-  const moduleW = 2;
+  const modules  = code128BModules(item.sku);
+  const moduleW  = 2;
   const barcodeW = modules.length * moduleW;
   let col = Math.floor(CX - barcodeW / 2);
   for (const black of modules) {
     if (col >= 0 && col + moduleW <= W) {
-      if (black) ctx.fillRect(col, m.marginTop, moduleW, 64);
+      if (black) ctx.fillRect(col, 0, moduleW, 64);
     }
     col += moduleW;
   }
@@ -218,29 +262,27 @@ function _drawPriceTagToCanvas(
   ctx.textBaseline = 'alphabetic';
   ctx.fillText(item.sku, CX, halfH - 10);
 
-  ctx.fillRect(m.marginLeft, halfH, W_INNER, 1);
+  ctx.fillRect(0, halfH, W, 1);
 
-  const bottomH = H - m.marginBottom - halfH;
+  const bottomH  = H - halfH;
   const priceStr = `$${(item.priceCents / 100).toFixed(2)}`;
   ctx.font = 'bold 44px "Helvetica Neue", Helvetica, Arial, sans-serif';
   ctx.fillText(priceStr, CX, halfH + Math.floor(bottomH * 0.55));
 
   ctx.font = '15px "Helvetica Neue", Helvetica, Arial, sans-serif';
   let displayName = item.name;
-  while (ctx.measureText(displayName).width > W_INNER && displayName.length > 1) displayName = displayName.slice(0, -1);
+  while (ctx.measureText(displayName).width > W && displayName.length > 1) displayName = displayName.slice(0, -1);
   if (displayName !== item.name) displayName = displayName.slice(0, -1) + '\u2026';
   ctx.fillText(displayName, CX, halfH + Math.floor(bottomH * 0.82));
 }
 
-function _drawPrinterLabelToCanvas(
+function _drawPrinterLabel(
   ctx: CanvasRenderingContext2D, W: number, H: number,
-  m: PrinterMargins, printerName: string, orgName: string,
+  printerName: string, orgName: string,
 ) {
-  const SANS    = '"Helvetica Neue", Helvetica, Arial, sans-serif';
-  const CX      = m.marginLeft + (W - m.marginLeft - m.marginRight) / 2;
-  const W_INNER = W - m.marginLeft - m.marginRight;
-  const H_INNER = H - m.marginTop - m.marginBottom;
-  const y = (frac: number) => m.marginTop + Math.floor(H_INNER * frac);
+  const SANS = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+  const CX   = W / 2;
+  const y    = (frac: number) => Math.floor(H * frac);
 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
@@ -252,15 +294,13 @@ function _drawPrinterLabelToCanvas(
   const yHiLabel      = yPrinterName - 20;
   const yOrgName      = y(0.60);
   const yBelongsLabel = yOrgName - 20;
-  const yLogoBlock    = y(0.85);
-  const yPoweredBy    = yLogoBlock - 12;
 
   ctx.font = `20px ${SANS}`;
   ctx.fillText('Hi! My name is:', CX, yHiLabel);
 
   ctx.font = `bold 38px ${SANS}`;
   let pName = printerName;
-  while (ctx.measureText(pName).width > W_INNER && pName.length > 1) pName = pName.slice(0, -1);
+  while (ctx.measureText(pName).width > W && pName.length > 1) pName = pName.slice(0, -1);
   if (pName !== printerName) pName = pName.slice(0, -1) + '\u2026';
   ctx.fillText(pName, CX, yPrinterName);
 
@@ -269,40 +309,61 @@ function _drawPrinterLabelToCanvas(
 
   ctx.font = `bold 28px ${SANS}`;
   let oName = orgName;
-  while (ctx.measureText(oName).width > W_INNER && oName.length > 1) oName = oName.slice(0, -1);
+  while (ctx.measureText(oName).width > W && oName.length > 1) oName = oName.slice(0, -1);
   if (oName !== orgName) oName = oName.slice(0, -1) + '\u2026';
   ctx.fillText(oName, CX, yOrgName);
+}
 
-  ctx.font = `12px ${SANS}`;
+// Draws "Powered by / PatrolKit" rotated 90° along the right margin, reading bottom-to-top.
+function _drawRotatedBranding(
+  ctx: CanvasRenderingContext2D, W: number, H: number, margins: PrinterMargins,
+) {
+  const SANS           = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+  const LOGO_SIZE      = 16;
+  const LOGO_TEXT_SIZE = 11;
+  const GAP            = 4;
+  const PB_SIZE        = 11;
+
+  ctx.save();
+  // Centre branding strip so its right edge aligns with the printable area boundary
+  ctx.translate(W - margins.marginRight - BRANDING_STRIP_W / 2, H / 2);
+  ctx.rotate(-Math.PI / 2); // bottom-to-top reading direction
+
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'top';
+
+  const poweredByRY = -BRANDING_STRIP_W / 2;
+  const logoRY      = poweredByRY + PB_SIZE + 2;
+
+  ctx.font      = `bold ${PB_SIZE}px ${SANS}`;
   ctx.fillStyle = '#555';
-  ctx.fillText('Powered by', CX, yPoweredBy);
+  ctx.fillText('Powered by', 0, poweredByRY);
 
-  const LOGO_SIZE = 20;
-  const LOGO_TEXT_SIZE = 14;
-  ctx.font = `bold ${LOGO_TEXT_SIZE}px ${SANS}`;
+  ctx.font      = `bold ${LOGO_TEXT_SIZE}px ${SANS}`;
   ctx.fillStyle = '#000';
-  const textW = ctx.measureText('PatrolKit').width;
-  const GAP = 5;
+  const textW  = ctx.measureText('PatrolKit').width;
   const blockW = LOGO_SIZE + GAP + textW;
-  const logoX = Math.floor(CX - blockW / 2);
+  const logoRX = -blockW / 2; // horizontal centre in rotated space
 
   const scale = LOGO_SIZE / 32;
   ctx.save();
-  ctx.translate(logoX, yLogoBlock);
+  ctx.translate(logoRX, logoRY);
   ctx.scale(scale, scale);
   ctx.strokeStyle = '#000';
-  ctx.lineWidth = 2 / scale;
+  ctx.lineWidth   = 2 / scale;
   ctx.stroke(new Path2D('M16 2L4 7V16C4 22.627 9.373 29 16 30C22.627 29 28 22.627 28 16V7L16 2Z'));
   ctx.fillStyle = '#000';
   ctx.fillRect(14, 10, 4, 12);
   ctx.fillRect(10, 14, 12, 4);
   ctx.restore();
 
-  ctx.textAlign = 'left';
+  ctx.textAlign    = 'left';
   ctx.textBaseline = 'top';
-  ctx.font = `bold ${LOGO_TEXT_SIZE}px ${SANS}`;
-  ctx.fillStyle = '#000';
-  ctx.fillText('PatrolKit', logoX + LOGO_SIZE + GAP, yLogoBlock + (LOGO_SIZE - LOGO_TEXT_SIZE) / 2);
+  ctx.font         = `bold ${LOGO_TEXT_SIZE}px ${SANS}`;
+  ctx.fillStyle    = '#000';
+  ctx.fillText('PatrolKit', logoRX + LOGO_SIZE + GAP, logoRY + (LOGO_SIZE - LOGO_TEXT_SIZE) / 2);
+
+  ctx.restore();
 }
 
 function rasterise(ctx: CanvasRenderingContext2D, W: number, H: number): boolean[][] {
@@ -333,30 +394,90 @@ function canvasToPreviewDataUrl(src: HTMLCanvasElement): string {
   return preview.toDataURL('image/png');
 }
 
-export function previewLabel(
-  item: { name: string; priceCents: number; sku: string },
-  paperSize: PaperSize = '40x30',
-  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
-): string {
-  const W = HEAD_WIDTH_DOTS;
-  const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  _drawPriceTagToCanvas(canvas.getContext('2d')!, W, H, margins, item);
-  return canvasToPreviewDataUrl(canvas);
+// ─── Compositor ────────────────────────────────────────────────────────────
+//
+// Places a printable-area canvas onto a full 320×H canvas, composites margins
+// and rotated branding, then returns the result as raster or preview data URL.
+
+function _composeToCanvas(
+  drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number) => void,
+  margins: PrinterMargins,
+  paperSize: PaperSize,
+): HTMLCanvasElement {
+  const fullW  = HEAD_WIDTH_DOTS;
+  const fullH  = PAPER_SIZE_HEIGHT_DOTS[paperSize];
+  const innerH = fullH - margins.marginTop  - margins.marginBottom;
+  // Content width stops at the branding left edge minus the gap
+  const brandingLeft = fullW - margins.marginRight - BRANDING_STRIP_W;
+  const contentW = brandingLeft - CONTENT_BRANDING_GAP - margins.marginLeft;
+
+  const inner = document.createElement('canvas');
+  inner.width = contentW; inner.height = innerH;
+  drawFn(inner.getContext('2d')!, contentW, innerH);
+
+  const full = document.createElement('canvas');
+  full.width = fullW; full.height = fullH;
+  const ctx = full.getContext('2d')!;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, fullW, fullH);
+  ctx.drawImage(inner, margins.marginLeft, margins.marginTop);
+  _drawRotatedBranding(ctx, fullW, fullH, margins);
+  return full;
 }
 
-export function previewPrinterLabel(
-  printerName: string, orgName: string,
-  paperSize: PaperSize = '40x30',
-  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+async function _composeToCanvasAsync(
+  drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number) => Promise<void>,
+  margins: PrinterMargins,
+  paperSize: PaperSize,
+): Promise<HTMLCanvasElement> {
+  const fullW  = HEAD_WIDTH_DOTS;
+  const fullH  = PAPER_SIZE_HEIGHT_DOTS[paperSize];
+  const innerH = fullH - margins.marginTop  - margins.marginBottom;
+  const brandingLeft = fullW - margins.marginRight - BRANDING_STRIP_W;
+  const contentW = brandingLeft - CONTENT_BRANDING_GAP - margins.marginLeft;
+
+  const inner = document.createElement('canvas');
+  inner.width = contentW; inner.height = innerH;
+  await drawFn(inner.getContext('2d')!, contentW, innerH);
+
+  const full = document.createElement('canvas');
+  full.width = fullW; full.height = fullH;
+  const ctx = full.getContext('2d')!;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, fullW, fullH);
+  ctx.drawImage(inner, margins.marginLeft, margins.marginTop);
+  _drawRotatedBranding(ctx, fullW, fullH, margins);
+  return full;
+}
+
+function _compose(
+  drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number) => void,
+  margins: PrinterMargins, paperSize: PaperSize,
+): boolean[][] {
+  const full = _composeToCanvas(drawFn, margins, paperSize);
+  return rasterise(full.getContext('2d')!, full.width, full.height);
+}
+
+function _composePreview(
+  drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number) => void,
+  margins: PrinterMargins, paperSize: PaperSize,
 ): string {
-  const W = HEAD_WIDTH_DOTS;
-  const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  _drawPrinterLabelToCanvas(canvas.getContext('2d')!, W, H, margins, printerName, orgName);
-  return canvasToPreviewDataUrl(canvas);
+  return canvasToPreviewDataUrl(_composeToCanvas(drawFn, margins, paperSize));
+}
+
+async function _composeAsync(
+  drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number) => Promise<void>,
+  margins: PrinterMargins, paperSize: PaperSize,
+): Promise<boolean[][]> {
+  const full = await _composeToCanvasAsync(drawFn, margins, paperSize);
+  return rasterise(full.getContext('2d')!, full.width, full.height);
+}
+
+async function _composePreviewAsync(
+  drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number) => Promise<void>,
+  margins: PrinterMargins, paperSize: PaperSize,
+): Promise<string> {
+  return canvasToPreviewDataUrl(await _composeToCanvasAsync(drawFn, margins, paperSize));
 }
 
 export function previewCalibrationPattern(paperSize: PaperSize = '40x30', margins: PrinterMargins = DEFAULT_PRINTER_MARGINS): string {

@@ -18,6 +18,7 @@ export class OrgsService {
       name: org.name,
       slug: org.slug,
       status: org.status,
+      logoUrl: org.logoUrl ?? null,
       modules: org.orgModules.map((om) => ({
         key: om.moduleKey,
         name: om.module.name,

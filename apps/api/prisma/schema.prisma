@@ -27,6 +27,7 @@ model Organization {
   name      String
   slug      String   @unique
   status    String   @default("active") // active | suspended
+  logoUrl   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

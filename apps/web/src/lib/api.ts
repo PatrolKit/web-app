@@ -364,4 +364,13 @@ export const api = {
         method: 'PUT', body: JSON.stringify(data),
       }),
   },
+
+  public: {
+    getSellerDetail: (sellerId: string) =>
+      request<import('./api.types').PublicSellerDetailResponse>(`/public/sellers/${sellerId}`),
+    findSeller: (orgSlug: string, email: string, last4: string) =>
+      request<import('./api.types').SellerFindResponse>(
+        `/public/${encodeURIComponent(orgSlug)}/ski-swap/seller-find?email=${encodeURIComponent(email)}&last4=${encodeURIComponent(last4)}`,
+      ),
+  },
 };

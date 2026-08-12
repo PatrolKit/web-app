@@ -14,10 +14,15 @@ const queryClient = new QueryClient({
   },
 });
 
+// Public seller routes live outside /app and need a root-based router.
+const isPublicSellerPath =
+  window.location.pathname.startsWith('/s/') ||
+  (window.location.pathname !== '/' && !window.location.pathname.startsWith('/app') && !window.location.pathname.startsWith('/auth'));
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/app">
+      <BrowserRouter basename={isPublicSellerPath ? '/' : '/app'}>
         <App />
       </BrowserRouter>
     </QueryClientProvider>

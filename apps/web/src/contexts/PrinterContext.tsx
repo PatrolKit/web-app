@@ -6,8 +6,14 @@ import {
   connectPrinter,
   DEFAULT_PRINTER_MARGINS,
   generateLabel,
+  generatePrinterLabel,
+  generateQrLabel,
+  generateCalibrationPattern,
   isWebBluetoothSupported,
   previewLabel,
+  previewPrinterLabel,
+  previewQrLabel,
+  previewCalibrationPattern,
   reconnectPrinter,
 } from '../lib/printing/PhomemoPrinterService';
 import type { ConnectedM110, PaperSize, PrinterMargins } from '../lib/printing/PhomemoPrinterService';
@@ -25,14 +31,22 @@ interface PrinterContextValue {
   connectPrinterById(printer: SwapPrinterRecord): Promise<ConnectedM110>;
   registerConnection(printer: SwapPrinterRecord, conn: ConnectedM110): void;
   printItem(item: ItemResponse): Promise<void>;
+  printQrLabel(sellerName: string, url: string): Promise<void>;
+  printPrinterIdLabel(printer: SwapPrinterRecord, orgName: string): Promise<void>;
+  printCalibration(printer: SwapPrinterRecord): Promise<void>;
   previewMode: boolean;
   pendingPreview: string | null;
   setPreviewMode(on: boolean): void;
   clearPendingPreview(): void;
+  setPendingPreview(dataUrl: string): void;
   isSupported: boolean;
 }
 
 const PrinterContext = createContext<PrinterContextValue | null>(null);
+
+function marginsFromRecord(p: SwapPrinterRecord): PrinterMargins {
+  return { marginTop: p.marginTop, marginBottom: p.marginBottom, marginLeft: p.marginLeft, marginRight: p.marginRight };
+}
 
 export function usePrinter(): PrinterContextValue {
   const ctx = useContext(PrinterContext);
@@ -225,6 +239,59 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectPrinterById]);
 
+  const printQrLabel = useCallback(async (sellerName: string, url: string): Promise<void> => {
+    const pool = printersRef.current;
+    const pref = pool.find((p) => p.id === preferredPrinterIdRef.current);
+    let conn = pref ? connectionsRef.current.get(pref.id) : undefined;
+    if (!conn) {
+      if (pref) {
+        conn = await connectPrinterById(pref);
+      } else {
+        const poolConn = await connectFromPool(pool.map((p) => p.bluetoothName));
+        const matched = printersRef.current.find((p) => p.bluetoothName === poolConn.bluetoothName);
+        if (matched) {
+          updateConnections((prev) => new Map(prev).set(matched.id, poolConn));
+          attachDisconnectHandler(matched.id, poolConn);
+          persistPreferred(matched.id);
+          conn = poolConn;
+        }
+      }
+    }
+    if (!conn) throw new Error('No printer connected');
+    const margins = pref ? marginsFromRecord(pref) : DEFAULT_PRINTER_MARGINS;
+    const paperSize = (pref?.paperSize ?? '40x30') as PaperSize;
+    if (previewMode) {
+      setPendingPreview(await previewQrLabel(sellerName, url, paperSize, margins));
+      return;
+    }
+    await conn.print(await generateQrLabel(sellerName, url, paperSize, margins));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectPrinterById]);
+
+  const printPrinterIdLabel = useCallback(async (printer: SwapPrinterRecord, orgName: string): Promise<void> => {
+    const ps      = (printer.paperSize ?? '40x30') as PaperSize;
+    const margins = marginsFromRecord(printer);
+    if (previewMode) {
+      setPendingPreview(previewPrinterLabel(printer.name, orgName, ps, margins));
+      return;
+    }
+    const conn = connectionsRef.current.get(printer.id) ?? await connectPrinterById(printer);
+    await conn.print(generatePrinterLabel(printer.name, orgName, ps, margins));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectPrinterById]);
+
+  const printCalibration = useCallback(async (printer: SwapPrinterRecord): Promise<void> => {
+    const ps      = (printer.paperSize ?? '40x30') as PaperSize;
+    const margins = marginsFromRecord(printer);
+    if (previewMode) {
+      setPendingPreview(previewCalibrationPattern(ps, margins));
+      return;
+    }
+    const conn = connectionsRef.current.get(printer.id) ?? await connectPrinterById(printer);
+    await conn.print(generateCalibrationPattern(ps, margins));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectPrinterById]);
+
   const preferredPrinter = printers.find((p) => p.id === preferredPrinterId) ?? null;
   const isPreferredConnected = preferredPrinter ? connections.has(preferredPrinter.id) : false;
 
@@ -232,8 +299,8 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
     <PrinterContext.Provider value={{
       printers, connections, preferredPrinter, isPreferredConnected,
       setPreferredPrinter, setPaperSize, connectPreferred, disconnectPreferred,
-      connectPrinterById, registerConnection, printItem,
-      previewMode, pendingPreview, setPreviewMode, clearPendingPreview,
+      connectPrinterById, registerConnection, printItem, printQrLabel, printPrinterIdLabel, printCalibration,
+      previewMode, pendingPreview, setPreviewMode, clearPendingPreview, setPendingPreview,
       isSupported,
     }}>
       {children}

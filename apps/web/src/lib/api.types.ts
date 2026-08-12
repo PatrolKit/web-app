@@ -22,6 +22,7 @@ export interface OrgResponse {
   name: string;
   slug: string;
   status: string;
+  logoUrl: string | null;
   modules: ModuleItem[];
 }
 
@@ -176,4 +177,34 @@ export interface SwapPrinterRecord {
 
 export interface SkiSwapSettings {
   labelsPerItem: number;
+}
+
+// ─── Public seller detail ─────────────────────────────────────────────────────
+
+export interface PublicSellerDetailItem {
+  itemId: string;
+  name: string;
+  sku: string;
+  priceCents: number;
+  originalQuantity: number;
+  inStock: number;
+  soldCount: number;
+  donateProceeds: boolean;
+}
+
+export interface PublicSellerDetailSwap {
+  swapId: string;
+  swapTitle: string;
+  items: PublicSellerDetailItem[];
+}
+
+export interface PublicSellerDetailResponse {
+  sellerName: string;
+  orgName: string;
+  orgLogoUrl: string | null;
+  swaps: PublicSellerDetailSwap[];
+}
+
+export interface SellerFindResponse {
+  sellerId: string;
 }

@@ -316,3 +316,38 @@ export const SkiSwapSettingsResponseSchema = z.object({
 export class UpdateSkiSwapSettingsDto extends createZodDto(UpdateSkiSwapSettingsSchema) {}
 export type SkiSwapSettingsResponse = z.infer<typeof SkiSwapSettingsResponseSchema>;
 
+// ─── Public seller detail (by ID) ────────────────────────────────────────────
+
+export const PublicSellerDetailItemSchema = z.object({
+  itemId: z.string(),
+  name: z.string(),
+  sku: z.string(),
+  priceCents: z.number().int(),
+  originalQuantity: z.number().int(),
+  inStock: z.number().int(),
+  soldCount: z.number().int(),
+  donateProceeds: z.boolean(),
+});
+
+export const PublicSellerDetailSwapSchema = z.object({
+  swapId: z.string(),
+  swapTitle: z.string(),
+  items: z.array(PublicSellerDetailItemSchema),
+});
+
+export const PublicSellerDetailResponseSchema = z.object({
+  sellerName: z.string(),
+  orgName: z.string(),
+  orgLogoUrl: z.string().nullable(),
+  swaps: z.array(PublicSellerDetailSwapSchema),
+});
+
+export type PublicSellerDetailItem = z.infer<typeof PublicSellerDetailItemSchema>;
+export type PublicSellerDetailSwap = z.infer<typeof PublicSellerDetailSwapSchema>;
+export type PublicSellerDetailResponse = z.infer<typeof PublicSellerDetailResponseSchema>;
+
+// ─── Public seller find (email + last4) ──────────────────────────────────────
+
+export const SellerFindResponseSchema = z.object({ sellerId: z.string() });
+export type SellerFindResponse = z.infer<typeof SellerFindResponseSchema>;
+

@@ -16,4 +16,15 @@ export class PublicLookupController {
     if (!phone) throw new BadRequestException('phone query param is required');
     return this.lookupService.lookup(orgSlug, phone, swapId);
   }
+
+  @Get('seller-find')
+  findSeller(
+    @Param('orgSlug') orgSlug: string,
+    @Query('email') email: string,
+    @Query('last4') last4: string,
+  ) {
+    if (!email || !last4) throw new BadRequestException('email and last4 query params are required');
+    if (!/^\d{4}$/.test(last4)) throw new BadRequestException('last4 must be exactly 4 digits');
+    return this.lookupService.findByEmailAndLast4(orgSlug, email, last4);
+  }
 }
