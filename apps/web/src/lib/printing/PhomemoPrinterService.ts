@@ -10,8 +10,8 @@ const ACK_CHAR        = '0000ff03-0000-1000-8000-00805f9b34fb'; // per-chunk ACK
 
 // ─── Print geometry ───────────────────────────────────────────────────────────
 
-const HEAD_WIDTH_DOTS  = 320; // full print head width — canvas is always this wide
-const HEAD_WIDTH_BYTES = 40;
+const HEAD_WIDTH_DOTS  = 400; // 50mm print head width at 8 dots/mm
+const HEAD_WIDTH_BYTES = 50;
 const RASTER_FEED_TOP    = 8; // blank rows prepended to every raster block
 const RASTER_FEED_BOTTOM = 8; // blank rows appended  (matches original Swift prototype)
 const CHUNK_SIZE       = 182;
@@ -45,9 +45,10 @@ export const PAPER_SIZE_LABELS: Record<PaperSize, string> = {
 };
 
 // Canvas height in dots at 8 dots/mm (feed rows NOT included — added by printRasterImage)
+// Both sizes are 30mm in the feed direction; the first dimension is the label width.
 const PAPER_SIZE_HEIGHT_DOTS: Record<PaperSize, number> = {
   '40x30': 224, // 30mm×8 − 16 feed rows
-  '50x30': 384, // 50mm×8 − 16 feed rows
+  '50x30': 224, // 30mm×8 − 16 feed rows (50mm is the label width, not feed length)
 };
 
 const PREVIEW_SCALE = 3;
