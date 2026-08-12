@@ -6,7 +6,7 @@ import type { SkiSwapContext } from './SkiSwapLayout';
 import SwapItemsPanel from './SwapItemsPanel';
 
 export default function ItemsPage() {
-  const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
+  const { orgId, perms, selectedSwap, labelsPerItem } = useOutletContext<SkiSwapContext>();
   const canManage = perms.has('ski_swap:manage');
   const swapId = selectedSwap?.id ?? null;
 
@@ -34,6 +34,7 @@ export default function ItemsPage() {
       showSearch
       sellers={sellers}
       queryKeyPrefix="ski-swap/items"
+      labelsPerItem={labelsPerItem}
       panelApi={{
         fetchItems: (sid, opts) => api.skiSwap.listItems(orgId, sid, opts),
         createItem: (sid, data) => api.skiSwap.createItem(orgId, sid, data),

@@ -37,7 +37,8 @@ model Organization {
   skiSwaps     SkiSwap[]
   swapSellers  SwapSeller[]
   swapItems    SwapItem[]
-  swapPrinters SwapPrinter[]
+  swapPrinters    SwapPrinter[]
+  skiSwapSettings SkiSwapSettings?
 }
 
 model Membership {
@@ -293,4 +294,14 @@ model SwapPrinter {
 
   @@index([orgId])
   @@index([assignedSellerId])
+}
+
+model SkiSwapSettings {
+  id            String   @id @default(cuid())
+  orgId         String   @unique
+  labelsPerItem Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 }

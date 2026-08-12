@@ -173,3 +173,7 @@ export interface SwapPrinterRecord {
   assignedSellerId: string | null;
   assignedSellerName: string | null;
 }
+
+export interface SkiSwapSettings {
+  labelsPerItem: number;
+}

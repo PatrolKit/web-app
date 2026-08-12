@@ -355,5 +355,13 @@ export const api = {
       request<void>(`/orgs/${orgId}/ski-swap/printers/${printerId}`, { method: 'DELETE' }),
     sellerListPrinters: (orgId: string) =>
       request<import('./api.types').SwapPrinterRecord[]>(`/orgs/${orgId}/ski-swap/seller/me/printers`),
+
+    // Settings
+    getSettings: (orgId: string) =>
+      request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`),
+    updateSettings: (orgId: string, data: { labelsPerItem: number }) =>
+      request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`, {
+        method: 'PUT', body: JSON.stringify(data),
+      }),
   },
 };

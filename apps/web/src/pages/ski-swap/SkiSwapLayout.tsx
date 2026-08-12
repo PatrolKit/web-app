@@ -17,6 +17,7 @@ export interface SkiSwapContext {
   sellerSelectedSwapId: string | null;
   setSellerSelectedSwapId: (id: string) => void;
   sellerSwaps: { id: string; title: string }[];
+  labelsPerItem: number;
 }
 
 export default function SkiSwapLayout() {
@@ -42,6 +43,14 @@ export default function SkiSwapLayout() {
     enabled: !!orgId && perms.has('ski_swap:report'),
     staleTime: 30_000,
   });
+
+  const { data: skiSwapSettings } = useQuery({
+    queryKey: ['ski-swap/settings', orgId],
+    queryFn: () => api.skiSwap.getSettings(orgId),
+    enabled: !!orgId && perms.has('ski_swap:report'),
+    staleTime: 60_000,
+  });
+  const labelsPerItem = skiSwapSettings?.labelsPerItem ?? 1;
 
   const squareConfigured = status?.squareConfigured;
 
@@ -199,7 +208,7 @@ export default function SkiSwapLayout() {
         )}
       </nav>
 
-      <Outlet context={{ orgId, perms, selectedSwap, setSelectedSwapId, swaps, sellerSelectedSwapId, setSellerSelectedSwapId, sellerSwaps } satisfies SkiSwapContext} />
+      <Outlet context={{ orgId, perms, selectedSwap, setSelectedSwapId, swaps, sellerSelectedSwapId, setSellerSelectedSwapId, sellerSwaps, labelsPerItem } satisfies SkiSwapContext} />
     </div>
   );
 }

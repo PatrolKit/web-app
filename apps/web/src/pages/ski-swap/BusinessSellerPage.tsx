@@ -4,7 +4,7 @@ import type { SkiSwapContext } from './SkiSwapLayout';
 import SwapItemsPanel from './SwapItemsPanel';
 
 export default function BusinessSellerPage() {
-  const { orgId, sellerSelectedSwapId, setSellerSelectedSwapId } = useOutletContext<SkiSwapContext>();
+  const { orgId, sellerSelectedSwapId, setSellerSelectedSwapId, labelsPerItem } = useOutletContext<SkiSwapContext>();
   void setSellerSelectedSwapId; // consumed by SkiSwapLayout
 
   return (
@@ -13,6 +13,7 @@ export default function BusinessSellerPage() {
       swapId={sellerSelectedSwapId}
       canManage={true}
       queryKeyPrefix="seller/items"
+      labelsPerItem={labelsPerItem}
       emptyMessage="No items yet."
 
         panelApi={{

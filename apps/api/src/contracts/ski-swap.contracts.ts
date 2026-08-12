@@ -303,3 +303,16 @@ export class PatchPrinterDto extends createZodDto(PatchPrinterSchema) {}
 export class PatchPrinterPaperSizeDto extends createZodDto(PatchPrinterPaperSizeSchema) {}
 export type SwapPrinterResponse = z.infer<typeof SwapPrinterResponseSchema>;
 
+// ─── Ski Swap Settings ────────────────────────────────────────────────────────
+
+export const UpdateSkiSwapSettingsSchema = z
+  .object({ labelsPerItem: z.number().int().min(1).max(3) })
+  .strict();
+
+export const SkiSwapSettingsResponseSchema = z.object({
+  labelsPerItem: z.number().int(),
+});
+
+export class UpdateSkiSwapSettingsDto extends createZodDto(UpdateSkiSwapSettingsSchema) {}
+export type SkiSwapSettingsResponse = z.infer<typeof SkiSwapSettingsResponseSchema>;
+

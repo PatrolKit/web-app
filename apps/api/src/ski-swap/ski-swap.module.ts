@@ -22,6 +22,8 @@ import { BusinessSellerService } from './business-seller.service';
 import { BusinessSellerController } from './business-seller.controller';
 import { PrinterService } from './printer.service';
 import { PrinterController } from './printer.controller';
+import { SkiSwapSettingsService } from './ski-swap-settings.service';
+import { SkiSwapSettingsController } from './ski-swap-settings.controller';
 import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 
@@ -37,6 +39,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
     SellerSelfController,
     BusinessSellerController,
     PrinterController,
+    SkiSwapSettingsController,
   ],
   providers: [
     SquareCryptoService,
@@ -52,6 +55,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
     SellerSelfService,
     BusinessSellerService,
     PrinterService,
+    SkiSwapSettingsService,
   ],
   exports: [SquareCryptoService, SquareClientService],
 })

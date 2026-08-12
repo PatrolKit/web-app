@@ -47,6 +47,7 @@ export interface SwapItemsPanelProps {
   showSearch?: boolean;
   sellers?: SellerResponse[];
   emptyMessage?: string;
+  labelsPerItem?: number;
 }
 
 // ─── Form state ───────────────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ const emptyForm: ItemFormData = { name: '', description: '', priceDollars: '', q
 
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi,
-  showSearch = false, sellers, emptyMessage = 'No items found.',
+  showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
@@ -145,7 +146,9 @@ export default function SwapItemsPanel({
     if (!isWebBluetoothSupported()) { setShowUnsupportedModal(true); return; }
     setPrintingItem(true);
     try {
-      await printItem(item);
+      for (let i = 0; i < labelsPerItem; i++) {
+        await printItem(item);
+      }
       await panelApi.patchItem(item.id, { hasPrintedTag: true });
       qc.invalidateQueries({ queryKey });
     } catch (err: unknown) {
