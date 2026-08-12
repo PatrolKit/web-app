@@ -165,6 +165,11 @@ export interface SwapPrinterRecord {
   id: string;
   name: string;
   bluetoothName: string;
+  paperSize: '40x30' | '50x30';
+  marginTop:    number;
+  marginBottom: number;
+  marginLeft:   number;
+  marginRight:  number;
   assignedSellerId: string | null;
   assignedSellerName: string | null;
 }

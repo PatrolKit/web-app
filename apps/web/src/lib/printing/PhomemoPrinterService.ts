@@ -7,16 +7,47 @@ const PHOMEMO_SERVICE = '0000ff00-0000-1000-8000-00805f9b34fb';
 const WRITE_CHAR      = '0000ff02-0000-1000-8000-00805f9b34fb';
 const ACK_CHAR        = '0000ff03-0000-1000-8000-00805f9b34fb'; // per-chunk ACK notifications
 
-// ─── Print geometry (matches PrintCommands.swift) ─────────────────────────────
+// ─── Print geometry ───────────────────────────────────────────────────────────
 
-const HEAD_WIDTH_DOTS     = 320;
-const HEAD_WIDTH_BYTES    = 40;
-const LEFT_OFFSET_DOTS    = 16;
-const CONTENT_WIDTH_DOTS  = 304;
-const PRINT_HEIGHT_DOTS   = 240;
-const TOP_MARGIN_ROWS     = 8;
-const CONTENT_HEIGHT_DOTS = 224; // PRINT_HEIGHT_DOTS - TOP_MARGIN_ROWS - BOTTOM_MARGIN_ROWS
-const CHUNK_SIZE          = 182;
+const HEAD_WIDTH_DOTS  = 320; // full print head width — canvas is always this wide
+const HEAD_WIDTH_BYTES = 40;
+const RASTER_FEED_TOP    = 8; // blank rows prepended to every raster block
+const RASTER_FEED_BOTTOM = 8; // blank rows appended  (matches original Swift prototype)
+const CHUNK_SIZE       = 182;
+
+// ─── Default margins (dots) — adjust in DevicesPage for each physical printer ─
+
+export const DEFAULT_PRINTER_MARGINS: PrinterMargins = {
+  marginTop:    4,
+  marginBottom: 4,
+  marginLeft:   0,
+  marginRight:  28,
+};
+
+export interface PrinterMargins {
+  marginTop:    number;
+  marginBottom: number;
+  marginLeft:   number;
+  marginRight:  number;
+}
+
+// ─── Paper sizes ──────────────────────────────────────────────────────────────
+
+export const PAPER_SIZES = ['40x30', '50x30'] as const;
+export type PaperSize = typeof PAPER_SIZES[number];
+
+export const PAPER_SIZE_LABELS: Record<PaperSize, string> = {
+  '40x30': '40 × 30 mm',
+  '50x30': '50 × 30 mm',
+};
+
+// Canvas height in dots at 8 dots/mm (feed rows NOT included — added by printRasterImage)
+const PAPER_SIZE_HEIGHT_DOTS: Record<PaperSize, number> = {
+  '40x30': 224, // 30mm×8 − 16 feed rows
+  '50x30': 384, // 50mm×8 − 16 feed rows
+};
+
+const PREVIEW_SCALE = 3;
 
 // ─── Browser support guard ────────────────────────────────────────────────────
 
@@ -80,141 +111,201 @@ export function code128BModules(text: string): boolean[] {
   return result;
 }
 
-// ─── Label renderer (port of generateSkiSwapLabel in main.swift) ─────────────
+// ─── Label renderers ──────────────────────────────────────────────────────────
 
-export function generateLabel(item: { name: string; priceCents: number; sku: string }): boolean[][] {
-  const W = CONTENT_WIDTH_DOTS;
-  const H = CONTENT_HEIGHT_DOTS;
-
+export function generateLabel(
+  item: { name: string; priceCents: number; sku: string },
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): boolean[][] {
+  const W = HEAD_WIDTH_DOTS;
+  const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
   const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
+  canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d')!;
+  _drawPriceTagToCanvas(ctx, W, H, margins, item);
+  return rasterise(ctx, W, H);
+}
+
+export function generatePrinterLabel(
+  printerName: string,
+  orgName: string,
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): boolean[][] {
+  const W = HEAD_WIDTH_DOTS;
+  const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  _drawPrinterLabelToCanvas(ctx, W, H, margins, printerName, orgName);
+  return rasterise(ctx, W, H);
+}
+
+/** Calibration pattern:
+ *  – full-canvas X diagonals showing absolute printable extents
+ *  – rectangle outline at the configured margin boundaries
+ *  – crosshair at the centre of the margin box */
+export function generateCalibrationPattern(paperSize: PaperSize = '40x30', margins: PrinterMargins = DEFAULT_PRINTER_MARGINS): boolean[][] {
+  const W = HEAD_WIDTH_DOTS;
+  const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
+  const rows: boolean[][] = Array.from({ length: H }, () => new Array(W).fill(false));
+  const D = 2; // line thickness in dots
+
+  const L  = margins.marginLeft;
+  const R  = W - margins.marginRight;       // exclusive
+  const T  = margins.marginTop;
+  const B  = H - margins.marginBottom;      // exclusive
+  const CX = Math.round((L + R - D) / 2);
+  const CY = Math.round((T + B - D) / 2);
+
+  function hline(y: number, x0: number, x1: number) {
+    for (let d = 0; d < D; d++) if (y + d < H) for (let x = x0; x < x1; x++) rows[y + d][x] = true;
+  }
+  function vline(x: number, y0: number, y1: number) {
+    for (let d = 0; d < D; d++) if (x + d < W) for (let y = y0; y < y1; y++) rows[y][x + d] = true;
+  }
+
+  // Full-canvas diagonals
+  for (let y = 0; y < H; y++) {
+    const x1 = Math.round(y * (W - 1) / (H - 1));
+    const x2 = (W - 1) - x1;
+    if (x1 < W)     rows[y][x1]     = true;
+    if (x1 + 1 < W) rows[y][x1 + 1] = true;
+    if (x2 >= 0)    rows[y][x2]     = true;
+    if (x2 - 1 >= 0) rows[y][x2 - 1] = true;
+  }
+
+  // Margin box outline
+  hline(T,     L, R); // top
+  hline(B - D, L, R); // bottom
+  vline(L,     T, B); // left
+  vline(R - D, T, B); // right
+
+  // Crosshair at centre of box
+  hline(CY, L, R); // horizontal arm
+  vline(CX, T, B); // vertical arm
+
+  return rows;
+}
+
+function _drawPriceTagToCanvas(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  m: PrinterMargins, item: { name: string; priceCents: number; sku: string },
+) {
+  const CX      = m.marginLeft + (W - m.marginLeft - m.marginRight) / 2;
+  const W_INNER = W - m.marginLeft - m.marginRight;
+  const H_INNER = H - m.marginTop - m.marginBottom;
+  const halfH   = m.marginTop + Math.floor(H_INNER / 2);
+
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#000';
 
-  // ── Top half: Code128 barcode ────────────────────────────────────────────
   const modules = code128BModules(item.sku);
   const moduleW = 2;
   const barcodeW = modules.length * moduleW;
-  let col = Math.floor((W - barcodeW) / 2);
+  let col = Math.floor(CX - barcodeW / 2);
   for (const black of modules) {
     if (col >= 0 && col + moduleW <= W) {
-      if (black) ctx.fillRect(col, 8, moduleW, 64);
+      if (black) ctx.fillRect(col, m.marginTop, moduleW, 64);
     }
     col += moduleW;
   }
 
-  // SKU text — baseline row 87
   ctx.font = '16px "Helvetica Neue", Helvetica, Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText(item.sku, W / 2, 87);
+  ctx.fillText(item.sku, CX, halfH - 10);
 
-  // ── Separator ────────────────────────────────────────────────────────────
-  ctx.fillRect(16, 112, W - 32, 1);
+  ctx.fillRect(m.marginLeft, halfH, W_INNER, 1);
 
-  // ── Bottom half: price + item name ───────────────────────────────────────
+  const bottomH = H - m.marginBottom - halfH;
   const priceStr = `$${(item.priceCents / 100).toFixed(2)}`;
   ctx.font = 'bold 44px "Helvetica Neue", Helvetica, Arial, sans-serif';
-  ctx.fillText(priceStr, W / 2, 173);
+  ctx.fillText(priceStr, CX, halfH + Math.floor(bottomH * 0.55));
 
   ctx.font = '15px "Helvetica Neue", Helvetica, Arial, sans-serif';
-  // Truncate item name to fit within label width
   let displayName = item.name;
-  while (ctx.measureText(displayName).width > W - 8 && displayName.length > 1) {
-    displayName = displayName.slice(0, -1);
-  }
-  if (displayName !== item.name) displayName = displayName.slice(0, -1) + '…';
-  ctx.fillText(displayName, W / 2, 200);
-
-  // ── Rasterise ────────────────────────────────────────────────────────────
-  const imageData = ctx.getImageData(0, 0, W, H);
-  const rows: boolean[][] = [];
-  for (let row = 0; row < H; row++) {
-    const rowData: boolean[] = [];
-    for (let c = 0; c < W; c++) {
-      const i = (row * W + c) * 4;
-      // Simple luminance threshold; white = 255 background
-      const lum = 0.299 * imageData.data[i] + 0.587 * imageData.data[i + 1] + 0.114 * imageData.data[i + 2];
-      rowData.push(lum < 128);
-    }
-    rows.push(rowData);
-  }
-  return rows;
+  while (ctx.measureText(displayName).width > W_INNER && displayName.length > 1) displayName = displayName.slice(0, -1);
+  if (displayName !== item.name) displayName = displayName.slice(0, -1) + '\u2026';
+  ctx.fillText(displayName, CX, halfH + Math.floor(bottomH * 0.82));
 }
 
-/** Printer identification label — "Hi! My name is: <name> / I belong to: <org> / PatrolKit logo" */
-export function generatePrinterLabel(printerName: string, orgName: string): boolean[][] {
-  const W = CONTENT_WIDTH_DOTS;
-  const H = CONTENT_HEIGHT_DOTS;
-  const SANS = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+function _drawPrinterLabelToCanvas(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  m: PrinterMargins, printerName: string, orgName: string,
+) {
+  const SANS    = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+  const CX      = m.marginLeft + (W - m.marginLeft - m.marginRight) / 2;
+  const W_INNER = W - m.marginLeft - m.marginRight;
+  const H_INNER = H - m.marginTop - m.marginBottom;
+  const y = (frac: number) => m.marginTop + Math.floor(H_INNER * frac);
 
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#000';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
-  // ── "Hi! My name is:" ─────────────────────────────────────────────────────
-  ctx.font = `11px ${SANS}`;
-  ctx.fillText('Hi! My name is:', W / 2, 8);
+  const yPrinterName  = y(0.16);
+  const yHiLabel      = yPrinterName - 20;
+  const yOrgName      = y(0.60);
+  const yBelongsLabel = yOrgName - 20;
+  const yLogoBlock    = y(0.85);
+  const yPoweredBy    = yLogoBlock - 12;
 
-  // ── Printer name ──────────────────────────────────────────────────────────
-  ctx.font = `bold 20px ${SANS}`;
+  ctx.font = `20px ${SANS}`;
+  ctx.fillText('Hi! My name is:', CX, yHiLabel);
+
+  ctx.font = `bold 38px ${SANS}`;
   let pName = printerName;
-  while (ctx.measureText(pName).width > W - 16 && pName.length > 1) pName = pName.slice(0, -1);
-  if (pName !== printerName) pName = pName.slice(0, -1) + '…';
-  ctx.fillText(pName, W / 2, 26);
+  while (ctx.measureText(pName).width > W_INNER && pName.length > 1) pName = pName.slice(0, -1);
+  if (pName !== printerName) pName = pName.slice(0, -1) + '\u2026';
+  ctx.fillText(pName, CX, yPrinterName);
 
-  // ── "I belong to:" ────────────────────────────────────────────────────────
-  ctx.font = `11px ${SANS}`;
-  ctx.fillText('I belong to:', W / 2, 58);
+  ctx.font = `20px ${SANS}`;
+  ctx.fillText('I belong to:', CX, yBelongsLabel);
 
-  // ── Org name ──────────────────────────────────────────────────────────────
-  ctx.font = `bold 16px ${SANS}`;
+  ctx.font = `bold 28px ${SANS}`;
   let oName = orgName;
-  while (ctx.measureText(oName).width > W - 16 && oName.length > 1) oName = oName.slice(0, -1);
-  if (oName !== orgName) oName = oName.slice(0, -1) + '…';
-  ctx.fillText(oName, W / 2, 76);
+  while (ctx.measureText(oName).width > W_INNER && oName.length > 1) oName = oName.slice(0, -1);
+  if (oName !== orgName) oName = oName.slice(0, -1) + '\u2026';
+  ctx.fillText(oName, CX, yOrgName);
 
-  // ── Separator ─────────────────────────────────────────────────────────────
-  ctx.fillRect(16, 106, W - 32, 1);
+  ctx.font = `12px ${SANS}`;
+  ctx.fillStyle = '#555';
+  ctx.fillText('Powered by', CX, yPoweredBy);
 
-  // ── PatrolKit logo block (shield + text), centred in bottom section ───────
-  const LOGO_SIZE = 28;
-  ctx.font = `bold 18px ${SANS}`;
+  const LOGO_SIZE = 20;
+  const LOGO_TEXT_SIZE = 14;
+  ctx.font = `bold ${LOGO_TEXT_SIZE}px ${SANS}`;
+  ctx.fillStyle = '#000';
   const textW = ctx.measureText('PatrolKit').width;
-  const GAP = 6;
+  const GAP = 5;
   const blockW = LOGO_SIZE + GAP + textW;
-  const logoX = Math.floor((W - blockW) / 2);
-  const logoY = Math.floor(114 + (H - 114 - LOGO_SIZE) / 2);
+  const logoX = Math.floor(CX - blockW / 2);
 
-  // Draw shield using Path2D (SVG path from landing page logo, scaled to LOGO_SIZE)
   const scale = LOGO_SIZE / 32;
   ctx.save();
-  ctx.translate(logoX, logoY);
+  ctx.translate(logoX, yLogoBlock);
   ctx.scale(scale, scale);
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 2 / scale;
   ctx.stroke(new Path2D('M16 2L4 7V16C4 22.627 9.373 29 16 30C22.627 29 28 22.627 28 16V7L16 2Z'));
   ctx.fillStyle = '#000';
-  ctx.fillRect(14, 10, 4, 12); // vertical bar
-  ctx.fillRect(10, 14, 12, 4); // horizontal bar
+  ctx.fillRect(14, 10, 4, 12);
+  ctx.fillRect(10, 14, 12, 4);
   ctx.restore();
 
-  // "PatrolKit" vertically centred beside the shield
   ctx.textAlign = 'left';
-  ctx.font = `bold 18px ${SANS}`;
+  ctx.textBaseline = 'top';
+  ctx.font = `bold ${LOGO_TEXT_SIZE}px ${SANS}`;
   ctx.fillStyle = '#000';
-  ctx.fillText('PatrolKit', logoX + LOGO_SIZE + GAP, logoY + (LOGO_SIZE - 18) / 2);
+  ctx.fillText('PatrolKit', logoX + LOGO_SIZE + GAP, yLogoBlock + (LOGO_SIZE - LOGO_TEXT_SIZE) / 2);
+}
 
-  // ── Rasterise ─────────────────────────────────────────────────────────────
+function rasterise(ctx: CanvasRenderingContext2D, W: number, H: number): boolean[][] {
   const imgData = ctx.getImageData(0, 0, W, H);
   const rows: boolean[][] = [];
   for (let row = 0; row < H; row++) {
@@ -229,7 +320,62 @@ export function generatePrinterLabel(printerName: string, orgName: string): bool
   return rows;
 }
 
-// ─── ESC/POS command builders (port of PrintCommands.swift) ──────────────────
+function canvasToPreviewDataUrl(src: HTMLCanvasElement): string {
+  const preview = document.createElement('canvas');
+  preview.width  = src.width  * PREVIEW_SCALE;
+  preview.height = src.height * PREVIEW_SCALE;
+  const ctx = preview.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(src, 0, 0, preview.width, preview.height);
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, preview.width - 1, preview.height - 1);
+  return preview.toDataURL('image/png');
+}
+
+export function previewLabel(
+  item: { name: string; priceCents: number; sku: string },
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): string {
+  const W = HEAD_WIDTH_DOTS;
+  const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  _drawPriceTagToCanvas(canvas.getContext('2d')!, W, H, margins, item);
+  return canvasToPreviewDataUrl(canvas);
+}
+
+export function previewPrinterLabel(
+  printerName: string, orgName: string,
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): string {
+  const W = HEAD_WIDTH_DOTS;
+  const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  _drawPrinterLabelToCanvas(canvas.getContext('2d')!, W, H, margins, printerName, orgName);
+  return canvasToPreviewDataUrl(canvas);
+}
+
+export function previewCalibrationPattern(paperSize: PaperSize = '40x30', margins: PrinterMargins = DEFAULT_PRINTER_MARGINS): string {
+  const rows = generateCalibrationPattern(paperSize, margins);
+  const W = HEAD_WIDTH_DOTS;
+  const H = rows.length;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  for (let r = 0; r < H; r++)
+    for (let c = 0; c < W; c++)
+      if (rows[r][c]) ctx.fillRect(c, r, 1, 1);
+  return canvasToPreviewDataUrl(canvas);
+}
+
+// ─── ESC/POS command builders ─────────────────────────────────────────────────
 
 function initialize(): Uint8Array { return new Uint8Array([0x1b, 0x40]); }
 function setPrintEnergy(level = 2): Uint8Array { return new Uint8Array([0x1f, 0x11, 0x08, Math.min(level, 2)]); }
@@ -237,30 +383,23 @@ function setPrintSpeed(level = 3): Uint8Array { return new Uint8Array([0x1f, 0x1
 function feed(dots = 30): Uint8Array { return new Uint8Array([0x1b, 0x4a, dots]); }
 
 function printRasterImage(rows: boolean[][]): Uint8Array {
-  const totalH = PRINT_HEIGHT_DOTS;
-  const blankRow = new Uint8Array(HEAD_WIDTH_BYTES);
+  const H      = rows.length;
+  const totalH = H + RASTER_FEED_TOP + RASTER_FEED_BOTTOM;
+  const blank  = new Uint8Array(HEAD_WIDTH_BYTES);
   const buf: number[] = [
     0x1d, 0x76, 0x30, 0x00,
     HEAD_WIDTH_BYTES & 0xff, HEAD_WIDTH_BYTES >> 8,
     totalH & 0xff, totalH >> 8,
   ];
-
-  for (let i = 0; i < TOP_MARGIN_ROWS; i++) buf.push(...blankRow);
-
-  const contentRows = Math.min(rows.length, CONTENT_HEIGHT_DOTS);
-  for (let r = 0; r < contentRows; r++) {
+  for (let i = 0; i < RASTER_FEED_TOP; i++) buf.push(...blank);
+  for (let r = 0; r < H; r++) {
     const headRow = new Uint8Array(HEAD_WIDTH_BYTES);
-    for (let c = 0; c < CONTENT_WIDTH_DOTS; c++) {
-      const headCol = c + LEFT_OFFSET_DOTS;
-      if (headCol >= HEAD_WIDTH_DOTS) break;
-      if (rows[r][c]) headRow[Math.floor(headCol / 8)] |= 0x80 >> (headCol % 8);
+    for (let c = 0; c < HEAD_WIDTH_DOTS; c++) {
+      if (rows[r][c]) headRow[Math.floor(c / 8)] |= 0x80 >> (c % 8);
     }
     buf.push(...headRow);
   }
-
-  const remaining = PRINT_HEIGHT_DOTS - TOP_MARGIN_ROWS - contentRows;
-  for (let i = 0; i < remaining; i++) buf.push(...blankRow);
-
+  for (let i = 0; i < RASTER_FEED_BOTTOM; i++) buf.push(...blank);
   return new Uint8Array(buf);
 }
 
@@ -273,41 +412,60 @@ function buildPrintJob(rows: boolean[][]): Uint8Array {
   return out;
 }
 
-// ─── BLE write with per-chunk ACK ─────────────────────────────────────────────
+// ─── BLE write with sliding-window ACK ───────────────────────────────────────
+// Send up to WINDOW chunks ahead of acknowledgements so the printer buffer stays
+// full and the paper motor never stalls waiting for data.
+
+const WINDOW = 3; // chunks in-flight before pausing for ACKs
 
 async function sendJob(
   writeChar: BluetoothRemoteGATTCharacteristic,
   ackChar: BluetoothRemoteGATTCharacteristic,
   job: Uint8Array,
 ): Promise<void> {
-  let offset = 0;
-  while (offset < job.length) {
-    const chunk = job.slice(offset, offset + CHUNK_SIZE);
-    offset += CHUNK_SIZE;
+  let ackCount  = 0;
+  let sentCount = 0;
+  let offset    = 0;
 
-    // Wait for ACK before sending next chunk
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        ackChar.removeEventListener('characteristicvaluechanged', handler);
-        reject(new Error('Printer ACK timeout'));
-      }, 5000);
+  function onAck(event: Event) {
+    const v = (event.target as BluetoothRemoteGATTCharacteristic).value!;
+    if (v && v.byteLength === 2 && v.getUint8(0) === 0x01 && v.getUint8(1) === 0x01) ackCount++;
+  }
+  ackChar.addEventListener('characteristicvaluechanged', onAck);
 
-      function handler(event: Event) {
-        const value = (event.target as BluetoothRemoteGATTCharacteristic).value!;
-        if (value && value.byteLength === 2 && value.getUint8(0) === 0x01 && value.getUint8(1) === 0x01) {
-          clearTimeout(timeout);
-          ackChar.removeEventListener('characteristicvaluechanged', handler);
-          resolve();
-        }
+  try {
+    while (offset < job.length) {
+      // Pause if we are WINDOW chunks ahead of acknowledged chunks
+      if (sentCount - ackCount >= WINDOW) {
+        await new Promise<void>((resolve, reject) => {
+          const deadline = Date.now() + 5000;
+          function poll() {
+            if (ackCount >= sentCount - WINDOW + 1) { resolve(); return; }
+            if (Date.now() > deadline) { reject(new Error('Printer ACK timeout')); return; }
+            setTimeout(poll, 1);
+          }
+          poll();
+        });
       }
 
-      ackChar.addEventListener('characteristicvaluechanged', handler);
-      writeChar.writeValueWithoutResponse(chunk).catch((err) => {
-        clearTimeout(timeout);
-        ackChar.removeEventListener('characteristicvaluechanged', handler);
-        reject(err);
-      });
+      const chunk = job.slice(offset, Math.min(offset + CHUNK_SIZE, job.length));
+      offset += CHUNK_SIZE;
+      await writeChar.writeValueWithoutResponse(chunk);
+      sentCount++;
+    }
+
+    // Drain remaining ACKs
+    await new Promise<void>((resolve, reject) => {
+      const deadline = Date.now() + 5000;
+      function drain() {
+        if (ackCount >= sentCount) { resolve(); return; }
+        if (Date.now() > deadline) { reject(new Error('Printer ACK timeout')); return; }
+        setTimeout(drain, 1);
+      }
+      drain();
     });
+  } finally {
+    ackChar.removeEventListener('characteristicvaluechanged', onAck);
   }
 }
 

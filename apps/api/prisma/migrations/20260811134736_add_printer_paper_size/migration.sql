@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `SwapPrinter` ADD COLUMN `paperSize` VARCHAR(191) NOT NULL DEFAULT '40x30';

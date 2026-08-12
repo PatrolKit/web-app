@@ -126,14 +126,35 @@ export default function AppShell() {
       <main className="flex-1 p-8 overflow-auto">
         <Outlet context={{ orgId: activeOrgId, perms }} />
       </main>
+      <PrintPreviewModal />
     </div>
     </PrinterProvider>
   );
 }
 
+function PrintPreviewModal() {
+  const { pendingPreview, clearPendingPreview } = usePrinter();
+  if (!pendingPreview) return null;
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={clearPendingPreview}>
+      <div className="bg-surface-200 rounded-lg p-4 space-y-3 max-w-xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-white font-semibold text-sm">Print Preview</h2>
+          <button onClick={clearPendingPreview} className="text-gray-500 hover:text-white text-xs">✕ Close</button>
+        </div>
+        <div className="flex justify-center bg-gray-100 rounded p-3">
+          <img src={pendingPreview} alt="Label preview" style={{ imageRendering: 'pixelated' }} className="max-w-full" />
+        </div>
+        <p className="text-gray-500 text-xs text-center">Preview only — not sent to printer</p>
+      </div>
+    </div>
+  );
+}
+
 function PrinterStatusBar() {
-  const { preferredPrinter, isPreferredConnected, connectPreferred, disconnectPreferred, isSupported } = usePrinter();
+  const { preferredPrinter, isPreferredConnected, connectPreferred, disconnectPreferred, setPaperSize, previewMode, setPreviewMode, pendingPreview, clearPendingPreview, isSupported } = usePrinter();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [showPopover, setShowPopover] = useState(false);
 
   if (!isSupported || !preferredPrinter) return null;
 
@@ -142,25 +163,75 @@ function PrinterStatusBar() {
     try { await connectPreferred(); } catch { /* user cancelled */ } finally { setIsConnecting(false); }
   }
 
+  async function handlePaperSize(size: '40x30' | '50x30') {
+    setShowPopover(false);
+    await setPaperSize(size);
+  }
+
+  const PAPER_LABELS: Record<'40x30' | '50x30', string> = { '40x30': '40 × 30 mm', '50x30': '50 × 30 mm' };
+
   return (
-    <div className="mb-2 pb-2 border-b border-gray-800 flex items-center gap-1.5 text-xs">
-      {isConnecting
-        ? <span className="w-3 h-3 border border-gray-500 border-t-transparent rounded-full animate-spin shrink-0" />
-        : isPreferredConnected
-          ? <FontAwesomeIcon icon={faPrintDuo} className="shrink-0 text-green-500" />
-          : <FontAwesomeIcon icon={faPrintSlashDuo} className="shrink-0 text-red-600" />}
-      <button
-        onClick={isPreferredConnected || isConnecting ? undefined : handleConnect}
-        disabled={isConnecting}
-        className={`truncate text-left min-w-0 ${!isPreferredConnected && !isConnecting ? 'hover:text-gray-300 cursor-pointer' : 'cursor-default'} ${isPreferredConnected ? 'text-gray-400' : 'text-gray-500'} disabled:opacity-40`}
-        title={isPreferredConnected ? preferredPrinter.name + ' — connected' : preferredPrinter.name + ' — click to connect'}
-      >
-        {isConnecting ? 'Connecting…' : preferredPrinter.name}
-      </button>
-      {isPreferredConnected && (
-        <button onClick={disconnectPreferred} className="text-gray-700 hover:text-red-500 shrink-0 ml-auto" title="Disconnect printer">
-          <FontAwesomeIcon icon={faCircleXmarkDuo} />
+    <div className="relative mb-2 pb-2 border-b border-gray-800">
+      <div className="flex items-center gap-1.5 text-xs">
+        <button
+          onClick={() => setShowPopover((v) => !v)}
+          className="flex items-center gap-1.5 min-w-0 flex-1 hover:opacity-80"
+          title="Printer options"
+        >
+          {isConnecting
+            ? <span className="w-3 h-3 border border-gray-500 border-t-transparent rounded-full animate-spin shrink-0" />
+            : isPreferredConnected
+              ? <FontAwesomeIcon icon={faPrintDuo} className="shrink-0 text-green-500" />
+              : <FontAwesomeIcon icon={faPrintSlashDuo} className="shrink-0 text-red-600" />}
+          <span className={`truncate text-left min-w-0 ${isPreferredConnected ? 'text-gray-400' : 'text-gray-500'}`}>
+            {isConnecting ? 'Connecting…' : preferredPrinter.name}
+          </span>
         </button>
+      </div>
+
+      {showPopover && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowPopover(false)} />
+          <div className="absolute bottom-full left-0 right-0 mb-1 bg-surface-100 border border-gray-700 rounded shadow-lg z-50 overflow-hidden text-xs">
+            {isPreferredConnected ? (
+              <>
+                <p className="px-3 pt-2 pb-1 text-gray-500 text-xs">Paper size</p>
+                {(['40x30', '50x30'] as const).map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => handlePaperSize(size)}
+                    className={`w-full text-left px-3 py-1.5 hover:bg-surface-200 ${preferredPrinter.paperSize === size ? 'text-brand-400' : 'text-gray-300'}`}
+                  >
+                    {PAPER_LABELS[size]}{preferredPrinter.paperSize === size && ' ✓'}
+                  </button>
+                ))}
+                <div className="border-t border-gray-800 mt-1" />
+                <button
+                  onClick={() => { setPreviewMode(!previewMode); setShowPopover(false); }}
+                  className="w-full text-left px-3 py-2 text-gray-300 hover:bg-surface-200 flex items-center justify-between"
+                >
+                  <span>Preview mode</span>
+                  {previewMode && <span className="text-brand-400 text-xs">ON</span>}
+                </button>
+                <div className="border-t border-gray-800" />
+                <button
+                  onClick={() => { disconnectPreferred(); setShowPopover(false); }}
+                  className="w-full text-left px-3 py-2 text-red-500 hover:bg-surface-200"
+                >
+                  Disconnect
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => { handleConnect(); setShowPopover(false); }}
+                disabled={isConnecting}
+                className="w-full text-left px-3 py-2 text-gray-300 hover:bg-surface-200 disabled:opacity-40"
+              >
+                Reconnect
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

@@ -339,13 +339,17 @@ export const api = {
     // Printers
     listPrinters: (orgId: string) =>
       request<import('./api.types').SwapPrinterRecord[]>(`/orgs/${orgId}/ski-swap/printers`),
-    createPrinter: (orgId: string, data: { name: string; bluetoothName: string }) =>
+    createPrinter: (orgId: string, data: { name: string; bluetoothName: string; paperSize: string }) =>
       request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers`, {
         method: 'POST', body: JSON.stringify(data),
       }),
-    patchPrinter: (orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null }) =>
+    patchPrinter: (orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }) =>
       request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers/${printerId}`, {
         method: 'PATCH', body: JSON.stringify(data),
+      }),
+    patchPrinterPaperSize: (orgId: string, printerId: string, paperSize: string) =>
+      request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers/${printerId}/paper-size`, {
+        method: 'PATCH', body: JSON.stringify({ paperSize }),
       }),
     deletePrinter: (orgId: string, printerId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/printers/${printerId}`, { method: 'DELETE' }),

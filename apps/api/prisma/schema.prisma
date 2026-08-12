@@ -278,6 +278,11 @@ model SwapPrinter {
   orgId            String
   name             String
   bluetoothName    String
+  paperSize        String   @default("40x30") // "40x30" | "50x30"
+  marginTop        Int      @default(4)
+  marginBottom     Int      @default(4)
+  marginLeft       Int      @default(0)
+  marginRight      Int      @default(28)
   assignedSellerId String?
   createdBy        String?
   createdAt        DateTime @default(now())

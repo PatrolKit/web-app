@@ -250,33 +250,56 @@ export type SellerSwapSummary = z.infer<typeof SellerSwapSummarySchema>;
 
 // ─── Printers ─────────────────────────────────────────────────────────────────
 
+export const PAPER_SIZES = ['40x30', '50x30'] as const;
+export type PaperSize = typeof PAPER_SIZES[number];
+
 export const CreatePrinterSchema = z
   .object({
     name: z.string().min(1).max(100),
     bluetoothName: z.string().min(1).max(100),
+    paperSize: z.enum(PAPER_SIZES),
   })
   .strict();
+
+const MarginFields = {
+  marginTop:    z.number().int().min(0).max(160),
+  marginBottom: z.number().int().min(0).max(160),
+  marginLeft:   z.number().int().min(0).max(160),
+  marginRight:  z.number().int().min(0).max(160),
+};
 
 export const PatchPrinterSchema = z
   .object({
     name: z.string().min(1).max(100).optional(),
     bluetoothName: z.string().min(1).max(100).optional(),
     assignedSellerId: z.string().nullable().optional(),
+    paperSize: z.enum(PAPER_SIZES).optional(),
+    ...Object.fromEntries(Object.entries(MarginFields).map(([k, v]) => [k, v.optional()])),
   })
   .strict()
   .refine((v) => Object.values(v).some((x) => x !== undefined), {
     message: 'At least one field must be provided',
   });
 
+export const PatchPrinterPaperSizeSchema = z
+  .object({ paperSize: z.enum(PAPER_SIZES) })
+  .strict();
+
 export const SwapPrinterResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
   bluetoothName: z.string(),
+  paperSize: z.enum(PAPER_SIZES),
+  marginTop:    z.number().int(),
+  marginBottom: z.number().int(),
+  marginLeft:   z.number().int(),
+  marginRight:  z.number().int(),
   assignedSellerId: z.string().nullable(),
   assignedSellerName: z.string().nullable(),
 });
 
 export class CreatePrinterDto extends createZodDto(CreatePrinterSchema) {}
 export class PatchPrinterDto extends createZodDto(PatchPrinterSchema) {}
+export class PatchPrinterPaperSizeDto extends createZodDto(PatchPrinterPaperSizeSchema) {}
 export type SwapPrinterResponse = z.infer<typeof SwapPrinterResponseSchema>;
 

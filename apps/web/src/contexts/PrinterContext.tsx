@@ -1,14 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import {
   connectFromPool,
   connectPrinter,
+  DEFAULT_PRINTER_MARGINS,
   generateLabel,
   isWebBluetoothSupported,
+  previewLabel,
   reconnectPrinter,
 } from '../lib/printing/PhomemoPrinterService';
-import type { ConnectedM110 } from '../lib/printing/PhomemoPrinterService';
+import type { ConnectedM110, PaperSize, PrinterMargins } from '../lib/printing/PhomemoPrinterService';
 import type { ItemResponse, SwapPrinterRecord } from '../lib/api.types';
 
 interface PrinterContextValue {
@@ -17,11 +19,16 @@ interface PrinterContextValue {
   preferredPrinter: SwapPrinterRecord | null;
   isPreferredConnected: boolean;
   setPreferredPrinter(printer: SwapPrinterRecord | null): void;
+  setPaperSize(paperSize: PaperSize): Promise<void>;
   connectPreferred(): Promise<void>;
   disconnectPreferred(): void;
   connectPrinterById(printer: SwapPrinterRecord): Promise<ConnectedM110>;
   registerConnection(printer: SwapPrinterRecord, conn: ConnectedM110): void;
   printItem(item: ItemResponse): Promise<void>;
+  previewMode: boolean;
+  pendingPreview: string | null;
+  setPreviewMode(on: boolean): void;
+  clearPendingPreview(): void;
   isSupported: boolean;
 }
 
@@ -44,6 +51,19 @@ interface Props {
 export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }: Props) {
   const isSupported = isWebBluetoothSupported();
   const storageKey = `patrolkit:${userId}:${orgId}:preferredPrinter`;
+  const previewStorageKey = `patrolkit:preferredPreview`; // global flag, not per-org
+  const queryClient = useQueryClient();
+  const printerQueryKey = isSeller ? ['ski-swap/seller-printers', orgId] : ['ski-swap/printers', orgId];
+
+  const [previewMode, setPreviewModeState] = useState(() => localStorage.getItem(previewStorageKey) === '1');
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+
+  function setPreviewMode(on: boolean) {
+    setPreviewModeState(on);
+    if (on) localStorage.setItem(previewStorageKey, '1');
+    else localStorage.removeItem(previewStorageKey);
+  }
+  const clearPendingPreview = useCallback(() => setPendingPreview(null), []);
 
   const [connections, setConnections] = useState<Map<string, ConnectedM110>>(new Map());
   const connectionsRef = useRef<Map<string, ConnectedM110>>(new Map());
@@ -55,7 +75,7 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
   const printersRef = useRef<SwapPrinterRecord[]>([]);
 
   const { data: printers = [] } = useQuery({
-    queryKey: isSeller ? ['ski-swap/seller-printers', orgId] : ['ski-swap/printers', orgId],
+    queryKey: printerQueryKey,
     queryFn: () => (isSeller ? api.skiSwap.sellerListPrinters(orgId) : api.skiSwap.listPrinters(orgId)),
     enabled: !!orgId && isSupported && canPrint,
     staleTime: 60_000,
@@ -160,6 +180,14 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
     persistPreferred(printer?.id ?? null);
   }
 
+  const setPaperSize = useCallback(async (paperSize: PaperSize): Promise<void> => {
+    const prefId = preferredPrinterIdRef.current;
+    if (!prefId) return;
+    await api.skiSwap.patchPrinterPaperSize(orgId, prefId, paperSize);
+    queryClient.invalidateQueries({ queryKey: printerQueryKey });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, printerQueryKey.join('|')]);
+
   const printItem = useCallback(async (item: ItemResponse): Promise<void> => {
     const pool = printersRef.current;
     const pref = pool.find((p) => p.id === preferredPrinterIdRef.current);
@@ -181,7 +209,18 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
     }
 
     if (!conn) throw new Error('No printer connected');
-    const rows = generateLabel({ name: item.name, priceCents: item.priceCents, sku: item.sku });
+
+    const margins: PrinterMargins = pref
+      ? { marginTop: pref.marginTop, marginBottom: pref.marginBottom, marginLeft: pref.marginLeft, marginRight: pref.marginRight }
+      : DEFAULT_PRINTER_MARGINS;
+    const paperSize = (pref?.paperSize ?? '40x30') as PaperSize;
+
+    if (previewMode) {
+      setPendingPreview(previewLabel({ name: item.name, priceCents: item.priceCents, sku: item.sku }, paperSize, margins));
+      return;
+    }
+
+    const rows = generateLabel({ name: item.name, priceCents: item.priceCents, sku: item.sku }, paperSize, margins);
     await conn.print(rows);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectPrinterById]);
@@ -192,8 +231,10 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
   return (
     <PrinterContext.Provider value={{
       printers, connections, preferredPrinter, isPreferredConnected,
-      setPreferredPrinter, connectPreferred, disconnectPreferred,
-      connectPrinterById, registerConnection, printItem, isSupported,
+      setPreferredPrinter, setPaperSize, connectPreferred, disconnectPreferred,
+      connectPrinterById, registerConnection, printItem,
+      previewMode, pendingPreview, setPreviewMode, clearPendingPreview,
+      isSupported,
     }}>
       {children}
     </PrinterContext.Provider>

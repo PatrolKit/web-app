@@ -5,7 +5,8 @@ import QRCode from 'react-qr-code';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBluetooth, faPrint as faPrintDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../../lib/api';
-import { connectFromDevice, generatePrinterLabel, isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
+import { connectFromDevice, DEFAULT_PRINTER_MARGINS, generateCalibrationPattern, generatePrinterLabel, isWebBluetoothSupported, previewCalibrationPattern, previewPrinterLabel } from '../../lib/printing/PhomemoPrinterService';
+import type { PaperSize, PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
 import { usePrinter } from '../../contexts/PrinterContext';
 import type { DeviceItem, OrgResponse, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 
@@ -17,11 +18,12 @@ const tabClass = (active: boolean) =>
 export default function DevicesPage() {
   const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
   const qc = useQueryClient();
-  const { connections, connectPrinterById, registerConnection } = usePrinter();
+  const { connections, connectPrinterById, registerConnection, previewMode } = usePrinter();
   const canManagePrinters = perms.has('ski_swap:admin');
   const [activeTab, setActiveTab] = useState<Tab>('tablets');
   const [pendingTestPrint, setPendingTestPrint] = useState<SwapPrinterRecord | null>(null);
   const [isPrintingId, setIsPrintingId] = useState<string | null>(null);
+  const [printerPreview, setPrinterPreview] = useState<string | null>(null);
 
   const { data: org } = useQuery<OrgResponse>({
     queryKey: ['org', orgId],
@@ -89,6 +91,7 @@ export default function DevicesPage() {
   // ─── Printers state ───────────────────────────────────────────────────────
   const [printerName, setPrinterName] = useState('');
   const [printerBtName, setPrinterBtName] = useState('');
+  const [printerPaperSize, setPrinterPaperSize] = useState<'40x30' | '50x30' | ''>('');
   // Holds the BluetoothDevice from the scan so the first print needs no picker
   const scannedDeviceRef = useRef<BluetoothDevice | null>(null);
   const [showPrinterForm, setShowPrinterForm] = useState(false);
@@ -96,6 +99,7 @@ export default function DevicesPage() {
   const [editingPrinter, setEditingPrinter] = useState<SwapPrinterRecord | null>(null);
   const [editPrinterName, setEditPrinterName] = useState('');
   const [editPrinterAssignedSellerId, setEditPrinterAssignedSellerId] = useState<string>('');
+  const [editMargins, setEditMargins] = useState<PrinterMargins>(DEFAULT_PRINTER_MARGINS);
 
   const { data: printers = [] } = useQuery({
     queryKey: ['ski-swap/printers', orgId],
@@ -110,13 +114,14 @@ export default function DevicesPage() {
   });
 
   const createPrinterMutation = useMutation({
-    mutationFn: () => api.skiSwap.createPrinter(orgId, { name: printerName, bluetoothName: printerBtName }),
+    mutationFn: () => api.skiSwap.createPrinter(orgId, { name: printerName, bluetoothName: printerBtName, paperSize: printerPaperSize }),
     onSuccess: async (created) => {
       qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] });
       setShowPrinterForm(false);
       setProvisionError(null);
       setPrinterName('');
       setPrinterBtName('');
+      setPrinterPaperSize('');
       // Grab and clear the ref synchronously so handleTestPrint won't double-connect
       const heldDevice = scannedDeviceRef.current;
       scannedDeviceRef.current = null;
@@ -135,14 +140,29 @@ export default function DevicesPage() {
   async function handleTestPrint(printer: SwapPrinterRecord) {
     if (!isWebBluetoothSupported()) { alert('Printing requires Chrome or Edge.'); return; }
     setIsPrintingId(printer.id);
+    const ps = (printer.paperSize ?? '40x30') as PaperSize;
+    const margins: PrinterMargins = {
+      marginTop:    printer.marginTop    ?? DEFAULT_PRINTER_MARGINS.marginTop,
+      marginBottom: printer.marginBottom ?? DEFAULT_PRINTER_MARGINS.marginBottom,
+      marginLeft:   printer.marginLeft   ?? DEFAULT_PRINTER_MARGINS.marginLeft,
+      marginRight:  printer.marginRight  ?? DEFAULT_PRINTER_MARGINS.marginRight,
+    };
     try {
+      if (previewMode) {
+        // Show preview without connecting to the printer
+        // (preview is shown via pendingPreview in AppShell)
+        // We generate it here via a direct API call since DevicesPage is outside SkiSwap context
+        const dataUrl = previewPrinterLabel(printer.name, org?.name ?? orgId, ps, margins);
+        setPrinterPreview(dataUrl);
+        return;
+      }
       // Use the held device ref (no picker) if available, otherwise fall back to context
       const conn = scannedDeviceRef.current
         ? await connectFromDevice(scannedDeviceRef.current)
         : (connections.get(printer.id) ?? await connectPrinterById(printer));
       scannedDeviceRef.current = null;
       registerConnection(printer, conn);
-      const rows = generatePrinterLabel(printer.name, org?.name ?? orgId);
+      const rows = generatePrinterLabel(printer.name, org?.name ?? orgId, ps, margins);
       await conn.print(rows);
     } catch (err: unknown) {
       if ((err as { name?: string })?.name !== 'NotFoundError')
@@ -152,8 +172,30 @@ export default function DevicesPage() {
     }
   }
 
+  async function handleCalibrationPrint(printer: SwapPrinterRecord) {
+    if (!isWebBluetoothSupported()) { alert('Printing requires Chrome or Edge.'); return; }
+    setIsPrintingId(`cal-${printer.id}`);
+    const ps = (printer.paperSize ?? '40x30') as PaperSize;
+    const margins: PrinterMargins = {
+      marginTop:    printer.marginTop    ?? DEFAULT_PRINTER_MARGINS.marginTop,
+      marginBottom: printer.marginBottom ?? DEFAULT_PRINTER_MARGINS.marginBottom,
+      marginLeft:   printer.marginLeft   ?? DEFAULT_PRINTER_MARGINS.marginLeft,
+      marginRight:  printer.marginRight  ?? DEFAULT_PRINTER_MARGINS.marginRight,
+    };
+    try {
+      if (previewMode) { setPrinterPreview(previewCalibrationPattern(ps, margins)); return; }
+      const conn = connections.get(printer.id) ?? await connectPrinterById(printer);
+      await conn.print(generateCalibrationPattern(ps, margins));
+    } catch (err: unknown) {
+      if ((err as { name?: string })?.name !== 'NotFoundError')
+        alert(`Print failed: ${(err as Error)?.message ?? String(err)}`);
+    } finally {
+      setIsPrintingId(null);
+    }
+  }
+
   const patchPrinterMutation = useMutation({
-    mutationFn: (data: { name?: string; assignedSellerId?: string | null }) =>
+    mutationFn: (data: { name?: string; assignedSellerId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }) =>
       api.skiSwap.patchPrinter(orgId, editingPrinter!.id, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] }); setEditingPrinter(null); },
   });
@@ -330,7 +372,7 @@ export default function DevicesPage() {
         <div className="space-y-4">
           <div className="flex justify-end">
             <button
-              onClick={() => { setShowPrinterForm(true); setPrinterName(''); setPrinterBtName(''); setProvisionError(null); }}
+              onClick={() => { setShowPrinterForm(true); setPrinterName(''); setPrinterBtName(''); setPrinterPaperSize(''); setProvisionError(null); }}
               className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
             >
               + Provision Printer
@@ -369,12 +411,22 @@ export default function DevicesPage() {
                   <FontAwesomeIcon icon={faBluetooth} /> Scan
                 </button>
               </div>
+              <select
+                value={printerPaperSize}
+                onChange={(e) => setPrinterPaperSize(e.target.value as '40x30' | '50x30')}
+                required
+                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+              >
+                <option value="" disabled>Paper size (required)</option>
+                <option value="40x30">40 × 30 mm</option>
+                <option value="50x30">50 × 30 mm</option>
+              </select>
               {provisionError && <p className="text-red-400 text-xs">{provisionError}</p>}
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={() => { setShowPrinterForm(false); scannedDeviceRef.current = null; setProvisionError(null); }} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
                 <button
                   type="submit"
-                  disabled={createPrinterMutation.isPending || !printerName || !printerBtName}
+                  disabled={createPrinterMutation.isPending || !printerName || !printerBtName || !printerPaperSize}
                   className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm disabled:opacity-40"
                 >
                   {createPrinterMutation.isPending ? 'Provisioning…' : 'Provision'}
@@ -389,7 +441,7 @@ export default function DevicesPage() {
                 className="bg-surface-200 rounded-lg p-6 w-full max-w-sm space-y-4"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  patchPrinterMutation.mutate({ name: editPrinterName, assignedSellerId: editPrinterAssignedSellerId || null });
+                  patchPrinterMutation.mutate({ name: editPrinterName, assignedSellerId: editPrinterAssignedSellerId || null, ...editMargins });
                 }}
               >
                 <h2 className="text-white font-semibold">Edit Printer</h2>
@@ -412,6 +464,33 @@ export default function DevicesPage() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Paper size</label>
+                  <select
+                    value={editingPrinter.paperSize}
+                    onChange={(e) => patchPrinterMutation.mutate({ paperSize: e.target.value as '40x30' | '50x30' })}
+                    className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+                  >
+                    <option value="40x30">40 × 30 mm</option>
+                    <option value="50x30">50 × 30 mm</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Margins (dots)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['marginTop', 'marginBottom', 'marginLeft', 'marginRight'] as const).map((key) => (
+                      <div key={key}>
+                        <label className="text-xs text-gray-600 block mb-0.5 capitalize">{key.replace('margin', '')}</label>
+                        <input
+                          type="number" min={0} max={160}
+                          value={editMargins[key]}
+                          onChange={(e) => setEditMargins((m) => ({ ...m, [key]: parseInt(e.target.value, 10) || 0 }))}
+                          className="w-full bg-surface-100 border border-gray-700 rounded px-2 py-1 text-sm text-white"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex gap-2 pt-2">
                   <button type="submit" disabled={patchPrinterMutation.isPending} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded py-1.5 disabled:opacity-40">Save</button>
                   <button type="button" onClick={() => setEditingPrinter(null)} className="flex-1 bg-surface-100 text-gray-300 text-sm rounded py-1.5">Cancel</button>
@@ -427,20 +506,35 @@ export default function DevicesPage() {
                   <p className="text-white font-medium">{p.name}</p>
                   <p className="text-xs text-gray-500 font-mono">{p.bluetoothName}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {p.assignedSellerName ? `Assigned to: ${p.assignedSellerName}` : 'Org pool'}
+                    {p.assignedSellerName ? `Assigned to: ${p.assignedSellerName}` : 'Org pool'}{' · '}{p.paperSize === '40x30' ? '40×30 mm' : '50×30 mm'}
+                  </p>
+                  <p className="text-xs text-gray-600 font-mono mt-0.5">
+                    T:{p.marginTop} B:{p.marginBottom} L:{p.marginLeft} R:{p.marginRight}
                   </p>
                 </div>
                 <div className="flex gap-2 items-center">
                   <button
+                    onClick={() => handleCalibrationPrint(p)}
+                    disabled={!!isPrintingId}
+                    className="text-xs text-gray-500 hover:text-white flex items-center gap-1 disabled:opacity-40"
+                    title="Print calibration pattern"
+                  >
+                    Calibrate
+                  </button>
+                  <button
                     onClick={() => handleTestPrint(p)}
-                    disabled={isPrintingId === p.id}
+                    disabled={!!isPrintingId}
                     className="text-xs text-gray-400 hover:text-white flex items-center gap-1 disabled:opacity-40"
                     title="Print identification label"
                   >
                     <FontAwesomeIcon icon={faPrintDuo} />{isPrintingId === p.id ? ' Printing…' : ' Print label'}
                   </button>
                   <button
-                    onClick={() => { setEditingPrinter(p); setEditPrinterName(p.name); setEditPrinterAssignedSellerId(p.assignedSellerId ?? ''); }}
+                    onClick={() => {
+                      setEditingPrinter(p); setEditPrinterName(p.name);
+                      setEditPrinterAssignedSellerId(p.assignedSellerId ?? '');
+                      setEditMargins({ marginTop: p.marginTop, marginBottom: p.marginBottom, marginLeft: p.marginLeft, marginRight: p.marginRight });
+                    }}
                     className="text-xs text-brand-500 hover:underline"
                   >Edit</button>
                   <button
@@ -480,6 +574,21 @@ export default function DevicesPage() {
                 Skip
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Print preview modal for test prints */}
+      {printerPreview && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setPrinterPreview(null)}>
+          <div className="bg-surface-200 rounded-lg p-4 space-y-3 max-w-xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-white font-semibold text-sm">Print Preview</h2>
+              <button onClick={() => setPrinterPreview(null)} className="text-gray-500 hover:text-white text-xs">✕ Close</button>
+            </div>
+            <div className="flex justify-center bg-gray-100 rounded p-3">
+              <img src={printerPreview} alt="Label preview" style={{ imageRendering: 'pixelated' }} className="max-w-full" />
+            </div>
+            <p className="text-gray-500 text-xs text-center">Preview only — not sent to printer</p>
           </div>
         </div>
       )}

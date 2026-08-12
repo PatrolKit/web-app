@@ -11,7 +11,7 @@ import { RequireModule } from '../common/decorators/require-module.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { PrinterService } from './printer.service';
-import { CreatePrinterDto, PatchPrinterDto } from '../contracts/ski-swap.contracts';
+import { CreatePrinterDto, PatchPrinterDto, PatchPrinterPaperSizeDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/printers')
 @UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
@@ -50,5 +50,16 @@ export class PrinterController {
   @RequirePermissions('ski_swap:admin')
   async remove(@Param('orgId') orgId: string, @Param('printerId') printerId: string) {
     await this.printerService.remove(orgId, printerId);
+  }
+
+  @Patch(':printerId/paper-size')
+  // Permission check is in the service — accepts ski_swap:manage or business_seller
+  patchPaperSize(
+    @Param('orgId') orgId: string,
+    @Param('printerId') printerId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: PatchPrinterPaperSizeDto,
+  ) {
+    return this.printerService.patchPaperSize(orgId, printerId, body.paperSize, user.userId);
   }
 }
