@@ -1,7 +1,0 @@
-{
-  "app": "npx ts-node bin/patrolkit.ts",
-  "context": {
-    "@aws-cdk/aws-apigateway:usagePlanKeyOrderInsensitiveId": true,
-    "@aws-cdk/core:stackRelativeExports": true
-  }
-}

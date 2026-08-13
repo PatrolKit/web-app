@@ -13,11 +13,6 @@
     "test": "pnpm -r test",
     "db:migrate": "pnpm --filter api db:migrate",
     "db:seed": "pnpm --filter api db:seed",
-    "infra:deploy": "pnpm --filter infra cdk deploy --all --require-approval never",
-    "infra:synth": "pnpm --filter infra cdk synth",
-    "infra:diff": "pnpm --filter infra cdk diff",
-    "image:build": "docker build --platform linux/amd64 -t patrolkit:latest -f apps/api/Dockerfile .",
-    "image:push": "node scripts/image-push.mjs",
     "release": "node scripts/release.mjs"
   },
   "devDependencies": {

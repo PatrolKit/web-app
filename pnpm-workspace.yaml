@@ -1,6 +1,5 @@
 packages:
   - 'apps/*'
-  - 'infra'
 
 onlyBuiltDependencies:
   - '@nestjs/core'
