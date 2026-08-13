@@ -1,27 +1,42 @@
 #!/usr/bin/env node
-// Trigger an App Runner deployment with the latest ECR image.
+// Deploy PatrolKit to EC2 via rsync + SSH.
 // Usage: node scripts/release.mjs
-// Prerequisites: AWS CLI logged in, App Runner service deployed.
+// Prerequisites: SSH key at ~/.ssh/patrolkit.pem, server set up per RESET_PLAN.md
 
 import { execSync } from 'child_process';
 
-const SERVICE_NAME = 'patrolkit';
-const REGION = 'us-east-2';
+const SERVER = 'ec2-user@patrolkit.io';
+const KEY = `${process.env.HOME}/.ssh/patrolkit.pem`;
+const SSH = `ssh -i ${KEY} -o StrictHostKeyChecking=no`;
 
-console.log(`Starting App Runner deployment for service: ${SERVICE_NAME}`);
+const run = (cmd, opts = {}) => execSync(cmd, { stdio: 'inherit', ...opts });
+const ssh = (cmd) => run(`${SSH} ${SERVER} "${cmd}"`);
 
-const result = execSync(
-  `aws apprunner list-services --region ${REGION} --query "ServiceSummaryList[?ServiceName=='${SERVICE_NAME}'].ServiceArn" --output text`,
-).toString().trim();
+// 1. Build API and web
+console.log('Building...');
+run('pnpm --filter api build');
+run('pnpm --filter web build');
 
-if (!result) {
-  console.error('Service not found. Run `pnpm infra:deploy` first.');
-  process.exit(1);
-}
+// 2. Sync compiled output to server
+console.log('Syncing to server...');
+run(`rsync -az --delete -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
+  apps/api/dist/ \
+  ${SERVER}:/home/ec2-user/patrolkit/dist/`);
 
-execSync(
-  `aws apprunner start-deployment --service-arn ${result} --region ${REGION}`,
-  { stdio: 'inherit' },
-);
+// 3. Sync prisma migrations and web SPA
+run(`rsync -az -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
+  apps/api/prisma/ \
+  ${SERVER}:/home/ec2-user/patrolkit/prisma/`);
+run(`rsync -az --delete -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
+  apps/web/dist/ \
+  ${SERVER}:/home/ec2-user/patrolkit/web/dist/`);
 
-console.log('\nDeployment triggered. Monitor at: https://us-east-2.console.aws.amazon.com/apprunner');
+// 4. Run any pending migrations
+console.log('Running migrations...');
+ssh('cd /home/ec2-user/patrolkit && node_modules/.bin/prisma migrate deploy');
+
+// 5. Restart app — cd into app dir so process.cwd() resolves web/dist correctly
+console.log('Restarting app...');
+ssh('pm2 delete patrolkit 2>/dev/null; set -a && source /home/ec2-user/patrolkit/.env && set +a && cd /home/ec2-user/patrolkit && pm2 start dist/src/main.js --name patrolkit && pm2 save');
+
+console.log('\nDone. https://patrolkit.io/healthz');

@@ -34,7 +34,7 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-white mb-4">Check your email</h1>
           <p className="text-gray-400">
             If <span className="text-white">{email}</span> has an account, a sign-in link is on its
-            way. Check your inbox (and Mailpit on port 8025 in local dev).
+            way. Check your inbox!
           </p>
         </div>
       </div>

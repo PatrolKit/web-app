@@ -40,7 +40,7 @@ import appConfig from './config/app.config';
       ? [ServeStaticModule.forRoot({
           rootPath: join(process.cwd(), 'web', 'dist'),
           exclude: ['/api/v1/(.*)', '/healthz', '/readyz'],
-          serveStaticOptions: { index: false },
+          serveStaticOptions: { index: 'landing.html' },
         })]
       : []),
     LoggerModule.forRoot({

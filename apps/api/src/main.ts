@@ -10,8 +10,24 @@ async function bootstrap() {
 
   app.useLogger(app.get(Logger));
 
-  // Security headers — no CORS for browser (same origin)
-  app.use(helmet());
+  // Allow landing page CDN resources (Tailwind CDN + Google Fonts)
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.tailwindcss.com'],
+        scriptSrcAttr: ["'unsafe-inline'", "'unsafe-hashes'"],
+        styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+        fontSrc: ["'self'", 'https:', 'data:'],
+        imgSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    },
+  }));
   app.use(cookieParser());
 
   // Body size limits (CSV uploads handled separately by multer)
