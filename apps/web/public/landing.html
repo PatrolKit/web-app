@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PatrolKit — Patrol management for ski patrol organizations</title>
-  <meta name="description" content="PatrolKit streamlines ski patrol administration — duty scheduling, incident reporting, training records, and equipment management in one place." />
+  <meta name="description" content="PatrolKit streamlines ski patrol administration — duty scheduling, time tracking, ski swap management, and patrol-wide engagement tools in one place." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
@@ -374,7 +374,7 @@
 
     <!-- Subheadline -->
     <p class="fade-hidden stagger-2 text-surface-300 leading-relaxed max-w-2xl mx-auto mb-10" style="font-size: clamp(1rem, 2vw, 1.2rem);">
-      PatrolKit brings duty scheduling, incident reporting, training records, and equipment management together in one place — built for the people who keep the mountain safe.
+      PatrolKit brings duty scheduling, time tracking, ski swap management, and patrol-wide communications together in one place — built for the people who keep the mountain safe.
     </p>
 
     <!-- CTA -->
@@ -448,65 +448,51 @@
         </p>
       </div>
 
-      <!-- Card 2: Incident Reporting -->
+      <!-- Card 2: Time Tracking -->
       <div class="feature-card fade-hidden stagger-2 p-6 rounded-xl border border-surface-700 bg-surface-800">
         <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/>
-            <line x1="16" y1="17" x2="8" y2="17"/>
-            <polyline points="10 9 9 9 8 9"/>
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
           </svg>
         </div>
-        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Incident Reporting</h3>
+        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Time Tracking</h3>
         <p class="text-surface-400 text-sm leading-relaxed">
-          Log and track incidents with structured reports. Search, filter, and close reports from any device — no paper required.
+          Track patrol hours for every member across the season. Generate reports on demand and give directors a live view of current hill staffing.
         </p>
       </div>
 
-      <!-- Card 3: Training & Certs -->
+      <!-- Card 3: Ski Swap -->
       <div class="feature-card fade-hidden stagger-3 p-6 rounded-xl border border-surface-700 bg-surface-800">
         <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="8" r="6"/>
-            <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>
+            <polyline points="17 1 21 5 17 9"/>
+            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+            <polyline points="7 23 3 19 7 15"/>
+            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
           </svg>
         </div>
-        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Training &amp; Certifications</h3>
+        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Ski Swap</h3>
         <p class="text-surface-400 text-sm leading-relaxed">
-          Track OEC, CPR, avalanche certs and more. Get proactive alerts before certifications expire so no one gets caught off guard.
+          Organize and run your annual Ski Swap. Manage item check-in, keep customers updated in real time, and automate seller payouts when the event wraps up.
         </p>
       </div>
 
-      <!-- Card 4: Equipment -->
+      <!-- Card 4: Engagement -->
       <div class="feature-card fade-hidden stagger-4 p-6 rounded-xl border border-surface-700 bg-surface-800">
         <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.63 3.36 2 2 0 0 1 3.6 1.18h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6.06 6.06l1.38-.87a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
           </svg>
         </div>
-        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Equipment Management</h3>
+        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Engagement</h3>
         <p class="text-surface-400 text-sm leading-relaxed">
-          Catalog your patrol gear, track condition, and log inspections. Always know what needs attention before it becomes a problem.
+          Send patrol-wide email or SMS blasts in seconds. Push informational slideshows and real-time announcements directly to smart TVs in your patrol room.
         </p>
       </div>
 
-      <!-- Card 5: Announcements -->
+      <!-- Card 5: Member Roster -->
       <div class="feature-card fade-hidden stagger-5 p-6 rounded-xl border border-surface-700 bg-surface-800">
-        <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-          </svg>
-        </div>
-        <h3 class="font-display font-600 text-white mb-2 text-lg" style="font-weight: 600;">Announcements</h3>
-        <p class="text-surface-400 text-sm leading-relaxed">
-          Keep your patrol informed with pinned announcements. No more lost group texts or important updates buried in email threads.
-        </p>
-      </div>
-
-      <!-- Card 6: Member Roster -->
-      <div class="feature-card fade-hidden stagger-6 p-6 rounded-xl border border-surface-700 bg-surface-800">
         <div class="w-11 h-11 rounded-lg flex items-center justify-center mb-4" style="background: rgba(220,38,38,0.12);">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
@@ -567,7 +553,7 @@
           <div class="step-num font-display mb-4 leading-none" style="font-size: 5rem; font-weight: 800; line-height: 1;">02</div>
           <h3 class="font-display font-600 text-white text-xl mb-3" style="font-weight: 600;">Get organized</h3>
           <p class="text-surface-400 text-sm leading-relaxed">
-            Access your patrol's schedule, report incidents, and manage your certifications from any device — phone, tablet, or desktop.
+            Access your patrol's schedule, log your hours, and stay on top of patrol operations from any device — phone, tablet, or desktop.
           </p>
         </div>
         <div class="hidden md:block absolute top-10 right-0 w-12 h-px" style="background: linear-gradient(90deg, #3d3d3d, transparent);"></div>
@@ -579,7 +565,7 @@
           <div class="step-num font-display mb-4 leading-none" style="font-size: 5rem; font-weight: 800; line-height: 1;">03</div>
           <h3 class="font-display font-600 text-white text-xl mb-3" style="font-weight: 600;">Stay connected</h3>
           <p class="text-surface-400 text-sm leading-relaxed">
-            Announcements, shift reminders, and expiring cert alerts keep your whole patrol on the same page all season long.
+            Shift reminders, patrol-wide notifications, and real-time smart TV announcements keep your whole patrol on the same page all season long.
           </p>
         </div>
       </div>
@@ -750,132 +736,124 @@
       <div class="flex-1 fade-hidden">
         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium mb-5" style="background: rgba(220,38,38,0.12); color: #ef4444; border: 1px solid rgba(220,38,38,0.2);">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="8" r="6"/>
-            <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
           </svg>
-          Training &amp; Certifications
+          Time Tracking
         </div>
         <h2 class="font-display font-700 text-white mb-4" style="font-size: clamp(1.5rem, 3.5vw, 2.25rem); font-weight: 700; letter-spacing: -0.02em;">
-          Never miss a recert
+          Every hour accounted for
         </h2>
         <p class="text-surface-400 leading-relaxed mb-6">
-          Track every patroller's OEC, CPR, avalanche training, and other certifications in one place. PatrolKit alerts you well before anything expires so you're never scrambling at the last minute.
+          Automatically log patrol hours as members sign up for and complete shifts. Generate detailed season-end reports for the board, and give directors a live dashboard showing exactly who's on the hill right now.
         </p>
         <ul class="space-y-3">
           <li class="flex items-start gap-3 text-sm text-surface-300">
             <svg class="mt-0.5 flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
-            Track OEC, CPR, WFR, avalanche and custom certs
+            Hours logged automatically from shift sign-ups
           </li>
           <li class="flex items-start gap-3 text-sm text-surface-300">
             <svg class="mt-0.5 flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
-            Expiry alerts sent to patrollers and directors
+            Export per-member hour reports any time
           </li>
           <li class="flex items-start gap-3 text-sm text-surface-300">
             <svg class="mt-0.5 flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
-            Full certification history for every member
+            Live staffing view so directors always know who's on hill
           </li>
         </ul>
       </div>
 
-      <!-- Certs SVG Mockup -->
+      <!-- Time Tracking SVG Mockup -->
       <div class="flex-1 w-full fade-hidden stagger-2">
         <div class="rounded-2xl overflow-hidden border border-surface-600 shadow-2xl" style="background: #141414;">
           <svg viewBox="0 0 480 300" xmlns="http://www.w3.org/2000/svg" class="w-full">
             <rect width="480" height="300" fill="#141414"/>
             <!-- Header -->
             <rect width="480" height="44" fill="#1e1e1e"/>
-            <text x="16" y="27" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#f5f5f5">My Certifications</text>
-            <!-- Status pill -->
-            <rect x="388" y="12" width="76" height="22" rx="11" fill="rgba(220,38,38,0.15)" stroke="rgba(220,38,38,0.3)" stroke-width="0.5"/>
-            <circle cx="401" cy="23" r="3" fill="#dc2626"/>
-            <text x="408" y="27" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" font-weight="500">1 Expiring</text>
+            <text x="16" y="27" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#f5f5f5">Patrol Hours</text>
+            <!-- Season label -->
+            <rect x="358" y="12" width="106" height="22" rx="6" fill="#2d2d2d"/>
+            <text x="411" y="27" font-family="Inter, sans-serif" font-size="9" fill="#a3a3a3" text-anchor="middle">Season 2025–26</text>
 
-            <!-- Cert card 1: OEC - Good -->
-            <rect x="12" y="56" width="216" height="72" rx="8" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
-            <rect x="12" y="56" width="4" height="72" rx="2" fill="#22c55e"/>
-            <text x="28" y="76" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#f5f5f5">OEC — Outdoor Emergency Care</text>
-            <text x="28" y="91" font-family="Inter, sans-serif" font-size="9" fill="#525252">National Ski Patrol  ·  Cert #4892-A</text>
-            <!-- Progress -->
-            <rect x="28" y="100" width="175" height="4" rx="2" fill="#2d2d2d"/>
-            <rect x="28" y="100" width="158" height="4" rx="2" fill="#22c55e"/>
-            <text x="28" y="118" font-family="Inter, sans-serif" font-size="8" fill="#22c55e">Valid</text>
-            <text x="160" y="118" font-family="Inter, sans-serif" font-size="8" fill="#525252">Expires Mar 2027</text>
+            <!-- On hill now panel -->
+            <rect x="12" y="56" width="220" height="68" rx="8" fill="#1e1e1e" stroke="rgba(220,38,38,0.3)" stroke-width="0.8"/>
+            <circle cx="28" cy="72" r="4" fill="#dc2626"/>
+            <circle cx="28" cy="72" r="4" fill="#dc2626" opacity="0.4">
+              <animate attributeName="r" values="4;8;4" dur="1.5s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0.4;0;0.4" dur="1.5s" repeatCount="indefinite"/>
+            </circle>
+            <text x="38" y="76" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#ef4444">ON HILL NOW</text>
+            <text x="16" y="98" font-family="Inter, sans-serif" font-size="28" font-weight="700" fill="white">7</text>
+            <text x="46" y="98" font-family="Inter, sans-serif" font-size="10" fill="#737373">patrollers</text>
+            <text x="16" y="113" font-family="Inter, sans-serif" font-size="8" fill="#525252">AM Patrol: 4  ·  PM Patrol: 2  ·  Sweep: 1</text>
 
-            <!-- Cert card 2: CPR - Expiring soon -->
-            <rect x="12" y="138" width="216" height="72" rx="8" fill="#1e1e1e" stroke="rgba(220,38,38,0.3)" stroke-width="0.8"/>
-            <rect x="12" y="138" width="4" height="72" rx="2" fill="#dc2626"/>
-            <text x="28" y="158" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#f5f5f5">CPR / AED Certification</text>
-            <text x="28" y="173" font-family="Inter, sans-serif" font-size="9" fill="#525252">American Heart Association</text>
-            <!-- Progress -->
-            <rect x="28" y="182" width="175" height="4" rx="2" fill="#2d2d2d"/>
-            <rect x="28" y="182" width="26" height="4" rx="2" fill="#dc2626"/>
-            <text x="28" y="200" font-family="Inter, sans-serif" font-size="8" fill="#ef4444">⚠ Expires in 23 days</text>
+            <!-- Season stats -->
+            <rect x="244" y="56" width="224" height="68" rx="8" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
+            <text x="260" y="76" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#737373">SEASON TOTALS</text>
+            <text x="260" y="98" font-family="Inter, sans-serif" font-size="22" font-weight="700" fill="white">1,284</text>
+            <text x="316" y="98" font-family="Inter, sans-serif" font-size="10" fill="#737373">hrs logged</text>
+            <text x="260" y="113" font-family="Inter, sans-serif" font-size="8" fill="#525252">24 members  ·  Avg 53.5 hrs/member</text>
 
-            <!-- Cert card 3: Avy 1 - Good -->
-            <rect x="12" y="220" width="216" height="68" rx="8" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
-            <rect x="12" y="220" width="4" height="68" rx="2" fill="#22c55e"/>
-            <text x="28" y="240" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#f5f5f5">Avalanche Level 1</text>
-            <text x="28" y="255" font-family="Inter, sans-serif" font-size="9" fill="#525252">AIARE  ·  Recert every 3 years</text>
-            <rect x="28" y="264" width="175" height="4" rx="2" fill="#2d2d2d"/>
-            <rect x="28" y="264" width="130" height="4" rx="2" fill="#22c55e"/>
-            <text x="28" y="280" font-family="Inter, sans-serif" font-size="8" fill="#22c55e">Valid  ·  Expires Jan 2026</text>
+            <!-- Column headers -->
+            <text x="16" y="146" font-family="Inter, sans-serif" font-size="8" font-weight="600" fill="#525252">MEMBER</text>
+            <text x="250" y="146" font-family="Inter, sans-serif" font-size="8" font-weight="600" fill="#525252" text-anchor="middle">SEASON HRS</text>
+            <text x="340" y="146" font-family="Inter, sans-serif" font-size="8" font-weight="600" fill="#525252" text-anchor="middle">THIS MONTH</text>
+            <text x="440" y="146" font-family="Inter, sans-serif" font-size="8" font-weight="600" fill="#525252" text-anchor="end">LAST DUTY</text>
+            <line x1="12" y1="150" x2="468" y2="150" stroke="#2d2d2d" stroke-width="0.5"/>
 
-            <!-- Right panel: Patrol cert summary -->
-            <rect x="240" y="56" width="228" height="72" rx="8" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
-            <text x="256" y="76" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="#a3a3a3" text-transform="uppercase" letter-spacing="0.5">Patrol Overview</text>
+            <!-- Member row 1 -->
+            <circle cx="24" cy="164" r="8" fill="#2d2d2d"/>
+            <text x="24" y="168" font-family="Inter, sans-serif" font-size="8" fill="#a3a3a3" text-anchor="middle">JS</text>
+            <text x="40" y="167" font-family="Inter, sans-serif" font-size="10" fill="#f5f5f5">J. Smith</text>
+            <text x="250" y="167" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="white" text-anchor="middle">72</text>
+            <text x="340" y="167" font-family="Inter, sans-serif" font-size="10" fill="#a3a3a3" text-anchor="middle">14</text>
+            <text x="440" y="167" font-family="Inter, sans-serif" font-size="9" fill="#525252" text-anchor="end">Today</text>
+            <line x1="12" y1="174" x2="468" y2="174" stroke="#2d2d2d" stroke-width="0.5"/>
 
-            <!-- Mini stat grid -->
-            <text x="256" y="96" font-family="Inter, sans-serif" font-size="22" font-weight="700" fill="white">24</text>
-            <text x="256" y="109" font-family="Inter, sans-serif" font-size="8" fill="#525252">Members total</text>
+            <!-- Member row 2 -->
+            <circle cx="24" cy="188" r="8" fill="#2d2d2d"/>
+            <text x="24" y="192" font-family="Inter, sans-serif" font-size="8" fill="#a3a3a3" text-anchor="middle">ML</text>
+            <text x="40" y="191" font-family="Inter, sans-serif" font-size="10" fill="#f5f5f5">M. Lee</text>
+            <text x="250" y="191" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="white" text-anchor="middle">68</text>
+            <text x="340" y="191" font-family="Inter, sans-serif" font-size="10" fill="#a3a3a3" text-anchor="middle">11</text>
+            <text x="440" y="191" font-family="Inter, sans-serif" font-size="9" fill="#525252" text-anchor="end">Today</text>
+            <line x1="12" y1="198" x2="468" y2="198" stroke="#2d2d2d" stroke-width="0.5"/>
 
-            <text x="336" y="96" font-family="Inter, sans-serif" font-size="22" font-weight="700" fill="#22c55e">21</text>
-            <text x="336" y="109" font-family="Inter, sans-serif" font-size="8" fill="#525252">Fully certified</text>
+            <!-- Member row 3 -->
+            <circle cx="24" cy="212" r="8" fill="#2d2d2d"/>
+            <text x="24" y="216" font-family="Inter, sans-serif" font-size="8" fill="#a3a3a3" text-anchor="middle">KP</text>
+            <text x="40" y="215" font-family="Inter, sans-serif" font-size="10" fill="#f5f5f5">K. Park</text>
+            <text x="250" y="215" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="white" text-anchor="middle">61</text>
+            <text x="340" y="215" font-family="Inter, sans-serif" font-size="10" fill="#a3a3a3" text-anchor="middle">9</text>
+            <text x="440" y="215" font-family="Inter, sans-serif" font-size="9" fill="#525252" text-anchor="end">Jan 11</text>
+            <line x1="12" y1="222" x2="468" y2="222" stroke="#2d2d2d" stroke-width="0.5"/>
 
-            <text x="404" y="96" font-family="Inter, sans-serif" font-size="22" font-weight="700" fill="#dc2626">3</text>
-            <text x="404" y="109" font-family="Inter, sans-serif" font-size="8" fill="#525252">Need action</text>
+            <!-- Member row 4 -->
+            <circle cx="24" cy="236" r="8" fill="#2d2d2d"/>
+            <text x="24" y="240" font-family="Inter, sans-serif" font-size="8" fill="#a3a3a3" text-anchor="middle">AJ</text>
+            <text x="40" y="239" font-family="Inter, sans-serif" font-size="10" fill="#f5f5f5">A. Jones</text>
+            <text x="250" y="239" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="#ef4444" text-anchor="middle">18</text>
+            <text x="340" y="239" font-family="Inter, sans-serif" font-size="10" fill="#a3a3a3" text-anchor="middle">4</text>
+            <text x="440" y="239" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="end">Jan 5 ⚠</text>
+            <line x1="12" y1="246" x2="468" y2="246" stroke="#2d2d2d" stroke-width="0.5"/>
 
-            <!-- Upcoming alerts list -->
-            <rect x="240" y="138" width="228" height="150" rx="8" fill="#1e1e1e" stroke="#2d2d2d" stroke-width="0.5"/>
-            <text x="256" y="156" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#737373">UPCOMING EXPIRATIONS</text>
+            <!-- Member row 5 -->
+            <circle cx="24" cy="260" r="8" fill="#2d2d2d"/>
+            <text x="24" y="264" font-family="Inter, sans-serif" font-size="8" fill="#a3a3a3" text-anchor="middle">RC</text>
+            <text x="40" y="263" font-family="Inter, sans-serif" font-size="10" fill="#f5f5f5">R. Chen</text>
+            <text x="250" y="263" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="white" text-anchor="middle">55</text>
+            <text x="340" y="263" font-family="Inter, sans-serif" font-size="10" fill="#a3a3a3" text-anchor="middle">12</text>
+            <text x="440" y="263" font-family="Inter, sans-serif" font-size="9" fill="#525252" text-anchor="end">Today</text>
 
-            <!-- Alert row 1 -->
-            <circle cx="256" cy="173" r="3" fill="#dc2626"/>
-            <text x="265" y="176" font-family="Inter, sans-serif" font-size="9" fill="#f5f5f5">J. Smith — CPR</text>
-            <text x="388" y="176" font-family="Inter, sans-serif" font-size="8" fill="#ef4444" text-anchor="end">23 days</text>
-
-            <line x1="256" y1="183" x2="456" y2="183" stroke="#2d2d2d" stroke-width="0.5"/>
-
-            <!-- Alert row 2 -->
-            <circle cx="256" cy="195" r="3" fill="#f59e0b"/>
-            <text x="265" y="198" font-family="Inter, sans-serif" font-size="9" fill="#f5f5f5">M. Lee — OEC recert</text>
-            <text x="388" y="198" font-family="Inter, sans-serif" font-size="8" fill="#f59e0b" text-anchor="end">45 days</text>
-
-            <line x1="256" y1="207" x2="456" y2="207" stroke="#2d2d2d" stroke-width="0.5"/>
-
-            <!-- Alert row 3 -->
-            <circle cx="256" cy="219" r="3" fill="#f59e0b"/>
-            <text x="265" y="222" font-family="Inter, sans-serif" font-size="9" fill="#f5f5f5">K. Park — Avy 1</text>
-            <text x="388" y="222" font-family="Inter, sans-serif" font-size="8" fill="#f59e0b" text-anchor="end">62 days</text>
-
-            <line x1="256" y1="231" x2="456" y2="231" stroke="#2d2d2d" stroke-width="0.5"/>
-
-            <!-- Alert row 4 -->
-            <circle cx="256" cy="243" r="3" fill="#22c55e"/>
-            <text x="265" y="246" font-family="Inter, sans-serif" font-size="9" fill="#737373">A. Jones — CPR</text>
-            <text x="388" y="246" font-family="Inter, sans-serif" font-size="8" fill="#525252" text-anchor="end">4 months</text>
-
-            <line x1="256" y1="255" x2="456" y2="255" stroke="#2d2d2d" stroke-width="0.5"/>
-
-            <!-- Alert row 5 -->
-            <circle cx="256" cy="267" r="3" fill="#22c55e"/>
-            <text x="265" y="270" font-family="Inter, sans-serif" font-size="9" fill="#737373">R. Chen — WFR</text>
-            <text x="388" y="270" font-family="Inter, sans-serif" font-size="8" fill="#525252" text-anchor="end">5 months</text>
+            <!-- Export button -->
+            <rect x="12" y="274" width="120" height="20" rx="5" fill="#2d2d2d"/>
+            <text x="72" y="288" font-family="Inter, sans-serif" font-size="9" fill="#a3a3a3" text-anchor="middle">Export Season Report →</text>
           </svg>
         </div>
       </div>
