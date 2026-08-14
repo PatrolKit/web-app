@@ -2,6 +2,14 @@
 // Port of printer_prototype/Sources/PhomemoPrinter/.
 import QRCode from 'qrcode';
 
+// Eagerly load the logo so it's available synchronously when labels are composed.
+let _logoImg: HTMLImageElement | null = null;
+{
+  const img = new Image();
+  img.onload = () => { _logoImg = img; };
+  img.src = '/logo.png';
+}
+
 // ─── BLE constants ────────────────────────────────────────────────────────────
 
 const PHOMEMO_SERVICE = '0000ff00-0000-1000-8000-00805f9b34fb';
@@ -346,17 +354,22 @@ function _drawRotatedBranding(
   const blockW = LOGO_SIZE + GAP + textW;
   const logoRX = -blockW / 2; // horizontal centre in rotated space
 
-  const scale = LOGO_SIZE / 32;
-  ctx.save();
-  ctx.translate(logoRX, logoRY);
-  ctx.scale(scale, scale);
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth   = 2 / scale;
-  ctx.stroke(new Path2D('M16 2L4 7V16C4 22.627 9.373 29 16 30C22.627 29 28 22.627 28 16V7L16 2Z'));
-  ctx.fillStyle = '#000';
-  ctx.fillRect(14, 10, 4, 12);
-  ctx.fillRect(10, 14, 12, 4);
-  ctx.restore();
+  if (_logoImg) {
+    ctx.drawImage(_logoImg, logoRX, logoRY, LOGO_SIZE, LOGO_SIZE);
+  } else {
+    // Fallback if image hasn't loaded yet
+    const scale = LOGO_SIZE / 32;
+    ctx.save();
+    ctx.translate(logoRX, logoRY);
+    ctx.scale(scale, scale);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth   = 2 / scale;
+    ctx.stroke(new Path2D('M16 2L4 7V16C4 22.627 9.373 29 16 30C22.627 29 28 22.627 28 16V7L16 2Z'));
+    ctx.fillStyle = '#000';
+    ctx.fillRect(14, 10, 4, 12);
+    ctx.fillRect(10, 14, 12, 4);
+    ctx.restore();
+  }
 
   ctx.textAlign    = 'left';
   ctx.textBaseline = 'top';

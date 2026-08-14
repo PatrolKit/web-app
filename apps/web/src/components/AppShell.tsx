@@ -69,7 +69,10 @@ export default function AppShell() {
       {/* Sidebar */}
       <aside className="w-64 bg-surface-50 flex flex-col border-r border-gray-800 h-screen sticky top-0 shrink-0">
         <div className="p-4 border-b border-gray-800">
-          <span className="text-xl font-bold"><span className="text-brand-600">Patrol</span>Kit</span>
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="PatrolKit" className="w-8 h-8 rounded-sm" />
+            <span className="text-xl font-bold"><span className="text-brand-600">Patrol</span>Kit</span>
+          </div>
         </div>
 
         {/* Org switcher */}
