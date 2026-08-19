@@ -10,6 +10,10 @@ async function bootstrap() {
 
   app.useLogger(app.get(Logger));
 
+  // Derive the S3 hostname from PHOTO_BASE_URL so img-src stays in sync with config.
+  const photoBaseUrl = process.env.PHOTO_BASE_URL ?? '';
+  const photoHost = photoBaseUrl ? new URL(photoBaseUrl).host : null;
+
   // Allow landing page CDN resources (Tailwind CDN + Google Fonts)
   app.use(helmet({
     contentSecurityPolicy: {
@@ -19,7 +23,7 @@ async function bootstrap() {
         scriptSrcAttr: ["'unsafe-inline'", "'unsafe-hashes'"],
         styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
         fontSrc: ["'self'", 'https:', 'data:'],
-        imgSrc: ["'self'", 'data:'],
+        imgSrc: ["'self'", 'data:', ...(photoHost ? [`https://${photoHost}`] : [])],
         connectSrc: ["'self'"],
         frameSrc: ["'none'"],
         objectSrc: ["'none'"],

@@ -1,6 +1,7 @@
 // WebBluetooth driver and label renderer for the Phomemo M110.
 // Port of printer_prototype/Sources/PhomemoPrinter/.
 import QRCode from 'qrcode';
+import { getAccessToken } from '../api';
 
 // Eagerly load the logo so it's available synchronously when labels are composed.
 let _logoImg: HTMLImageElement | null = null;
@@ -171,6 +172,204 @@ export async function previewQrLabel(
   margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
 ): Promise<string> {
   return _composePreviewAsync((ctx, W, H) => _drawQrLabel(ctx, W, H, sellerName, url), margins, paperSize);
+}
+
+export async function generateReceiptHeaderLabel(
+  orgLogoUrl: string | null,
+  date: string, sellerName: string, phone: string, qrUrl: string,
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): Promise<boolean[][]> {
+  return _composeAsync(
+    (ctx, W, H) => _drawReceiptHeader(ctx, W, H, orgLogoUrl, date, sellerName, phone, qrUrl),
+    margins, paperSize,
+  );
+}
+
+export async function previewReceiptHeaderLabel(
+  orgLogoUrl: string | null,
+  date: string, sellerName: string, phone: string, qrUrl: string,
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): Promise<string> {
+  return _composePreviewAsync(
+    (ctx, W, H) => _drawReceiptHeader(ctx, W, H, orgLogoUrl, date, sellerName, phone, qrUrl),
+    margins, paperSize,
+  );
+}
+
+export function generateReceiptItemLabels(
+  items: { name: string; sku: string; priceCents: number }[],
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): boolean[][][] {
+  const pages: boolean[][][] = [];
+  let offset = 0;
+  let isFirst = true;
+  while (offset < items.length) {
+    let drawnThisPage = 0;
+    pages.push(_compose((ctx, W, H) => {
+      const { rowsDrawn } = _drawReceiptItems(ctx, W, H, items.slice(offset), isFirst);
+      drawnThisPage = rowsDrawn;
+    }, margins, paperSize));
+    if (drawnThisPage === 0) break;
+    offset += drawnThisPage;
+    isFirst = false;
+  }
+  return pages;
+}
+
+export function previewReceiptItemLabels(
+  items: { name: string; sku: string; priceCents: number }[],
+  paperSize: PaperSize = '40x30',
+  margins: PrinterMargins = DEFAULT_PRINTER_MARGINS,
+): string[] {
+  const previews: string[] = [];
+  let offset = 0;
+  let isFirst = true;
+  while (offset < items.length) {
+    let drawnThisPage = 0;
+    previews.push(_composePreview((ctx, W, H) => {
+      const { rowsDrawn } = _drawReceiptItems(ctx, W, H, items.slice(offset), isFirst);
+      drawnThisPage = rowsDrawn;
+    }, margins, paperSize));
+    if (drawnThisPage === 0) break;
+    offset += drawnThisPage;
+    isFirst = false;
+  }
+  return previews;
+}
+
+async function _drawReceiptHeader(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  orgLogoUrl: string | null,
+  date: string, sellerName: string, phone: string,
+  qrUrl: string,
+): Promise<void> {
+  const SANS = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+  const halfH = Math.floor(H / 2);
+
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  ctx.textBaseline = 'top';
+
+  // ── Top half ─────────────────────────────────────────────────────────────────
+  const LOGO_SIZE = 64;
+  if (orgLogoUrl) {
+    try {
+      const token = getAccessToken();
+      const res = await fetch(orgLogoUrl, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+      const ct = res.headers.get('content-type') ?? '';
+      if (!ct.includes('svg')) {
+        const bitmap = await createImageBitmap(await res.blob());
+        const oc = document.createElement('canvas');
+        oc.width = LOGO_SIZE; oc.height = LOGO_SIZE;
+        const oc2d = oc.getContext('2d')!;
+        oc2d.fillStyle = '#fff';
+        oc2d.fillRect(0, 0, LOGO_SIZE, LOGO_SIZE);
+        oc2d.drawImage(bitmap, 0, 0, LOGO_SIZE, LOGO_SIZE);
+        const id = oc2d.getImageData(0, 0, LOGO_SIZE, LOGO_SIZE);
+        for (let i = 0; i < id.data.length; i += 4) {
+          const lum = 0.299 * id.data[i] + 0.587 * id.data[i + 1] + 0.114 * id.data[i + 2];
+          const v = lum < 200 ? 0 : 255;
+          id.data[i] = id.data[i + 1] = id.data[i + 2] = v;
+          id.data[i + 3] = 255;
+        }
+        oc2d.putImageData(id, 0, 0);
+        ctx.drawImage(oc, 0, Math.floor((halfH - LOGO_SIZE) / 2), LOGO_SIZE, LOGO_SIZE);
+      }
+    } catch { /* skip */ }
+  }
+
+  // Right-aligned date / seller name / phone block, vertically centred in top half
+  const DATE_H = 16, NAME_H = 18, PHONE_H = 16, LINE_GAP = 3;
+  const blockH = DATE_H + LINE_GAP + NAME_H + LINE_GAP + PHONE_H;
+  let ty = Math.floor((halfH - blockH) / 2);
+  ctx.textAlign = 'right';
+  ctx.font = `bold ${DATE_H}px ${SANS}`;
+  ctx.fillText(date, W, ty);
+  ty += DATE_H + LINE_GAP;
+  ctx.font = `bold ${NAME_H}px ${SANS}`;
+  ctx.fillText(sellerName, W, ty);
+  ty += NAME_H + LINE_GAP;
+  ctx.font = `bold ${PHONE_H}px ${SANS}`;
+  ctx.fillText(phone, W, ty);
+
+  // ── Divider ───────────────────────────────────────────────────────────────────
+  ctx.fillRect(0, halfH, W, 1);
+
+  // ── Bottom half ───────────────────────────────────────────────────────────────
+  const bottomAvail = H - halfH - 1;
+  const QR_SIZE = Math.min(96, bottomAvail - 8);
+  const QR_X = W - QR_SIZE - 8;
+  const QR_Y = halfH + 1 + Math.floor((bottomAvail - QR_SIZE) / 2);
+  const qrCanvas = document.createElement('canvas');
+  await QRCode.toCanvas(qrCanvas, qrUrl, { width: QR_SIZE, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+  ctx.drawImage(qrCanvas, QR_X, QR_Y, QR_SIZE, QR_SIZE);
+
+  const SCAN_SIZE = 14, SCAN_GAP = 3;
+  const scanBlockH = SCAN_SIZE + SCAN_GAP + SCAN_SIZE;
+  const scanY = halfH + 1 + Math.floor((bottomAvail - scanBlockH) / 2);
+  ctx.font = `bold ${SCAN_SIZE}px ${SANS}`;
+  ctx.textAlign = 'left';
+  ctx.fillText('Scan to track', 0, scanY, QR_X - 4);
+  ctx.fillText('your items:', 0, scanY + SCAN_SIZE + SCAN_GAP, QR_X - 4);
+}
+
+function _drawReceiptItems(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  items: { name: string; sku: string; priceCents: number }[],
+  showHeader: boolean,
+): { rowsDrawn: number } {
+  const SANS = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  ctx.textBaseline = 'top';
+
+  const NAME_H = 18, SKU_H = 14, LINE_GAP = 2, ITEM_GAP = 4;
+  const itemH = NAME_H + LINE_GAP + SKU_H;
+
+  let y = 0;
+
+  if (showHeader) {
+    ctx.font = `bold 16px ${SANS}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('Your Items:', W / 2, y);
+    y += 16 + 6;
+  }
+
+  let drawn = 0;
+  for (const item of items) {
+    const neededY = (drawn > 0 ? y + ITEM_GAP : y) + itemH;
+    if (neededY > H) break;
+    if (drawn > 0) y += ITEM_GAP;
+
+    const priceStr = `$${(item.priceCents / 100).toFixed(2)}`;
+    ctx.font = `bold ${NAME_H}px ${SANS}`;
+    const priceW = ctx.measureText(priceStr).width;
+    const maxNameW = W - priceW - 4;
+    let name = item.name;
+    while (ctx.measureText(name).width > maxNameW && name.length > 1) name = name.slice(0, -1);
+    if (name !== item.name) name = name.slice(0, -1) + '…';
+
+    ctx.textAlign = 'left';
+    ctx.fillText(name, 0, y);
+    ctx.textAlign = 'right';
+    ctx.fillText(priceStr, W, y);
+    y += NAME_H + LINE_GAP;
+
+    ctx.font = `bold ${SKU_H}px ${SANS}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(item.sku, 4, y);
+    y += SKU_H;
+
+    drawn++;
+  }
+
+  return { rowsDrawn: drawn };
 }
 
 async function _drawQrLabel(

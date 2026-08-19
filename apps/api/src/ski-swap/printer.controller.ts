@@ -2,7 +2,7 @@ import {
   Body, Controller, Delete, Get, HttpCode, Param,
   Patch, Post, UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -14,15 +14,15 @@ import { PrinterService } from './printer.service';
 import { CreatePrinterDto, PatchPrinterDto, PatchPrinterPaperSizeDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/printers')
-@UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireModule('ski_swap')
 export class PrinterController {
   constructor(private readonly printerService: PrinterService) {}
 
   @Get()
   @RequirePermissions('ski_swap:manage')
-  list(@Param('orgId') orgId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.printerService.list(orgId, user.userId);
+  list(@Param('orgId') orgId: string, @CurrentUser() user?: AuthenticatedUser) {
+    return this.printerService.list(orgId, user?.userId);
   }
 
   @Post()

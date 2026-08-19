@@ -145,6 +145,7 @@ export const CreateItemSchema = z
     quantity: z.number().int().positive(),
     sellerId: z.string().optional(),
     donateProceeds: z.boolean().default(false),
+    sku: z.string().max(20).optional(),
   })
   .strict();
 

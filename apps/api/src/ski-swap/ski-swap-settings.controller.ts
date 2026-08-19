@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Put, Param, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -9,7 +9,7 @@ import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { UpdateSkiSwapSettingsDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/settings')
-@UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireModule('ski_swap')
 export class SkiSwapSettingsController {
   constructor(private readonly settingsService: SkiSwapSettingsService) {}

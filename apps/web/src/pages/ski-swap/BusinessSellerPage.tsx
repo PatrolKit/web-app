@@ -28,10 +28,7 @@ export default function BusinessSellerPage() {
           }),
           patchItem: (iid, data) => api.skiSwap.sellerPatchItem(orgId, iid, data),
           deleteItem: (iid) => api.skiSwap.sellerDeleteItem(orgId, iid),
-          uploadPhoto: async (iid, file) => {
-            const r = await api.skiSwap.sellerUploadPhoto(orgId, iid, file);
-            return r.data;
-          },
+          uploadPhoto: (iid, file) => api.skiSwap.sellerUploadPhoto(orgId, iid, file),
           deletePhoto: (iid, pid) => api.skiSwap.sellerDeletePhoto(orgId, iid, pid),
         }}
       />

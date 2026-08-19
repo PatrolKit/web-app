@@ -88,6 +88,7 @@ export class JwtService implements OnModuleInit {
   async verifyAccessToken(token: string): Promise<AccessTokenPayload> {
     const { payload } = await jwtVerify(token, this.publicKey, { algorithms: ['EdDSA'] });
     if (!payload.sub) throw new Error('Token missing sub claim');
+    if (payload['deviceId']) throw new Error('Cannot use device token as access token');
     return { sub: payload.sub };
   }
 

@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { PoweredByFooter } from './PoweredByFooter';
 
 function formatPrice(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -100,6 +101,7 @@ export default function SellerItemsPage() {
             ),
           )
         )}
+        <PoweredByFooter />
       </div>
     </div>
   );

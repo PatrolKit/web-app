@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser, faBuilding, faQrcode } from '@fortawesome/free-solid-svg-icons';
+import { faUser, faBuilding, faQrcode, faPrint } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
 import type { SellerResponse, BusinessSellerMember } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SellerImportModal from './SellerImportModal';
-import SellerQrModal from './SellerQrModal';
+import PrintReceiptModal from './PrintReceiptModal';
 
 interface SellerForm {
   type: 'individual' | 'business' | '';
@@ -25,14 +25,14 @@ const emptyForm: SellerForm = {
 };
 
 export default function SellersPage() {
-  const { orgId, perms } = useOutletContext<SkiSwapContext>();
+  const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'individual' | 'business'>('all');
   const [editSeller, setEditSeller] = useState<SellerResponse | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [qrSeller, setQrSeller] = useState<SellerResponse | null>(null);
+  const [receiptSeller, setReceiptSeller] = useState<SellerResponse | null>(null);
   const [form, setForm] = useState<SellerForm>(emptyForm);
   const [sortKey, setSortKey] = useState<keyof SellerResponse>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -352,11 +352,11 @@ export default function SellersPage() {
                       className="text-xs text-red-500 hover:underline">Delete</button>
                   )}
                   <button
-                    onClick={() => setQrSeller(s)}
-                    title="Print QR code"
-                    className="text-xs text-gray-400 hover:text-white"
+                    onClick={() => setReceiptSeller(s)}
+                    title="Print receipt"
+                    className="text-xs text-gray-400 hover:text-white flex items-center gap-1"
                   >
-                    <FontAwesomeIcon icon={faQrcode} />
+                    <FontAwesomeIcon icon={faPrint} /> Receipt
                   </button>
                 </td>
               )}
@@ -389,8 +389,8 @@ export default function SellersPage() {
         />
       )}
 
-      {qrSeller && (
-        <SellerQrModal seller={qrSeller} onClose={() => setQrSeller(null)} />
+      {receiptSeller && (
+        <PrintReceiptModal seller={receiptSeller} swapId={selectedSwap?.id ?? null} onClose={() => setReceiptSeller(null)} />
       )}
     </div>
   );

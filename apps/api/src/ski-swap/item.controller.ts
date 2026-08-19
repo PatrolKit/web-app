@@ -1,9 +1,9 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param,
+  Body, Controller, Delete, Get, Headers, HttpCode, Param,
   Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -13,7 +13,7 @@ import { ItemService } from './item.service';
 import { CreateItemDto, PatchItemDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/swaps/:swapId/items')
-@UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireModule('ski_swap')
 export class ItemController {
   constructor(private readonly itemService: ItemService) {}
@@ -27,19 +27,26 @@ export class ItemController {
     @Query('sellerId') sellerId?: string,
     @Query('skip') skip?: string,
     @Query('take') take?: string,
+    @Query('updatedSince') updatedSince?: string,
   ) {
     return this.itemService.list(orgId, swapId, {
       query,
       sellerId,
       skip: skip ? parseInt(skip, 10) : undefined,
       take: take ? parseInt(take, 10) : undefined,
+      updatedSince,
     });
   }
 
   @Post()
   @RequirePermissions('ski_swap:manage')
-  create(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @Body() body: CreateItemDto) {
-    return this.itemService.create(orgId, swapId, body);
+  create(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Body() body: CreateItemDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.itemService.create(orgId, swapId, body, idempotencyKey);
   }
 
   @Get(':itemId')

@@ -15,6 +15,48 @@ type Tab = 'tablets' | 'printers';
 const tabClass = (active: boolean) =>
   `text-sm px-3 py-1.5 rounded transition ${active ? 'bg-surface-100 text-white' : 'text-gray-400 hover:text-white'}`;
 
+function ProvisioningCodeCard({ clientId, secret, onDismiss }: { clientId: string; secret: string; onDismiss: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const payload = JSON.stringify({
+    v: 1, cid: clientId, sec: secret,
+    api: `${window.location.protocol}//${window.location.host}/api/v1`,
+  });
+
+  const copy = () => {
+    const el = document.createElement('textarea');
+    el.value = payload;
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    navigator.clipboard?.writeText(payload).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="bg-green-900/30 border border-green-700 rounded-lg p-4">
+      <p className="text-green-400 font-medium mb-4">Device provisioned — scan or copy the code now</p>
+      <div className="flex flex-col items-center gap-3">
+        <div className="bg-white p-3 rounded">
+          <QRCode value={payload} size={200} />
+        </div>
+        <p className="text-xs text-gray-400">Scan with PatrolKit iOS, or copy below</p>
+        <button
+          onClick={copy}
+          className="text-sm bg-brand-500 hover:bg-brand-600 text-white px-6 py-2 rounded w-full max-w-xs transition-colors"
+        >
+          {copied ? 'Copied!' : 'Copy provisioning code'}
+        </button>
+      </div>
+      <button onClick={onDismiss} className="mt-4 text-xs text-gray-500 hover:underline block">Dismiss</button>
+    </div>
+  );
+}
+
 export default function DevicesPage() {
   const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
   const qc = useQueryClient();
@@ -259,37 +301,11 @@ export default function DevicesPage() {
           )}
 
           {revealedSecret && (
-            <div className="bg-green-900/30 border border-green-700 rounded-lg p-4">
-              <p className="text-green-400 font-medium mb-3">Client secret (shown once — copy or scan now)</p>
-              <div className="flex gap-6">
-                <div className="flex flex-col items-center gap-2">
-                  <p className="text-xs text-gray-400">Scan with PatrolKit iOS to provision</p>
-                  <div className="bg-white p-2 rounded">
-                    <QRCode
-                      value={JSON.stringify({
-                        v: 1,
-                        cid: revealedSecret.clientId,
-                        sec: revealedSecret.secret,
-                        api: `${window.location.protocol}//${window.location.host}/api/v1`,
-                      })}
-                      size={200}
-                    />
-                  </div>
-                </div>
-                <div className="flex-1 flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-sm text-white bg-surface-100 rounded px-3 py-2 break-all">{revealedSecret.secret}</code>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(revealedSecret.secret)}
-                      className="text-xs bg-surface-100 hover:bg-surface-200 text-gray-300 px-3 py-2 rounded whitespace-nowrap"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <button onClick={() => setRevealedSecret(null)} className="mt-3 text-xs text-gray-500 hover:underline">Dismiss</button>
-            </div>
+            <ProvisioningCodeCard
+              clientId={revealedSecret.clientId}
+              secret={revealedSecret.secret}
+              onDismiss={() => setRevealedSecret(null)}
+            />
           )}
 
           <div className="space-y-3">

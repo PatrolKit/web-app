@@ -208,3 +208,8 @@ export interface PublicSellerDetailResponse {
 export interface SellerFindResponse {
   sellerId: string;
 }
+
+export interface OrgBrandingResponse {
+  orgName: string;
+  logoUrl: string | null;
+}

@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '../auth/jwt.service';
 import { AuditService } from '../common/audit/audit.service';
@@ -38,16 +39,21 @@ export class DevicesService {
     const clientSecret = randomBytes(32).toString('hex');
     const secretHash = await argon2.hash(clientSecret, { type: argon2.argon2id });
 
-    const device = await this.prisma.device.create({
-      data: {
-        id: createId(),
-        orgId,
-        name: data.name,
-        role: data.role,
-        clientId,
-        secretHash,
-        createdBy: actorUserId,
-      },
+    const { device } = await this.prisma.$transaction(async (tx) => {
+      const skiSwapDeviceCode = await this.assignSkiSwapDeviceCode(orgId, tx);
+      const device = await tx.device.create({
+        data: {
+          id: createId(),
+          orgId,
+          name: data.name,
+          role: data.role,
+          clientId,
+          secretHash,
+          createdBy: actorUserId,
+          skiSwapDeviceCode,
+        },
+      });
+      return { device };
     });
 
     if (data.permissions.length > 0) {
@@ -169,6 +175,35 @@ export class DevicesService {
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+  private async assignSkiSwapDeviceCode(
+    orgId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<string> {
+    const devices = await tx.device.findMany({
+      where: { orgId },
+      select: { skiSwapDeviceCode: true },
+    });
+    const existing = new Set(
+      devices.map((d) => d.skiSwapDeviceCode).filter((c): c is string => c !== null),
+    );
+    let n = 1;
+    while (true) {
+      const code = this.generateSkiSwapCode(n);
+      if (!existing.has(code)) return code;
+      n++;
+    }
+  }
+
+  private generateSkiSwapCode(n: number): string {
+    let code = '';
+    let remainder = n;
+    while (remainder > 0) {
+      code = String.fromCharCode(((remainder - 1) % 26) + 65) + code;
+      remainder = Math.floor((remainder - 1) / 26);
+    }
+    return code;
+  }
+
   private async assignDevicePermissions(deviceId: string, keys: PermissionKey[]): Promise<void> {
     const perms = await this.prisma.permission.findMany({ where: { key: { in: keys } } });
     await this.prisma.devicePermission.createMany({
@@ -192,9 +227,15 @@ export class DevicesService {
       throw new UnauthorizedException('Device not found');
     }
 
-    await this.prisma.device.update({
-      where: { id: deviceId },
-      data: { lastSeenAt: new Date() },
+    let { skiSwapDeviceCode } = device;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (!skiSwapDeviceCode) {
+        skiSwapDeviceCode = await this.assignSkiSwapDeviceCode(device.orgId, tx);
+        await tx.device.update({ where: { id: deviceId }, data: { lastSeenAt: new Date(), skiSwapDeviceCode } });
+      } else {
+        await tx.device.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } });
+      }
     });
 
     return {
@@ -204,6 +245,9 @@ export class DevicesService {
       orgId: device.orgId,
       orgName: device.org.name,
       permissions: device.permissions.map((dp) => dp.permission.key),
+      skiSwapDeviceCode,
+      sellerSiteUrl: process.env.SELLER_SITE_URL ?? 'https://skiswap.patrolkit.io',
+      orgLogoUrl: device.org.logoUrl ?? null,
     };
   }
 

@@ -17,6 +17,11 @@ export class PublicLookupController {
     return this.lookupService.lookup(orgSlug, phone, swapId);
   }
 
+  @Get('branding')
+  branding(@Param('orgSlug') orgSlug: string) {
+    return this.lookupService.getOrgBranding(orgSlug);
+  }
+
   @Get('seller-find')
   findSeller(
     @Param('orgSlug') orgSlug: string,

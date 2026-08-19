@@ -40,10 +40,7 @@ export default function ItemsPage() {
         createItem: (sid, data) => api.skiSwap.createItem(orgId, sid, data),
         patchItem: (iid, data) => api.skiSwap.patchItem(orgId, swapId, iid, data),
         deleteItem: (iid) => api.skiSwap.deleteItem(orgId, swapId, iid),
-        uploadPhoto: async (iid, file) => {
-          const r = await api.skiSwap.uploadPhoto(orgId, swapId, iid, file);
-          return r.data;
-        },
+        uploadPhoto: (iid, file) => api.skiSwap.uploadPhoto(orgId, swapId, iid, file),
         deletePhoto: (iid, pid) => api.skiSwap.deletePhoto(orgId, swapId, iid, pid),
       }}
     />

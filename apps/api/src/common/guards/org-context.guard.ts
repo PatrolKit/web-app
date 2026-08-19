@@ -7,6 +7,7 @@ import {
 import type { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedUser } from './jwt-auth.guard';
+import type { AuthenticatedDevice } from './device-auth.guard';
 
 export interface OrgMembership {
   id: string;
@@ -23,7 +24,9 @@ export class OrgContextGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx
       .switchToHttp()
-      .getRequest<Request & { user?: AuthenticatedUser; membership?: OrgMembership; params: Record<string, string> }>();
+      .getRequest<Request & { user?: AuthenticatedUser; device?: AuthenticatedDevice; membership?: OrgMembership; params: Record<string, string> }>();
+
+    if (req.device) return true;
 
     const orgId = req.params['orgId'];
     const userId = req.user?.userId;

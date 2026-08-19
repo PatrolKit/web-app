@@ -112,6 +112,9 @@ export default function AppShell() {
               className={navClass}
             >Ski Swap</NavLink>
           )}
+          {perms.has('org:manage') && (
+            <NavLink to="org-admin" className={navClass}>Org Admin</NavLink>
+          )}
           {user.isSuperAdmin && (
             <NavLink to="admin" className={navClass}>Platform Admin</NavLink>
           )}
@@ -136,18 +139,36 @@ export default function AppShell() {
 }
 
 function PrintPreviewModal() {
-  const { pendingPreview, clearPendingPreview } = usePrinter();
-  if (!pendingPreview) return null;
+  const { pendingPreview, clearPendingPreview, pendingPreviews, clearPendingPreviews } = usePrinter();
+  const multiPage = pendingPreviews.length > 0;
+  if (!multiPage && !pendingPreview) return null;
+
+  function handleClose() {
+    if (multiPage) clearPendingPreviews();
+    else clearPendingPreview();
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={clearPendingPreview}>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={handleClose}>
       <div className="bg-surface-200 rounded-lg p-4 space-y-3 max-w-xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="text-white font-semibold text-sm">Print Preview</h2>
-          <button onClick={clearPendingPreview} className="text-gray-500 hover:text-white text-xs">✕ Close</button>
+          <button onClick={handleClose} className="text-gray-500 hover:text-white text-xs">✕ Close</button>
         </div>
-        <div className="flex justify-center bg-gray-100 rounded p-3">
-          <img src={pendingPreview} alt="Label preview" style={{ imageRendering: 'pixelated' }} className="max-w-full" />
-        </div>
+        {multiPage ? (
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto">
+            {pendingPreviews.map((src, i) => (
+              <div key={i} className="bg-gray-100 rounded p-3 flex flex-col items-center gap-1">
+                <span className="text-gray-500 text-xs">Page {i + 1} of {pendingPreviews.length}</span>
+                <img src={src} alt={`Label page ${i + 1}`} style={{ imageRendering: 'pixelated' }} className="max-w-full" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex justify-center bg-gray-100 rounded p-3">
+            <img src={pendingPreview!} alt="Label preview" style={{ imageRendering: 'pixelated' }} className="max-w-full" />
+          </div>
+        )}
         <p className="text-gray-500 text-xs text-center">Preview only — not sent to printer</p>
       </div>
     </div>

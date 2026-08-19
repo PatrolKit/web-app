@@ -1,6 +1,9 @@
 packages:
   - 'apps/*'
 
+allowBuilds:
+  sharp: true
+
 onlyBuiltDependencies:
   - '@nestjs/core'
   - '@prisma/client'

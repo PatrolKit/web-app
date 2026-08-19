@@ -67,9 +67,10 @@ export const PatchOrgSchema = z
   .object({
     name: z.string().min(1).max(100).optional(),
     status: z.enum(['active', 'suspended']).optional(),
+    slug: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Slug may only contain lowercase letters, numbers, and hyphens').optional(),
   })
   .strict()
-  .refine((v) => v.name !== undefined || v.status !== undefined, {
+  .refine((v) => v.name !== undefined || v.status !== undefined || v.slug !== undefined, {
     message: 'At least one field must be provided',
   });
 

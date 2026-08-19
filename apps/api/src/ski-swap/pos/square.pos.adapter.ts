@@ -1,9 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import { SquareClient } from 'square';
+import { SquareClient, SquareError } from 'square';
 import { SquareClientService } from '../square-client.service';
 import { PosAdapterFactory, type IPosAdapter, type PosItemSync } from './pos.adapter';
 import type { Square } from 'square';
+
+function isSquareMissingReferenceError(err: unknown): boolean {
+  if (!(err instanceof SquareError)) return false;
+  return err.errors.some((e) =>
+    e.code === 'NOT_FOUND' || e.code === 'INVALID_REFERENCE' || e.category === 'INVALID_REQUEST_ERROR',
+  );
+}
 
 function asItem(obj: Square.CatalogObject | undefined | null) {
   if (obj?.type === 'ITEM') return obj as Square.CatalogObject.Item;
@@ -13,14 +20,39 @@ function asItem(obj: Square.CatalogObject | undefined | null) {
 class SquarePosAdapter implements IPosAdapter {
   constructor(private readonly client: SquareClient) {}
 
-  async syncItem(item: PosItemSync, locationId: string, initialQuantity: number): Promise<{ posItemId: string; posVariationId: string }> {
-    let existingVersion: bigint | undefined;
-    if (item.posItemId) {
-      const current = await this.client.catalog.object.get({ objectId: item.posItemId });
-      existingVersion = current.object?.version;
+  private async findOrCreatePatrolKitCategory(): Promise<string> {
+    const page = await this.client.catalog.list({ types: 'CATEGORY' });
+    for await (const obj of page) {
+      if (obj.type === 'CATEGORY' && (obj as any).categoryData?.name === 'PatrolKit') {
+        return obj.id as string;
+      }
     }
+    const res = await this.client.catalog.object.upsert({
+      idempotencyKey: uuidv4(),
+      object: {
+        type: 'CATEGORY',
+        id: '#patrolkit',
+        categoryData: { name: 'PatrolKit', isTopLevel: true },
+      },
+    });
+    const id = res.catalogObject?.id;
+    if (!id) throw new Error('Square did not return a category ID for PatrolKit');
+    return id;
+  }
 
-    const upsertRes = await this.client.catalog.object.upsert({
+  async upsertCategory(name: string): Promise<string> {
+    const parentId = await this.findOrCreatePatrolKitCategory();
+    const res = await this.client.catalog.object.upsert({
+      idempotencyKey: uuidv4(),
+      object: { type: 'CATEGORY', id: '#category', categoryData: { name, parentCategory: { id: parentId } } },
+    });
+    const id = res.catalogObject?.id;
+    if (!id) throw new Error('Square did not return a category ID');
+    return id;
+  }
+
+  private async doItemUpsert(item: PosItemSync, categoryId: string, existingVersion?: bigint) {
+    return this.client.catalog.object.upsert({
       idempotencyKey: uuidv4(),
       object: {
         type: 'ITEM',
@@ -29,7 +61,8 @@ class SquarePosAdapter implements IPosAdapter {
         itemData: {
           name: item.name,
           description: item.description,
-          categoryId: item.categoryId,
+          // categories replaces the deprecated categoryId (deprecated since 2023-12-13)
+          categories: [{ id: categoryId }],
           variations: [
             {
               type: 'ITEM_VARIATION',
@@ -49,6 +82,28 @@ class SquarePosAdapter implements IPosAdapter {
         },
       },
     });
+  }
+
+  async syncItem(item: PosItemSync, locationId: string, initialQuantity: number): Promise<{ posItemId: string; posVariationId: string; resolvedCategoryId: string }> {
+    let existingVersion: bigint | undefined;
+    if (item.posItemId) {
+      const current = await this.client.catalog.object.get({ objectId: item.posItemId });
+      existingVersion = current.object?.version;
+    }
+
+    let resolvedCategoryId = item.categoryId;
+    let upsertRes = await this.doItemUpsert(item, resolvedCategoryId, existingVersion).catch(async (err) => {
+      if (err instanceof SquareError) {
+        console.error('[Square] catalog upsert error — codes:', err.errors.map((e) => `${e.code}/${e.category}`).join(', '));
+      }
+      // If Square rejects the category reference, recreate the category and retry once.
+      if (isSquareMissingReferenceError(err)) {
+        console.warn('[Square] Category missing, recreating for swap category:', item.categoryId);
+        resolvedCategoryId = await this.upsertCategory(item.categoryName);
+        return this.doItemUpsert(item, resolvedCategoryId, existingVersion);
+      }
+      throw err;
+    });
 
     const posItemId = upsertRes.catalogObject?.id;
     if (!posItemId) throw new Error('Square did not return an item ID');
@@ -61,12 +116,14 @@ class SquarePosAdapter implements IPosAdapter {
 
     if (!posVariationId) throw new Error('Square did not return a variation ID');
 
-    // Only set initial inventory for new items (no existing posItemId)
+    // Set initial inventory for new items separately — a failure here must not
+    // prevent us from returning the catalog IDs (we still want squareItemId stored).
     if (!item.posItemId) {
-      await this.setInitialInventory(posVariationId, locationId, initialQuantity);
+      await this.setInitialInventory(posVariationId, locationId, initialQuantity)
+        .catch((err) => console.error('[Square] setInitialInventory failed:', err));
     }
 
-    return { posItemId, posVariationId };
+    return { posItemId, posVariationId, resolvedCategoryId };
   }
 
   async deleteItem(posItemId: string): Promise<void> {
@@ -112,13 +169,14 @@ class SquarePosAdapter implements IPosAdapter {
   }
 
   async setInitialInventory(variationId: string, locationId: string, quantity: number): Promise<void> {
-    await this.client.inventory.batchCreateChanges({
+    const res = await this.client.inventory.batchCreateChanges({
       idempotencyKey: uuidv4(),
       changes: [{
         type: 'ADJUSTMENT',
         adjustment: {
           catalogObjectId: variationId,
           fromState: 'NONE',
+          fromLocationId: locationId,
           toState: 'IN_STOCK',
           toLocationId: locationId,
           quantity: String(quantity),
@@ -126,6 +184,9 @@ class SquarePosAdapter implements IPosAdapter {
         },
       }],
     });
+    if (res.errors?.length) {
+      throw new Error(`Square inventory errors: ${res.errors.map((e) => `${e.code}: ${e.detail}`).join(', ')}`);
+    }
   }
 
   async setInventoryPhysicalCount(variationId: string, locationId: string, quantity: number): Promise<void> {

@@ -7,9 +7,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PosAdapterFactory } from './pos/pos.adapter';
 import { SellerService } from './seller.service';
 import { S3Service } from './s3.service';
+import { IdempotencyService } from '../common/services/idempotency.service';
 import { formatSku } from './sku.util';
 import { createId } from '@paralleldrive/cuid2';
 import { extname } from 'path';
+import sharp from 'sharp';
 
 export interface ItemPhotoResponse { id: string; url: string; }
 
@@ -23,7 +25,7 @@ export interface ItemResponse {
   photos: ItemPhotoResponse[];
 }
 
-type SwapShape = { id: string; squareCategoryId: string; locationId: string; skuPrefix: string; skuCounter: number };
+type SwapShape = { id: string; title: string; squareCategoryId: string; locationId: string; skuPrefix: string; skuCounter: number };
 
 @Injectable()
 export class ItemService {
@@ -32,14 +34,22 @@ export class ItemService {
     private readonly posFactory: PosAdapterFactory,
     private readonly sellerService: SellerService,
     private readonly s3: S3Service,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
-  async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number }): Promise<{ items: ItemResponse[]; total: number }> {
+  async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string }): Promise<{ items: ItemResponse[]; total: number }> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const where = {
       swapId, orgId,
-      ...(opts.query ? { OR: [{ name: { contains: opts.query } }, { sku: { contains: opts.query } }] } : {}),
+      ...(opts.query ? { OR: [
+        { name: { contains: opts.query } },
+        { sku: { contains: opts.query } },
+        { seller: { name: { contains: opts.query } } },
+        { seller: { email: { contains: opts.query } } },
+        { seller: { phone: { contains: opts.query.replace(/\D/g, '') } } },
+      ] } : {}),
       ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
+      ...(opts.updatedSince ? { updatedAt: { gt: new Date(opts.updatedSince) } } : {}),
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.swapItem.findMany({ where, include: { seller: true, photos: { orderBy: { displayOrder: 'asc' } } }, orderBy: { createdAt: 'desc' }, skip: opts.skip ?? 0, take: opts.take ?? 50 }),
@@ -57,12 +67,22 @@ export class ItemService {
     return this.toResponse(item, inventoryMap);
   }
 
-  async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean }): Promise<ItemResponse> {
+  async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string }, idempotencyKey?: string): Promise<ItemResponse> {
+    if (idempotencyKey) {
+      const cached = await this.idempotency.getCached(idempotencyKey);
+      if (cached) return cached as unknown as ItemResponse;
+    }
+
     const swap = await this.findSwapOrThrow(orgId, swapId);
     if (data.sellerId) await this.sellerService.findOrThrow(orgId, data.sellerId);
 
-    const updatedSwap = await this.prisma.skiSwap.update({ where: { id: swapId }, data: { skuCounter: { increment: 1 } } });
-    const sku = formatSku(updatedSwap.skuPrefix, updatedSwap.skuCounter);
+    let sku: string;
+    if (data.sku) {
+      sku = data.sku;
+    } else {
+      const updatedSwap = await this.prisma.skiSwap.update({ where: { id: swapId }, data: { skuCounter: { increment: 1 } } });
+      sku = formatSku(updatedSwap.skuPrefix, updatedSwap.skuCounter);
+    }
 
     const item = await this.prisma.swapItem.create({
       data: { id: createId(), swapId, orgId, sellerId: data.sellerId ?? null, name: data.name, description: data.description ?? null, priceCents: data.priceCents, sku, originalQuantity: data.quantity, donateProceeds: data.donateProceeds ?? false },
@@ -73,7 +93,13 @@ export class ItemService {
 
     const refreshed = await this.prisma.swapItem.findUniqueOrThrow({ where: { id: item.id }, include: { seller: true, photos: true } });
     const inventoryMap = await this.fetchInventoryMap(orgId, swap, [refreshed]);
-    return this.toResponse(refreshed, inventoryMap);
+    const response = this.toResponse(refreshed, inventoryMap);
+
+    if (idempotencyKey) {
+      await this.idempotency.save(idempotencyKey, response as unknown as Record<string, unknown>);
+    }
+
+    return response;
   }
 
   async patch(orgId: string, swapId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean }): Promise<ItemResponse> {
@@ -131,21 +157,31 @@ export class ItemService {
     const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId } });
     if (!item) throw new NotFoundException('Item not found');
 
-    const ext = extname(file.originalname) || '.jpg';
-    const s3Key = `${orgId}/${swapId}/${itemId}/${createId()}${ext}`;
+    // Resize to max 1200px on the longest side, JPEG 85% — keeps files well under
+    // Square's 15MB limit and reduces S3 storage for high-volume swaps.
+    const resized = await sharp(file.buffer)
+      .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+
+    const s3Key = `photos/${orgId}/${swapId}/${itemId}/${createId()}.jpg`;
     let url = '';
     let s3KeyStored = '';
 
     if (this.s3.configured) {
-      url = await this.s3.upload(s3Key, file.buffer, file.mimetype);
-      s3KeyStored = s3Key;
+      try {
+        url = await this.s3.upload(s3Key, resized, 'image/jpeg');
+        s3KeyStored = s3Key;
+      } catch (err) {
+        console.error('[S3] upload failed, falling back to Square CDN:', err);
+      }
     }
 
     let squareImageId: string | undefined;
     if (item.squareItemId) {
       const pos = await this.posFactory.forOrg(orgId);
       if (pos) {
-        const res = await pos.uploadImage(item.squareItemId, file.buffer, file.mimetype).catch(() => null);
+        const res = await pos.uploadImage(item.squareItemId, resized, 'image/jpeg').catch((err) => { console.error('[Square] uploadImage failed:', err); return null; });
         if (res) { squareImageId = res.posImageId; if (!url) url = res.imageUrl; }
       }
     }
@@ -180,18 +216,22 @@ export class ItemService {
     return swap;
   }
 
-  private async syncItemToPos(orgId: string, swap: Pick<SwapShape, 'squareCategoryId' | 'locationId'>, item: { id: string; name: string; description: string | null; priceCents: number; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null }): Promise<void> {
+  private async syncItemToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, item: { id: string; name: string; description: string | null; priceCents: number; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null }): Promise<void> {
     if (!swap.locationId) return;
     const pos = await this.posFactory.forOrg(orgId);
     if (!pos) return;
     try {
       const result = await pos.syncItem(
-        { posItemId: item.squareItemId ?? undefined, posVariationId: item.squareVariationId ?? undefined, name: item.name, description: item.description ?? undefined, priceCents: item.priceCents, sku: item.sku, categoryId: swap.squareCategoryId },
+        { posItemId: item.squareItemId ?? undefined, posVariationId: item.squareVariationId ?? undefined, name: item.name, description: item.description ?? undefined, priceCents: item.priceCents, sku: item.sku, categoryId: swap.squareCategoryId, categoryName: swap.title },
         swap.locationId,
         item.originalQuantity,
       );
+      // Persist category ID if it was recreated (stale category recovered)
+      if (result.resolvedCategoryId !== swap.squareCategoryId) {
+        await this.prisma.skiSwap.update({ where: { id: swap.id }, data: { squareCategoryId: result.resolvedCategoryId } });
+      }
       await this.prisma.swapItem.update({ where: { id: item.id }, data: { squareItemId: result.posItemId, squareVariationId: result.posVariationId, lastSyncedAt: new Date() } });
-    } catch { /* POS sync failures are non-fatal */ }
+    } catch (err) { console.error('[Square] syncItemToPos failed:', err); }
   }
 
   private async fetchInventoryMap(orgId: string, swap: { locationId: string }, items: { squareVariationId: string | null }[]): Promise<Map<string, number>> {

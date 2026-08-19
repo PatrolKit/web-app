@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Header,
+  Headers,
   HttpCode,
   Param,
   Patch,
@@ -16,7 +17,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -26,21 +27,29 @@ import { SellerService } from './seller.service';
 import { CreateSellerDto, PatchSellerDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/sellers')
-@UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireModule('ski_swap')
 export class SellerController {
   constructor(private readonly sellerService: SellerService) {}
 
   @Get()
   @RequirePermissions('ski_swap:report')
-  list(@Param('orgId') orgId: string, @Query('query') query?: string) {
-    return this.sellerService.list(orgId, query);
+  list(
+    @Param('orgId') orgId: string,
+    @Query('query') query?: string,
+    @Query('updatedSince') updatedSince?: string,
+  ) {
+    return this.sellerService.list(orgId, query, updatedSince);
   }
 
   @Post()
   @RequirePermissions('ski_swap:manage')
-  create(@Param('orgId') orgId: string, @Body() body: CreateSellerDto) {
-    return this.sellerService.create(orgId, body);
+  create(
+    @Param('orgId') orgId: string,
+    @Body() body: CreateSellerDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.sellerService.create(orgId, body, idempotencyKey);
   }
 
   @Get(':sellerId')

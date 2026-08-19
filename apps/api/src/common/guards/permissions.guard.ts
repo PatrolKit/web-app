@@ -9,6 +9,7 @@ import type { Request } from 'express';
 import { PERMISSIONS_KEY } from '../decorators/require-permissions.decorator';
 import { PermissionsService } from '../../permissions/permissions.service';
 import type { AuthenticatedUser } from './jwt-auth.guard';
+import type { AuthenticatedDevice } from './device-auth.guard';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -26,7 +27,9 @@ export class PermissionsGuard implements CanActivate {
 
     const req = ctx
       .switchToHttp()
-      .getRequest<Request & { user?: AuthenticatedUser; params: Record<string, string> }>();
+      .getRequest<Request & { user?: AuthenticatedUser; device?: AuthenticatedDevice; params: Record<string, string> }>();
+
+    if (req.device) return true;
     const userId = req.user?.userId;
     const orgId = req.params['orgId'];
 

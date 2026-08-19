@@ -20,6 +20,10 @@ import SellerProfilePage from './pages/ski-swap/SellerProfilePage';
 import SellerStatusPage from './pages/public/SellerStatusPage';
 import SellerItemsPage from './pages/public/SellerItemsPage';
 import OrgSellerLookupPage from './pages/public/OrgSellerLookupPage';
+import OrgAdminPage from './pages/org/OrgAdminPage';
+
+// Evaluated once at module load — never changes for a given page load.
+const isSellerSite = window.location.hostname.startsWith('skiswap.');
 
 function DefaultDashboardRedirect() {
   const { user, activeOrgId } = useAuth();
@@ -33,6 +37,17 @@ function DefaultDashboardRedirect() {
 }
 
 export default function App() {
+  if (isSellerSite) {
+    return (
+      <Routes>
+        <Route path="s/:sellerId" element={<SellerItemsPage />} />
+        <Route path=":orgSlug/ski-swap/status" element={<SellerStatusPage />} />
+        <Route path=":orgSlug" element={<OrgSellerLookupPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
+  }
+
   return (
     <AuthProvider>
       <Routes>
@@ -49,6 +64,7 @@ export default function App() {
           <Route path="modules" element={<ModulesPage />} />
           <Route path="devices" element={<DevicesPage />} />
           <Route path="admin" element={<AdminPage />} />
+          <Route path="org-admin" element={<OrgAdminPage />} />
           <Route path="ski-swap" element={<SkiSwapLayout />}>
             <Route index element={<SkiSwapDashboard />} />
             <Route path="swaps" element={<SwapsPage />} />

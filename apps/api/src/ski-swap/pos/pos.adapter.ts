@@ -6,11 +6,14 @@ export interface PosItemSync {
   priceCents: number;
   sku: string;
   categoryId: string;
+  categoryName: string;
 }
 
 /** Org-scoped POS adapter — all methods operate against one org's credentials. */
 export interface IPosAdapter {
-  syncItem(item: PosItemSync, locationId: string, initialQuantity: number): Promise<{ posItemId: string; posVariationId: string }>;
+  /** Creates or recreates a POS category and returns its ID. */
+  upsertCategory(name: string): Promise<string>;
+  syncItem(item: PosItemSync, locationId: string, initialQuantity: number): Promise<{ posItemId: string; posVariationId: string; resolvedCategoryId: string }>;
   deleteItem(posItemId: string): Promise<void>;
   uploadImage(posItemId: string, buffer: Buffer, mimeType: string): Promise<{ posImageId: string; imageUrl: string }>;
   deleteImage(posImageId: string): Promise<void>;

@@ -109,11 +109,26 @@ export const api = {
 
   orgs: {
     get: (orgId: string) => request<import('./api.types').OrgResponse>(`/orgs/${orgId}`),
-    patch: (orgId: string, data: { name?: string; status?: string }) =>
+    patch: (orgId: string, data: { name?: string; status?: string; slug?: string }) =>
       request<import('./api.types').OrgResponse>(`/orgs/${orgId}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
       }),
+    uploadLogo: (orgId: string, file: File): Promise<import('./api.types').OrgResponse> => {
+      const form = new FormData();
+      form.append('file', file);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      return fetch(`/api/v1/orgs/${orgId}/logo`, {
+        method: 'POST', credentials: 'include', headers, body: form,
+      }).then(async (r) => {
+        const body = await r.json().catch(() => ({ success: false, error: 'Invalid response' }));
+        if (!r.ok || !body.success) throw new ApiError(r.status, body.error ?? body.message ?? 'Upload failed', body.code);
+        return body.data as import('./api.types').OrgResponse;
+      });
+    },
+    deleteLogo: (orgId: string) =>
+      request<import('./api.types').OrgResponse>(`/orgs/${orgId}/logo`, { method: 'DELETE' }),
   },
 
   members: {
@@ -242,14 +257,17 @@ export const api = {
       }),
     deleteItem: (orgId: string, swapId: string, itemId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}`, { method: 'DELETE' }),
-    uploadPhoto: (orgId: string, swapId: string, itemId: string, file: File) => {
+    uploadPhoto: async (orgId: string, swapId: string, itemId: string, file: File): Promise<{ id: string; url: string }> => {
       const form = new FormData();
       form.append('image', file);
       const headers: Record<string, string> = {};
       if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-      return fetch(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/photos`, {
+      const res = await fetch(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/photos`, {
         method: 'POST', credentials: 'include', headers, body: form,
-      }).then((r) => r.json() as Promise<{ success: boolean; data: { id: string; url: string } }>);
+      });
+      const body = await res.json().catch(() => ({ success: false, error: 'Invalid response' })) as { success: boolean; data?: { id: string; url: string }; error?: string };
+      if (!res.ok || !body.success) throw new ApiError(res.status, body.error ?? 'Photo upload failed');
+      return body.data!;
     },
     deletePhoto: (orgId: string, swapId: string, itemId: string, photoId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/photos/${photoId}`, { method: 'DELETE' }),
@@ -324,14 +342,17 @@ export const api = {
       }),
     sellerDeleteItem: (orgId: string, itemId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}`, { method: 'DELETE' }),
-    sellerUploadPhoto: (orgId: string, itemId: string, file: File) => {
+    sellerUploadPhoto: async (orgId: string, itemId: string, file: File): Promise<{ id: string; url: string }> => {
       const form = new FormData();
       form.append('image', file);
       const headers: Record<string, string> = {};
       if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-      return fetch(`/api/v1/orgs/${orgId}/ski-swap/seller/me/items/${itemId}/photos`, {
+      const res = await fetch(`/api/v1/orgs/${orgId}/ski-swap/seller/me/items/${itemId}/photos`, {
         method: 'POST', credentials: 'include', headers, body: form,
-      }).then((r) => r.json() as Promise<{ success: boolean; data: { id: string; url: string } }>);
+      });
+      const body = await res.json().catch(() => ({ success: false, error: 'Invalid response' })) as { success: boolean; data?: { id: string; url: string }; error?: string };
+      if (!res.ok || !body.success) throw new ApiError(res.status, body.error ?? 'Photo upload failed');
+      return body.data!;
     },
     sellerDeletePhoto: (orgId: string, itemId: string, photoId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}/photos/${photoId}`, { method: 'DELETE' }),
@@ -368,6 +389,8 @@ export const api = {
   public: {
     getSellerDetail: (sellerId: string) =>
       request<import('./api.types').PublicSellerDetailResponse>(`/public/sellers/${sellerId}`),
+    getOrgBranding: (orgSlug: string) =>
+      request<import('./api.types').OrgBrandingResponse>(`/public/${encodeURIComponent(orgSlug)}/ski-swap/branding`),
     findSeller: (orgSlug: string, email: string, last4: string) =>
       request<import('./api.types').SellerFindResponse>(
         `/public/${encodeURIComponent(orgSlug)}/ski-swap/seller-find?email=${encodeURIComponent(email)}&last4=${encodeURIComponent(last4)}`,

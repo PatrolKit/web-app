@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { PublicSellerLookupResponse } from '../../lib/api.types';
+import { PoweredByFooter } from './PoweredByFooter';
 
 export default function SellerStatusPage() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
@@ -101,6 +102,7 @@ export default function SellerStatusPage() {
             )}
           </div>
         )}
+        <PoweredByFooter />
       </div>
     </div>
   );

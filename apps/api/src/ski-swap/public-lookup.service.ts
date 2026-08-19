@@ -25,6 +25,12 @@ export class PublicLookupService {
     private readonly posFactory: PosAdapterFactory,
   ) {}
 
+  async getOrgBranding(orgSlug: string): Promise<{ orgName: string; logoUrl: string | null }> {
+    const org = await this.prisma.organization.findFirst({ where: { slug: orgSlug.toLowerCase() } });
+    if (!org) throw new NotFoundException('Organization not found');
+    return { orgName: org.name, logoUrl: org.logoUrl ?? null };
+  }
+
   async lookup(orgSlug: string, phone: string, swapId?: string): Promise<PublicSellerLookupResponse> {
     const org = await this.prisma.organization.findFirst({ where: { slug: orgSlug.toLowerCase() } });
     if (!org) throw new NotFoundException('Organization not found');

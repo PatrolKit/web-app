@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { IdempotencyService } from '../common/services/idempotency.service';
 import { SquareCryptoService } from './square-crypto.service';
 import { SquareClientService } from './square-client.service';
 import { SquareConfigService } from './square-config.service';
@@ -45,6 +46,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
     SkiSwapSettingsController,
   ],
   providers: [
+    IdempotencyService,
     SquareCryptoService,
     SquareClientService,
     SquareConfigService,

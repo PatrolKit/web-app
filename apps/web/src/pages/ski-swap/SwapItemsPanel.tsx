@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
 import type { ItemResponse, SellerResponse } from '../../lib/api.types';
+import SearchableSelect from '../../components/SearchableSelect';
 import { usePrinter } from '../../contexts/PrinterContext';
 import { isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
 
@@ -71,12 +72,13 @@ export default function SwapItemsPanel({
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
-  const [sellerFilter, setSellerFilter] = useState('');
   const [printFilter, setPrintFilter] = useState<'' | 'not_printed' | 'printed'>('');
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ItemResponse | null>(null);
   const [printingItem, setPrintingItem] = useState(false);
   const [showUnsupportedModal, setShowUnsupportedModal] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState<{ file: File; preview: string } | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   const { printItem } = usePrinter();
   const [form, setForm] = useState<ItemFormData>(emptyForm);
@@ -94,11 +96,27 @@ export default function SwapItemsPanel({
       name: form.name,
       description: form.description || undefined,
       priceCents: Math.round(parseFloat(form.priceDollars) * 100),
-      quantity: parseInt(form.quantity, 10),
+      quantity: 1,
       sellerId: form.sellerId || undefined,
       donateProceeds: form.donateProceeds,
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey }); closeForm(); },
+    onSuccess: (item) => {
+      if (pendingPhoto && panelApi.uploadPhoto) {
+        uploadPhotoMutation.mutate(
+          { itemId: item.id, file: pendingPhoto.file },
+          {
+            onSuccess: () => { qc.invalidateQueries({ queryKey }); closeForm(); },
+            onError: (err: unknown) => {
+              qc.invalidateQueries({ queryKey });
+              setPhotoError((err as Error)?.message ?? 'Photo upload failed. Item was saved.');
+            },
+          },
+        );
+      } else {
+        qc.invalidateQueries({ queryKey });
+        closeForm();
+      }
+    },
   });
 
   const patchMutation = useMutation({
@@ -121,6 +139,7 @@ export default function SwapItemsPanel({
   const uploadPhotoMutation = useMutation({
     mutationFn: ({ itemId, file }: { itemId: string; file: File }) => panelApi.uploadPhoto!(itemId, file),
     onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onError: (err: unknown) => setPhotoError((err as Error)?.message ?? 'Photo upload failed'),
   });
 
   const deletePhotoMutation = useMutation({
@@ -140,7 +159,13 @@ export default function SwapItemsPanel({
     });
   }
 
-  function closeForm() { setShowForm(false); setEditItem(null); setForm(emptyForm); }
+  function closeForm() {
+    setPendingPhoto(null);
+    setPhotoError(null);
+    setShowForm(false);
+    setEditItem(null);
+    setForm(emptyForm);
+  }
 
   async function handlePrint(item: ItemResponse) {
     if (!isWebBluetoothSupported()) { setShowUnsupportedModal(true); return; }
@@ -161,7 +186,6 @@ export default function SwapItemsPanel({
 
   const isFormOpen = showForm || editItem !== null;
   const items = (data?.items ?? [])
-    .filter((i) => !sellerFilter || i.seller?.id === sellerFilter)
     .filter((i) => printFilter === 'printed' ? i.hasPrintedTag : printFilter === 'not_printed' ? !i.hasPrintedTag : true);
 
   if (!swapId) return null;
@@ -176,19 +200,9 @@ export default function SwapItemsPanel({
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search name / SKU…"
-              className="bg-surface-50 border border-gray-700 rounded px-3 py-1.5 text-sm text-white w-48"
+              placeholder="Search name, SKU, seller…"
+              className="bg-surface-50 border border-gray-700 rounded px-3 py-1.5 text-sm text-white w-72"
             />
-          )}
-          {sellers && sellers.length > 0 && (
-            <select
-              value={sellerFilter}
-              onChange={(e) => setSellerFilter(e.target.value)}
-              className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
-            >
-              <option value="">All sellers</option>
-              {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
           )}
           <select
             value={printFilter}
@@ -268,7 +282,7 @@ export default function SwapItemsPanel({
                         className="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1 disabled:opacity-40"
                         title="Print tag"
                       >
-                        <FontAwesomeIcon icon={faPrintDuo} /> Print
+                        <FontAwesomeIcon icon={faPrintDuo} /> Label
                       </button>
                     )}
                   </td>
@@ -304,7 +318,30 @@ export default function SwapItemsPanel({
               rows={2}
               className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white resize-none"
             />
-            <div className="grid grid-cols-2 gap-3">
+            {editItem ? (
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  required
+                  inputMode="decimal"
+                  value={form.priceDollars}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*?)\./g, '$1');
+                    setForm({ ...form, priceDollars: val });
+                  }}
+                  placeholder="Price ($)"
+                  className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+                />
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  value={form.quantity}
+                  onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                  placeholder="Quantity"
+                  className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+                />
+              </div>
+            ) : (
               <input
                 required
                 inputMode="decimal"
@@ -314,28 +351,19 @@ export default function SwapItemsPanel({
                   setForm({ ...form, priceDollars: val });
                 }}
                 placeholder="Price ($)"
-                className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
               />
-              <input
-                required
-                type="number"
-                min="1"
-                value={form.quantity}
-                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-                placeholder="Quantity"
-                className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-              />
-            </div>
+            )}
 
             {sellers && (
-              <select
+              <SearchableSelect
                 value={form.sellerId}
-                onChange={(e) => setForm({ ...form, sellerId: e.target.value })}
-                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-              >
-                <option value="">No seller assigned</option>
-                {sellers.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.phone})</option>)}
-              </select>
+                onChange={(v) => setForm({ ...form, sellerId: v })}
+                options={sellers.map((s) => ({ value: s.id, label: s.name, sublabel: s.phone, keywords: s.email ?? '' }))}
+                placeholder="No seller assigned"
+                clearLabel="No seller assigned"
+                emptyMessage="No sellers match."
+              />
             )}
 
             <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -348,7 +376,42 @@ export default function SwapItemsPanel({
               <span className="text-gray-300">❤️ Donate proceeds to ski patrol</span>
             </label>
 
-            {/* Photos — only shown in edit mode when upload/delete functions are provided */}
+            {/* Photo — pending upload for new items */}
+            {!editItem && panelApi.uploadPhoto && (
+              <div className="space-y-2 pt-1 border-t border-gray-700">
+                <p className="text-xs text-gray-400">Photo (optional)</p>
+                {pendingPhoto ? (
+                  <div className="flex items-center gap-3">
+                    <img src={pendingPhoto.preview} className="w-16 h-16 object-cover rounded" alt="" />
+                    <button
+                      type="button"
+                      onClick={() => setPendingPhoto(null)}
+                      className="text-xs text-red-400 hover:text-red-300"
+                    >Remove</button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-400 hover:text-white">
+                    <span className="bg-surface-100 border border-gray-700 rounded px-3 py-1.5 text-xs">Choose image…</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setPendingPhoto({ file: f, preview: ev.target!.result as string });
+                          reader.readAsDataURL(f);
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+
+            {/* Photos — edit mode: view, add, delete */}
             {editItem && panelApi.uploadPhoto && panelApi.deletePhoto && (
               <div className="space-y-2 pt-1 border-t border-gray-700">
                 <p className="text-xs text-gray-400">Photos</p>
@@ -377,10 +440,14 @@ export default function SwapItemsPanel({
               </div>
             )}
 
+            {photoError && (
+              <p className="text-xs text-red-400 pt-1">{photoError}</p>
+            )}
+
             <div className="flex gap-2 pt-2">
               <button
                 type="submit"
-                disabled={createMutation.isPending || patchMutation.isPending}
+                disabled={createMutation.isPending || patchMutation.isPending || uploadPhotoMutation.isPending}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded py-1.5 disabled:opacity-40"
               >
                 {editItem ? 'Save' : 'Add'}

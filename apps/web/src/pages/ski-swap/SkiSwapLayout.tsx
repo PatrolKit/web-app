@@ -148,8 +148,8 @@ export default function SkiSwapLayout() {
             <>
               {perms.has('ski_swap:report') && <NavLink to="" end className={navClass}>Dashboard</NavLink>}
               {perms.has('ski_swap:report') && <NavLink to="items" className={navClass}>Items</NavLink>}
-              {perms.has('business_seller') && <NavLink to="my-items" className={navClass}>My Items</NavLink>}
-              {perms.has('business_seller') && <NavLink to="seller-profile" className={navClass}>Seller Profile</NavLink>}
+              {isSellerOnly && <NavLink to="my-items" className={navClass}>My Items</NavLink>}
+              {isSellerOnly && <NavLink to="seller-profile" className={navClass}>Seller Profile</NavLink>}
             </>
           )}
 

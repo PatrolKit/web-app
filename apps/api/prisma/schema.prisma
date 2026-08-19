@@ -126,18 +126,21 @@ model RefreshToken {
 }
 
 model Device {
-  id         String    @id @default(cuid())
-  orgId      String
-  name       String
-  clientId   String    @unique
-  secretHash String
-  role       String    @db.VarChar(100)
-  lastSeenAt DateTime?
-  createdBy  String?
-  createdAt  DateTime  @default(now())
+  id                 String    @id @default(cuid())
+  orgId              String
+  name               String
+  clientId           String    @unique
+  secretHash         String
+  role               String    @db.VarChar(100)
+  lastSeenAt         DateTime?
+  createdBy          String?
+  createdAt          DateTime  @default(now())
+  skiSwapDeviceCode  String?   @db.VarChar(3)
 
   org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   permissions DevicePermission[]
+
+  @@unique([orgId, skiSwapDeviceCode])
 }
 
 model DevicePermission {
@@ -305,4 +308,13 @@ model SkiSwapSettings {
   updatedAt     DateTime @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model IdempotencyRecord {
+  key       String   @id
+  response  Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
 }

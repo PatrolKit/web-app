@@ -1,5 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { IdempotencyService } from '../common/services/idempotency.service';
 import { createId } from '@paralleldrive/cuid2';
 import { parse as parseCsv } from 'csv-parse/sync';
 import type { SellerResponse } from '../contracts/ski-swap.contracts';
@@ -78,9 +80,12 @@ export function normalizeSellerRow(raw: {
 
 @Injectable()
 export class SellerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
-  async list(orgId: string, query?: string): Promise<SellerResponse[]> {
+  async list(orgId: string, query?: string, updatedSince?: string): Promise<SellerResponse[]> {
     const sellers = await this.prisma.swapSeller.findMany({
       where: {
         orgId,
@@ -89,9 +94,11 @@ export class SellerService {
               OR: [
                 { name: { contains: query } },
                 { phone: { contains: query.replace(/\D/g, '') } },
+                { email: { contains: query } },
               ],
             }
           : {}),
+        ...(updatedSince ? { updatedAt: { gt: new Date(updatedSince) } } : {}),
       },
       orderBy: { name: 'asc' },
     });
@@ -111,7 +118,13 @@ export class SellerService {
       payoutMethod?: string | null; payoutIdentifierType?: string | null;
       payoutIdentifier?: string | null; payoutIdentifierConfirmedAt?: string | null;
     },
+    idempotencyKey?: string,
   ): Promise<SellerResponse> {
+    if (idempotencyKey) {
+      const cached = await this.idempotency.getCached(idempotencyKey);
+      if (cached) return cached as unknown as SellerResponse;
+    }
+
     const seller = await this.prisma.swapSeller.create({
       data: {
         id: createId(), orgId, type: data.type ?? 'individual',
@@ -124,7 +137,13 @@ export class SellerService {
         payoutIdentifierConfirmedAt: data.payoutIdentifierConfirmedAt ? new Date(data.payoutIdentifierConfirmedAt) : null,
       },
     });
-    return this.toResponse(seller);
+    const response = this.toResponse(seller);
+
+    if (idempotencyKey) {
+      await this.idempotency.save(idempotencyKey, response as unknown as Record<string, unknown>);
+    }
+
+    return response;
   }
 
   async patch(

@@ -10,7 +10,8 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard, type AuthenticatedUser } from '../common/guards/jwt-auth.guard';
+import { type AuthenticatedUser } from '../common/guards/jwt-auth.guard';
+import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -21,7 +22,7 @@ import { SwapService } from './swap.service';
 import { CreateSwapDto, PatchSwapDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/swaps')
-@UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireModule('ski_swap')
 export class SwapController {
   constructor(private readonly swapService: SwapService) {}

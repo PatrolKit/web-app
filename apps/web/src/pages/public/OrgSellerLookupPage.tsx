@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../../lib/api';
+import type { OrgBrandingResponse } from '../../lib/api.types';
+import { PoweredByFooter } from './PoweredByFooter';
 
 export default function OrgSellerLookupPage() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
@@ -9,6 +11,17 @@ export default function OrgSellerLookupPage() {
   const [last4, setLast4] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [branding, setBranding] = useState<OrgBrandingResponse | null>(null);
+  const [orgNotFound, setOrgNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!orgSlug) return;
+    api.public.getOrgBranding(orgSlug)
+      .then(setBranding)
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 404) setOrgNotFound(true);
+      });
+  }, [orgSlug]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,14 +45,30 @@ export default function OrgSellerLookupPage() {
     }
   }
 
+  if (orgNotFound) {
+    return (
+      <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-4 text-center">
+        <img src="/logo.png" alt="PatrolKit" className="w-12 h-12 mx-auto mb-4 rounded-lg" />
+        <h1 className="text-white font-semibold text-lg">Page not found</h1>
+        <p className="text-gray-400 text-sm mt-1">This link doesn't match any active ski swap. Check the URL and try again.</p>
+        <PoweredByFooter />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-surface flex flex-col items-center justify-start pt-20 px-4">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <span className="text-2xl font-bold">
-            <span className="text-brand-600">Patrol</span>Kit
-          </span>
-          <h1 className="text-xl font-semibold text-white mt-2">Ski Swap — Item Status</h1>
+          <img
+            src={branding?.logoUrl ?? '/logo.png'}
+            alt={branding?.orgName ?? 'PatrolKit'}
+            className="w-16 h-16 mx-auto mb-3 rounded-lg object-contain"
+          />
+          {branding?.orgName && (
+            <p className="text-brand-500 font-semibold text-sm mb-1">{branding.orgName}</p>
+          )}
+          <h1 className="text-xl font-semibold text-white">Ski Swap Item Status</h1>
           <p className="text-gray-400 text-sm mt-1">
             Enter your email and the last 4 digits of your phone to check your items.
           </p>
@@ -76,6 +105,7 @@ export default function OrgSellerLookupPage() {
         </form>
 
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+        <PoweredByFooter />
       </div>
     </div>
   );

@@ -8,16 +8,21 @@ import {
   generateLabel,
   generatePrinterLabel,
   generateQrLabel,
+  generateReceiptHeaderLabel,
+  generateReceiptItemLabels,
   generateCalibrationPattern,
   isWebBluetoothSupported,
   previewLabel,
   previewPrinterLabel,
   previewQrLabel,
+  previewReceiptHeaderLabel,
+  previewReceiptItemLabels,
   previewCalibrationPattern,
   reconnectPrinter,
 } from '../lib/printing/PhomemoPrinterService';
 import type { ConnectedM110, PaperSize, PrinterMargins } from '../lib/printing/PhomemoPrinterService';
-import type { ItemResponse, SwapPrinterRecord } from '../lib/api.types';
+import type { ItemResponse, SellerResponse, SwapPrinterRecord } from '../lib/api.types';
+import { SELLER_SITE_URL } from '../lib/sellerSiteUrl';
 
 interface PrinterContextValue {
   printers: SwapPrinterRecord[];
@@ -34,11 +39,15 @@ interface PrinterContextValue {
   printQrLabel(sellerName: string, url: string): Promise<void>;
   printPrinterIdLabel(printer: SwapPrinterRecord, orgName: string): Promise<void>;
   printCalibration(printer: SwapPrinterRecord): Promise<void>;
+  printReceipt(seller: SellerResponse, items: { name: string; sku: string; priceCents: number }[], orgLogoUrl: string | null): Promise<void>;
   previewMode: boolean;
   pendingPreview: string | null;
+  pendingPreviews: string[];
   setPreviewMode(on: boolean): void;
   clearPendingPreview(): void;
   setPendingPreview(dataUrl: string): void;
+  setPendingPreviews(pages: string[]): void;
+  clearPendingPreviews(): void;
   isSupported: boolean;
 }
 
@@ -71,6 +80,7 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
 
   const [previewMode, setPreviewModeState] = useState(() => localStorage.getItem(previewStorageKey) === '1');
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const [pendingPreviews, setPendingPreviews] = useState<string[]>([]);
 
   function setPreviewMode(on: boolean) {
     setPreviewModeState(on);
@@ -78,6 +88,7 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
     else localStorage.removeItem(previewStorageKey);
   }
   const clearPendingPreview = useCallback(() => setPendingPreview(null), []);
+  const clearPendingPreviews = useCallback(() => setPendingPreviews([]), []);
 
   const [connections, setConnections] = useState<Map<string, ConnectedM110>>(new Map());
   const connectionsRef = useRef<Map<string, ConnectedM110>>(new Map());
@@ -292,6 +303,49 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectPrinterById]);
 
+  const printReceipt = useCallback(async (
+    seller: SellerResponse,
+    items: { name: string; sku: string; priceCents: number }[],
+    orgLogoUrl: string | null,
+  ): Promise<void> => {
+    const pool = printersRef.current;
+    const pref = pool.find((p) => p.id === preferredPrinterIdRef.current);
+    let conn = pref ? connectionsRef.current.get(pref.id) : undefined;
+    if (!conn) {
+      if (pref) {
+        conn = await connectPrinterById(pref);
+      } else {
+        const poolConn = await connectFromPool(pool.map((p) => p.bluetoothName));
+        const matched = printersRef.current.find((p) => p.bluetoothName === poolConn.bluetoothName);
+        if (matched) {
+          updateConnections((prev) => new Map(prev).set(matched.id, poolConn));
+          attachDisconnectHandler(matched.id, poolConn);
+          persistPreferred(matched.id);
+          conn = poolConn;
+        }
+      }
+    }
+    if (!conn) throw new Error('No printer connected');
+
+    const margins = pref ? marginsFromRecord(pref) : DEFAULT_PRINTER_MARGINS;
+    const paperSize = (pref?.paperSize ?? '40x30') as PaperSize;
+    const date = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const qrUrl = `${SELLER_SITE_URL}/s/${seller.id}`;
+
+    if (previewMode) {
+      const headerUrl = await previewReceiptHeaderLabel(orgLogoUrl, date, seller.name, seller.phone, qrUrl, paperSize, margins);
+      const pageUrls = previewReceiptItemLabels(items, paperSize, margins);
+      setPendingPreviews([headerUrl, ...pageUrls]);
+      return;
+    }
+
+    await conn.print(await generateReceiptHeaderLabel(orgLogoUrl, date, seller.name, seller.phone, qrUrl, paperSize, margins));
+    for (const page of generateReceiptItemLabels(items, paperSize, margins)) {
+      await conn.print(page);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectPrinterById]);
+
   const preferredPrinter = printers.find((p) => p.id === preferredPrinterId) ?? null;
   const isPreferredConnected = preferredPrinter ? connections.has(preferredPrinter.id) : false;
 
@@ -299,8 +353,8 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
     <PrinterContext.Provider value={{
       printers, connections, preferredPrinter, isPreferredConnected,
       setPreferredPrinter, setPaperSize, connectPreferred, disconnectPreferred,
-      connectPrinterById, registerConnection, printItem, printQrLabel, printPrinterIdLabel, printCalibration,
-      previewMode, pendingPreview, setPreviewMode, clearPendingPreview, setPendingPreview,
+      connectPrinterById, registerConnection, printItem, printQrLabel, printPrinterIdLabel, printCalibration, printReceipt,
+      previewMode, pendingPreview, pendingPreviews, setPreviewMode, clearPendingPreview, setPendingPreview, setPendingPreviews, clearPendingPreviews,
       isSupported,
     }}>
       {children}

@@ -57,6 +57,9 @@ export const DeviceMeResponseSchema = z.object({
   orgId: z.string(),
   orgName: z.string(),
   permissions: z.array(z.string()),
+  skiSwapDeviceCode: z.string().nullable(),
+  sellerSiteUrl: z.string(),
+  orgLogoUrl: z.string().nullable().optional(),
 });
 
 // ─── DTOs ────────────────────────────────────────────────────────────────────

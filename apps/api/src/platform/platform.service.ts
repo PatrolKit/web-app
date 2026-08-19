@@ -30,7 +30,9 @@ export class PlatformService {
     const membership = await this.prisma.membership.create({
       data: { id: createId(), userId: owner.id, orgId: org.id },
     });
-    const allPerms = await this.prisma.permission.findMany({ where: { key: { in: ALL_PERMISSION_KEYS } } });
+    // business_seller is an external-seller role, not an admin permission
+    const adminPermKeys = ALL_PERMISSION_KEYS.filter((k) => k !== 'business_seller');
+    const allPerms = await this.prisma.permission.findMany({ where: { key: { in: adminPermKeys } } });
     await this.prisma.membershipPermission.createMany({
       data: allPerms.map((p) => ({ membershipId: membership.id, permissionId: p.id })),
     });

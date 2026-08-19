@@ -11,9 +11,12 @@ export class PrinterService {
     private readonly permissionsService: PermissionsService,
   ) {}
 
-  async list(orgId: string, userId: string): Promise<SwapPrinterResponse[]> {
-    const perms = await this.permissionsService.getPermissions(userId, orgId);
-    const isAdmin = perms.includes('ski_swap:admin');
+  async list(orgId: string, userId?: string): Promise<SwapPrinterResponse[]> {
+    let isAdmin = !userId;
+    if (userId) {
+      const perms = await this.permissionsService.getPermissions(userId, orgId);
+      isAdmin = perms.includes('ski_swap:admin');
+    }
 
     const printers = await this.prisma.swapPrinter.findMany({
       where: isAdmin ? { orgId } : { orgId, assignedSellerId: null },
