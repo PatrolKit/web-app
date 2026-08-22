@@ -23,6 +23,7 @@ import { OrgModulesModule } from './modules/modules.module';
 import { DevicesModule } from './devices/devices.module';
 import { AuditModule } from './common/audit/audit.module';
 import { SkiSwapModule } from './ski-swap/ski-swap.module';
+import { SmsModule } from './sms/sms.module';
 import appConfig from './config/app.config';
 
 @Module({
@@ -59,6 +60,7 @@ import appConfig from './config/app.config';
     }),
     PrismaModule,
     MailModule,
+    SmsModule,
     AuthModule,
     PermissionsModule,
     MeModule,

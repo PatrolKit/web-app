@@ -40,9 +40,11 @@ run(`rsync -az -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
 console.log('Installing dependencies...');
 ssh('cd /home/ec2-user/patrolkit && npm install --omit=dev 2>&1 | tail -3');
 
-// 5. Run any pending migrations and regenerate Prisma client
+// 5. Run any pending migrations, seed, and regenerate Prisma client
 console.log('Running migrations...');
 ssh('cd /home/ec2-user/patrolkit && node_modules/.bin/prisma migrate deploy');
+console.log('Seeding database...');
+ssh('cd /home/ec2-user/patrolkit && node_modules/.bin/ts-node --project prisma/tsconfig.seed.json prisma/seed.ts');
 console.log('Regenerating Prisma client...');
 ssh('cd /home/ec2-user/patrolkit && node_modules/.bin/prisma generate');
 

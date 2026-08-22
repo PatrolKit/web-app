@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -51,5 +52,14 @@ export class BusinessSellerController {
     @Body() body: UpdateBusinessSellerStatusDto,
   ) {
     return this.businessSellerService.setStatus(orgId, targetUserId, body.status);
+  }
+
+  @Delete(':userId')
+  @HttpCode(204)
+  remove(
+    @Param('orgId') orgId: string,
+    @Param('userId') targetUserId: string,
+  ) {
+    return this.businessSellerService.remove(orgId, targetUserId);
   }
 }

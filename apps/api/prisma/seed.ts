@@ -21,6 +21,14 @@ const PERMISSIONS = [
   { key: 'ski_swap:manage', description: 'Read/write ski swap items and sellers.' },
   { key: 'ski_swap:admin', description: 'Manage ski swaps and configure Square credentials.' },
   { key: 'business_seller', description: 'Self-service access to own consignment items in ski swaps.' },
+  // Time Tracking module permissions
+  { key: 'time_tracking:report', description: 'View time tracking records and reports.' },
+  { key: 'time_tracking:manage', description: 'Create and edit time tracking entries.' },
+  { key: 'time_tracking:admin', description: 'Administer time tracking settings and all entries.' },
+  // Signage module permissions
+  { key: 'signage:report', description: 'View signage displays and message history.' },
+  { key: 'signage:manage', description: 'Create and publish messages to signage displays.' },
+  { key: 'signage:admin', description: 'Administer signage displays and settings.' },
 ] as const;
 
 async function main() {
@@ -44,6 +52,16 @@ async function main() {
     where: { key: 'ski_swap' },
     update: { name: 'Ski Swap', description: 'Consignment ski swap management powered by Square POS.' },
     create: { key: 'ski_swap', name: 'Ski Swap', description: 'Consignment ski swap management powered by Square POS.', isCore: false },
+  });
+  await prisma.moduleCatalog.upsert({
+    where: { key: 'time_tracking' },
+    update: { name: 'Time Tracking', description: 'Track and report on time entries across your organization.' },
+    create: { key: 'time_tracking', name: 'Time Tracking', description: 'Track and report on time entries across your organization.', isCore: false },
+  });
+  await prisma.moduleCatalog.upsert({
+    where: { key: 'signage' },
+    update: { name: 'Signage', description: 'Manage smart displays in patrol rooms for distributing notifications and messages.' },
+    create: { key: 'signage', name: 'Signage', description: 'Manage smart displays in patrol rooms for distributing notifications and messages.', isCore: false },
   });
   console.log('✓ modules seeded');
 

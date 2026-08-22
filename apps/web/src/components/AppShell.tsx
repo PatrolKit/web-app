@@ -97,14 +97,23 @@ export default function AppShell() {
 
         {/* Nav — use NavLink so navigation stays in-app (no full reload) */}
         <nav className="flex-1 p-4 space-y-1">
+          {perms.has('devices:read') && (
+            <NavLink to="devices" className={navClass}>Devices</NavLink>
+          )}
           {perms.has('users:read') && (
             <NavLink to="members" className={navClass}>Members</NavLink>
           )}
           {perms.has('org:read') && (
             <NavLink to="modules" className={navClass}>Modules</NavLink>
           )}
-          {perms.has('devices:read') && (
-            <NavLink to="devices" className={navClass}>Devices</NavLink>
+          {perms.has('org:manage') && (
+            <NavLink to="org-admin" className={navClass}>Org Admin</NavLink>
+          )}
+          {user.isSuperAdmin && (
+            <NavLink to="admin" className={navClass}>Platform Admin</NavLink>
+          )}
+          {perms.has('signage:report') && isModuleEnabled('signage') && (
+            <NavLink to="signage" className={navClass}>Signage</NavLink>
           )}
           {(perms.has('ski_swap:report') || perms.has('business_seller')) && isModuleEnabled('ski_swap') && (
             <NavLink
@@ -112,11 +121,8 @@ export default function AppShell() {
               className={navClass}
             >Ski Swap</NavLink>
           )}
-          {perms.has('org:manage') && (
-            <NavLink to="org-admin" className={navClass}>Org Admin</NavLink>
-          )}
-          {user.isSuperAdmin && (
-            <NavLink to="admin" className={navClass}>Platform Admin</NavLink>
+          {perms.has('time_tracking:report') && isModuleEnabled('time_tracking') && (
+            <NavLink to="time-tracking" className={navClass}>Time Tracking</NavLink>
           )}
         </nav>
 

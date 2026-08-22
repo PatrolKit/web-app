@@ -24,13 +24,17 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { SellerService } from './seller.service';
+import { SellerVerificationService } from './seller-verification.service';
 import { CreateSellerDto, PatchSellerDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/sellers')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireModule('ski_swap')
 export class SellerController {
-  constructor(private readonly sellerService: SellerService) {}
+  constructor(
+    private readonly sellerService: SellerService,
+    private readonly verificationService: SellerVerificationService,
+  ) {}
 
   @Get()
   @RequirePermissions('ski_swap:report')
@@ -73,6 +77,26 @@ export class SellerController {
   @RequirePermissions('ski_swap:manage')
   async remove(@Param('orgId') orgId: string, @Param('sellerId') sellerId: string) {
     await this.sellerService.remove(orgId, sellerId);
+  }
+
+  @Post(':sellerId/verify/email/initiate')
+  @HttpCode(204)
+  @RequirePermissions('ski_swap:manage')
+  async initiateEmailVerification(
+    @Param('orgId') orgId: string,
+    @Param('sellerId') sellerId: string,
+  ) {
+    await this.verificationService.initiateEmail(sellerId, orgId);
+  }
+
+  @Post(':sellerId/verify/phone/initiate')
+  @HttpCode(204)
+  @RequirePermissions('ski_swap:manage')
+  async initiatePhoneVerification(
+    @Param('orgId') orgId: string,
+    @Param('sellerId') sellerId: string,
+  ) {
+    await this.verificationService.initiatePhone(sellerId, orgId);
   }
 
   @Get('import/template')

@@ -21,6 +21,25 @@ function magicLinkTemplate(magicLinkUrl: string): string {
 </html>`;
 }
 
+function sellerVerificationTemplate(verifyUrl: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Verify your email with PatrolKit</title></head>
+<body style="font-family: Inter, 'Plus Jakarta Sans', sans-serif; background: #1a1a1a; color: #fff; margin: 0; padding: 40px 20px;">
+  <div style="max-width: 480px; margin: 0 auto; background: #252525; border-radius: 8px; padding: 40px;">
+    <h1 style="color: #dc2626; font-size: 24px; margin: 0 0 8px;">PatrolKit</h1>
+    <p style="color: #9ca3af; margin: 0 0 32px; font-size: 14px;">Ski swap management</p>
+    <p style="margin: 0 0 8px; font-size: 18px; font-weight: 600;">Verify your email address</p>
+    <p style="color: #9ca3af; margin: 0 0 24px; font-size: 14px;">Click the button below to confirm your email. This link expires in <strong style="color: #e5e7eb;">15 minutes</strong>.</p>
+    <a href="${verifyUrl}" style="display: inline-block; background: #dc2626; color: #fff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Verify Email</a>
+    <p style="color: #6b7280; font-size: 13px; margin-top: 32px;">If you weren't expecting this, you can safely ignore this email.</p>
+    <hr style="border: none; border-top: 1px solid #333; margin: 24px 0;">
+    <p style="color: #4b5563; font-size: 12px; margin: 0;">Or copy this link: <span style="word-break: break-all; color: #9ca3af;">${verifyUrl}</span></p>
+  </div>
+</body>
+</html>`;
+}
+
 function sellerAddedTemplate(signInUrl: string, orgName: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -76,6 +95,12 @@ export class MailService {
     await this.send(to, subject, html);
   }
 
+  async sendVerificationEmail(to: string, verifyUrl: string): Promise<void> {
+    const subject = 'Verify your email address — PatrolKit';
+    const html = sellerVerificationTemplate(verifyUrl);
+    await this.send(to, subject, html);
+  }
+
   async sendSellerAddedNotification(to: string, orgName: string): Promise<void> {
     const appUrl = this.config.get<string>('app.appUrl', 'http://localhost:3000');
     const signInUrl = `${appUrl}/app/auth/login`;
@@ -96,6 +121,7 @@ export class MailService {
       this.logger.log({ to, subject }, 'Email sent');
     } catch (err) {
       this.logger.error({ err, to }, 'Failed to send email');
+      throw err;
     }
   }
 

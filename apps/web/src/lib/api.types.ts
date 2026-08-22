@@ -103,6 +103,8 @@ export interface SellerResponse {
   payoutIdentifierType: 'EMAIL' | 'PHONE' | 'USER_HANDLE' | null;
   payoutIdentifier: string | null;
   payoutIdentifierConfirmedAt: string | null;
+  emailVerifiedAt: string | null;
+  phoneVerifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

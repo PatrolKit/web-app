@@ -203,4 +203,45 @@ export class BusinessSellerService {
       seller: seller ? { id: seller.id, name: seller.name, email: seller.email ?? null, phone: seller.phone } : null,
     };
   }
+
+  async remove(orgId: string, targetUserId: string): Promise<void> {
+    const bsPerm = await this.prisma.permission.findUnique({ where: { key: 'business_seller' } });
+
+    const membership = await this.prisma.membership.findUnique({
+      where: { userId_orgId: { userId: targetUserId, orgId } },
+      include: { permissions: { include: { permission: true } } },
+    });
+
+    if (!membership) throw new NotFoundException('Membership not found');
+
+    const bsMp = bsPerm && membership.permissions.find((mp) => mp.permissionId === bsPerm.id);
+    if (!bsMp) throw new NotFoundException('Not a business seller');
+
+    await this.prisma.membershipPermission.delete({
+      where: { membershipId_permissionId: { membershipId: membership.id, permissionId: bsPerm!.id } },
+    });
+
+    const remainingPerms = membership.permissions.filter((mp) => mp.permissionId !== bsPerm!.id);
+    if (remainingPerms.length === 0) {
+      await this.prisma.membership.update({
+        where: { id: membership.id },
+        data: { status: 'disabled' },
+      });
+    }
+
+    this.permissionsService.invalidate(targetUserId, orgId);
+
+    await this.prisma.auditLog.create({
+      data: {
+        id: createId(),
+        actorType: 'user',
+        actorId: undefined,
+        orgId,
+        action: 'business_seller.removed',
+        targetType: 'membership',
+        targetId: membership.id,
+        metadata: {},
+      },
+    });
+  }
 }

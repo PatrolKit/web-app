@@ -24,6 +24,7 @@ export default registerAs('app', () => ({
   // AWS
   awsRegion: process.env.AWS_REGION ?? 'us-east-2',
   sesRegion: process.env.SES_REGION ?? 'us-east-2',
+  snsOriginationNumber: process.env.AWS_SNS_ORIGINATION_NUMBER ?? '',
 
   // Seed
   seedSuperAdminEmail: process.env.SEED_SUPERADMIN_EMAIL ?? '',

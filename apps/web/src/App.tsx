@@ -9,6 +9,8 @@ import ModulesPage from './pages/modules/ModulesPage';
 import DevicesPage from './pages/devices/DevicesPage';
 import AdminPage from './pages/admin/AdminPage';
 import SkiSwapLayout from './pages/ski-swap/SkiSwapLayout';
+import TimeTrackingLayout, { TimeTrackingPlaceholder } from './pages/time-tracking/TimeTrackingLayout';
+import SignageLayout, { SignagePlaceholder } from './pages/signage/SignageLayout';
 import SkiSwapDashboard from './pages/ski-swap/SkiSwapDashboard';
 import SwapsPage from './pages/ski-swap/SwapsPage';
 import ItemsPage from './pages/ski-swap/ItemsPage';
@@ -21,6 +23,7 @@ import SellerStatusPage from './pages/public/SellerStatusPage';
 import SellerItemsPage from './pages/public/SellerItemsPage';
 import OrgSellerLookupPage from './pages/public/OrgSellerLookupPage';
 import OrgAdminPage from './pages/org/OrgAdminPage';
+import VerifySellerPage from './pages/ski-swap/VerifySellerPage';
 
 // Evaluated once at module load — never changes for a given page load.
 const isSellerSite = window.location.hostname.startsWith('skiswap.');
@@ -54,6 +57,7 @@ export default function App() {
         <Route index element={<Navigate to="auth/login" replace />} />
         <Route path="auth/login" element={<LoginPage />} />
         <Route path="auth/verify" element={<VerifyPage />} />
+        <Route path="verify-seller" element={<VerifySellerPage />} />
         {/* Public seller-status page (no auth required) */}
         <Route path=":orgSlug/ski-swap/status" element={<SellerStatusPage />} />
         {/* Seller website public routes */}
@@ -73,6 +77,12 @@ export default function App() {
             <Route path="config" element={<AdministrationPage />} />
             <Route path="my-items" element={<BusinessSellerPage />} />
             <Route path="seller-profile" element={<SellerProfilePage />} />
+          </Route>
+          <Route path="time-tracking" element={<TimeTrackingLayout />}>
+            <Route index element={<TimeTrackingPlaceholder />} />
+          </Route>
+          <Route path="signage" element={<SignageLayout />}>
+            <Route index element={<SignagePlaceholder />} />
           </Route>
         </Route>
         {/* Org seller lookup — broad catch-all; must be before the * redirect */}

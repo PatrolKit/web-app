@@ -305,6 +305,7 @@ export class SellerService {
     state: string | null; zip: string | null;
     payoutMethod: string | null; payoutIdentifierType: string | null;
     payoutIdentifier: string | null; payoutIdentifierConfirmedAt: Date | null;
+    emailVerifiedAt: Date | null; phoneVerifiedAt: Date | null;
     createdAt: Date; updatedAt: Date;
   }): SellerResponse {
     return {
@@ -316,6 +317,8 @@ export class SellerService {
       payoutIdentifierType: seller.payoutIdentifierType as SellerResponse['payoutIdentifierType'],
       payoutIdentifier: seller.payoutIdentifier,
       payoutIdentifierConfirmedAt: seller.payoutIdentifierConfirmedAt?.toISOString() ?? null,
+      emailVerifiedAt: seller.emailVerifiedAt?.toISOString() ?? null,
+      phoneVerifiedAt: seller.phoneVerifiedAt?.toISOString() ?? null,
       createdAt: seller.createdAt.toISOString(), updatedAt: seller.updatedAt.toISOString(),
     };
   }

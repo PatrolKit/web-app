@@ -285,6 +285,10 @@ export const api = {
       }),
     deleteSeller: (orgId: string, sellerId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, { method: 'DELETE' }),
+    initiateEmailVerification: (orgId: string, sellerId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}/verify/email/initiate`, { method: 'POST' }),
+    initiatePhoneVerification: (orgId: string, sellerId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}/verify/phone/initiate`, { method: 'POST' }),
     downloadSellerTemplate: (orgId: string) => `/api/v1/orgs/${orgId}/ski-swap/sellers/import/template`,
     parseSellerCsv: (orgId: string, file: File) => {
       const form = new FormData();
@@ -318,6 +322,8 @@ export const api = {
       request<import('./api.types').BusinessSellerMember>(`/orgs/${orgId}/ski-swap/business-sellers/${userId}/status`, {
         method: 'PATCH', body: JSON.stringify({ status }),
       }),
+    removeBusinessSeller: (orgId: string, userId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/business-sellers/${userId}`, { method: 'DELETE' }),
 
     // Seller self-service
     sellerGetProfile: (orgId: string) =>
@@ -387,6 +393,16 @@ export const api = {
   },
 
   public: {
+    confirmEmailVerification: (sellerId: string, token: string) =>
+      request<{ verified: boolean }>(`/public/sellers/${sellerId}/verify/email/confirm`, {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      }),
+    confirmPhoneVerification: (sellerId: string, code: string) =>
+      request<{ verified: boolean }>(`/public/sellers/${sellerId}/verify/phone/confirm`, {
+        method: 'POST',
+        body: JSON.stringify({ code }),
+      }),
     getSellerDetail: (sellerId: string) =>
       request<import('./api.types').PublicSellerDetailResponse>(`/public/sellers/${sellerId}`),
     getOrgBranding: (orgSlug: string) =>

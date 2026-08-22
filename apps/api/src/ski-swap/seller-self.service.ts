@@ -154,6 +154,8 @@ export class SellerSelfService {
       payoutIdentifierType: (s.payoutIdentifierType ?? null) as SellerResponse['payoutIdentifierType'],
       payoutIdentifier: s.payoutIdentifier ?? null,
       payoutIdentifierConfirmedAt: s.payoutIdentifierConfirmedAt?.toISOString() ?? null,
+      emailVerifiedAt: s.emailVerifiedAt?.toISOString() ?? null,
+      phoneVerifiedAt: s.phoneVerifiedAt?.toISOString() ?? null,
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString(),
     };

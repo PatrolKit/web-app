@@ -127,12 +127,19 @@ export const SellerResponseSchema = z.object({
   payoutIdentifierType: z.enum(PAYOUT_ID_TYPES).nullable(),
   payoutIdentifier: z.string().nullable(),
   payoutIdentifierConfirmedAt: z.string().datetime().nullable(),
+  emailVerifiedAt: z.string().datetime().nullable(),
+  phoneVerifiedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 
+export const ConfirmEmailVerificationSchema = z.object({ token: z.string().min(1) }).strict();
+export const ConfirmPhoneVerificationSchema = z.object({ code: z.string().length(6) }).strict();
+
 export class CreateSellerDto extends createZodDto(CreateSellerSchema) {}
 export class PatchSellerDto extends createZodDto(PatchSellerSchema) {}
+export class ConfirmEmailVerificationDto extends createZodDto(ConfirmEmailVerificationSchema) {}
+export class ConfirmPhoneVerificationDto extends createZodDto(ConfirmPhoneVerificationSchema) {}
 export type SellerResponse = z.infer<typeof SellerResponseSchema>;
 
 // ─── Items ────────────────────────────────────────────────────────────────────
