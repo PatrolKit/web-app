@@ -26,7 +26,11 @@ function sha256(value: string): string {
 export interface IssuedChallenge {
   challengeId: string;
   channel: ChallengeChannel;
-  /** Populated only when notifications are suppressed, so dev can complete the flow. */
+  /**
+   * The raw code, echoed back so a developer can complete the flow with nothing
+   * delivered. Populated only OUTSIDE production — on a reachable host this
+   * would let anyone sign in as anyone.
+   */
   devCode?: string;
 }
 
@@ -88,11 +92,17 @@ export class ContactChallengeService {
 
     await this.dispatch(challenge.id, channel, target, rawCode, purpose, params.orgName);
 
+    // Two independent conditions, deliberately. Suppression says nothing was
+    // delivered; non-production says it is safe to say what the code was. A
+    // production host with notifications off stays silent rather than handing
+    // out credentials — otherwise the fail-closed switch would itself become an
+    // authentication bypass.
     const suppressed = !this.config.get<boolean>('app.outboundNotifications', false);
+    const isProduction = this.config.get<string>('app.nodeEnv') === 'production';
     return {
       challengeId: challenge.id,
       channel,
-      ...(suppressed ? { devCode: rawCode } : {}),
+      ...(suppressed && !isProduction ? { devCode: rawCode } : {}),
     };
   }
 
