@@ -571,38 +571,31 @@ returns `{ challengeId }` (plus the code itself while notifications are off).
 
 ## 14. Still outstanding
 
-- **The deployed database is wiped and waiting for a deploy.** All 27 tables were
-  dropped on 2026-08-25, `_prisma_migrations` included, leaving an empty schema.
+- ~~The deployed database is wiped and waiting for a deploy.~~ — **done.**
+  `patrolkit.io` runs this branch on the squashed baseline, seeded with the 20
+  permissions, 4 modules and the super admin. It holds **no organisation**: the
+  demo org is guarded by `NODE_ENV !== 'production'`, so one has to be created
+  through the platform API before the app is usable.
 
-  Dropping the migration table on purpose is what keeps the deploy simple: with
-  no rows naming folders that no longer exist, `release.mjs` runs start to finish
-  and its `migrate deploy` applies the squashed baseline to a clean database.
-  No manual `migrate reset` step is needed any more.
+  The pre-wipe data (1,723 rows, including 1,433 test `SwapSeller` records) is
+  backed up at `~/patrolkit-backups/patrolkit-pre-consolidation.json` and on the
+  instance under `/home/ec2-user/backups/`. It dumps the *old* schema, so it
+  cannot be replayed into the new one.
+
+- **Nobody can sign in to the deployed instance yet.** `OUTBOUND_NOTIFICATIONS`
+  is unset there, so it is fail-closed and no sign-in email is delivered — and
+  `devCode` is deliberately withheld in production, so there is no way to read
+  the code out of the response either. That combination is correct, and it is
+  also a locked door. Add one line to `/home/ec2-user/patrolkit/.env` and
+  restart:
 
   ```
-  node scripts/release.mjs
+  OUTBOUND_NOTIFICATIONS=on
   ```
 
-  **A backup was taken first**, because the instance held more than expected —
-  1,433 `SwapSeller` rows, a `SquareConfig`, 3 resorts, 1 swap, 2 users; 1,723
-  rows across 27 tables. It is stored in two places:
-
-  - `ec2-user@patrolkit.io:/home/ec2-user/backups/patrolkit-pre-consolidation.json`
-  - `~/patrolkit-backups/patrolkit-pre-consolidation.json` (local copy)
-
-  It is a raw per-table JSON dump of the **old** schema, so it cannot be restored
-  by replaying it into the new one. Recovering that seller list would mean
-  transforming it through the consolidation rules in §5 — matching on email then
-  phone, one `User` per person, a `SellerProfile` per org membership.
-
-  **The live site is down until the deploy runs.** The process is still up and
-  `/healthz` returns 200, but every database-backed route now returns 500.
-- **`OUTBOUND_NOTIFICATIONS` must be set to `on`** wherever real delivery is
-  wanted. It is off everywhere today, by design.
-- **The iOS app still reads the old seller contract** and will break until
-  updated — the agreed clean cutover, with no compatibility shim.
-- ~~`pnpm start` is broken~~ — fixed: `express` is now a declared dependency of
-  `apps/api`, and the production start path boots and serves.
+  SES is already configured (`MAIL_TRANSPORT=ses`, `EMAIL_FROM=noreply@patrolkit.io`)
+  and `SEED_SUPERADMIN_EMAIL` is a real address, so sign-in mail will arrive once
+  it is on. `release.mjs` warns on every deploy until it is.
 
 - **Any other database still holding migration history needs a reset too.** The
   squash is only safe because every environment is wiped. A teammate's laptop, a
