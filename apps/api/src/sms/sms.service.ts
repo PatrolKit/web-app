@@ -9,6 +9,10 @@ export class SmsService {
   constructor(private readonly config: ConfigService) {}
 
   async send(to: string, body: string): Promise<void> {
+    if (!this.config.get<boolean>('app.outboundNotifications', false)) {
+      this.logger.log({ to, body }, '[SMS suppressed] OUTBOUND_NOTIFICATIONS is off');
+      return;
+    }
     const originationNumber = this.config.get<string>('app.snsOriginationNumber', '');
     if (!originationNumber) {
       this.logger.log({ to, body }, '[SMS stub] AWS_SNS_ORIGINATION_NUMBER not set — logging instead of sending');

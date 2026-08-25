@@ -6,6 +6,7 @@
 > Schema changes are free and migrations may be destructive. **Both the local and the deployed
 > database are wiped before the change lands** — the deployed instance is development-only.
 > **No API compatibility layer:** the iOS app is updated after this work, not alongside it.
+> **No outbound notifications:** all email and SMS is suppressed for the duration — see §6.3.
 
 ---
 
@@ -47,7 +48,7 @@ Everything a person *is* lives on `User`. Everything a person is *to an organisa
 `Membership`. Role-specific detail hangs off the membership in per-module profile tables. Nothing
 person-shaped is duplicated, and nothing person-shaped is ever hard-deleted.
 
-**Out of scope:** record merging (§12), multi-user businesses (§6.3), device authentication, and data
+**Out of scope:** record merging (§12), multi-user businesses (§6.4), device authentication, and data
 migration — there is no data to migrate.
 
 ---
@@ -332,7 +333,31 @@ The result is one self-service implementation instead of two, and it unblocks bo
 this work: PayPal Payouts needs a verified email or phone, and self-service check-in needs to prove
 "we found you" without exposing a stranger's details. Both are the same primitive as login.
 
-### 6.3 Known limitation
+### 6.3 Outbound notifications are off
+
+No email or SMS reaches anyone while this work is in progress. `OUTBOUND_NOTIFICATIONS` is a
+**fail-closed** master switch read by both `MailService.send` and `SmsService.send`: unless it is
+explicitly set to `on`, each logs and returns before touching SES, SNS or SMTP. It defaults to `off`,
+so an unset variable suppresses rather than sends.
+
+This sits *above* the existing transport config rather than replacing it. Local dev was already inert
+— `MAIL_TRANSPORT=smtp` points at Mailpit on `localhost:1025`, and `SmsService` already stubbed when
+`AWS_SNS_ORIGINATION_NUMBER` was unset — but neither protects the deployed instance, and the
+integration suite genuinely calls `POST /auth/magic-link` for a *known* user, which reaches
+`MailService`. The switch makes suppression a property of the application rather than of one
+environment's configuration.
+
+Two consequences to carry forward:
+
+- **Production must set `OUTBOUND_NOTIFICATIONS=on`.** Nothing else turns it on. This is deliberate
+  — the failure mode of forgetting is silence, not a mis-sent invite.
+- **Seed and test fixtures use unroutable contacts**: `@example.com` (RFC 2606) and `+1555xxxxxxx`
+  (the reserved fictional range), so even a mistakenly-enabled switch cannot reach a real person.
+
+`prisma/seed.ts` sends nothing at all — it is pure Prisma writes — so wiping and re-seeding either
+database delivers no mail.
+
+### 6.4 Known limitation
 
 A business *is* the login, so a shop with two staff who both need access shares a mailbox. Accepted
 for V1. Because `businessName` sits on the profile (D13), lifting this later means adding a second
@@ -450,7 +475,10 @@ the iOS app follows afterwards; no compatibility shim is built.
 
 Ordered so the tree builds and tests pass at every step.
 
-**Phase 0 — Schema.** Rewrite `schema.prisma` per §4 as a single destructive migration. Wipe and
+**Phase 0 — Notifications off, then schema.** Land the `OUTBOUND_NOTIFICATIONS` kill switch (§6.3)
+before anything else, so no subsequent phase can send by accident.
+
+**Phase 0b — Schema.** Rewrite `schema.prisma` per §4 as a single destructive migration. Wipe and
 re-migrate both the local and the deployed database — the deployed instance is development-only and
 holds nothing worth keeping, but the wipe is a deliberate, separately-run step, not a side effect of
 the migration. Rewrite `seed.ts` to drop the `business_seller` permission and seed people with

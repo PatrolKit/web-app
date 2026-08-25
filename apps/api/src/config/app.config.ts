@@ -15,6 +15,12 @@ export default registerAs('app', () => ({
   deviceTokenTtl: parseInt(process.env.DEVICE_TOKEN_TTL ?? '3600', 10),
   magicLinkTtl: parseInt(process.env.MAGIC_LINK_TTL ?? '900', 10),
 
+  /// Master kill switch for ALL outbound email and SMS. Fail-closed: nothing is
+  /// delivered unless this is explicitly set to 'on'. Must be turned on for
+  /// production. See docs/plan/10_user consolidation — outbound sends stay off
+  /// for the duration of the consolidation work.
+  outboundNotifications: (process.env.OUTBOUND_NOTIFICATIONS ?? 'off') === 'on',
+
   // Mail
   mailTransport: process.env.MAIL_TRANSPORT ?? 'smtp',
   emailFrom: process.env.EMAIL_FROM ?? 'noreply@patrolkit.io',
