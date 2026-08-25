@@ -13,7 +13,6 @@ export default registerAs('app', () => ({
   accessTokenTtl: parseInt(process.env.ACCESS_TOKEN_TTL ?? '900', 10),
   refreshTokenTtl: parseInt(process.env.REFRESH_TOKEN_TTL ?? '2592000', 10),
   deviceTokenTtl: parseInt(process.env.DEVICE_TOKEN_TTL ?? '3600', 10),
-  magicLinkTtl: parseInt(process.env.MAGIC_LINK_TTL ?? '900', 10),
 
   /// Master kill switch for ALL outbound email and SMS. Fail-closed: nothing is
   /// delivered unless this is explicitly set to 'on'. Must be turned on for
