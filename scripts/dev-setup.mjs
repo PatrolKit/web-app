@@ -142,7 +142,7 @@ console.log(`
   PatrolKit local dev is ready!
 
   Start:   pnpm dev
-  API:     http://localhost:4000/healthz
+  API:     http://localhost:4000/api/v1/healthz
   Web:     http://localhost:3000
   Mailpit: http://localhost:8025
 

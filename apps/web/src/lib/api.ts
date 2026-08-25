@@ -129,6 +129,20 @@ export const api = {
     },
     deleteLogo: (orgId: string) =>
       request<import('./api.types').OrgResponse>(`/orgs/${orgId}/logo`, { method: 'DELETE' }),
+
+    // Resorts — org-level, consumed by time tracking
+    listResorts: (orgId: string) =>
+      request<import('./api.types').ResortResponse[]>(`/orgs/${orgId}/resorts`),
+    createResort: (orgId: string, data: import('./api.types').ResortInput & { name: string }) =>
+      request<import('./api.types').ResortResponse>(`/orgs/${orgId}/resorts`, {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    patchResort: (orgId: string, resortId: string, data: import('./api.types').ResortInput) =>
+      request<import('./api.types').ResortResponse>(`/orgs/${orgId}/resorts/${resortId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    deleteResort: (orgId: string, resortId: string) =>
+      request<void>(`/orgs/${orgId}/resorts/${resortId}`, { method: 'DELETE' }),
   },
 
   members: {
@@ -172,12 +186,12 @@ export const api = {
 
   devices: {
     list: (orgId: string) => request<import('./api.types').DeviceItem[]>(`/orgs/${orgId}/devices`),
-    provision: (orgId: string, data: { name: string; role: 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller'; permissions: string[] }) =>
+    provision: (orgId: string, data: { name: string; role: import('./api.types').DeviceRole; permissions: string[] }) =>
       request<import('./api.types').ProvisionedDevice>(`/orgs/${orgId}/devices`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    updateRole: (orgId: string, id: string, role: 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller') =>
+    updateRole: (orgId: string, id: string, role: import('./api.types').DeviceRole) =>
       request<import('./api.types').DeviceItem>(`/orgs/${orgId}/devices/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ role }),
@@ -390,6 +404,75 @@ export const api = {
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`, {
         method: 'PUT', body: JSON.stringify(data),
       }),
+  },
+
+  timeClock: {
+    // Settings
+    getSettings: (orgId: string) =>
+      request<import('./api.types').TimeClockSettingsResponse>(`/orgs/${orgId}/time-clock/settings`),
+    updateSettings: (orgId: string, data: { autoCloseLocalTime?: string; autoCloseAfterHours?: number }) =>
+      request<import('./api.types').TimeClockSettingsResponse>(`/orgs/${orgId}/time-clock/settings`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+
+    // Roster
+    listPatrollers: (orgId: string) =>
+      request<import('./api.types').PatrollerResponse[]>(`/orgs/${orgId}/time-clock/patrollers`),
+    createPatroller: (orgId: string, data: { firstName: string; lastName: string; nspId: string; patrolLevel?: string | null }) =>
+      request<import('./api.types').PatrollerResponse>(`/orgs/${orgId}/time-clock/patrollers`, {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    patchPatroller: (
+      orgId: string,
+      patrollerId: string,
+      data: { firstName?: string; lastName?: string; nspId?: string; patrolLevel?: string | null; active?: boolean },
+    ) =>
+      request<import('./api.types').PatrollerResponse & { closedShiftId: string | null }>(
+        `/orgs/${orgId}/time-clock/patrollers/${patrollerId}`,
+        { method: 'PATCH', body: JSON.stringify(data) },
+      ),
+    deletePatroller: (orgId: string, patrollerId: string) =>
+      request<{ closedShiftId: string | null }>(`/orgs/${orgId}/time-clock/patrollers/${patrollerId}`, {
+        method: 'DELETE',
+      }),
+    importPatrollers: (
+      orgId: string,
+      rows: { firstName: string; lastName: string; nspId: string; patrolLevel?: string | null }[],
+      strategy: 'preserve' | 'overwrite',
+    ) =>
+      request<{ created: number; updated: number; skipped: number; errors: string[] }>(
+        `/orgs/${orgId}/time-clock/patrollers/import`,
+        { method: 'POST', body: JSON.stringify({ rows, strategy }) },
+      ),
+
+    // Shifts
+    listShifts: (
+      orgId: string,
+      params: { resortId?: string; status?: string; from?: string; to?: string; dutyType?: string; pastSweep?: boolean } = {},
+    ) => {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== '' && v !== false) qs.set(k, String(v));
+      });
+      const suffix = qs.toString() ? `?${qs}` : '';
+      return request<import('./api.types').ShiftResponse[]>(`/orgs/${orgId}/time-clock/shifts${suffix}`);
+    },
+    patchShift: (
+      orgId: string,
+      shiftId: string,
+      data: { clockInAt?: string; clockOutAt?: string | null; dutyType?: string; dutyNote?: string | null },
+    ) =>
+      request<import('./api.types').ShiftResponse>(`/orgs/${orgId}/time-clock/shifts/${shiftId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+
+    // Reports
+    hours: (orgId: string, params: { from?: string; to?: string; resortId?: string; dutyType?: string } = {}) => {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, String(v)); });
+      const suffix = qs.toString() ? `?${qs}` : '';
+      return request<import('./api.types').HoursReportRow[]>(`/orgs/${orgId}/time-clock/reports/hours${suffix}`);
+    },
   },
 
   public: {

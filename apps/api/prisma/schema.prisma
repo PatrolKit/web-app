@@ -40,6 +40,11 @@ model Organization {
   swapItems    SwapItem[]
   swapPrinters    SwapPrinter[]
   skiSwapSettings SkiSwapSettings?
+  resorts           Resort[]
+  patrollers        Patroller[]
+  timeClockEvents   TimeClockEvent[]
+  timeClockShifts   TimeClockShift[]
+  timeClockSettings TimeClockSettings?
 }
 
 model Membership {
@@ -337,4 +342,111 @@ model IdempotencyRecord {
   createdAt DateTime @default(now())
 
   @@index([expiresAt])
+}
+
+// ─── Time Clock ───────────────────────────────────────────────────────────────
+
+model Resort {
+  id     String  @id @default(cuid())
+  orgId  String
+  name   String
+  street String?
+  city   String?
+  state  String?
+  zip    String?
+  /// IANA zone derived from the address; shift arithmetic depends on it.
+  timeZone  String    @default("America/New_York")
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  org    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  shifts TimeClockShift[]
+  events TimeClockEvent[]
+
+  @@index([orgId, deletedAt])
+  @@index([orgId, updatedAt])
+}
+
+model Patroller {
+  id          String    @id @default(cuid())
+  orgId       String
+  firstName   String
+  lastName    String
+  nspId       String
+  patrolLevel String?
+  active      Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  org    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  shifts TimeClockShift[]
+  events TimeClockEvent[]
+
+  @@unique([orgId, nspId])
+  @@index([orgId, updatedAt])
+}
+
+model TimeClockEvent {
+  id          String   @id
+  orgId       String
+  resortId    String
+  patrollerId String
+  deviceId    String?
+  type        String
+  dutyType    String?
+  dutyNote    String?  @db.VarChar(120)
+  source      String   @default("device")
+  occurredAt  DateTime
+  recordedAt  DateTime @default(now())
+  clockSkewMs Int?
+  status      String   @default("applied")
+  statusNote  String?
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  resort    Resort       @relation(fields: [resortId], references: [id])
+  patroller Patroller    @relation(fields: [patrollerId], references: [id])
+
+  @@index([orgId, patrollerId, occurredAt])
+  @@index([orgId, status])
+  @@index([resortId])
+}
+
+model TimeClockShift {
+  id             String    @id
+  orgId          String
+  resortId       String
+  patrollerId    String
+  dutyType       String
+  dutyNote       String?   @db.VarChar(120)
+  clockInAt      DateTime
+  clockOutAt     DateTime?
+  status         String
+  closeReason    String?
+  flagged        Boolean   @default(false)
+  editedByUserId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  resort    Resort       @relation(fields: [resortId], references: [id])
+  patroller Patroller    @relation(fields: [patrollerId], references: [id])
+
+  @@index([orgId, resortId, status])
+  @@index([orgId, updatedAt])
+  @@index([orgId, patrollerId, status])
+  @@index([resortId])
+  @@index([patrollerId])
+}
+
+model TimeClockSettings {
+  id                  String   @id @default(cuid())
+  orgId               String   @unique
+  autoCloseLocalTime  String   @default("03:00")
+  autoCloseAfterHours Int      @default(4)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 }

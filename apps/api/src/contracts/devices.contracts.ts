@@ -4,7 +4,11 @@ import { PermissionKeySchema } from './org.contracts';
 
 // ─── Role enumeration ─────────────────────────────────────────────────────────
 
-export const DeviceRoleSchema = z.enum(['Ski Swap - Check-In', 'Ski Swap - Bulk Seller']);
+export const DeviceRoleSchema = z.enum([
+  'Ski Swap - Check-In',
+  'Ski Swap - Bulk Seller',
+  'Time Clock',
+]);
 export type DeviceRole = z.infer<typeof DeviceRoleSchema>;
 
 // ─── Provision request / response ────────────────────────────────────────────

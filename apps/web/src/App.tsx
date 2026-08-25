@@ -9,7 +9,12 @@ import ModulesPage from './pages/modules/ModulesPage';
 import DevicesPage from './pages/devices/DevicesPage';
 import AdminPage from './pages/admin/AdminPage';
 import SkiSwapLayout from './pages/ski-swap/SkiSwapLayout';
-import TimeTrackingLayout, { TimeTrackingPlaceholder } from './pages/time-tracking/TimeTrackingLayout';
+import TimeTrackingLayout from './pages/time-tracking/TimeTrackingLayout';
+import OnShiftPage from './pages/time-tracking/OnShiftPage';
+import ShiftsPage from './pages/time-tracking/ShiftsPage';
+import HoursReportPage from './pages/time-tracking/HoursReportPage';
+import RosterPage from './pages/time-tracking/RosterPage';
+import TimeTrackingSettingsPage from './pages/time-tracking/SettingsPage';
 import SignageLayout, { SignagePlaceholder } from './pages/signage/SignageLayout';
 import SkiSwapDashboard from './pages/ski-swap/SkiSwapDashboard';
 import SwapsPage from './pages/ski-swap/SwapsPage';
@@ -22,7 +27,9 @@ import SellerProfilePage from './pages/ski-swap/SellerProfilePage';
 import SellerStatusPage from './pages/public/SellerStatusPage';
 import SellerItemsPage from './pages/public/SellerItemsPage';
 import OrgSellerLookupPage from './pages/public/OrgSellerLookupPage';
-import OrgAdminPage from './pages/org/OrgAdminPage';
+import OrgAdminLayout from './pages/org/OrgAdminLayout';
+import OrgGeneralPage from './pages/org/OrgGeneralPage';
+import OrgResortsPage from './pages/org/OrgResortsPage';
 import VerifySellerPage from './pages/ski-swap/VerifySellerPage';
 
 // Evaluated once at module load — never changes for a given page load.
@@ -68,7 +75,10 @@ export default function App() {
           <Route path="modules" element={<ModulesPage />} />
           <Route path="devices" element={<DevicesPage />} />
           <Route path="admin" element={<AdminPage />} />
-          <Route path="org-admin" element={<OrgAdminPage />} />
+          <Route path="org-admin" element={<OrgAdminLayout />}>
+            <Route index element={<OrgGeneralPage />} />
+            <Route path="resorts" element={<OrgResortsPage />} />
+          </Route>
           <Route path="ski-swap" element={<SkiSwapLayout />}>
             <Route index element={<SkiSwapDashboard />} />
             <Route path="swaps" element={<SwapsPage />} />
@@ -79,7 +89,11 @@ export default function App() {
             <Route path="seller-profile" element={<SellerProfilePage />} />
           </Route>
           <Route path="time-tracking" element={<TimeTrackingLayout />}>
-            <Route index element={<TimeTrackingPlaceholder />} />
+            <Route index element={<OnShiftPage />} />
+            <Route path="shifts" element={<ShiftsPage />} />
+            <Route path="hours" element={<HoursReportPage />} />
+            <Route path="roster" element={<RosterPage />} />
+            <Route path="settings" element={<TimeTrackingSettingsPage />} />
           </Route>
           <Route path="signage" element={<SignageLayout />}>
             <Route index element={<SignagePlaceholder />} />

@@ -2,9 +2,10 @@ import { useState, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import type { OrgAdminContext } from './OrgAdminLayout';
 
-export default function OrgAdminPage() {
-  const { orgId } = useOutletContext<{ orgId: string; perms: Set<string> }>();
+export default function OrgGeneralPage() {
+  const { orgId } = useOutletContext<OrgAdminContext>();
   const qc = useQueryClient();
 
   const { data: org, isLoading } = useQuery({
@@ -94,8 +95,6 @@ export default function OrgAdminPage() {
 
   return (
     <div className="space-y-8 max-w-lg">
-      <h1 className="text-2xl font-bold text-white">Org Admin</h1>
-
       {error && <p className="text-red-400 text-sm">{error}</p>}
       {success && <p className="text-green-400 text-sm">{success}</p>}
 

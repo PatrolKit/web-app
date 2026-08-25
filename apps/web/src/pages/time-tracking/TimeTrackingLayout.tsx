@@ -1,6 +1,12 @@
-import { Navigate, Outlet, useOutletContext } from 'react-router-dom';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faClock } from '@fortawesome/pro-duotone-svg-icons';
+import { NavLink, Navigate, Outlet, useOutletContext } from 'react-router-dom';
+
+const navClass = ({ isActive }: { isActive: boolean }) =>
+  `text-sm px-3 py-1.5 rounded transition ${isActive ? 'bg-surface-100 text-white' : 'text-gray-400 hover:text-white'}`;
+
+export interface TimeTrackingContext {
+  orgId: string;
+  perms: Set<string>;
+}
 
 export default function TimeTrackingLayout() {
   const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
@@ -12,19 +18,17 @@ export default function TimeTrackingLayout() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-white">Time Tracking</h1>
-      <Outlet context={{ orgId, perms }} />
-    </div>
-  );
-}
 
-export function TimeTrackingPlaceholder() {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 text-center space-y-4">
-      <FontAwesomeIcon icon={faClock} className="text-gray-600" style={{ fontSize: '5rem' }} />
-      <h2 className="text-xl font-semibold text-gray-300">Coming Soon</h2>
-      <p className="text-gray-500 text-sm max-w-sm">
-        Time Tracking is under construction. Check back soon.
-      </p>
+      <nav className="flex items-center gap-1 border-b border-gray-800 pb-1">
+        <NavLink to="" end className={navClass}>On Shift</NavLink>
+        <NavLink to="shifts" className={navClass}>Shifts</NavLink>
+        <NavLink to="hours" className={navClass}>Hours</NavLink>
+        <span className="mx-2 text-gray-700 select-none">|</span>
+        {perms.has('time_tracking:manage') && <NavLink to="roster" className={navClass}>Roster</NavLink>}
+        {perms.has('time_tracking:admin') && <NavLink to="settings" className={navClass}>Settings</NavLink>}
+      </nav>
+
+      <Outlet context={{ orgId, perms } satisfies TimeTrackingContext} />
     </div>
   );
 }

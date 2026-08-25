@@ -1,3 +1,5 @@
+export type DeviceRole = 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller' | 'Time Clock';
+
 // Shared types used by the web API client
 // These mirror the API contract shapes (source of truth is apps/api/src/contracts/)
 
@@ -55,7 +57,7 @@ export interface DeviceItem {
   id: string;
   clientId: string;
   name: string;
-  role: 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller';
+  role: DeviceRole;
   orgId: string;
   permissions: string[];
   lastSeenAt: string | null;
@@ -214,4 +216,77 @@ export interface SellerFindResponse {
 export interface OrgBrandingResponse {
   orgName: string;
   logoUrl: string | null;
+}
+
+export interface ResortResponse {
+  id: string;
+  orgId: string;
+  name: string;
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  /** IANA zone, derived from the address unless an admin overrode it. */
+  timeZone: string;
+  updatedAt: string;
+}
+
+export interface ResortInput {
+  name?: string;
+  street?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  timeZone?: string;
+}
+
+// ─── Time Clock ───────────────────────────────────────────────────────────────
+
+export interface PatrollerResponse {
+  id: string;
+  orgId: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  nspId: string;
+  patrolLevel: string | null;
+  active: boolean;
+  deletedAt: string | null;
+  updatedAt: string;
+}
+
+export interface TimeClockSettingsResponse {
+  orgId: string;
+  autoCloseLocalTime: string;
+  autoCloseAfterHours: number;
+  updatedAt: string;
+}
+
+export interface ShiftResponse {
+  id: string;
+  orgId: string;
+  resortId: string;
+  resortName: string | null;
+  patrollerId: string;
+  patrollerName: string | null;
+  patrolLevel: string | null;
+  nspId: string | null;
+  dutyType: string;
+  dutyNote: string | null;
+  clockInAt: string;
+  clockOutAt: string | null;
+  status: string;
+  closeReason: string | null;
+  flagged: boolean;
+  updatedAt: string;
+}
+
+export interface HoursReportRow {
+  patrollerId: string;
+  patrollerName: string;
+  nspId: string;
+  patrolLevel: string | null;
+  shiftCount: number;
+  totalMinutes: number;
+  minutesByDutyType: Record<string, number>;
 }

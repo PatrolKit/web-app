@@ -10,6 +10,8 @@ import type { PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
 import { usePrinter } from '../../contexts/PrinterContext';
 import type { DeviceItem, OrgResponse, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 
+import type { DeviceRole } from '../../lib/api.types';
+
 type Tab = 'tablets' | 'printers';
 
 const tabClass = (active: boolean) =>
@@ -75,11 +77,11 @@ export default function DevicesPage() {
 
   // ─── Tablets state ────────────────────────────────────────────────────────
   const [provisionName, setProvisionName] = useState('');
-  const [provisionRole, setProvisionRole] = useState<'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller'>('Ski Swap - Check-In');
+  const [provisionRole, setProvisionRole] = useState<DeviceRole>('Ski Swap - Check-In');
   const [showProvisionForm, setShowProvisionForm] = useState(false);
   const [editingRole, setEditingRole] = useState<{
     id: string;
-    value: 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller';
+    value: DeviceRole;
   } | null>(null);
   const [revealedSecret, setRevealedSecret] = useState<{
     id: string;
@@ -119,7 +121,7 @@ export default function DevicesPage() {
   });
 
   const updateRoleMutation = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller' }) =>
+    mutationFn: ({ id, role }: { id: string; role: DeviceRole }) =>
       api.devices.updateRole(orgId, id, role),
     onSuccess: (updated) => {
       qc.setQueryData<DeviceItem[]>(['devices', orgId], (prev) =>
@@ -286,6 +288,7 @@ export default function DevicesPage() {
               >
                 <option value="Ski Swap - Check-In">Ski Swap - Check-In</option>
                 <option value="Ski Swap - Bulk Seller">Ski Swap - Bulk Seller</option>
+                <option value="Time Clock">Time Clock</option>
               </select>
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={() => setShowProvisionForm(false)} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
@@ -325,6 +328,8 @@ export default function DevicesPage() {
                       >
                         <option value="Ski Swap - Check-In">Ski Swap - Check-In</option>
                         <option value="Ski Swap - Bulk Seller">Ski Swap - Bulk Seller</option>
+                        <option value="Time Clock">Time Clock</option>
+                <option value="Time Clock">Time Clock</option>
                       </select>
                       <button onClick={() => updateRoleMutation.mutate({ id: d.id, role: editingRole.value })} disabled={updateRoleMutation.isPending} className="text-xs text-green-400 hover:underline">Save</button>
                       <button onClick={() => setEditingRole(null)} className="text-xs text-gray-500 hover:underline">Cancel</button>

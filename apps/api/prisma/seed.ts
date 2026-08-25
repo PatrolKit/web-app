@@ -163,6 +163,93 @@ async function main() {
           }
         }
         console.log(`✓ Ski-swap dev users seeded (reporter / manager / admin)`);
+
+        // Enable time_tracking for dev so the TimeClock module works out of the box
+        await prisma.orgModule.upsert({
+          where: { orgId_moduleKey: { orgId: demoOrg.id, moduleKey: 'time_tracking' } },
+          update: {},
+          create: {
+            id: createId(),
+            orgId: demoOrg.id,
+            moduleKey: 'time_tracking',
+            enabled: true,
+            enabledAt: new Date(),
+            enabledBy: owner.id,
+          },
+        });
+
+        // Demo resorts + roster so a TimeClock iPad has something to bind to
+        const resorts = [
+          { name: 'North Lodge', street: '1 Summit Rd', city: 'Lake Placid', state: 'NY', zip: '12946', timeZone: 'America/New_York' },
+          { name: 'South Peak', street: '200 Base Lodge Way', city: 'Killington', state: 'VT', zip: '05751', timeZone: 'America/New_York' },
+        ] as const;
+        for (const r of resorts) {
+          const existing = await prisma.resort.findFirst({
+            where: { orgId: demoOrg.id, name: r.name, deletedAt: null },
+          });
+          if (!existing) {
+            await prisma.resort.create({ data: { id: createId(), orgId: demoOrg.id, ...r } });
+          }
+        }
+
+        await prisma.timeClockSettings.upsert({
+          where: { orgId: demoOrg.id },
+          update: {},
+          create: { id: createId(), orgId: demoOrg.id },
+        });
+
+        const patrollers = [
+          { firstName: 'Jane',    lastName: 'Doe',       nspId: '100001', patrolLevel: 'Senior' },
+          { firstName: 'John',    lastName: 'Smith',     nspId: '100002', patrolLevel: 'Basic' },
+          { firstName: 'Maria',   lastName: 'Garcia',    nspId: '100003', patrolLevel: 'Certified' },
+          { firstName: 'Chen',    lastName: 'Wei',       nspId: '100004', patrolLevel: 'Candidate' },
+          { firstName: 'Aisha',   lastName: 'Patel',     nspId: '100005', patrolLevel: 'Senior' },
+          { firstName: 'Tom',     lastName: 'Anderson',  nspId: '100006', patrolLevel: 'Basic' },
+        ] as const;
+        for (const pt of patrollers) {
+          await prisma.patroller.upsert({
+            where: { orgId_nspId: { orgId: demoOrg.id, nspId: pt.nspId } },
+            update: {},
+            create: {
+              id: createId(),
+              orgId: demoOrg.id,
+              firstName: pt.firstName,
+              lastName: pt.lastName,
+              nspId: pt.nspId,
+              patrolLevel: pt.patrolLevel,
+            },
+          });
+        }
+        console.log(`✓ Time-clock demo resorts, settings, and roster seeded`);
+
+        // Dev users with escalating time-tracking permission levels
+        const timeUsers = [
+          { email: 'time-reporter@example.com', name: 'Time Reporter', perms: ['time_tracking:report'] },
+          { email: 'time-manager@example.com',  name: 'Time Manager',  perms: ['time_tracking:report', 'time_tracking:manage'] },
+          { email: 'time-admin@example.com',    name: 'Time Admin',    perms: ['time_tracking:report', 'time_tracking:manage', 'time_tracking:admin'] },
+        ] as const;
+
+        for (const u of timeUsers) {
+          const devUser = await prisma.user.upsert({
+            where: { email: u.email },
+            update: {},
+            create: { id: createId(), email: u.email, name: u.name },
+          });
+          const devMembership = await prisma.membership.upsert({
+            where: { userId_orgId: { userId: devUser.id, orgId: demoOrg.id } },
+            update: {},
+            create: { id: createId(), userId: devUser.id, orgId: demoOrg.id },
+          });
+          for (const permKey of u.perms) {
+            const perm = await prisma.permission.findUniqueOrThrow({ where: { key: permKey } });
+            await prisma.membershipPermission.upsert({
+              where: { membershipId_permissionId: { membershipId: devMembership.id, permissionId: perm.id } },
+              update: {},
+              create: { membershipId: devMembership.id, permissionId: perm.id },
+            });
+          }
+        }
+        console.log(`✓ Time-tracking dev users seeded (reporter / manager / admin)`);
       }
     }
   }

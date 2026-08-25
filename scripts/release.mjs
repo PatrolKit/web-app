@@ -40,16 +40,18 @@ run(`rsync -az -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
 console.log('Installing dependencies...');
 ssh('cd /home/ec2-user/patrolkit && npm install --omit=dev 2>&1 | tail -3');
 
-// 5. Run any pending migrations, seed, and regenerate Prisma client
+// 5. Regenerate the Prisma client, run any pending migrations, then seed.
+// Generate has to come first: a deploy that adds models leaves the server's
+// client stale, and the seed is typechecked against it.
+console.log('Regenerating Prisma client...');
+ssh('cd /home/ec2-user/patrolkit && node_modules/.bin/prisma generate');
 console.log('Running migrations...');
 ssh('cd /home/ec2-user/patrolkit && node_modules/.bin/prisma migrate deploy');
 console.log('Seeding database...');
 ssh('cd /home/ec2-user/patrolkit && node_modules/.bin/ts-node --project prisma/tsconfig.seed.json prisma/seed.ts');
-console.log('Regenerating Prisma client...');
-ssh('cd /home/ec2-user/patrolkit && node_modules/.bin/prisma generate');
 
 // 6. Restart app — cd into app dir so process.cwd() resolves web/dist correctly
 console.log('Restarting app...');
 ssh('pm2 delete patrolkit 2>/dev/null; set -a && source /home/ec2-user/patrolkit/.env && set +a && cd /home/ec2-user/patrolkit && pm2 start dist/src/main.js --name patrolkit && pm2 save');
 
-console.log('\nDone. https://patrolkit.io/healthz');
+console.log('\nDone. https://patrolkit.io/api/v1/healthz');

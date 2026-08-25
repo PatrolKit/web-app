@@ -46,7 +46,7 @@ pnpm db:seed      # upsert permissions, modules, super-admin
 pnpm dev
 ```
 
-- **API** → http://localhost:4000 (`GET /healthz`, `GET /readyz`)
+- **API** → http://localhost:4000 (`GET /api/v1/healthz`, `GET /readyz`)
 - **Web** → http://localhost:3000 (Vite dev server, proxies `/api` → API)
 - **Magic-link emails** → http://localhost:8025
 
@@ -98,7 +98,7 @@ This script:
 
 1. Navigate to `https://patrolkit.io`
 2. Enter the `SEED_SUPERADMIN_EMAIL` address and check for the magic-link email
-3. Confirm `https://patrolkit.io/healthz` returns `200`
+3. Confirm `https://patrolkit.io/api/v1/healthz` returns `200`
 
 ### Rollback
 

@@ -23,6 +23,7 @@ import { OrgModulesModule } from './modules/modules.module';
 import { DevicesModule } from './devices/devices.module';
 import { AuditModule } from './common/audit/audit.module';
 import { SkiSwapModule } from './ski-swap/ski-swap.module';
+import { TimeClockModule } from './time-clock/time-clock.module';
 import { SmsModule } from './sms/sms.module';
 import appConfig from './config/app.config';
 
@@ -71,6 +72,7 @@ import appConfig from './config/app.config';
     DevicesModule,
     AuditModule,
     SkiSwapModule,
+    TimeClockModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
     HealthModule,
   ],
