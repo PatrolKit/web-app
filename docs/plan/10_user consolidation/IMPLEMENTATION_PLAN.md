@@ -571,15 +571,41 @@ returns `{ challengeId }` (plus the code itself while notifications are off).
 
 ## 14. Still outstanding
 
-- **The deployed database has not been wiped or re-migrated.** Local is done;
-  the deployed instance still holds the old schema. It needs
-  `prisma migrate deploy` against a reset database, run by someone with those
-  credentials.
+- **The deployed database has not been wiped or re-migrated.** Local is done and
+  now sits on the squashed baseline; the deployed RDS instance still reports the
+  old 22 migrations.
+
+  **The squash changes this procedure.** A plain `prisma migrate deploy` will now
+  *fail* there: `_prisma_migrations` names 22 folders that no longer exist on
+  disk, and Prisma refuses to continue. The database has to be dropped, not
+  migrated forward. `migrate reset` does exactly that — drop, apply the baseline,
+  seed — and is safe here only because the instance is development-only:
+
+  ```
+  # 1. Ship the new code, but stop before migrations run.
+  #    release.mjs will fail at its `migrate deploy` step; that is expected.
+  node scripts/release.mjs
+
+  # 2. Drop, re-migrate onto the baseline, and re-seed.
+  ssh -i ~/.ssh/patrolkit.pem ec2-user@patrolkit.io \
+    'cd /home/ec2-user/patrolkit && node_modules/.bin/prisma migrate reset --force'
+
+  # 3. Restart under pm2.
+  ssh -i ~/.ssh/patrolkit.pem ec2-user@patrolkit.io \
+    'cd /home/ec2-user/patrolkit && pm2 restart patrolkit'
+  ```
+
+  Re-running `release.mjs` afterwards is then clean, because `migrate deploy`
+  finds the baseline already applied.
 - **`OUTBOUND_NOTIFICATIONS` must be set to `on`** wherever real delivery is
   wanted. It is off everywhere today, by design.
 - **The iOS app still reads the old seller contract** and will break until
   updated — the agreed clean cutover, with no compatibility shim.
-- **`pnpm start` is broken independently of this work.** `apps/api/src/main.ts`
-  imports `express` directly but does not declare it in `apps/api/package.json`,
-  so pnpm's strict layout cannot resolve it. Pre-dates this branch (commit
-  `25f5aef`); `pnpm dev` is unaffected. Worth fixing before any deploy.
+- ~~`pnpm start` is broken~~ — fixed: `express` is now a declared dependency of
+  `apps/api`, and the production start path boots and serves.
+
+- **Any other database still holding migration history needs a reset too.** The
+  squash is only safe because every environment is wiped. A teammate's laptop, a
+  staging box, or a CI database that persists between runs would fail its next
+  `migrate deploy` with "migrations found in the database that are not on disk".
+  Local and the deployed instance are the only two known.
