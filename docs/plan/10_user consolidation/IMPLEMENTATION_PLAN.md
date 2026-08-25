@@ -1,6 +1,6 @@
 # Plan 10 — User / Identity Consolidation
 
-> **Status:** Draft v3 — for review.
+> **Status:** Implemented on `feat/user-consolidation`. Kept as the design record.
 > **Companion:** [`flows.md`](./flows.md) — activity diagrams; the authoritative behavioural spec.
 > **Constraint:** The product is 100% pre-production. No existing data needs to be preserved.
 > Schema changes are free and migrations may be destructive. **Both the local and the deployed
@@ -475,6 +475,13 @@ the iOS app follows afterwards; no compatibility shim is built.
 
 Ordered so the tree builds and tests pass at every step.
 
+> **Implementation notes.** All six phases are done and verified against a live
+> local stack. Two things changed during the build, both recorded in §13:
+> `/auth/login` needed a decoy challenge id to stay non-enumerable, and the
+> staff verification endpoint had to return its challenge id so counter staff can
+> confirm an OTP the seller reads out. The deployed database has **not** been
+> wiped — that step is still outstanding and is the operator's to run.
+
 **Phase 0 — Notifications off, then schema.** Land the `OUTBOUND_NOTIFICATIONS` kill switch (§6.3)
 before anything else, so no subsequent phase can send by accident.
 
@@ -543,3 +550,36 @@ a person holds on `MembersPage`. Delete `VerifySellerPage`, folding it into the 
 - **No denormalised `orgId` on profiles (§4.3).** Every profile query joins through `Membership`.
   Cheap at this scale, but the existing `@@index([orgId, …])` access patterns move onto the
   membership indexes.
+
+---
+
+## 13. Built differently than planned
+
+Two deviations, both discovered while verifying the running system.
+
+**`/auth/login` returns a decoy challenge id for unknown contacts.** The plan
+implied returning nothing when nobody matches. In practice that made the
+*response shape* an enumeration oracle — a null `challengeId` meant "no such
+account". The phone flow needs an id to confirm against, so the endpoint now
+always returns a well-formed id; for an absent person it is never stored, and
+confirming it fails exactly like a wrong code.
+
+**Staff-initiated verification returns its challenge id.** §10 had the endpoint
+as fire-and-forget. But the counter workflow is that staff send an OTP and the
+seller reads it back to them, so staff need something to confirm against. It now
+returns `{ challengeId }` (plus the code itself while notifications are off).
+
+## 14. Still outstanding
+
+- **The deployed database has not been wiped or re-migrated.** Local is done;
+  the deployed instance still holds the old schema. It needs
+  `prisma migrate deploy` against a reset database, run by someone with those
+  credentials.
+- **`OUTBOUND_NOTIFICATIONS` must be set to `on`** wherever real delivery is
+  wanted. It is off everywhere today, by design.
+- **The iOS app still reads the old seller contract** and will break until
+  updated — the agreed clean cutover, with no compatibility shim.
+- **`pnpm start` is broken independently of this work.** `apps/api/src/main.ts`
+  imports `express` directly but does not declare it in `apps/api/package.json`,
+  so pnpm's strict layout cannot resolve it. Pre-dates this branch (commit
+  `25f5aef`); `pnpm dev` is unaffected. Worth fixing before any deploy.

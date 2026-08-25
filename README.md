@@ -1,6 +1,6 @@
 # PatrolKit — Server
 
-Multi-org foundation: magic-link auth, per-org permissions, pluggable modules, and device provisioning.
+Multi-org foundation: passwordless auth by email or phone, per-org permissions, pluggable modules, and device provisioning.
 
 ## Prerequisites
 
@@ -80,7 +80,7 @@ pnpm dev
 node scripts/gen-keys.mjs   # prints JWT_PRIVATE_KEY and JWT_PUBLIC_KEY
 ```
 
-4. Set `SEED_SUPERADMIN_EMAIL` in the server's `.env`. The super admin logs in via magic link at `https://patrolkit.io/auth/login`.
+4. Set `SEED_SUPERADMIN_EMAIL` in the server's `.env`. The super admin signs in with that email at `https://patrolkit.io/auth/login`. Set `OUTBOUND_NOTIFICATIONS=on` in production, or no mail or SMS is ever delivered.
 
 ### Deploy
 
@@ -97,7 +97,7 @@ This script:
 ### Verify
 
 1. Navigate to `https://patrolkit.io`
-2. Enter the `SEED_SUPERADMIN_EMAIL` address and check for the magic-link email
+2. Enter the `SEED_SUPERADMIN_EMAIL` address and check for the sign-in email
 3. Confirm `https://patrolkit.io/api/v1/healthz` returns `200`
 
 ### Rollback
