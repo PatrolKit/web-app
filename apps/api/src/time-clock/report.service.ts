@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { displayName } from '../common/util/person';
 import type { HoursReportRow } from '../contracts/time-clock.contracts';
 
 @Injectable()
@@ -29,7 +30,7 @@ export class TimeClockReportService {
     const shifts = await this.prisma.timeClockShift.findMany({
       where,
       include: {
-        patroller: { select: { firstName: true, lastName: true, nspId: true, patrolLevel: true } },
+        patroller: { include: { membership: { select: { user: true } } } },
       },
     });
 
@@ -45,9 +46,9 @@ export class TimeClockReportService {
       if (!row) {
         row = {
           patrollerId: s.patrollerId,
-          patrollerName: `${s.patroller.firstName} ${s.patroller.lastName}`.trim(),
-          nspId: s.patroller.nspId,
-          patrolLevel: s.patroller.patrolLevel,
+          patrollerName: displayName(s.patroller.membership.user),
+          nspId: s.patroller.membership.user.nspId ?? '',
+          patrolLevel: s.patroller.membership.user.patrolLevel,
           shiftCount: 0,
           totalMinutes: 0,
           minutesByDutyType: {},

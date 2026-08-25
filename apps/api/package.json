@@ -13,7 +13,6 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
-    "db:reset-business-sellers": "ts-node -r tsconfig-paths/register prisma/reset-business-sellers.ts",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate"
   },

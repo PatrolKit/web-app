@@ -13,7 +13,6 @@ export interface OrgMembership {
   id: string;
   orgId: string;
   userId: string;
-  status: string;
   org: { id: string; name: string; slug: string; status: string };
 }
 
@@ -38,7 +37,7 @@ export class OrgContextGuard implements CanActivate {
       include: { org: true },
     });
 
-    if (!membership || membership.status !== 'active' || membership.org.status !== 'active') {
+    if (!membership || membership.deletedAt !== null || membership.org.status !== 'active') {
       throw new ForbiddenException('Not an active member of this organization');
     }
 
@@ -46,7 +45,6 @@ export class OrgContextGuard implements CanActivate {
       id: membership.id,
       orgId: membership.orgId,
       userId: membership.userId,
-      status: membership.status,
       org: {
         id: membership.org.id,
         name: membership.org.name,

@@ -1,17 +1,26 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { PublicSellerDetailResponse } from '../contracts/ski-swap.contracts';
+import { displayName } from '../common/util/person';
 
 @Injectable()
 export class PublicSellerService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getById(sellerId: string): Promise<PublicSellerDetailResponse> {
-    const seller = await this.prisma.swapSeller.findUnique({
+    const profile = await this.prisma.sellerProfile.findUnique({
       where: { id: sellerId },
-      include: { org: true },
+      include: { membership: { include: { user: true, org: true } } },
     });
-    if (!seller) throw new NotFoundException('Seller not found');
+    if (!profile || profile.deletedAt || profile.membership.deletedAt) {
+      throw new NotFoundException('Seller not found');
+    }
+    const seller = {
+      id: profile.id,
+      orgId: profile.membership.orgId,
+      name: displayName(profile.membership.user, profile.businessName),
+      org: profile.membership.org,
+    };
 
     const orgModule = await this.prisma.orgModule.findUnique({
       where: { orgId_moduleKey: { orgId: seller.orgId, moduleKey: 'ski_swap' } },

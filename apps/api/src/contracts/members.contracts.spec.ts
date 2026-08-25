@@ -22,8 +22,9 @@ describe('Members contracts', () => {
   });
 
   describe('UpdateMemberSchema', () => {
-    it('accepts status only', () => {
-      expect(UpdateMemberSchema.safeParse({ status: 'active' }).success).toBe(true);
+    it('accepts removal only', () => {
+      expect(UpdateMemberSchema.safeParse({ removed: true }).success).toBe(true);
+      expect(UpdateMemberSchema.safeParse({ removed: false }).success).toBe(true);
     });
     it('accepts permissions only', () => {
       expect(UpdateMemberSchema.safeParse({ permissions: ['org:read'] }).success).toBe(true);

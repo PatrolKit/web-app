@@ -22,6 +22,6 @@ export class MeController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: PatchMeDto,
   ): Promise<MeResponse> {
-    return this.meService.patchMe(user.userId, body.name);
+    return this.meService.patchMe(user.userId, body);
   }
 }

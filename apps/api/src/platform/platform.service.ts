@@ -19,7 +19,7 @@ export class PlatformService {
     const existing = await this.prisma.organization.findUnique({ where: { slug: data.slug } });
     if (existing) throw new ConflictException('Slug already in use');
 
-    const owner = await this.prisma.user.findUnique({ where: { email: data.ownerEmail } });
+    const owner = await this.prisma.user.findFirst({ where: { email: data.ownerEmail } });
     if (!owner) throw new NotFoundException(`User not found: ${data.ownerEmail}`);
 
     const org = await this.prisma.organization.create({
@@ -28,11 +28,11 @@ export class PlatformService {
 
     // Seed owner membership with all permissions
     const membership = await this.prisma.membership.create({
-      data: { id: createId(), userId: owner.id, orgId: org.id },
+      data: { id: createId(), userId: owner.id, orgId: org.id, updatedAt: new Date() },
     });
-    // business_seller is an external-seller role, not an admin permission
-    const adminPermKeys = ALL_PERMISSION_KEYS.filter((k) => k !== 'business_seller');
-    const allPerms = await this.prisma.permission.findMany({ where: { key: { in: adminPermKeys } } });
+    const allPerms = await this.prisma.permission.findMany({
+      where: { key: { in: ALL_PERMISSION_KEYS } },
+    });
     await this.prisma.membershipPermission.createMany({
       data: allPerms.map((p) => ({ membershipId: membership.id, permissionId: p.id })),
     });

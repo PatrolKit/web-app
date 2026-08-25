@@ -29,13 +29,16 @@ afterAll(async () => {
 async function loginAs(email: string): Promise<string> {
   const rawToken = randomBytes(32).toString('hex');
   const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-  const user = await prisma.user.findUniqueOrThrow({ where: { email } });
-  await prisma.magicLink.create({
-    data: { id: createId(), userId: user.id, tokenHash, expiresAt: new Date(Date.now() + 900_000) },
+  const user = await prisma.user.findFirstOrThrow({ where: { email } });
+  const challenge = await prisma.contactChallenge.create({
+    data: {
+      id: createId(), userId: user.id, channel: 'email', target: email,
+      purpose: 'login', codeHash: tokenHash, expiresAt: new Date(Date.now() + 900_000),
+    },
   });
   const { body } = await request()
-    .post('/api/v1/auth/magic-link/verify')
-    .send({ token: rawToken });
+    .post(`/api/v1/auth/challenges/${challenge.id}/confirm`)
+    .send({ code: rawToken });
   return body.data.accessToken;
 }
 
@@ -55,7 +58,7 @@ describe('Device provisioning + token lifecycle', () => {
     // Create a dedicated admin user for this test suite
     const adminEmail = `device-admin-${Date.now()}@test.com`;
     const adminUser = await prisma.user.create({
-      data: { id: createId(), email: adminEmail, name: 'Device Admin', isSuperAdmin: true },
+      data: { id: createId(), email: adminEmail, firstName: 'Device', lastName: 'Admin', isSuperAdmin: true },
     });
     const membership = await prisma.membership.create({
       data: { id: createId(), userId: adminUser.id, orgId },
@@ -161,14 +164,14 @@ describe('Module gating', () => {
       data: { id: createId(), orgId: org.id, moduleKey: 'user_management', enabled: true, enabledAt: new Date() },
     });
     const user = await prisma.user.create({
-      data: { id: createId(), email: `mod-admin-${Date.now()}@test.com`, name: 'Mod Admin' },
+      data: { id: createId(), email: `mod-admin-${Date.now()}@test.com`, firstName: 'Mod', lastName: 'Admin' },
     });
     const membership = await prisma.membership.create({
-      data: { id: createId(), userId: user.id, orgId: org.id },
+      data: { id: createId(), userId: user.id, orgId: org.id, updatedAt: new Date() },
     });
     const perm = await prisma.permission.findUnique({ where: { key: 'modules:manage' } });
     if (perm) await prisma.membershipPermission.create({ data: { membershipId: membership.id, permissionId: perm.id } });
-    const token = await loginAs(user.email);
+    const token = await loginAs(user.email!);
 
     const { body } = await request()
       .patch(`/api/v1/orgs/${org.id}/modules/user_management`)
@@ -191,7 +194,7 @@ describe('Bulk CSV import', () => {
 
     const adminEmail = `import-admin-${Date.now()}@test.com`;
     const adminUser = await prisma.user.create({
-      data: { id: createId(), email: adminEmail, name: 'Import Admin' },
+      data: { id: createId(), email: adminEmail, firstName: 'Import', lastName: 'Admin' },
     });
     const membership = await prisma.membership.create({
       data: { id: createId(), userId: adminUser.id, orgId },

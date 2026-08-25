@@ -1,247 +1,189 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { MailService } from '../mail/mail.service';
-import { PermissionsService } from '../permissions/permissions.service';
-import { createId } from '@paralleldrive/cuid2';
+import { PersonService } from '../common/identity/person.service';
+import { MembershipTouchService } from '../common/identity/membership-touch.service';
+import { displayName } from '../common/util/person';
 import type { BusinessSellerMemberResponse } from '../contracts/ski-swap.contracts';
 
+const PROFILE_INCLUDE = {
+  membership: { include: { user: true } },
+} as const;
+
+type BusinessProfile = {
+  id: string;
+  businessName: string | null;
+  deletedAt: Date | null;
+  membership: {
+    userId: string;
+    joinedAt: Date;
+    user: { firstName: string | null; lastName: string | null; email: string | null; phone: string | null };
+  };
+};
+
+function toResponse(p: BusinessProfile): BusinessSellerMemberResponse {
+  return {
+    userId: p.membership.userId,
+    sellerId: p.id,
+    email: p.membership.user.email,
+    businessName: p.businessName,
+    displayName: displayName(p.membership.user, p.businessName),
+    phone: p.membership.user.phone,
+    joinedAt: p.membership.joinedAt.toISOString(),
+    removedAt: p.deletedAt?.toISOString() ?? null,
+  };
+}
+
+/**
+ * Business sellers are no longer a special kind of account — they are a seller
+ * profile that carries a business name. The invite still creates the person,
+ * the membership and a 30-day challenge, but it no longer grants a permission
+ * or writes a second person row.
+ */
 @Injectable()
 export class BusinessSellerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
     private readonly mailService: MailService,
-    private readonly permissionsService: PermissionsService,
+    private readonly people: PersonService,
+    private readonly touch: MembershipTouchService,
   ) {}
+
+  /**
+   * Name-only autocomplete over every business on the platform. A business name
+   * is not personal data, so this is deliberately global — it is what stops two
+   * orgs inventing two spellings of the same shop.
+   */
+  async searchBusinesses(query: string): Promise<{ businessName: string; userId: string }[]> {
+    if (!query.trim()) return [];
+    const profiles = await this.prisma.sellerProfile.findMany({
+      where: { deletedAt: null, businessName: { contains: query.trim() } },
+      include: { membership: { select: { userId: true } } },
+      take: 10,
+    });
+    const seen = new Set<string>();
+    const out: { businessName: string; userId: string }[] = [];
+    for (const p of profiles) {
+      const key = `${p.businessName}:${p.membership.userId}`;
+      if (!p.businessName || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ businessName: p.businessName, userId: p.membership.userId });
+    }
+    return out;
+  }
 
   async invite(
     orgId: string,
     inviterUserId: string,
-    data: { name: string; email: string },
+    data: { businessName: string; email: string },
   ): Promise<BusinessSellerMemberResponse> {
     void inviterUserId;
 
-    const isNewUser = !(await this.prisma.user.findUnique({ where: { email: data.email } }));
-
-    let user = await this.prisma.user.findUnique({ where: { email: data.email } });
-
-    if (user) {
-      // Check for an existing business_seller membership in this org
-      const existing = await this.prisma.membership.findUnique({
-        where: { userId_orgId: { userId: user.id, orgId } },
-        include: { permissions: { include: { permission: true } } },
+    const existingUser = await this.people.resolve({ email: data.email });
+    if (existingUser) {
+      const existingProfile = await this.prisma.sellerProfile.findFirst({
+        where: { membership: { orgId, userId: existingUser.id } },
       });
-      if (existing) {
-        const hasBs = existing.permissions.some((mp) => mp.permission.key === 'business_seller');
-        if (hasBs) {
-          if (existing.status === 'active') {
-            throw new ConflictException('This business seller is already active in this org');
-          } else {
-            throw new ConflictException('This business seller is disabled. Use the enable toggle to restore their access.');
-          }
-        }
+      if (existingProfile && !existingProfile.deletedAt) {
+        throw new ConflictException('That business is already an active seller in this org');
       }
-    } else {
-      user = await this.prisma.user.create({
-        data: { id: createId(), email: data.email, name: data.name },
-      });
     }
 
-    const membership = await this.prisma.membership.upsert({
-      where: { userId_orgId: { userId: user.id, orgId } },
-      update: { status: 'active' },
-      create: { id: createId(), userId: user.id, orgId, status: 'active' },
+    // The invite knows the mailbox, not the person — name parts stay empty until
+    // they sign in and fill them in.
+    const { user, created } = await this.people.resolveOrCreate({ email: data.email });
+    const membership = await this.people.upsertMembership(user.id, orgId);
+
+    const profile = await this.prisma.sellerProfile.upsert({
+      where: { membershipId: membership.id },
+      update: { deletedAt: null, businessName: data.businessName },
+      create: { id: createId(), membershipId: membership.id, businessName: data.businessName },
+    });
+    await this.touch.touch(membership.id);
+
+    const org = await this.prisma.organization.findUniqueOrThrow({
+      where: { id: orgId },
+      select: { name: true },
     });
 
-    this.permissionsService.invalidate(user.id, orgId);
-
-    // Ensure the permission record exists (idempotent — guards against an un-seeded DB)
-    const bsPerm = await this.prisma.permission.upsert({
-      where: { key: 'business_seller' },
-      update: {},
-      create: { id: createId(), key: 'business_seller', description: 'Self-service access to own consignment items in ski swaps.' },
-    });
-    await this.prisma.membershipPermission.upsert({
-      where: { membershipId_permissionId: { membershipId: membership.id, permissionId: bsPerm.id } },
-      update: {},
-      create: { membershipId: membership.id, permissionId: bsPerm.id },
-    });
-    const existingAnonymous = await this.prisma.swapSeller.findFirst({
-      where: { orgId, email: data.email, userId: null },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    let seller;
-    if (existingAnonymous) {
-      seller = await this.prisma.swapSeller.update({
-        where: { id: existingAnonymous.id },
-        data: { userId: user.id, type: 'business' },
-      });
+    // Business sellers are always notified. Delivery is suppressed globally
+    // while OUTBOUND_NOTIFICATIONS is off.
+    if (created) {
+      await this.authService
+        .createInviteChallenge(user.id, data.email, org.name)
+        .catch(() => {});
     } else {
-      seller = await this.prisma.swapSeller.create({
-        data: {
-          id: createId(),
-          orgId,
-          userId: user.id,
-          type: 'business',
-          name: data.name,
-          email: data.email,
-          phone: '',
-        },
-      });
+      this.mailService.sendSellerAddedNotification(data.email, org.name).catch(() => {});
     }
 
-    // Send appropriate email: 30-day invite link for new accounts, sign-in notification for existing ones
-    if (isNewUser) {
-      const org = await this.prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { name: true } });
-      const inviteUrl = await this.authService.createInviteMagicLink(user.id);
-      this.mailService.sendSellerInvite(user.email, inviteUrl, org.name).catch(() => {});
-    } else {
-      const org = await this.prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { name: true } });
-      this.mailService.sendSellerAddedNotification(user.email, org.name).catch(() => {});
-    }
-
-    return {
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      status: membership.status,
-      joinedAt: membership.joinedAt.toISOString(),
-      seller: { id: seller.id, name: seller.name, email: seller.email ?? null, phone: seller.phone },
-    };
+    return toResponse(await this.findProfileOrThrow(profile.id));
   }
 
   async list(orgId: string): Promise<BusinessSellerMemberResponse[]> {
-    const bsPerm = await this.prisma.permission.findUnique({ where: { key: 'business_seller' } });
-    if (!bsPerm) return [];
-
-    const memberships = await this.prisma.membership.findMany({
-      where: {
-        orgId,
-        permissions: { some: { permissionId: bsPerm.id } },
-      },
-      include: {
-        user: true,
-        permissions: { include: { permission: true } },
-      },
-      orderBy: { joinedAt: 'asc' },
+    const profiles = await this.prisma.sellerProfile.findMany({
+      where: { businessName: { not: null }, membership: { orgId } },
+      include: PROFILE_INCLUDE,
+      orderBy: { createdAt: 'asc' },
     });
-
-    const sellerMap = new Map(
-      (
-        await this.prisma.swapSeller.findMany({
-          where: { orgId, userId: { in: memberships.map((m) => m.userId) } },
-        })
-      ).map((s) => [s.userId!, s]),
-    );
-
-    return memberships.map((m) => {
-      const s = sellerMap.get(m.userId) ?? null;
-      return {
-        userId: m.userId,
-        email: m.user.email,
-        name: m.user.name,
-        status: m.status,
-        joinedAt: m.joinedAt.toISOString(),
-        seller: s ? { id: s.id, name: s.name, email: s.email ?? null, phone: s.phone } : null,
-      };
-    });
+    return profiles.map(toResponse);
   }
 
-  async setStatus(
+  /** Soft removal and restore. The profile row always survives. */
+  async setRemoved(
     orgId: string,
     targetUserId: string,
-    status: 'active' | 'disabled',
+    removed: boolean,
   ): Promise<BusinessSellerMemberResponse> {
-    const bsPerm = await this.prisma.permission.findUnique({ where: { key: 'business_seller' } });
-
-    const membership = await this.prisma.membership.findUnique({
-      where: { userId_orgId: { userId: targetUserId, orgId } },
-      include: { user: true, permissions: { include: { permission: true } } },
+    const profile = await this.prisma.sellerProfile.findFirst({
+      where: { businessName: { not: null }, membership: { orgId, userId: targetUserId } },
+      include: PROFILE_INCLUDE,
     });
+    if (!profile) throw new NotFoundException('Business seller not found');
 
-    if (!membership) throw new NotFoundException('Membership not found');
-
-    const hasBs =
-      bsPerm && membership.permissions.some((mp) => mp.permissionId === bsPerm.id);
-    if (!hasBs) throw new NotFoundException('Not a business seller');
-
-    await this.prisma.membership.update({
-      where: { id: membership.id },
-      data: { status },
+    await this.prisma.sellerProfile.update({
+      where: { id: profile.id },
+      data: { deletedAt: removed ? new Date() : null },
     });
-
-    this.permissionsService.invalidate(targetUserId, orgId);
+    await this.touch.touchBySellerProfile(profile.id);
 
     await this.prisma.auditLog.create({
       data: {
         id: createId(),
         actorType: 'user',
-        actorId: undefined,
         orgId,
-        action: 'business_seller.status_changed',
-        targetType: 'membership',
-        targetId: membership.id,
-        metadata: { status },
+        action: removed ? 'business_seller.removed' : 'business_seller.restored',
+        targetType: 'seller_profile',
+        targetId: profile.id,
       },
     });
 
-    const seller = await this.prisma.swapSeller.findFirst({ where: { orgId, userId: targetUserId } });
-
-    return {
-      userId: membership.userId,
-      email: membership.user.email,
-      name: membership.user.name,
-      status,
-      joinedAt: membership.joinedAt.toISOString(),
-      seller: seller ? { id: seller.id, name: seller.name, email: seller.email ?? null, phone: seller.phone } : null,
-    };
+    return toResponse(await this.findProfileOrThrow(profile.id));
   }
 
   async remove(orgId: string, targetUserId: string): Promise<void> {
-    const bsPerm = await this.prisma.permission.findUnique({ where: { key: 'business_seller' } });
-
-    const membership = await this.prisma.membership.findUnique({
-      where: { userId_orgId: { userId: targetUserId, orgId } },
-      include: { permissions: { include: { permission: true } } },
+    const profile = await this.prisma.sellerProfile.findFirst({
+      where: { businessName: { not: null }, membership: { orgId, userId: targetUserId } },
     });
+    if (!profile) throw new NotFoundException('Business seller not found');
 
-    if (!membership) throw new NotFoundException('Membership not found');
-
-    const bsMp = bsPerm && membership.permissions.find((mp) => mp.permissionId === bsPerm.id);
-    if (!bsMp) throw new NotFoundException('Not a business seller');
-
-    await this.prisma.membershipPermission.delete({
-      where: { membershipId_permissionId: { membershipId: membership.id, permissionId: bsPerm!.id } },
-    });
-
-    const remainingPerms = membership.permissions.filter((mp) => mp.permissionId !== bsPerm!.id);
-    if (remainingPerms.length === 0) {
-      await this.prisma.membership.update({
-        where: { id: membership.id },
-        data: { status: 'disabled' },
-      });
+    const itemCount = await this.prisma.swapItem.count({ where: { sellerId: profile.id } });
+    if (itemCount > 0) {
+      throw new BadRequestException(
+        'Cannot remove a business seller with items. Unassign their items first.',
+      );
     }
 
-    this.permissionsService.invalidate(targetUserId, orgId);
-
-    await this.prisma.auditLog.create({
-      data: {
-        id: createId(),
-        actorType: 'user',
-        actorId: undefined,
-        orgId,
-        action: 'business_seller.removed',
-        targetType: 'membership',
-        targetId: membership.id,
-        metadata: {},
-      },
+    await this.prisma.sellerProfile.update({
+      where: { id: profile.id },
+      data: { deletedAt: new Date() },
     });
+    await this.touch.touchBySellerProfile(profile.id);
+  }
+
+  private async findProfileOrThrow(id: string): Promise<BusinessProfile> {
+    return this.prisma.sellerProfile.findUniqueOrThrow({ where: { id }, include: PROFILE_INCLUDE });
   }
 }

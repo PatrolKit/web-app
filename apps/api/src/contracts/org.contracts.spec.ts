@@ -15,7 +15,7 @@ describe('Org contracts', () => {
       'org:read', 'org:manage', 'modules:manage',
       'users:read', 'users:invite', 'users:import', 'users:manage',
       'permissions:assign', 'devices:read', 'devices:provision', 'devices:revoke',
-      'ski_swap:report', 'ski_swap:manage', 'ski_swap:admin', 'business_seller',
+      'ski_swap:report', 'ski_swap:manage', 'ski_swap:admin',
       'time_tracking:report', 'time_tracking:manage', 'time_tracking:admin',
       'signage:report', 'signage:manage', 'signage:admin',
     ];
@@ -34,11 +34,15 @@ describe('Org contracts', () => {
   });
 
   describe('PatchMeSchema', () => {
-    it('accepts a valid name', () => {
-      expect(PatchMeSchema.safeParse({ name: 'Alice' }).success).toBe(true);
+    it('accepts either name part on its own', () => {
+      expect(PatchMeSchema.safeParse({ firstName: 'Alice' }).success).toBe(true);
+      expect(PatchMeSchema.safeParse({ lastName: 'Reyes' }).success).toBe(true);
     });
-    it('rejects an empty name', () => {
-      expect(PatchMeSchema.safeParse({ name: '' }).success).toBe(false);
+    it('rejects an empty name part', () => {
+      expect(PatchMeSchema.safeParse({ firstName: '' }).success).toBe(false);
+    });
+    it('rejects an empty object', () => {
+      expect(PatchMeSchema.safeParse({}).success).toBe(false);
     });
     it('rejects unknown fields', () => {
       expect(PatchMeSchema.safeParse({ name: 'Alice', email: 'x@x.com' }).success).toBe(false);

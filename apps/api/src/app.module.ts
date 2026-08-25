@@ -12,6 +12,7 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { IdentityModule } from './common/identity/identity.module';
 import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
 import { PermissionsModule } from './permissions/permissions.module';
@@ -60,6 +61,7 @@ import appConfig from './config/app.config';
       },
     }),
     PrismaModule,
+    IdentityModule,
     MailModule,
     SmsModule,
     AuthModule,

@@ -56,91 +56,101 @@ export type SwapResponse = z.infer<typeof SwapResponseSchema>;
 // ─── Sellers ─────────────────────────────────────────────────────────────────
 
 const PAYOUT_METHODS = ['PAYPAL', 'VENMO', 'CHECK', 'DONATE'] as const;
-const PAYOUT_ID_TYPES = ['EMAIL', 'PHONE', 'USER_HANDLE'] as const;
 
-// Validates identifier format against the selected type
-function validatePayoutIdentifier(
-  method: string | undefined,
-  idType: string | undefined,
-  identifier: string | undefined,
-  ctx: z.RefinementCtx,
-) {
-  if (!method || method === 'DONATE' || method === 'CHECK') return; // no identifier needed
-  if (!idType || !identifier) return; // optional overall
-  if (idType === 'EMAIL' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) {
-    ctx.addIssue({ code: 'custom', message: `Payout identifier must be a valid email for type EMAIL`, path: ['payoutIdentifier'] });
-  }
-  if (idType === 'PHONE' && !/^\d{7,}$/.test(identifier.replace(/\D/g, ''))) {
-    ctx.addIssue({ code: 'custom', message: `Payout identifier must be a valid phone number for type PHONE`, path: ['payoutIdentifier'] });
-  }
-}
-
+/**
+ * A payout targets one of the person's own contacts rather than a free-text
+ * identifier, so there is one verification concept instead of two. The service
+ * layer rejects a channel that is not verified.
+ */
 const PayoutFields = {
   payoutMethod: z.enum(PAYOUT_METHODS).nullable().optional(),
-  payoutIdentifierType: z.enum(PAYOUT_ID_TYPES).nullable().optional(),
-  payoutIdentifier: z.string().max(200).nullable().optional(),
-  payoutIdentifierConfirmedAt: z.string().datetime().nullable().optional(),
+  payoutChannel: z.enum(['email', 'phone']).nullable().optional(),
+};
+
+/** Person fields live on User and are global; they are edited through the seller API for convenience. */
+const PersonFields = {
+  firstName: z.string().trim().max(100).nullable().optional(),
+  lastName: z.string().trim().max(100).nullable().optional(),
+  phone: z.string().trim().max(32).nullable().optional(),
+  email: z.string().trim().toLowerCase().email().nullable().optional(),
+  street: z.string().max(200).nullable().optional(),
+  city: z.string().max(100).nullable().optional(),
+  state: z.string().max(50).nullable().optional(),
+  zip: z.string().max(20).nullable().optional(),
 };
 
 export const CreateSellerSchema = z
   .object({
-    name: z.string().min(1).max(100),
-    phone: z.string().min(1).max(20),
-    email: z.string().email().optional(),
-    type: z.enum(['individual', 'business']).default('individual'),
-    street: z.string().max(200).optional(),
-    city: z.string().max(100).optional(),
-    state: z.string().max(50).optional(),
-    zip: z.string().max(20).optional(),
+    ...PersonFields,
+    /// Set ⇒ business seller. Null or absent ⇒ individual.
+    businessName: z.string().trim().min(1).max(100).nullable().optional(),
     ...PayoutFields,
   })
   .strict()
-  .superRefine((v, ctx) => validatePayoutIdentifier(v.payoutMethod ?? undefined, v.payoutIdentifierType ?? undefined, v.payoutIdentifier ?? undefined, ctx));
+  .refine((v) => Boolean(v.email || v.phone || (v.firstName && v.lastName) || v.businessName), {
+    message: 'A seller needs at least a name, an email, or a phone number',
+  });
 
 export const PatchSellerSchema = z
   .object({
-    name: z.string().min(1).max(100).optional(),
-    phone: z.string().min(1).max(20).optional(),
-    email: z.string().email().nullable().optional(),
-    type: z.enum(['individual', 'business']).optional(),
-    street: z.string().max(200).nullable().optional(),
-    city: z.string().max(100).nullable().optional(),
-    state: z.string().max(50).nullable().optional(),
-    zip: z.string().max(20).nullable().optional(),
+    ...PersonFields,
+    businessName: z.string().trim().min(1).max(100).nullable().optional(),
     ...PayoutFields,
   })
   .strict()
-  .superRefine((v, ctx) => validatePayoutIdentifier(v.payoutMethod ?? undefined, v.payoutIdentifierType ?? undefined, v.payoutIdentifier ?? undefined, ctx));
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one field must be provided' });
 
 export const SellerResponseSchema = z.object({
+  /// SellerProfile id — the public /s/:sellerId identifier and the FK items point at.
   id: z.string(),
   orgId: z.string(),
-  type: z.enum(['individual', 'business']),
-  name: z.string(),
-  phone: z.string(),
+  userId: z.string(),
+  businessName: z.string().nullable(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  /// businessName, else "First Last", else a contact. Never empty.
+  displayName: z.string(),
+  phone: z.string().nullable(),
   email: z.string().nullable(),
   street: z.string().nullable(),
   city: z.string().nullable(),
   state: z.string().nullable(),
   zip: z.string().nullable(),
   payoutMethod: z.enum(PAYOUT_METHODS).nullable(),
-  payoutIdentifierType: z.enum(PAYOUT_ID_TYPES).nullable(),
-  payoutIdentifier: z.string().nullable(),
-  payoutIdentifierConfirmedAt: z.string().datetime().nullable(),
+  payoutChannel: z.enum(['email', 'phone']).nullable(),
   emailVerifiedAt: z.string().datetime().nullable(),
   phoneVerifiedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 
-export const ConfirmEmailVerificationSchema = z.object({ token: z.string().min(1) }).strict();
-export const ConfirmPhoneVerificationSchema = z.object({ code: z.string().length(6) }).strict();
+/**
+ * Cross-org lookup discloses a name and nothing else. The full record follows
+ * only after staff confirm identity with the person in front of them.
+ */
+export const PersonSearchResultSchema = z.object({
+  userId: z.string(),
+  displayName: z.string(),
+  /// True when this person already has a live seller profile at this org.
+  alreadyHere: z.boolean(),
+});
+
+export const PersonSearchSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().optional(),
+    phone: z.string().trim().optional(),
+  })
+  .strict()
+  .refine((v) => Boolean(v.email || v.phone), { message: 'Provide an email or a phone number' });
+
+export const AddSellerFromPersonSchema = z.object({ userId: z.string().min(1) }).strict();
 
 export class CreateSellerDto extends createZodDto(CreateSellerSchema) {}
 export class PatchSellerDto extends createZodDto(PatchSellerSchema) {}
-export class ConfirmEmailVerificationDto extends createZodDto(ConfirmEmailVerificationSchema) {}
-export class ConfirmPhoneVerificationDto extends createZodDto(ConfirmPhoneVerificationSchema) {}
+export class PersonSearchDto extends createZodDto(PersonSearchSchema) {}
+export class AddSellerFromPersonDto extends createZodDto(AddSellerFromPersonSchema) {}
 export type SellerResponse = z.infer<typeof SellerResponseSchema>;
+export type PersonSearchResult = z.infer<typeof PersonSearchResultSchema>;
 
 // ─── Items ────────────────────────────────────────────────────────────────────
 
@@ -182,7 +192,7 @@ export const ItemResponseSchema = z.object({
   squareSynced: z.boolean(),
   donateProceeds: z.boolean(),
   hasPrintedTag: z.boolean(),
-  seller: SellerResponseSchema.pick({ id: true, name: true, phone: true }).nullable(),
+  seller: SellerResponseSchema.pick({ id: true, displayName: true, phone: true }).nullable(),
   photos: z.array(z.object({ id: z.string(), url: z.string() })),
 });
 
@@ -204,22 +214,23 @@ export const PublicSellerItemSchema = z.object({
 // ─── Business seller invite (admin) ──────────────────────────────────────────
 
 export const InviteBusinessSellerSchema = z
-  .object({ name: z.string().min(1).max(100), email: z.string().email() })
+  .object({ businessName: z.string().trim().min(1).max(100), email: z.string().trim().toLowerCase().email() })
   .strict();
 
+/** Removal is soft: the profile row survives as a tombstone. */
 export const UpdateBusinessSellerStatusSchema = z
-  .object({ status: z.enum(['active', 'disabled']) })
+  .object({ removed: z.boolean() })
   .strict();
 
 export const BusinessSellerMemberResponseSchema = z.object({
   userId: z.string(),
-  email: z.string(),
-  name: z.string(),
-  status: z.string(),
+  sellerId: z.string(),
+  email: z.string().nullable(),
+  businessName: z.string().nullable(),
+  displayName: z.string(),
+  phone: z.string().nullable(),
   joinedAt: z.string().datetime(),
-  seller: z
-    .object({ id: z.string(), name: z.string(), email: z.string().nullable(), phone: z.string() })
-    .nullable(),
+  removedAt: z.string().datetime().nullable(),
 });
 
 export class InviteBusinessSellerDto extends createZodDto(InviteBusinessSellerSchema) {}

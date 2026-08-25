@@ -28,7 +28,7 @@ export class TimeClockEventService {
 
     const [resorts, patrollers] = await Promise.all([
       this.prisma.resort.findMany({ where: { orgId }, select: { id: true } }),
-      this.prisma.patroller.findMany({ where: { orgId }, select: { id: true } }),
+      this.prisma.patrollerProfile.findMany({ where: { membership: { orgId } }, select: { id: true } }),
     ]);
     const resortIds = new Set(resorts.map((r) => r.id));
     const patrollerIds = new Set(patrollers.map((p) => p.id));

@@ -37,18 +37,18 @@ describe('Health', () => {
   });
 });
 
-describe('Auth — magic link (no enumeration)', () => {
-  it('POST /auth/magic-link returns 200 for unknown email', async () => {
+describe('Auth — login (no enumeration)', () => {
+  it('POST /auth/login returns 200 for unknown email', async () => {
     const { body } = await request()
-      .post('/api/v1/auth/magic-link')
+      .post('/api/v1/auth/login')
       .send({ email: 'nobody@unknown.example' })
       .expect(200);
     expect(body.success).toBe(true);
   });
 
-  it('POST /auth/magic-link returns 200 for known user', async () => {
+  it('POST /auth/login returns 200 for known user', async () => {
     const { body } = await request()
-      .post('/api/v1/auth/magic-link')
+      .post('/api/v1/auth/login')
       .send({ email: 'admin@test.patrolkit.io' })
       .expect(200);
     expect(body.success).toBe(true);
@@ -63,29 +63,32 @@ describe('Auth — magic link (no enumeration)', () => {
   });
 });
 
-describe('Auth — full magic-link flow', () => {
+describe('Auth — full login flow', () => {
   let accessToken: string;
 
-  it('can obtain tokens via the stored magic-link hash', async () => {
+  it('can obtain tokens by confirming a stored challenge', async () => {
     // Create magic link directly in DB (simulates email click)
     const { createHash, randomBytes } = await import('crypto');
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-    const user = await prisma.user.findUniqueOrThrow({
+    const user = await prisma.user.findFirstOrThrow({
       where: { email: 'admin@test.patrolkit.io' },
     });
-    await prisma.magicLink.create({
+    const challenge = await prisma.contactChallenge.create({
       data: {
         id: createId(),
         userId: user.id,
-        tokenHash,
+        channel: 'email',
+        target: user.email!,
+        purpose: 'login',
+        codeHash: tokenHash,
         expiresAt: new Date(Date.now() + 900_000),
       },
     });
 
     const { body } = await request()
-      .post('/api/v1/auth/magic-link/verify')
-      .send({ token: rawToken })
+      .post(`/api/v1/auth/challenges/${challenge.id}/confirm`)
+      .send({ code: rawToken })
       .expect(200);
 
     expect(body.success).toBe(true);
@@ -106,9 +109,9 @@ describe('Auth — full magic-link flow', () => {
     await request().get('/api/v1/me').expect(401);
   });
 
-  it('used magic-link token is rejected', async () => {
-    const link = await prisma.magicLink.findFirst({ where: { usedAt: { not: null } } });
-    expect(link).not.toBeNull();
+  it('a confirmed challenge is marked used', async () => {
+    const used = await prisma.contactChallenge.findFirst({ where: { usedAt: { not: null } } });
+    expect(used).not.toBeNull();
   });
 });
 
@@ -128,10 +131,10 @@ describe('Org isolation', () => {
     orgBId = orgB.id;
 
     const user = await prisma.user.create({
-      data: { id: createId(), email: `isolation-user-${Date.now()}@test.com`, name: 'Isolation User' },
+      data: { id: createId(), email: `isolation-user-${Date.now()}@test.com`, firstName: 'Isolation', lastName: 'User' },
     });
     const membership = await prisma.membership.create({
-      data: { id: createId(), userId: user.id, orgId: orgAId },
+      data: { id: createId(), userId: user.id, orgId: orgAId, updatedAt: new Date() },
     });
     const orgReadPerm = await prisma.permission.findUnique({ where: { key: 'org:read' } });
     if (orgReadPerm) {
@@ -142,12 +145,15 @@ describe('Org isolation', () => {
 
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-    await prisma.magicLink.create({
-      data: { id: createId(), userId: user.id, tokenHash, expiresAt: new Date(Date.now() + 900_000) },
+    const challenge = await prisma.contactChallenge.create({
+      data: {
+        id: createId(), userId: user.id, channel: 'email', target: user.email!,
+        purpose: 'login', codeHash: tokenHash, expiresAt: new Date(Date.now() + 900_000),
+      },
     });
     const { body } = await request()
-      .post('/api/v1/auth/magic-link/verify')
-      .send({ token: rawToken });
+      .post(`/api/v1/auth/challenges/${challenge.id}/confirm`)
+      .send({ code: rawToken });
     tokenOrgA = body.data.accessToken;
   });
 
@@ -177,19 +183,22 @@ describe('Permission enforcement', () => {
     });
     orgId = org.id;
     const user = await prisma.user.create({
-      data: { id: createId(), email: `perm-user-${Date.now()}@test.com`, name: 'No-Perm User' },
+      data: { id: createId(), email: `perm-user-${Date.now()}@test.com`, firstName: 'NoPerm', lastName: 'User' },
     });
     await prisma.membership.create({
       data: { id: createId(), userId: user.id, orgId },
     });
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-    await prisma.magicLink.create({
-      data: { id: createId(), userId: user.id, tokenHash, expiresAt: new Date(Date.now() + 900_000) },
+    const challenge = await prisma.contactChallenge.create({
+      data: {
+        id: createId(), userId: user.id, channel: 'email', target: user.email!,
+        purpose: 'login', codeHash: tokenHash, expiresAt: new Date(Date.now() + 900_000),
+      },
     });
     const { body } = await request()
-      .post('/api/v1/auth/magic-link/verify')
-      .send({ token: rawToken });
+      .post(`/api/v1/auth/challenges/${challenge.id}/confirm`)
+      .send({ code: rawToken });
     tokenNoPerms = body.data.accessToken;
   });
 

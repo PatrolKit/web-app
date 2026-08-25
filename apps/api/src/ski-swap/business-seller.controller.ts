@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -45,13 +46,18 @@ export class BusinessSellerController {
     return this.businessSellerService.list(orgId);
   }
 
+  @Get('search')
+  search(@Query('q') q: string) {
+    return this.businessSellerService.searchBusinesses(q ?? '');
+  }
+
   @Patch(':userId/status')
-  setStatus(
+  setRemoved(
     @Param('orgId') orgId: string,
     @Param('userId') targetUserId: string,
     @Body() body: UpdateBusinessSellerStatusDto,
   ) {
-    return this.businessSellerService.setStatus(orgId, targetUserId, body.status);
+    return this.businessSellerService.setRemoved(orgId, targetUserId, body.removed);
   }
 
   @Delete(':userId')

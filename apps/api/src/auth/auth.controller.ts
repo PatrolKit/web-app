@@ -2,13 +2,15 @@ import {
   Body,
   Controller,
   HttpCode,
+  Param,
   Post,
   Req,
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { MagicLinkRequestDto, MagicLinkVerifyDto, DeviceTokenRequestDto } from '../contracts/auth.contracts';
+import { LoginRequestDto, ChallengeConfirmDto, DeviceTokenRequestDto } from '../contracts/auth.contracts';
+import type { AuthTokenResponse, LoginResponse } from '../contracts/auth.contracts';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { DeviceTokenResponse } from '../contracts/devices.contracts';
 
@@ -16,25 +18,32 @@ import type { DeviceTokenResponse } from '../contracts/devices.contracts';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // ─── Magic link ─────────────────────────────────────────────────────────────
+  // ─── Login (email magic link or phone OTP) ──────────────────────────────────
 
-  @Post('magic-link')
+  @Post('login')
   @HttpCode(200)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async requestMagicLink(@Body() body: MagicLinkRequestDto): Promise<{ queued: true }> {
-    await this.authService.requestMagicLink(body.email);
-    return { queued: true };
+  async login(@Body() body: LoginRequestDto): Promise<LoginResponse> {
+    const issued = await this.authService.requestLogin(body);
+    // Uniform shape whether or not the account exists — no enumeration.
+    return {
+      queued: true,
+      challengeId: issued?.challengeId ?? null,
+      channel: issued?.channel ?? null,
+      ...(issued?.devCode ? { devCode: issued.devCode } : {}),
+    };
   }
 
-  @Post('magic-link/verify')
+  @Post('challenges/:id/confirm')
   @HttpCode(200)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  async verifyMagicLink(
-    @Body() body: MagicLinkVerifyDto,
+  async confirmChallenge(
+    @Param('id') challengeId: string,
+    @Body() body: ChallengeConfirmDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<{ accessToken: string }> {
-    return this.authService.verifyMagicLink(body.token, res, {
+  ): Promise<AuthTokenResponse> {
+    return this.authService.confirmChallenge(challengeId, body.code, res, {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });

@@ -2,19 +2,24 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { ItemService } from './item.service';
 import type { SellerResponse } from '../contracts/ski-swap.contracts';
-import type { SwapSeller } from '@prisma/client';
+import { SellerService } from './seller.service';
 
 @Injectable()
 export class SellerSelfService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly itemService: ItemService,
+    private readonly sellerService: SellerService,
   ) {}
 
   // ─── Seller record ────────────────────────────────────────────────────────
 
-  async getSellerRecord(orgId: string, userId: string): Promise<SwapSeller> {
-    const seller = await this.prisma.swapSeller.findFirst({ where: { orgId, userId } });
+  /** The caller's live seller profile at this org — the thing that grants self-service. */
+  async getSellerRecord(orgId: string, userId: string): Promise<{ id: string; businessName: string | null }> {
+    const seller = await this.prisma.sellerProfile.findFirst({
+      where: { deletedAt: null, membership: { orgId, userId, deletedAt: null } },
+      select: { id: true, businessName: true },
+    });
     if (!seller) throw new NotFoundException('Seller profile not found');
     return seller;
   }
@@ -22,21 +27,19 @@ export class SellerSelfService {
   // ─── Profile ──────────────────────────────────────────────────────────────
 
   async getProfile(orgId: string, userId: string): Promise<SellerResponse> {
-    const s = await this.getSellerRecord(orgId, userId);
-    return this.toResponse(s);
+    const seller = await this.getSellerRecord(orgId, userId);
+    return this.sellerService.get(orgId, seller.id);
   }
 
   async updateProfile(
     orgId: string,
     userId: string,
-    data: Partial<Pick<SwapSeller, 'name' | 'phone' | 'email' | 'street' | 'city' | 'state' | 'zip' | 'payoutMethod' | 'payoutIdentifierType' | 'payoutIdentifier'>>,
+    data: Parameters<SellerService['patch']>[2],
   ): Promise<SellerResponse> {
     const existing = await this.getSellerRecord(orgId, userId);
-    const updated = await this.prisma.swapSeller.update({
-      where: { id: existing.id },
-      data,
-    });
-    return this.toResponse(updated);
+    // A business seller may not rename their own business; staff own that field.
+    const { businessName: _ignored, ...safe } = data;
+    return this.sellerService.patch(orgId, existing.id, safe);
   }
 
   // ─── Active swaps (for swap selector) ────────────────────────────────────
@@ -136,28 +139,5 @@ export class SellerSelfService {
     const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId } });
     if (!item) throw new NotFoundException('Item not found');
     if (item.sellerId !== sellerId) throw new ForbiddenException('Not your item');
-  }
-
-  private toResponse(s: SwapSeller): SellerResponse {
-    return {
-      id: s.id,
-      orgId: s.orgId,
-      type: s.type as 'individual' | 'business',
-      name: s.name,
-      phone: s.phone,
-      email: s.email,
-      street: s.street,
-      city: s.city,
-      state: s.state,
-      zip: s.zip,
-      payoutMethod: (s.payoutMethod ?? null) as SellerResponse['payoutMethod'],
-      payoutIdentifierType: (s.payoutIdentifierType ?? null) as SellerResponse['payoutIdentifierType'],
-      payoutIdentifier: s.payoutIdentifier ?? null,
-      payoutIdentifierConfirmedAt: s.payoutIdentifierConfirmedAt?.toISOString() ?? null,
-      emailVerifiedAt: s.emailVerifiedAt?.toISOString() ?? null,
-      phoneVerifiedAt: s.phoneVerifiedAt?.toISOString() ?? null,
-      createdAt: s.createdAt.toISOString(),
-      updatedAt: s.updatedAt.toISOString(),
-    };
   }
 }

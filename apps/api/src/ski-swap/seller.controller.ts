@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -24,8 +25,8 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { SellerService } from './seller.service';
-import { SellerVerificationService } from './seller-verification.service';
-import { CreateSellerDto, PatchSellerDto } from '../contracts/ski-swap.contracts';
+import { ContactChallengeService } from '../auth/contact-challenge.service';
+import { CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/sellers')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
@@ -33,7 +34,7 @@ import { CreateSellerDto, PatchSellerDto } from '../contracts/ski-swap.contracts
 export class SellerController {
   constructor(
     private readonly sellerService: SellerService,
-    private readonly verificationService: SellerVerificationService,
+    private readonly challenges: ContactChallengeService,
   ) {}
 
   @Get()
@@ -79,24 +80,47 @@ export class SellerController {
     await this.sellerService.remove(orgId, sellerId);
   }
 
-  @Post(':sellerId/verify/email/initiate')
+  /**
+   * Staff-initiated contact verification. Issues a `verify` challenge, which
+   * proves the contact without minting a session.
+   */
+  @Post(':sellerId/verify/:channel/initiate')
   @HttpCode(204)
   @RequirePermissions('ski_swap:manage')
-  async initiateEmailVerification(
+  async initiateVerification(
     @Param('orgId') orgId: string,
     @Param('sellerId') sellerId: string,
+    @Param('channel') channel: string,
   ) {
-    await this.verificationService.initiateEmail(sellerId, orgId);
+    if (channel !== 'email' && channel !== 'phone') {
+      throw new BadRequestException('channel must be email or phone');
+    }
+    const seller = await this.sellerService.findOrThrow(orgId, sellerId);
+    const target = channel === 'email' ? seller.membership.user.email : seller.membership.user.phone;
+    if (!target) throw new BadRequestException(`Seller has no ${channel} on record`);
+
+    await this.challenges.issue({
+      userId: seller.membership.userId,
+      channel,
+      target,
+      purpose: 'verify',
+    });
   }
 
-  @Post(':sellerId/verify/phone/initiate')
-  @HttpCode(204)
+  /** Name-only cross-org lookup. The full record follows staff confirmation. */
+  @Post('search')
+  @HttpCode(200)
   @RequirePermissions('ski_swap:manage')
-  async initiatePhoneVerification(
-    @Param('orgId') orgId: string,
-    @Param('sellerId') sellerId: string,
-  ) {
-    await this.verificationService.initiatePhone(sellerId, orgId);
+  searchPeople(@Param('orgId') orgId: string, @Body() body: PersonSearchDto) {
+    return this.sellerService.searchPeople(orgId, body);
+  }
+
+  /** Grants the seller role to a person staff have already confirmed. */
+  @Post('from-person')
+  @HttpCode(201)
+  @RequirePermissions('ski_swap:manage')
+  addFromPerson(@Param('orgId') orgId: string, @Body() body: AddSellerFromPersonDto) {
+    return this.sellerService.addFromPerson(orgId, body.userId);
   }
 
   @Get('import/template')

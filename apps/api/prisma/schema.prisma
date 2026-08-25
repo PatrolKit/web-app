@@ -7,19 +7,59 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// ─── Identity ─────────────────────────────────────────────────────────────────
+
+/// The person. One row per human (or, for a business seller invited by email,
+/// one row per mailbox until someone claims it). Everything a person *is* lives
+/// here; everything they are *to an org* lives on Membership.
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  status       String   @default("active") // active | disabled
-  isSuperAdmin Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id String @id @default(cuid())
+
+  /// Both nullable: a walk-in known only by a phone number has neither.
+  firstName String?
+  lastName  String?
+
+  /// Issued nationally, one per human — a matching key, never an auth key.
+  /// Normalised by `normalizeNspId`: non-alphanumerics stripped, upper-cased,
+  /// leading zeros preserved.
+  nspId       String? @unique
+  patrolLevel String?
+
+  // Global: these describe the human, not one relationship.
+  street String?
+  city   String?
+  state  String?
+  zip    String?
+
+  payoutMethod  String? @default("CHECK") // PAYPAL | VENMO | CHECK | DONATE
+  /// Which of this person's contacts receives a PayPal payout. Must be verified.
+  payoutChannel String?                   // email | phone
+
+  /// Claims. Indexed for matching, deliberately NOT unique — an unverified
+  /// claim may collide with another unverified claim.
+  email           String?
+  emailVerifiedAt DateTime?
+  /// Mirror of `email`, written only when verified. The unique index is what
+  /// enforces "at most one person may hold a verified claim to a contact".
+  verifiedEmail   String?   @unique
+
+  /// E.164 normalised.
+  phone           String?
+  phoneVerifiedAt DateTime?
+  /// Mirror of `phone`, written only when verified.
+  verifiedPhone   String?   @unique
+
+  isSuperAdmin Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   memberships   Membership[]
-  magicLinks    MagicLink[]
+  challenges    ContactChallenge[]
   refreshTokens RefreshToken[]
-  swapSellers   SwapSeller[]
+
+  @@index([email])
+  @@index([phone])
 }
 
 model Organization {
@@ -31,34 +71,48 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships  Membership[]
-  orgModules   OrgModule[]
-  devices      Device[]
-  squareConfig SquareConfig?
-  skiSwaps     SkiSwap[]
-  swapSellers  SwapSeller[]
-  swapItems    SwapItem[]
+  memberships     Membership[]
+  orgModules      OrgModule[]
+  devices         Device[]
+  squareConfig    SquareConfig?
+  skiSwaps        SkiSwap[]
+  swapItems       SwapItem[]
   swapPrinters    SwapPrinter[]
   skiSwapSettings SkiSwapSettings?
+
   resorts           Resort[]
-  patrollers        Patroller[]
   timeClockEvents   TimeClockEvent[]
   timeClockShifts   TimeClockShift[]
   timeClockSettings TimeClockSettings?
 }
 
+/// The person, to an organisation. The single org-scoped person record: roles
+/// hang off it as profiles, permissions as grants. `deletedAt` is the only
+/// lifecycle field — there is no separate "disabled" status.
 model Membership {
   id       String   @id @default(cuid())
   userId   String
   orgId    String
-  status   String   @default("active")
   joinedAt DateTime @default(now())
+
+  /// Delta-sync watermark covering User + Membership + profiles. Deliberately
+  /// NOT `@updatedAt`: a rename on User must bump it, which Prisma cannot do.
+  /// Maintained by MembershipTouchService.
+  updatedAt DateTime @default(now())
+  /// Soft removal. Memberships are never hard-deleted — offline devices need
+  /// the tombstone to learn that someone left the roster.
+  deletedAt DateTime?
 
   user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   org         Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   permissions MembershipPermission[]
 
+  sellerProfile    SellerProfile?
+  patrollerProfile PatrollerProfile?
+
   @@unique([userId, orgId])
+  @@index([orgId, updatedAt])
+  @@index([orgId, deletedAt])
 }
 
 model Permission {
@@ -82,8 +136,55 @@ model MembershipPermission {
   @@id([membershipId, permissionId])
 }
 
+// ─── Contact proof ────────────────────────────────────────────────────────────
+
+/// One primitive for proving control of a contact channel. Replaces MagicLink
+/// and SellerVerification. Confirming a challenge always stamps the contact
+/// verified, and mints a session when `purpose` allows.
+///
+/// Lookup is always by `id`, never by hash: a 32-byte email token and a 6-digit
+/// OTP share this table, and a unique index on `codeHash` cannot work for OTPs.
+model ContactChallenge {
+  id      String @id @default(cuid())
+  userId  String
+  channel String // email | phone
+  /// Snapshot of the address being proven, so editing the contact cannot
+  /// retarget a live challenge.
+  target  String
+  /// login | verify | invite — controls TTL and whether confirmation mints a session.
+  purpose String
+
+  codeHash String
+  /// Capped at 5. A 6-digit OTP needs a per-challenge counter, not just an IP throttle.
+  attempts Int @default(0)
+
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, channel, usedAt])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  ipAddress String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Modules, devices, audit ──────────────────────────────────────────────────
+
 model ModuleCatalog {
-  key         String @id
+  key         String  @id
   name        String
   description String
   isCore      Boolean @default(false)
@@ -106,41 +207,17 @@ model OrgModule {
   @@unique([orgId, moduleKey])
 }
 
-model MagicLink {
-  id        String    @id @default(cuid())
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model RefreshToken {
-  id        String    @id @default(cuid())
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-  userAgent String?
-  ipAddress String?
-  createdAt DateTime  @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
 model Device {
-  id                 String    @id @default(cuid())
-  orgId              String
-  name               String
-  clientId           String    @unique
-  secretHash         String
-  role               String    @db.VarChar(100)
-  lastSeenAt         DateTime?
-  createdBy          String?
-  createdAt          DateTime  @default(now())
-  skiSwapDeviceCode  String?   @db.VarChar(3)
+  id                String    @id @default(cuid())
+  orgId             String
+  name              String
+  clientId          String    @unique
+  secretHash        String
+  role              String    @db.VarChar(100)
+  lastSeenAt        DateTime?
+  createdBy         String?
+  createdAt         DateTime  @default(now())
+  skiSwapDeviceCode String?   @db.VarChar(3)
 
   org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   permissions DevicePermission[]
@@ -160,7 +237,7 @@ model DevicePermission {
 
 model AuditLog {
   id         String   @id @default(cuid())
-  actorType  String   // user | device | system
+  actorType  String // user | device | system
   actorId    String?
   orgId      String?
   action     String
@@ -171,6 +248,15 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   @@index([orgId, createdAt])
+}
+
+model IdempotencyRecord {
+  key       String   @id
+  response  Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 // ─── Ski Swap ─────────────────────────────────────────────────────────────────
@@ -199,71 +285,41 @@ model SkiSwap {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  org         Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  items       SwapItem[]
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  items SwapItem[]
 
   @@unique([orgId, title])
   @@index([orgId, active])
 }
 
-model SwapSeller {
-  id        String   @id @default(cuid())
-  orgId     String
-  userId    String?  // PatrolKit User.id; null for anonymous (walk-in) sellers
-  type      String   @default("individual") // "individual" | "business"
-  name      String
-  phone     String
-  email     String?
-  street    String?
-  city      String?
-  state     String?
-  zip       String?
+/// The seller role, granted on a membership. Deliberately thin: person data
+/// lives on User. What keeps it a table is its id — which anchors
+/// SwapItem.sellerId, SwapPrinter.assignedSellerId and the public /s/:sellerId
+/// URL — and `deletedAt`, which grants and revokes the role.
+model SellerProfile {
+  id           String @id @default(cuid())
+  membershipId String @unique
 
-  // Payout info
-  payoutMethod              String?   @default("CHECK") // "PAYPAL" | "VENMO" | "CHECK" | "DONATE"
-  payoutIdentifierType      String?   // "EMAIL" | "PHONE" | "USER_HANDLE"
-  payoutIdentifier          String?
-  payoutIdentifierConfirmedAt DateTime?
+  /// Set ⇒ this membership sells on behalf of a business; null ⇒ individual.
+  /// Replaces the old `type` enum, so the two can no longer contradict.
+  businessName String?
 
-  // Contact verification
-  emailVerifiedAt DateTime?
-  phoneVerifiedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  org           Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user          User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
-  swapItems     SwapItem[]
-  assignedPrinters SwapPrinter[]
-  verifications SellerVerification[]
-
-  @@unique([orgId, userId])
-  @@index([orgId, phone])
-  @@index([userId])
-}
-
-model SellerVerification {
-  id        String    @id @default(cuid())
-  sellerId  String
-  channel   String    // "email" | "phone"
-  code      String    // SHA-256 hash of the raw token/OTP
-  expiresAt DateTime
-  usedAt    DateTime?
+  deletedAt DateTime?
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  seller SwapSeller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-
-  @@index([sellerId, channel])
+  membership       Membership    @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  swapItems        SwapItem[]
+  assignedPrinters SwapPrinter[]
 }
 
 model SwapItem {
-  id               String    @id @default(cuid())
+  id               String  @id @default(cuid())
   swapId           String
   orgId            String
   sellerId         String?
   name             String
-  description      String?   @db.Text
+  description      String? @db.Text
   priceCents       Int
   sku              String
   originalQuantity Int
@@ -272,16 +328,16 @@ model SwapItem {
   squareItemId      String?
   squareVariationId String?
   lastSyncedAt      DateTime?
-  donateProceeds    Boolean  @default(false)
-  hasPrintedTag     Boolean  @default(false)
+  donateProceeds    Boolean   @default(false)
+  hasPrintedTag     Boolean   @default(false)
 
-  createdBy  String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  swap   SkiSwap    @relation(fields: [swapId], references: [id], onDelete: Cascade)
-  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  seller SwapSeller?  @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  swap   SkiSwap        @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  org    Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  seller SellerProfile? @relation(fields: [sellerId], references: [id], onDelete: SetNull)
   photos SwapItemPhoto[]
 
   @@unique([swapId, sku])
@@ -318,8 +374,8 @@ model SwapPrinter {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  seller SwapSeller?  @relation(fields: [assignedSellerId], references: [id], onDelete: SetNull)
+  org    Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  seller SellerProfile? @relation(fields: [assignedSellerId], references: [id], onDelete: SetNull)
 
   @@index([orgId])
   @@index([assignedSellerId])
@@ -333,15 +389,6 @@ model SkiSwapSettings {
   updatedAt     DateTime @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-}
-
-model IdempotencyRecord {
-  key       String   @id
-  response  Json
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  @@index([expiresAt])
 }
 
 // ─── Time Clock ───────────────────────────────────────────────────────────────
@@ -368,24 +415,22 @@ model Resort {
   @@index([orgId, updatedAt])
 }
 
-model Patroller {
-  id          String    @id @default(cuid())
-  orgId       String
-  firstName   String
-  lastName    String
-  nspId       String
-  patrolLevel String?
-  active      Boolean   @default(true)
-  deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+/// The patroller role, granted on a membership. Deliberately thin: nspId,
+/// patrolLevel and the person's name live on User. `active` is genuinely
+/// org-scoped — on the roster at this mountain, but not currently patrolling.
+model PatrollerProfile {
+  id           String @id @default(cuid())
+  membershipId String @unique
 
-  org    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  shifts TimeClockShift[]
-  events TimeClockEvent[]
+  active Boolean @default(true)
 
-  @@unique([orgId, nspId])
-  @@index([orgId, updatedAt])
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  membership Membership       @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  shifts     TimeClockShift[]
+  events     TimeClockEvent[]
 }
 
 model TimeClockEvent {
@@ -404,9 +449,9 @@ model TimeClockEvent {
   status      String   @default("applied")
   statusNote  String?
 
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  resort    Resort       @relation(fields: [resortId], references: [id])
-  patroller Patroller    @relation(fields: [patrollerId], references: [id])
+  org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  resort    Resort           @relation(fields: [resortId], references: [id])
+  patroller PatrollerProfile @relation(fields: [patrollerId], references: [id])
 
   @@index([orgId, patrollerId, occurredAt])
   @@index([orgId, status])
@@ -429,9 +474,9 @@ model TimeClockShift {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  resort    Resort       @relation(fields: [resortId], references: [id])
-  patroller Patroller    @relation(fields: [patrollerId], references: [id])
+  org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  resort    Resort           @relation(fields: [resortId], references: [id])
+  patroller PatrollerProfile @relation(fields: [patrollerId], references: [id])
 
   @@index([orgId, resortId, status])
   @@index([orgId, updatedAt])

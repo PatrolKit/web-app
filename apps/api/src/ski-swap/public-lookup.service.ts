@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PosAdapterFactory } from './pos/pos.adapter';
-import { normalizePhone } from './seller.service';
+import { normalizePhone, displayName } from '../common/util/person';
 import type { SellerFindResponse } from '../contracts/ski-swap.contracts';
 
 export interface PublicSellerItem {
@@ -41,8 +41,17 @@ export class PublicLookupService {
     if (!orgModule?.enabled) throw new NotFoundException('Organization not found');
 
     const normalizedPhone = normalizePhone(phone);
-    const seller = await this.prisma.swapSeller.findFirst({ where: { orgId: org.id, phone: normalizedPhone } });
-    if (!seller) return { sellerName: '', items: [] };
+    const profile = normalizedPhone
+      ? await this.prisma.sellerProfile.findFirst({
+          where: {
+            deletedAt: null,
+            membership: { orgId: org.id, deletedAt: null, user: { phone: normalizedPhone } },
+          },
+          include: { membership: { include: { user: true } } },
+        })
+      : null;
+    if (!profile) return { sellerName: '', items: [] };
+    const seller = { id: profile.id, name: displayName(profile.membership.user, profile.businessName) };
 
     const activeSwaps = await this.prisma.skiSwap.findMany({
       where: { orgId: org.id, active: true, ...(swapId ? { id: swapId } : {}) },
@@ -92,13 +101,19 @@ export class PublicLookupService {
     });
     if (!orgModule?.enabled) throw new NotFoundException('No seller found.');
 
-    const sellers = await this.prisma.swapSeller.findMany({
-      where: { orgId: org.id, email: email.toLowerCase() },
+    const profiles = await this.prisma.sellerProfile.findMany({
+      where: {
+        deletedAt: null,
+        membership: { orgId: org.id, deletedAt: null, user: { email: email.toLowerCase() } },
+      },
+      include: { membership: { select: { user: { select: { phone: true } } } } },
     });
 
-    const seller = sellers.find((s) => normalizePhone(s.phone).slice(-4) === last4);
-    if (!seller) throw new NotFoundException('No seller found.');
+    const match = profiles.find(
+      (p) => (normalizePhone(p.membership.user.phone) ?? '').slice(-4) === last4,
+    );
+    if (!match) throw new NotFoundException('No seller found.');
 
-    return { sellerId: seller.id };
+    return { sellerId: match.id };
   }
 }

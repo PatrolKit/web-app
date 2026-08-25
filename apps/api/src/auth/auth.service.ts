@@ -2,11 +2,12 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from './jwt.service';
-import { MailService } from '../mail/mail.service';
+import { ContactChallengeService, type IssuedChallenge } from './contact-challenge.service';
 import { createId } from '@paralleldrive/cuid2';
 import { createHash, randomBytes } from 'crypto';
 import type { Request, Response } from 'express';
 import type { DeviceTokenResponse } from '../contracts/devices.contracts';
+import { normalizeEmail, normalizePhone } from '../common/util/person';
 
 const REFRESH_COOKIE = 'refresh_token';
 
@@ -21,69 +22,63 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly mailService: MailService,
+    private readonly challenges: ContactChallengeService,
     private readonly config: ConfigService,
   ) {}
 
-  // ─── Magic link ─────────────────────────────────────────────────────────────
+  // ─── Login (email or phone) ──────────────────────────────────────────────────
 
-  async requestMagicLink(email: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user || user.status !== 'active') {
-      // Uniform 200 — no account enumeration
-      return;
-    }    const rawToken = randomBytes(32).toString('hex');
-    const tokenHash = sha256(rawToken);
-    const ttl = this.config.get<number>('app.magicLinkTtl', 900);
-    const expiresAt = new Date(Date.now() + ttl * 1000);
+  /**
+   * Issues a login challenge on whichever channel was supplied. Always resolves,
+   * whether or not the person exists — an error here would leak account
+   * existence. Returns null when there is nothing to send to.
+   */
+  async requestLogin(input: { email?: string; phone?: string }): Promise<IssuedChallenge | null> {
+    const email = normalizeEmail(input.email);
+    const phone = normalizePhone(input.phone);
+    if (!email && !phone) return null;
 
-    await this.prisma.magicLink.create({
-      data: { id: createId(), userId: user.id, tokenHash, expiresAt },
+    const user = await this.prisma.user.findFirst({
+      where: email ? { email } : { phone: phone! },
     });
+    if (!user) return null;
 
-    const appUrl = this.config.get<string>('app.appUrl', 'http://localhost:3000');
-    const magicLinkUrl = `${appUrl}/app/auth/verify?token=${rawToken}`;
-
-    // Fire-and-forget — never throw back to caller
-    this.mailService.sendMagicLink(user.email, magicLinkUrl).catch((err) => {
-      this.logger.error({ err }, 'Magic-link email delivery failed');
+    return this.challenges.issue({
+      userId: user.id,
+      channel: email ? 'email' : 'phone',
+      target: (email ?? phone)!,
+      purpose: 'login',
     });
   }
 
-  /** Creates a 30-day magic-link token for a seller invitation. Returns the full verify URL. */
-  async createInviteMagicLink(userId: string): Promise<string> {
-    const rawToken = randomBytes(32).toString('hex');
-    const tokenHash = sha256(rawToken);
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    await this.prisma.magicLink.create({
-      data: { id: createId(), userId, tokenHash, expiresAt },
-    });
-    const appUrl = this.config.get<string>('app.appUrl', 'http://localhost:3000');
-    return `${appUrl}/app/auth/verify?token=${rawToken}`;
-  }
-
-  async verifyMagicLink(
-    rawToken: string,
+  /**
+   * Confirms a challenge. Stamps the contact verified, and mints a session for
+   * every purpose except a bare `verify`, which only proves the contact.
+   */
+  async confirmChallenge(
+    challengeId: string,
+    code: string,
     res: Response,
     meta: { ipAddress?: string; userAgent?: string },
-  ): Promise<{ accessToken: string }> {
-    const tokenHash = sha256(rawToken);
-    const link = await this.prisma.magicLink.findUnique({ where: { tokenHash } });
+  ): Promise<{ accessToken: string | null; verified: true }> {
+    const { userId, purpose } = await this.challenges.confirm(challengeId, code);
 
-    if (!link || link.usedAt || link.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid or expired magic link');
-    }
+    if (purpose === 'verify') return { accessToken: null, verified: true };
 
-    // Mark used atomically
-    await this.prisma.magicLink.update({
-      where: { id: link.id },
-      data: { usedAt: new Date() },
+    const accessToken = await this.jwtService.signAccessToken(userId);
+    await this.issueRefreshCookie(userId, res, meta);
+    return { accessToken, verified: true };
+  }
+
+  /** 30-day invite challenge for a newly-created business seller. */
+  async createInviteChallenge(userId: string, email: string, orgName: string): Promise<void> {
+    await this.challenges.issue({
+      userId,
+      channel: 'email',
+      target: email,
+      purpose: 'invite',
+      orgName,
     });
-
-    const accessToken = await this.jwtService.signAccessToken(link.userId);
-    await this.issueRefreshCookie(link.userId, res, meta);
-
-    return { accessToken };
   }
 
   // ─── Refresh rotation ────────────────────────────────────────────────────────
@@ -103,7 +98,6 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token invalid or expired');
     }
 
-    // Revoke old token
     await this.prisma.refreshToken.update({
       where: { id: record.id },
       data: { revokedAt: new Date() },

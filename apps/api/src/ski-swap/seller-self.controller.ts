@@ -16,8 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
-import { PermissionsGuard } from '../common/guards/permissions.guard';
-import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
+import { SellerProfileGuard } from '../common/guards/seller-profile.guard';
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
@@ -26,9 +25,8 @@ import { PatchSellerDto, SellerItemCreateDto, SellerItemUpdateDto } from '../con
 import { PrinterService } from './printer.service';
 
 @Controller('orgs/:orgId/ski-swap/seller/me')
-@UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, SellerProfileGuard)
 @RequireModule('ski_swap')
-@RequirePermissions('business_seller')
 export class SellerSelfController {
   constructor(
     private readonly sellerSelfService: SellerSelfService,

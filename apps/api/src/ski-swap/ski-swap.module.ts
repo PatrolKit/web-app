@@ -23,7 +23,6 @@ import { SellerSelfService } from './seller-self.service';
 import { SellerSelfController } from './seller-self.controller';
 import { BusinessSellerService } from './business-seller.service';
 import { BusinessSellerController } from './business-seller.controller';
-import { SellerVerificationService } from './seller-verification.service';
 import { PrinterService } from './printer.service';
 import { PrinterController } from './printer.controller';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
@@ -61,7 +60,6 @@ import { PermissionsModule } from '../permissions/permissions.module';
     PublicSellerService,
     SellerSelfService,
     BusinessSellerService,
-    SellerVerificationService,
     PrinterService,
     SkiSwapSettingsService,
   ],

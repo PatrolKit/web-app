@@ -1,12 +1,14 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IdempotencyService } from '../common/services/idempotency.service';
+import { PersonService } from '../common/identity/person.service';
+import { MembershipTouchService } from '../common/identity/membership-touch.service';
+import { displayName, normalizeNamePart, normalizePhone, splitName } from '../common/util/person';
 import { createId } from '@paralleldrive/cuid2';
 import { parse as parseCsv } from 'csv-parse/sync';
-import type { SellerResponse } from '../contracts/ski-swap.contracts';
+import type { PersonSearchResult, SellerResponse } from '../contracts/ski-swap.contracts';
 
-// ─── Normalization helpers ────────────────────────────────────────────────────
+// ─── Address normalisation ────────────────────────────────────────────────────
 
 const STATE_MAP: Record<string, string> = {
   'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA',
@@ -23,22 +25,11 @@ const STATE_MAP: Record<string, string> = {
   'district of columbia':'DC','washington dc':'DC','washington d.c.':'DC',
 };
 
-/** Stores as XXX-XXX-XXXX; also used for duplicate lookup (strip dashes first). */
-export function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  // Strip leading country code 1 from 11-digit US numbers
-  const ten = digits.length === 11 && digits[0] === '1' ? digits.slice(1) : digits;
-  if (ten.length !== 10) return ten; // return raw digits if non-standard length
-  return `${ten.slice(0, 3)}-${ten.slice(3, 6)}-${ten.slice(6)}`;
-}
-
 function normalizeState(s: string): string {
   const trimmed = s.trim();
   if (!trimmed) return '';
-  // Already a 2-char abbreviation
   if (trimmed.length === 2) return trimmed.toUpperCase();
-  const lower = trimmed.toLowerCase();
-  return STATE_MAP[lower] ?? trimmed.toUpperCase().slice(0, 2); // best-effort if unknown
+  return STATE_MAP[trimmed.toLowerCase()] ?? trimmed.toUpperCase().slice(0, 2);
 }
 
 function normalizeZip(s: string): string {
@@ -59,23 +50,71 @@ export function normalizeSellerRow(raw: {
   const warnings: string[] = [];
 
   const name  = toTitleCase(raw.name ?? '');
-  const phone = normalizePhone(raw.phone ?? '');
+  const phone = normalizePhone(raw.phone ?? '') ?? '';
   const email = (raw.email ?? '').trim().toLowerCase();
   const zip   = normalizeZip(raw.zip ?? '');
   const rawState = (raw.state ?? '').trim();
   const state = normalizeState(rawState);
 
-  if (!name)  errors.push('name is required');
-  if (!phone) errors.push('phone is required');
-  else if (phone.replace(/\D/g, '').length !== 10) errors.push(`"${raw.phone?.trim()}" is not a valid 10-digit phone number`);
-  if (!email) errors.push('email is required');
-  else if (!EMAIL_RE.test(email)) errors.push(`"${email}" is not a valid email address`);
+  if (!name) errors.push('name is required');
+  // A person needs at least one way to be reached; neither alone is mandatory.
+  if (!phone && !email) errors.push('an email or phone number is required');
+  if (raw.phone?.trim() && !phone) errors.push(`"${raw.phone.trim()}" is not a valid phone number`);
+  if (email && !EMAIL_RE.test(email)) errors.push(`"${email}" is not a valid email address`);
 
-  // Optional-field issues are warnings — row is still imported
   if (zip && zip.length !== 5) warnings.push(`ZIP "${raw.zip?.trim()}" is not 5 digits; stored as-is`);
   if (rawState && rawState.length > 2 && !STATE_MAP[rawState.toLowerCase()]) warnings.push(`State "${rawState}" not recognised; stored as "${state}"`);
 
   return { name, phone, email, street: toTitleCase(raw.street ?? ''), city: toTitleCase(raw.city ?? ''), state, zip, errors, warnings };
+}
+
+// ─── Query shape ──────────────────────────────────────────────────────────────
+
+const SELLER_INCLUDE = {
+  membership: { include: { user: true, org: { select: { id: true } } } },
+} as const;
+
+type SellerRow = {
+  id: string;
+  businessName: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  membership: {
+    orgId: string;
+    userId: string;
+    user: {
+      firstName: string | null; lastName: string | null;
+      email: string | null; phone: string | null;
+      street: string | null; city: string | null; state: string | null; zip: string | null;
+      emailVerifiedAt: Date | null; phoneVerifiedAt: Date | null;
+      payoutMethod: string | null; payoutChannel: string | null;
+    };
+  };
+};
+
+export function toSellerResponse(s: SellerRow): SellerResponse {
+  const u = s.membership.user;
+  return {
+    id: s.id,
+    orgId: s.membership.orgId,
+    userId: s.membership.userId,
+    businessName: s.businessName,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    displayName: displayName(u, s.businessName),
+    phone: u.phone,
+    email: u.email,
+    street: u.street,
+    city: u.city,
+    state: u.state,
+    zip: u.zip,
+    payoutMethod: u.payoutMethod as SellerResponse['payoutMethod'],
+    payoutChannel: u.payoutChannel as SellerResponse['payoutChannel'],
+    emailVerifiedAt: u.emailVerifiedAt?.toISOString() ?? null,
+    phoneVerifiedAt: u.phoneVerifiedAt?.toISOString() ?? null,
+    createdAt: s.createdAt.toISOString(),
+    updatedAt: s.updatedAt.toISOString(),
+  };
 }
 
 @Injectable()
@@ -83,40 +122,103 @@ export class SellerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
+    private readonly people: PersonService,
+    private readonly touch: MembershipTouchService,
   ) {}
 
   async list(orgId: string, query?: string, updatedSince?: string): Promise<SellerResponse[]> {
-    const sellers = await this.prisma.swapSeller.findMany({
+    const sellers = await this.prisma.sellerProfile.findMany({
       where: {
-        orgId,
-        ...(query
-          ? {
-              OR: [
-                { name: { contains: query } },
-                { phone: { contains: query.replace(/\D/g, '') } },
-                { email: { contains: query } },
-              ],
-            }
-          : {}),
+        deletedAt: null,
+        membership: {
+          orgId,
+          deletedAt: null,
+          ...(query
+            ? {
+                user: {
+                  OR: [
+                    { firstName: { contains: query } },
+                    { lastName: { contains: query } },
+                    { phone: { contains: query.replace(/\D/g, '') } },
+                    { email: { contains: query } },
+                  ],
+                },
+              }
+            : {}),
+        },
         ...(updatedSince ? { updatedAt: { gt: new Date(updatedSince) } } : {}),
+        ...(query ? {} : {}),
       },
-      orderBy: { name: 'asc' },
+      include: SELLER_INCLUDE,
+      orderBy: [{ membership: { user: { lastName: 'asc' } } }, { createdAt: 'asc' }],
     });
-    return sellers.map(this.toResponse);
+    // Business-name matches cannot be expressed in the same OR as user fields.
+    const byBusiness = query
+      ? await this.prisma.sellerProfile.findMany({
+          where: {
+            deletedAt: null,
+            businessName: { contains: query },
+            membership: { orgId, deletedAt: null },
+          },
+          include: SELLER_INCLUDE,
+        })
+      : [];
+
+    const merged = new Map(
+      [...sellers, ...byBusiness].map((s) => [s.id, s] as const),
+    );
+    return [...merged.values()].map(toSellerResponse);
   }
 
   async get(orgId: string, sellerId: string): Promise<SellerResponse> {
-    const seller = await this.findOrThrow(orgId, sellerId);
-    return this.toResponse(seller);
+    return toSellerResponse(await this.findOrThrow(orgId, sellerId));
+  }
+
+  /**
+   * Name-only cross-org lookup. Disclosing anything more before staff confirm
+   * identity with the person in front of them would leak another org's data.
+   */
+  async searchPeople(
+    orgId: string,
+    input: { email?: string; phone?: string },
+  ): Promise<PersonSearchResult[]> {
+    const user = await this.people.resolve(input);
+    if (!user) return [];
+
+    const membership = await this.prisma.membership.findUnique({
+      where: { userId_orgId: { userId: user.id, orgId } },
+      include: { sellerProfile: true },
+    });
+
+    return [
+      {
+        userId: user.id,
+        displayName: displayName(user),
+        alreadyHere: Boolean(
+          membership && !membership.deletedAt && membership.sellerProfile && !membership.sellerProfile.deletedAt,
+        ),
+      },
+    ];
+  }
+
+  /** Grants the seller role to an already-identified person (post-confirmation). */
+  async addFromPerson(orgId: string, userId: string): Promise<SellerResponse> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Person not found');
+
+    const membership = await this.people.upsertMembership(userId, orgId);
+    const profile = await this.upsertSellerProfile(membership.id, null);
+    return toSellerResponse(await this.findByIdOrThrow(profile.id));
   }
 
   async create(
     orgId: string,
     data: {
-      name: string; phone: string; email?: string; type?: string;
-      street?: string; city?: string; state?: string; zip?: string;
-      payoutMethod?: string | null; payoutIdentifierType?: string | null;
-      payoutIdentifier?: string | null; payoutIdentifierConfirmedAt?: string | null;
+      firstName?: string | null; lastName?: string | null;
+      phone?: string | null; email?: string | null;
+      businessName?: string | null;
+      street?: string | null; city?: string | null; state?: string | null; zip?: string | null;
+      payoutMethod?: string | null; payoutChannel?: string | null;
     },
     idempotencyKey?: string,
   ): Promise<SellerResponse> {
@@ -125,24 +227,22 @@ export class SellerService {
       if (cached) return cached as unknown as SellerResponse;
     }
 
-    const seller = await this.prisma.swapSeller.create({
-      data: {
-        id: createId(), orgId, type: data.type ?? 'individual',
-        name: data.name, phone: normalizePhone(data.phone),
-        email: data.email ?? null, street: data.street ?? null,
-        city: data.city ?? null, state: data.state ?? null, zip: data.zip ?? null,
-        payoutMethod: data.payoutMethod ?? null,
-        payoutIdentifierType: data.payoutIdentifierType ?? null,
-        payoutIdentifier: data.payoutIdentifier ?? null,
-        payoutIdentifierConfirmedAt: data.payoutIdentifierConfirmedAt ? new Date(data.payoutIdentifierConfirmedAt) : null,
-      },
+    const { user } = await this.people.resolveOrCreate({
+      email: data.email,
+      phone: data.phone,
+      firstName: data.firstName,
+      lastName: data.lastName,
     });
-    const response = this.toResponse(seller);
+
+    await this.writeUserFields(user.id, data);
+    const membership = await this.people.upsertMembership(user.id, orgId);
+    const profile = await this.upsertSellerProfile(membership.id, data.businessName ?? null);
+
+    const response = toSellerResponse(await this.findByIdOrThrow(profile.id));
 
     if (idempotencyKey) {
       await this.idempotency.save(idempotencyKey, response as unknown as Record<string, unknown>);
     }
-
     return response;
   }
 
@@ -150,42 +250,42 @@ export class SellerService {
     orgId: string,
     sellerId: string,
     data: {
-      name?: string; phone?: string; email?: string | null; type?: string;
+      firstName?: string | null; lastName?: string | null;
+      phone?: string | null; email?: string | null;
+      businessName?: string | null;
       street?: string | null; city?: string | null; state?: string | null; zip?: string | null;
-      payoutMethod?: string | null; payoutIdentifierType?: string | null;
-      payoutIdentifier?: string | null; payoutIdentifierConfirmedAt?: string | null;
+      payoutMethod?: string | null; payoutChannel?: string | null;
     },
   ): Promise<SellerResponse> {
-    await this.findOrThrow(orgId, sellerId);
-    const seller = await this.prisma.swapSeller.update({
-      where: { id: sellerId },
-      data: {
-        ...(data.name !== undefined ? { name: data.name } : {}),
-        ...(data.phone !== undefined ? { phone: normalizePhone(data.phone) } : {}),
-        ...(data.email !== undefined ? { email: data.email } : {}),
-        ...(data.type !== undefined ? { type: data.type } : {}),
-        ...(data.street !== undefined ? { street: data.street } : {}),
-        ...(data.city !== undefined ? { city: data.city } : {}),
-        ...(data.state !== undefined ? { state: data.state } : {}),
-        ...(data.zip !== undefined ? { zip: data.zip } : {}),
-        ...(data.payoutMethod !== undefined ? { payoutMethod: data.payoutMethod } : {}),
-        ...(data.payoutIdentifierType !== undefined ? { payoutIdentifierType: data.payoutIdentifierType } : {}),
-        ...(data.payoutIdentifier !== undefined ? { payoutIdentifier: data.payoutIdentifier } : {}),
-        ...(data.payoutIdentifierConfirmedAt !== undefined ? { payoutIdentifierConfirmedAt: data.payoutIdentifierConfirmedAt ? new Date(data.payoutIdentifierConfirmedAt) : null } : {}),
-      },
-    });
-    return this.toResponse(seller);
+    const existing = await this.findOrThrow(orgId, sellerId);
+
+    await this.writeUserFields(existing.membership.userId, data, { overwrite: true });
+
+    if (data.businessName !== undefined) {
+      await this.prisma.sellerProfile.update({
+        where: { id: sellerId },
+        data: { businessName: data.businessName },
+      });
+    }
+    await this.touch.touch(existing.membership.id);
+
+    return toSellerResponse(await this.findByIdOrThrow(sellerId));
   }
 
+  /** Soft removal — revokes the seller role, keeping the row as a tombstone. */
   async remove(orgId: string, sellerId: string): Promise<void> {
-    await this.findOrThrow(orgId, sellerId);
+    const existing = await this.findOrThrow(orgId, sellerId);
     const itemCount = await this.prisma.swapItem.count({ where: { sellerId } });
     if (itemCount > 0) {
       throw new ConflictException(
-        'Cannot delete a seller with active item mappings. Unassign all items first.',
+        'Cannot remove a seller with active item mappings. Unassign all items first.',
       );
     }
-    await this.prisma.swapSeller.delete({ where: { id: sellerId } });
+    await this.prisma.sellerProfile.update({
+      where: { id: sellerId },
+      data: { deletedAt: new Date() },
+    });
+    await this.touch.touch(existing.membership.id);
   }
 
   // ─── CSV import ────────────────────────────────────────────────────────────
@@ -219,24 +319,19 @@ export class SellerService {
     const headers = rawHeaders.map((h) => h.trim());
     const mapping = SellerService.detectMapping(headers);
 
-    // Normalize each row so the preview shows what will actually be imported
     const rows = dataRows.map((row) => {
       const raw = Object.fromEntries(headers.map((h, i) => [h, row[i] ?? '']));
-      const { errors: _e, warnings: _w, ...normalizedFields } = normalizeSellerRow({
-        name:   mapping.name   ? raw[mapping.name]   : '',
-        phone:  mapping.phone  ? raw[mapping.phone]  : '',
-        email:  mapping.email  ? raw[mapping.email]  : '',
-        street: mapping.street ? raw[mapping.street] : '',
-        city:   mapping.city   ? raw[mapping.city]   : '',
-        state:  mapping.state  ? raw[mapping.state]  : '',
-        zip:    mapping.zip    ? raw[mapping.zip]     : '',
-      });
-      // Merge normalized values back under original header keys so the preview table works
+      const { errors: _e, warnings: _w, ...normalizedFields } = normalizeSellerRow(pick(raw, mapping));
       return { ...raw, ...Object.fromEntries(Object.entries(mapping).map(([field, header]) => [header, (normalizedFields as Record<string, string>)[field] ?? ''])) };
     });
     return { headers, rows, mapping };
   }
 
+  /**
+   * Imports last season's sellers. Matching is blind by design: email, then
+   * phone, then create. A row that matches an existing person joins them to
+   * this org rather than creating a second record.
+   */
   async importSellers(
     orgId: string,
     buffer: Buffer,
@@ -250,15 +345,8 @@ export class SellerService {
       const raw = rows[i];
       const rowNum = i + 2;
 
-      const { name, phone, email, street, city, state, zip, errors, warnings } = normalizeSellerRow({
-        name:   mapping.name   ? raw[mapping.name]   : '',
-        phone:  mapping.phone  ? raw[mapping.phone]  : '',
-        email:  mapping.email  ? raw[mapping.email]  : '',
-        street: mapping.street ? raw[mapping.street] : '',
-        city:   mapping.city   ? raw[mapping.city]   : '',
-        state:  mapping.state  ? raw[mapping.state]  : '',
-        zip:    mapping.zip    ? raw[mapping.zip]     : '',
-      });
+      const { name, phone, email, street, city, state, zip, errors, warnings } =
+        normalizeSellerRow(pick(raw, mapping));
 
       if (errors.length) {
         results.push({ row: rowNum, outcome: 'error' as const, name, phone, error: errors.join('; ') });
@@ -266,23 +354,37 @@ export class SellerService {
       }
 
       try {
-        const existing = await this.prisma.swapSeller.findFirst({ where: { orgId, phone } });
-        if (existing) {
-          if (duplicateStrategy === 'preserve') {
-            results.push({ row: rowNum, outcome: 'skipped' as const, name, phone, warning: warnings.join('; ') || undefined });
-          } else {
-            await this.prisma.swapSeller.update({
-              where: { id: existing.id },
-              data: { name, email, street: street || existing.street, city: city || existing.city, state: state || existing.state, zip: zip || existing.zip },
-            });
-            results.push({ row: rowNum, outcome: warnings.length ? 'warning' as const : 'updated' as const, name, phone, warning: warnings.join('; ') || undefined });
-          }
-        } else {
-          await this.prisma.swapSeller.create({
-            data: { id: createId(), orgId, name, phone, email, street: street || null, city: city || null, state: state || null, zip: zip || null },
-          });
-          results.push({ row: rowNum, outcome: warnings.length ? 'warning' as const : 'created' as const, name, phone, warning: warnings.join('; ') || undefined });
+        const parts = splitName(name);
+        const existingUser = await this.people.resolve({ email, phone });
+        const existingProfile = existingUser
+          ? await this.prisma.sellerProfile.findFirst({
+              where: { membership: { orgId, userId: existingUser.id }, deletedAt: null },
+            })
+          : null;
+
+        if (existingProfile && duplicateStrategy === 'preserve') {
+          results.push({ row: rowNum, outcome: 'skipped' as const, name, phone, warning: warnings.join('; ') || undefined });
+          continue;
         }
+
+        const { user } = await this.people.resolveOrCreate({
+          email, phone, firstName: parts.firstName, lastName: parts.lastName,
+        });
+        await this.writeUserFields(
+          user.id,
+          { street: street || null, city: city || null, state: state || null, zip: zip || null },
+          { overwrite: duplicateStrategy === 'overwrite' },
+        );
+        const membership = await this.people.upsertMembership(user.id, orgId);
+        await this.upsertSellerProfile(membership.id, null);
+
+        const outcome = existingProfile ? 'updated' : 'created';
+        results.push({
+          row: rowNum,
+          outcome: warnings.length ? ('warning' as const) : (outcome as 'created' | 'updated'),
+          name, phone,
+          warning: warnings.join('; ') || undefined,
+        });
       } catch (err) {
         results.push({ row: rowNum, outcome: 'error' as const, name, phone, error: err instanceof Error ? err.message : 'Unknown error' });
       }
@@ -294,32 +396,108 @@ export class SellerService {
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   async findOrThrow(orgId: string, sellerId: string) {
-    const seller = await this.prisma.swapSeller.findFirst({ where: { id: sellerId, orgId } });
+    const seller = await this.prisma.sellerProfile.findFirst({
+      where: { id: sellerId, deletedAt: null, membership: { orgId } },
+      include: { ...SELLER_INCLUDE, membership: { include: { user: true, org: { select: { id: true } } } } },
+    });
     if (!seller) throw new NotFoundException('Seller not found');
     return seller;
   }
 
-  private toResponse(seller: {
-    id: string; orgId: string; type: string; name: string; phone: string;
-    email: string | null; street: string | null; city: string | null;
-    state: string | null; zip: string | null;
-    payoutMethod: string | null; payoutIdentifierType: string | null;
-    payoutIdentifier: string | null; payoutIdentifierConfirmedAt: Date | null;
-    emailVerifiedAt: Date | null; phoneVerifiedAt: Date | null;
-    createdAt: Date; updatedAt: Date;
-  }): SellerResponse {
-    return {
-      id: seller.id, orgId: seller.orgId,
-      type: (seller.type ?? 'individual') as 'individual' | 'business',
-      name: seller.name, phone: seller.phone, email: seller.email,
-      street: seller.street, city: seller.city, state: seller.state, zip: seller.zip,
-      payoutMethod: seller.payoutMethod as SellerResponse['payoutMethod'],
-      payoutIdentifierType: seller.payoutIdentifierType as SellerResponse['payoutIdentifierType'],
-      payoutIdentifier: seller.payoutIdentifier,
-      payoutIdentifierConfirmedAt: seller.payoutIdentifierConfirmedAt?.toISOString() ?? null,
-      emailVerifiedAt: seller.emailVerifiedAt?.toISOString() ?? null,
-      phoneVerifiedAt: seller.phoneVerifiedAt?.toISOString() ?? null,
-      createdAt: seller.createdAt.toISOString(), updatedAt: seller.updatedAt.toISOString(),
-    };
+  private async findByIdOrThrow(sellerId: string) {
+    return this.prisma.sellerProfile.findUniqueOrThrow({
+      where: { id: sellerId },
+      include: SELLER_INCLUDE,
+    });
   }
+
+  private async upsertSellerProfile(membershipId: string, businessName: string | null) {
+    const profile = await this.prisma.sellerProfile.upsert({
+      where: { membershipId },
+      update: { deletedAt: null, ...(businessName !== null ? { businessName } : {}) },
+      create: { id: createId(), membershipId, businessName },
+    });
+    await this.touch.touch(membershipId);
+    return profile;
+  }
+
+  /**
+   * Person fields live on `User` and are global. On import they only fill gaps;
+   * a staff edit overwrites, because the person is standing right there.
+   */
+  private async writeUserFields(
+    userId: string,
+    data: {
+      firstName?: string | null; lastName?: string | null;
+      phone?: string | null; email?: string | null;
+      street?: string | null; city?: string | null; state?: string | null; zip?: string | null;
+      payoutMethod?: string | null; payoutChannel?: string | null;
+    },
+    opts: { overwrite?: boolean } = {},
+  ): Promise<void> {
+    const current = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const keep = <T>(incoming: T | null | undefined, existing: T | null): T | null | undefined => {
+      if (incoming === undefined) return undefined;
+      if (!opts.overwrite && existing != null && existing !== '') return undefined;
+      return incoming;
+    };
+
+    const update = {
+      ...defined('firstName', keep(normalizeNamePart(data.firstName), current.firstName)),
+      ...defined('lastName', keep(normalizeNamePart(data.lastName), current.lastName)),
+      ...defined('phone', keep(data.phone ? normalizePhone(data.phone) : data.phone, current.phone)),
+      ...defined('email', keep(data.email?.toLowerCase() ?? data.email, current.email)),
+      ...defined('street', keep(data.street, current.street)),
+      ...defined('city', keep(data.city, current.city)),
+      ...defined('state', keep(data.state, current.state)),
+      ...defined('zip', keep(data.zip, current.zip)),
+      ...defined('payoutMethod', data.payoutMethod),
+      ...defined('payoutChannel', data.payoutChannel),
+    };
+
+    if (Object.keys(update).length === 0) return;
+    await this.prisma.user.update({ where: { id: userId }, data: update });
+    await this.touch.touchAllForUser(userId);
+  }
+}
+
+function defined<T>(key: string, value: T | undefined): Record<string, T> {
+  return value === undefined ? {} : { [key]: value };
+}
+
+function pick(raw: Record<string, string>, mapping: Record<string, string>) {
+  return {
+    name:   mapping.name   ? raw[mapping.name]   : '',
+    phone:  mapping.phone  ? raw[mapping.phone]  : '',
+    email:  mapping.email  ? raw[mapping.email]  : '',
+    street: mapping.street ? raw[mapping.street] : '',
+    city:   mapping.city   ? raw[mapping.city]   : '',
+    state:  mapping.state  ? raw[mapping.state]  : '',
+    zip:    mapping.zip    ? raw[mapping.zip]    : '',
+  };
+}
+
+// ─── Display helpers shared with printers, items and public pages ────────────
+
+/** Include that carries just enough of the person to render a seller's name. */
+export const SELLER_NAME_INCLUDE = {
+  membership: { select: { user: { select: { firstName: true, lastName: true, email: true, phone: true } } } },
+} as const;
+
+export interface SellerNameRow {
+  businessName: string | null;
+  membership: {
+    user: {
+      firstName: string | null;
+      lastName: string | null;
+      email?: string | null;
+      phone?: string | null;
+    };
+  };
+}
+
+/** businessName, else "First Last", else a contact. Never empty. */
+export function sellerDisplayName(seller: SellerNameRow | null | undefined): string | null {
+  if (!seller) return null;
+  return displayName(seller.membership.user, seller.businessName);
 }

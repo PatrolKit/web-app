@@ -6,28 +6,40 @@ import { PermissionKeySchema } from './org.contracts';
 
 export const MemberResponseSchema = z.object({
   userId: z.string(),
-  email: z.string(),
-  name: z.string(),
-  status: z.string(),
+  membershipId: z.string(),
+  email: z.string().nullable(),
+  emailVerified: z.boolean(),
+  phone: z.string().nullable(),
+  phoneVerified: z.boolean(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  displayName: z.string(),
   joinedAt: z.date(),
+  /// Soft removal. Null ⇒ live member; set ⇒ removed but retained as a tombstone.
+  removedAt: z.date().nullable(),
   permissions: z.array(PermissionKeySchema),
+  roles: z.array(z.enum(['seller', 'patroller'])),
 });
 
 export const InviteMemberSchema = z
   .object({
     email: z.string().trim().toLowerCase().email(),
-    name: z.string().min(1).max(100).optional(),
+    firstName: z.string().trim().min(1).max(100).optional(),
+    lastName: z.string().trim().min(1).max(100).optional(),
+    phone: z.string().trim().min(7).max(32).optional(),
     permissions: z.array(PermissionKeySchema).default([]),
   })
   .strict();
 
 export const UpdateMemberSchema = z
   .object({
-    status: z.enum(['active', 'disabled']).optional(),
+    /// Soft removal, replacing the old active/disabled status: false clears
+    /// `deletedAt`, true sets it. The membership row always survives.
+    removed: z.boolean().optional(),
     permissions: z.array(PermissionKeySchema).optional(),
   })
   .strict()
-  .refine((v) => v.status !== undefined || v.permissions !== undefined, {
+  .refine((v) => v.removed !== undefined || v.permissions !== undefined, {
     message: 'At least one field must be provided',
   });
 

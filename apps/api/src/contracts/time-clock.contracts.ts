@@ -26,6 +26,9 @@ export const CreatePatrollerSchema = z
     lastName: z.string().min(1).max(60),
     nspId: z.string().min(1).max(32),
     patrolLevel: z.string().max(60).nullable().optional(),
+    /// Contact is optional on the roster but is what makes onboarding possible.
+    email: z.string().trim().toLowerCase().email().nullable().optional(),
+    phone: z.string().trim().max(32).nullable().optional(),
     active: z.boolean().default(true),
   })
   .strict();
@@ -36,6 +39,8 @@ export const PatchPatrollerSchema = z
     lastName: z.string().min(1).max(60).optional(),
     nspId: z.string().min(1).max(32).optional(),
     patrolLevel: z.string().max(60).nullable().optional(),
+    email: z.string().trim().toLowerCase().email().nullable().optional(),
+    phone: z.string().trim().max(32).nullable().optional(),
     active: z.boolean().optional(),
   })
   .strict()
@@ -49,6 +54,10 @@ export const PatrollerResponseSchema = z.object({
   displayName: z.string(),
   nspId: z.string(),
   patrolLevel: z.string().nullable(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  /// True once the person has proved control of either contact channel.
+  contactVerified: z.boolean(),
   active: z.boolean(),
   deletedAt: z.string().nullable(),
   updatedAt: z.string(),
@@ -63,6 +72,8 @@ export const ImportPatrollersSchema = z
           lastName: z.string(),
           nspId: z.string(),
           patrolLevel: z.string().nullable().optional(),
+          email: z.string().nullable().optional(),
+          phone: z.string().nullable().optional(),
         }),
       )
       .max(5000),

@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PosAdapterFactory } from './pos/pos.adapter';
-import { SellerService } from './seller.service';
+import { SellerService, SELLER_NAME_INCLUDE, sellerDisplayName, type SellerNameRow } from './seller.service';
 import { S3Service } from './s3.service';
 import { IdempotencyService } from '../common/services/idempotency.service';
 import { formatSku } from './sku.util';
@@ -21,7 +21,7 @@ export interface ItemResponse {
   sku: string; priceCents: number; originalQuantity: number;
   inStock: number; soldCount: number; squareSynced: boolean;
   donateProceeds: boolean; hasPrintedTag: boolean;
-  seller: { id: string; name: string; phone: string } | null;
+  seller: { id: string; displayName: string; phone: string | null } | null;
   photos: ItemPhotoResponse[];
 }
 
@@ -44,15 +44,17 @@ export class ItemService {
       ...(opts.query ? { OR: [
         { name: { contains: opts.query } },
         { sku: { contains: opts.query } },
-        { seller: { name: { contains: opts.query } } },
-        { seller: { email: { contains: opts.query } } },
-        { seller: { phone: { contains: opts.query.replace(/\D/g, '') } } },
+        { seller: { businessName: { contains: opts.query } } },
+        { seller: { membership: { user: { firstName: { contains: opts.query } } } } },
+        { seller: { membership: { user: { lastName: { contains: opts.query } } } } },
+        { seller: { membership: { user: { email: { contains: opts.query } } } } },
+        { seller: { membership: { user: { phone: { contains: opts.query.replace(/\D/g, '') } } } } },
       ] } : {}),
       ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
       ...(opts.updatedSince ? { updatedAt: { gt: new Date(opts.updatedSince) } } : {}),
     };
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.swapItem.findMany({ where, include: { seller: true, photos: { orderBy: { displayOrder: 'asc' } } }, orderBy: { createdAt: 'desc' }, skip: opts.skip ?? 0, take: opts.take ?? 50 }),
+      this.prisma.swapItem.findMany({ where, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } }, orderBy: { createdAt: 'desc' }, skip: opts.skip ?? 0, take: opts.take ?? 50 }),
       this.prisma.swapItem.count({ where }),
     ]);
     const inventoryMap = await this.fetchInventoryMap(orgId, swap, items);
@@ -61,7 +63,7 @@ export class ItemService {
 
   async get(orgId: string, swapId: string, itemId: string): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId }, include: { seller: true, photos: { orderBy: { displayOrder: 'asc' } } } });
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId }, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } } });
     if (!item) throw new NotFoundException('Item not found');
     const inventoryMap = await this.fetchInventoryMap(orgId, swap, [item]);
     return this.toResponse(item, inventoryMap);
@@ -86,12 +88,12 @@ export class ItemService {
 
     const item = await this.prisma.swapItem.create({
       data: { id: createId(), swapId, orgId, sellerId: data.sellerId ?? null, name: data.name, description: data.description ?? null, priceCents: data.priceCents, sku, originalQuantity: data.quantity, donateProceeds: data.donateProceeds ?? false },
-      include: { seller: true, photos: true },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true },
     });
 
     await this.syncItemToPos(orgId, swap, item);
 
-    const refreshed = await this.prisma.swapItem.findUniqueOrThrow({ where: { id: item.id }, include: { seller: true, photos: true } });
+    const refreshed = await this.prisma.swapItem.findUniqueOrThrow({ where: { id: item.id }, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true } });
     const inventoryMap = await this.fetchInventoryMap(orgId, swap, [refreshed]);
     const response = this.toResponse(refreshed, inventoryMap);
 
@@ -119,7 +121,7 @@ export class ItemService {
         ...(data.donateProceeds !== undefined ? { donateProceeds: data.donateProceeds } : {}),
         ...(data.hasPrintedTag !== undefined ? { hasPrintedTag: data.hasPrintedTag } : {}),
       },
-      include: { seller: true, photos: { orderBy: { displayOrder: 'asc' } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
     });
 
     await this.syncItemToPos(orgId, swap, updated);
@@ -243,7 +245,7 @@ export class ItemService {
     return pos.getInventoryCounts(ids, swap.locationId).catch(() => new Map());
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; seller: { id: string; name: string; phone: string } | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>): ItemResponse {
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>): ItemResponse {
     const inStock = item.squareVariationId ? (inventoryMap.get(item.squareVariationId) ?? 0) : 0;
     return {
       id: item.id, swapId: item.swapId, orgId: item.orgId,
@@ -253,7 +255,13 @@ export class ItemService {
       squareSynced: !!item.squareItemId,
       donateProceeds: item.donateProceeds,
       hasPrintedTag: item.hasPrintedTag,
-      seller: item.seller ? { id: item.seller.id, name: item.seller.name, phone: item.seller.phone } : null,
+      seller: item.seller
+        ? {
+            id: item.seller.id,
+            displayName: sellerDisplayName(item.seller) ?? 'Unnamed',
+            phone: item.seller.membership.user.phone ?? null,
+          }
+        : null,
       photos: item.photos.map((p) => ({ id: p.id, url: p.url })),
     };
   }

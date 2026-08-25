@@ -18,7 +18,6 @@ export const PermissionKeySchema = z.enum([
   'ski_swap:report',
   'ski_swap:manage',
   'ski_swap:admin',
-  'business_seller',
   'time_tracking:report',
   'time_tracking:manage',
   'time_tracking:admin',
@@ -37,19 +36,32 @@ export const MembershipSummarySchema = z.object({
   orgId: z.string(),
   orgName: z.string(),
   orgSlug: z.string(),
-  status: z.string(),
   permissions: z.array(PermissionKeySchema),
+  /// Roles held at this org. Derived from live profile rows, not permissions.
+  roles: z.array(z.enum(['seller', 'patroller'])),
 });
 
 export const MeResponseSchema = z.object({
   id: z.string(),
-  email: z.string(),
-  name: z.string(),
+  email: z.string().nullable(),
+  emailVerified: z.boolean(),
+  phone: z.string().nullable(),
+  phoneVerified: z.boolean(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  /// Collapsed for display; never empty.
+  displayName: z.string(),
   isSuperAdmin: z.boolean(),
   memberships: z.array(MembershipSummarySchema),
 });
 
-export const PatchMeSchema = z.object({ name: z.string().min(1).max(100) }).strict();
+export const PatchMeSchema = z
+  .object({
+    firstName: z.string().trim().min(1).max(100).optional(),
+    lastName: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one field must be provided' });
 
 // ─── Org schemas ─────────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { createId } from '@paralleldrive/cuid2';
 import type { SwapPrinterResponse } from '../contracts/ski-swap.contracts';
+import { SELLER_NAME_INCLUDE, sellerDisplayName, type SellerNameRow } from './seller.service';
 
 @Injectable()
 export class PrinterService {
@@ -20,19 +21,21 @@ export class PrinterService {
 
     const printers = await this.prisma.swapPrinter.findMany({
       where: isAdmin ? { orgId } : { orgId, assignedSellerId: null },
-      include: { seller: { select: { name: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE } },
       orderBy: { createdAt: 'asc' },
     });
     return printers.map((p) => this.toResponse(p));
   }
 
   async listForSeller(orgId: string, userId: string): Promise<SwapPrinterResponse[]> {
-    const seller = await this.prisma.swapSeller.findFirst({ where: { orgId, userId } });
+    const seller = await this.prisma.sellerProfile.findFirst({
+      where: { deletedAt: null, membership: { orgId, userId, deletedAt: null } },
+    });
     if (!seller) return [];
 
     const printers = await this.prisma.swapPrinter.findMany({
       where: { orgId, assignedSellerId: seller.id },
-      include: { seller: { select: { name: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE } },
       orderBy: { createdAt: 'asc' },
     });
     return printers.map((p) => this.toResponse(p));
@@ -44,7 +47,7 @@ export class PrinterService {
 
     const printer = await this.prisma.swapPrinter.create({
       data: { id: createId(), orgId, name: data.name, bluetoothName: data.bluetoothName, paperSize: data.paperSize, createdBy: userId },
-      include: { seller: { select: { name: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE } },
     });
     return this.toResponse(printer);
   }
@@ -54,7 +57,9 @@ export class PrinterService {
     if (!existing) throw new NotFoundException('Printer not found');
 
     if (data.assignedSellerId) {
-      const seller = await this.prisma.swapSeller.findFirst({ where: { id: data.assignedSellerId, orgId } });
+      const seller = await this.prisma.sellerProfile.findFirst({
+        where: { id: data.assignedSellerId, deletedAt: null, membership: { orgId } },
+      });
       if (!seller) throw new NotFoundException('Seller not found');
     }
 
@@ -70,7 +75,7 @@ export class PrinterService {
         ...(data.marginLeft !== undefined ? { marginLeft: data.marginLeft } : {}),
         ...(data.marginRight !== undefined ? { marginRight: data.marginRight } : {}),
       },
-      include: { seller: { select: { name: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE } },
     });
     return this.toResponse(updated);
   }
@@ -90,7 +95,7 @@ export class PrinterService {
 
     const printer = await this.prisma.swapPrinter.findFirst({
       where: { id: printerId, orgId },
-      include: { seller: { select: { name: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE } },
     });
     if (!printer) throw new NotFoundException('Printer not found');
 
@@ -98,7 +103,9 @@ export class PrinterService {
     if (!isAdmin) {
       if (isManage && printer.assignedSellerId !== null) throw new ForbiddenException('Not your printer');
       if (isSeller && !isManage) {
-        const sellerRecord = await this.prisma.swapSeller.findFirst({ where: { orgId, userId } });
+        const sellerRecord = await this.prisma.sellerProfile.findFirst({
+          where: { deletedAt: null, membership: { orgId, userId, deletedAt: null } },
+        });
         if (!sellerRecord || printer.assignedSellerId !== sellerRecord.id) throw new ForbiddenException('Not your printer');
       }
     }
@@ -106,12 +113,12 @@ export class PrinterService {
     const updated = await this.prisma.swapPrinter.update({
       where: { id: printerId },
       data: { paperSize },
-      include: { seller: { select: { name: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE } },
     });
     return this.toResponse(updated);
   }
 
-  private toResponse(p: { id: string; name: string; bluetoothName: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number; assignedSellerId: string | null; seller: { name: string } | null }): SwapPrinterResponse {
+  private toResponse(p: { id: string; name: string; bluetoothName: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number; assignedSellerId: string | null; seller: SellerNameRow | null }): SwapPrinterResponse {
     return {
       id: p.id,
       name: p.name,
@@ -122,7 +129,7 @@ export class PrinterService {
       marginLeft: p.marginLeft,
       marginRight: p.marginRight,
       assignedSellerId: p.assignedSellerId,
-      assignedSellerName: p.seller?.name ?? null,
+      assignedSellerName: sellerDisplayName(p.seller),
     };
   }
 }

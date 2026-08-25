@@ -21,7 +21,7 @@ export class SquareConfigService {
   async resetOrgData(orgId: string): Promise<{ deletedItems: number; deletedSellers: number }> {
     const [deletedItems, deletedSellers] = await this.prisma.$transaction([
       this.prisma.swapItem.deleteMany({ where: { orgId } }),
-      this.prisma.swapSeller.deleteMany({ where: { orgId } }),
+      this.prisma.sellerProfile.deleteMany({ where: { membership: { orgId } } }),
     ]);
     // Reset all SKU counters so numbering starts fresh
     await this.prisma.skiSwap.updateMany({ where: { orgId }, data: { skuCounter: 0 } });

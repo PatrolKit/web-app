@@ -3,6 +3,40 @@ import { createId } from '@paralleldrive/cuid2';
 
 const prisma = new PrismaClient();
 
+/**
+ * Dev fixtures use unroutable contacts by design: @example.com is reserved by
+ * RFC 2606, and +1555xxxxxxx is the reserved fictional range. Even if outbound
+ * notifications were mistakenly enabled, nothing can reach a real person.
+ */
+async function upsertPerson(data: {
+  email?: string;
+  phone?: string;
+  firstName?: string;
+  lastName?: string;
+  nspId?: string;
+  patrolLevel?: string;
+  isSuperAdmin?: boolean;
+}) {
+  const existing = data.email
+    ? await prisma.user.findFirst({ where: { email: data.email } })
+    : data.nspId
+      ? await prisma.user.findUnique({ where: { nspId: data.nspId } })
+      : null;
+
+  if (existing) {
+    return prisma.user.update({ where: { id: existing.id }, data });
+  }
+  return prisma.user.create({ data: { id: createId(), ...data } });
+}
+
+async function upsertMembership(userId: string, orgId: string) {
+  return prisma.membership.upsert({
+    where: { userId_orgId: { userId, orgId } },
+    update: { deletedAt: null },
+    create: { id: createId(), userId, orgId, updatedAt: new Date() },
+  });
+}
+
 // §6 permission catalog
 const PERMISSIONS = [
   { key: 'org:read', description: 'View organization details.' },
@@ -20,7 +54,6 @@ const PERMISSIONS = [
   { key: 'ski_swap:report', description: 'View ski swap items, stats, and seller records.' },
   { key: 'ski_swap:manage', description: 'Read/write ski swap items and sellers.' },
   { key: 'ski_swap:admin', description: 'Manage ski swaps and configure Square credentials.' },
-  { key: 'business_seller', description: 'Self-service access to own consignment items in ski swaps.' },
   // Time Tracking module permissions
   { key: 'time_tracking:report', description: 'View time tracking records and reports.' },
   { key: 'time_tracking:manage', description: 'Create and edit time tracking entries.' },
@@ -68,10 +101,12 @@ async function main() {
   // 3. Upsert super admin
   const superAdminEmail = process.env.SEED_SUPERADMIN_EMAIL;
   if (superAdminEmail) {
-    await prisma.user.upsert({
-      where: { email: superAdminEmail },
-      update: { isSuperAdmin: true },
-      create: { id: createId(), email: superAdminEmail, name: 'Super Admin', isSuperAdmin: true },
+    await upsertPerson({
+      email: superAdminEmail,
+      firstName: 'Super',
+      lastName: 'Admin',
+      phone: '+15550100000',
+      isSuperAdmin: true,
     });
     console.log(`✓ Super admin seeded: ${superAdminEmail}`);
   } else {
@@ -87,13 +122,9 @@ async function main() {
     });
 
     if (superAdminEmail) {
-      const owner = await prisma.user.findUnique({ where: { email: superAdminEmail } });
+      const owner = await prisma.user.findFirst({ where: { email: superAdminEmail } });
       if (owner) {
-        const membership = await prisma.membership.upsert({
-          where: { userId_orgId: { userId: owner.id, orgId: demoOrg.id } },
-          update: {},
-          create: { id: createId(), userId: owner.id, orgId: demoOrg.id },
-        });
+        const membership = await upsertMembership(owner.id, demoOrg.id);
 
         // Grant all permissions to the owner
         const allPerms = await prisma.permission.findMany();
@@ -137,22 +168,16 @@ async function main() {
 
         // Dev users with escalating ski-swap permission levels for testing
         const swapUsers = [
-          { email: 'swap-reporter@example.com', name: 'Swap Reporter', perms: ['ski_swap:report'] },
-          { email: 'swap-manager@example.com',  name: 'Swap Manager',  perms: ['ski_swap:report', 'ski_swap:manage'] },
-          { email: 'swap-admin@example.com',    name: 'Swap Admin',    perms: ['ski_swap:report', 'ski_swap:manage', 'ski_swap:admin'] },
+          { email: 'swap-reporter@example.com', firstName: 'Swap', lastName: 'Reporter', phone: '+15550101001', perms: ['ski_swap:report'] },
+          { email: 'swap-manager@example.com',  firstName: 'Swap', lastName: 'Manager',  phone: '+15550101002', perms: ['ski_swap:report', 'ski_swap:manage'] },
+          { email: 'swap-admin@example.com',    firstName: 'Swap', lastName: 'Admin',    phone: '+15550101003', perms: ['ski_swap:report', 'ski_swap:manage', 'ski_swap:admin'] },
         ] as const;
 
         for (const u of swapUsers) {
-          const devUser = await prisma.user.upsert({
-            where: { email: u.email },
-            update: {},
-            create: { id: createId(), email: u.email, name: u.name },
+          const devUser = await upsertPerson({
+            email: u.email, firstName: u.firstName, lastName: u.lastName, phone: u.phone,
           });
-          const devMembership = await prisma.membership.upsert({
-            where: { userId_orgId: { userId: devUser.id, orgId: demoOrg.id } },
-            update: {},
-            create: { id: createId(), userId: devUser.id, orgId: demoOrg.id },
-          });
+          const devMembership = await upsertMembership(devUser.id, demoOrg.id);
           for (const permKey of u.perms) {
             const perm = await prisma.permission.findUniqueOrThrow({ where: { key: permKey } });
             await prisma.membershipPermission.upsert({
@@ -198,48 +223,46 @@ async function main() {
           create: { id: createId(), orgId: demoOrg.id },
         });
 
+        // Most roster rows carry a contact, matching a real import; the last has
+        // neither, which is the permitted contactless case.
         const patrollers = [
-          { firstName: 'Jane',    lastName: 'Doe',       nspId: '100001', patrolLevel: 'Senior' },
-          { firstName: 'John',    lastName: 'Smith',     nspId: '100002', patrolLevel: 'Basic' },
-          { firstName: 'Maria',   lastName: 'Garcia',    nspId: '100003', patrolLevel: 'Certified' },
-          { firstName: 'Chen',    lastName: 'Wei',       nspId: '100004', patrolLevel: 'Candidate' },
-          { firstName: 'Aisha',   lastName: 'Patel',     nspId: '100005', patrolLevel: 'Senior' },
-          { firstName: 'Tom',     lastName: 'Anderson',  nspId: '100006', patrolLevel: 'Basic' },
+          { firstName: 'Jane',  lastName: 'Doe',      nspId: '100001', patrolLevel: 'Senior',    email: 'jane.doe@example.com',  phone: '+15550301001' },
+          { firstName: 'John',  lastName: 'Smith',    nspId: '100002', patrolLevel: 'Basic',     email: 'john.smith@example.com' },
+          { firstName: 'Maria', lastName: 'Garcia',   nspId: '100003', patrolLevel: 'Certified', phone: '+15550301003' },
+          { firstName: 'Chen',  lastName: 'Wei',      nspId: '100004', patrolLevel: 'Candidate', email: 'chen.wei@example.com',  phone: '+15550301004' },
+          { firstName: 'Aisha', lastName: 'Patel',    nspId: '100005', patrolLevel: 'Senior',    email: 'aisha.patel@example.com' },
+          { firstName: 'Tom',   lastName: 'Anderson', nspId: '100006', patrolLevel: 'Basic' },
         ] as const;
         for (const pt of patrollers) {
-          await prisma.patroller.upsert({
-            where: { orgId_nspId: { orgId: demoOrg.id, nspId: pt.nspId } },
-            update: {},
-            create: {
-              id: createId(),
-              orgId: demoOrg.id,
-              firstName: pt.firstName,
-              lastName: pt.lastName,
-              nspId: pt.nspId,
-              patrolLevel: pt.patrolLevel,
-            },
+          const person = await upsertPerson({
+            nspId: pt.nspId,
+            firstName: pt.firstName,
+            lastName: pt.lastName,
+            patrolLevel: pt.patrolLevel,
+            ...('email' in pt ? { email: pt.email } : {}),
+            ...('phone' in pt ? { phone: pt.phone } : {}),
+          });
+          const m = await upsertMembership(person.id, demoOrg.id);
+          await prisma.patrollerProfile.upsert({
+            where: { membershipId: m.id },
+            update: { active: true, deletedAt: null },
+            create: { id: createId(), membershipId: m.id },
           });
         }
         console.log(`✓ Time-clock demo resorts, settings, and roster seeded`);
 
         // Dev users with escalating time-tracking permission levels
         const timeUsers = [
-          { email: 'time-reporter@example.com', name: 'Time Reporter', perms: ['time_tracking:report'] },
-          { email: 'time-manager@example.com',  name: 'Time Manager',  perms: ['time_tracking:report', 'time_tracking:manage'] },
-          { email: 'time-admin@example.com',    name: 'Time Admin',    perms: ['time_tracking:report', 'time_tracking:manage', 'time_tracking:admin'] },
+          { email: 'time-reporter@example.com', firstName: 'Time', lastName: 'Reporter', phone: '+15550201001', perms: ['time_tracking:report'] },
+          { email: 'time-manager@example.com',  firstName: 'Time', lastName: 'Manager',  phone: '+15550201002', perms: ['time_tracking:report', 'time_tracking:manage'] },
+          { email: 'time-admin@example.com',    firstName: 'Time', lastName: 'Admin',    phone: '+15550201003', perms: ['time_tracking:report', 'time_tracking:manage', 'time_tracking:admin'] },
         ] as const;
 
         for (const u of timeUsers) {
-          const devUser = await prisma.user.upsert({
-            where: { email: u.email },
-            update: {},
-            create: { id: createId(), email: u.email, name: u.name },
+          const devUser = await upsertPerson({
+            email: u.email, firstName: u.firstName, lastName: u.lastName, phone: u.phone,
           });
-          const devMembership = await prisma.membership.upsert({
-            where: { userId_orgId: { userId: devUser.id, orgId: demoOrg.id } },
-            update: {},
-            create: { id: createId(), userId: devUser.id, orgId: demoOrg.id },
-          });
+          const devMembership = await upsertMembership(devUser.id, demoOrg.id);
           for (const permKey of u.perms) {
             const perm = await prisma.permission.findUniqueOrThrow({ where: { key: permKey } });
             await prisma.membershipPermission.upsert({

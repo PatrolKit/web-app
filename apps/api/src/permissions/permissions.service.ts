@@ -23,8 +23,9 @@ export class PermissionsService {
       include: { permissions: { include: { permission: true } } },
     });
 
+    // A soft-removed membership grants nothing, but the row survives as a tombstone.
     const keys =
-      membership?.status === 'active'
+      membership && membership.deletedAt === null
         ? membership.permissions.map((mp) => mp.permission.key)
         : [];
 

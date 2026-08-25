@@ -3,12 +3,13 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TimeClockFoldService } from './fold.service';
 import { sweepAt } from './sweep.util';
+import { displayName } from '../common/util/person';
 import type { ShiftResponse } from '../contracts/time-clock.contracts';
 
 type ShiftWithRelations = Prisma.TimeClockShiftGetPayload<{
   include: {
     resort: { select: { name: true; timeZone: true } };
-    patroller: { select: { firstName: true; lastName: true; patrolLevel: true; nspId: true } };
+    patroller: { include: { membership: { select: { user: true } } } };
   };
 }>;
 
@@ -57,7 +58,7 @@ export class ShiftService {
       where,
       include: {
         resort: { select: { name: true, timeZone: true } },
-        patroller: { select: { firstName: true, lastName: true, patrolLevel: true, nspId: true } },
+        patroller: { include: { membership: { select: { user: true } } } },
       },
       orderBy: { clockInAt: 'desc' },
       take: 2000,
@@ -181,7 +182,7 @@ export class ShiftService {
       where: { id: shiftId },
       include: {
         resort: { select: { name: true, timeZone: true } },
-        patroller: { select: { firstName: true, lastName: true, patrolLevel: true, nspId: true } },
+        patroller: { include: { membership: { select: { user: true } } } },
       },
     });
     return toResponse(updated);
@@ -195,11 +196,9 @@ function toResponse(s: ShiftWithRelations): ShiftResponse {
     resortId: s.resortId,
     resortName: s.resort?.name ?? null,
     patrollerId: s.patrollerId,
-    patrollerName: s.patroller
-      ? `${s.patroller.firstName} ${s.patroller.lastName}`.trim()
-      : null,
-    patrolLevel: s.patroller?.patrolLevel ?? null,
-    nspId: s.patroller?.nspId ?? null,
+    patrollerName: s.patroller ? displayName(s.patroller.membership.user) : null,
+    patrolLevel: s.patroller?.membership.user.patrolLevel ?? null,
+    nspId: s.patroller?.membership.user.nspId ?? null,
     dutyType: s.dutyType,
     dutyNote: s.dutyNote,
     clockInAt: s.clockInAt.toISOString(),
