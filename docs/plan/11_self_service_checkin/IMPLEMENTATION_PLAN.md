@@ -62,6 +62,8 @@ Staff stop being typists and go back to handling gear.
 | **D5b** | **Tags are enqueued when an item is saved**, not in a batch at the end. Saving is the print trigger. | The seller applies tags themselves, item by item, while the gear is in front of them. Batching would hand someone a stack of tags and a pile of gear and ask them to re-match the two. |
 | **D5c** | **An item prints once.** Editing a saved item does not reprint; `hasPrintedTag` guards it. Reprints are an explicit action. | A seller correcting a typo has already stuck the tag on. Silent reprinting produces a second tag with no home. |
 | **D6** | **`SwapPrinter` gains a device link rather than being replaced.** A printer row is Bluetooth-driven, device-driven, or both. | The Bluetooth path has to keep working while ESP-32 hardware is built and rolled out. |
+| **D6b** | **Check-in is a phone-first flow, not a responsive desktop one.** It is designed against a one-handed seller holding a ski, on venue wifi, in Safari. | Every seller arrives with a phone and nothing else — there is no desktop fallback to degrade to. Treating mobile as the target rather than a breakpoint is the difference between a flow that works at a counter and one that technically renders. |
+| **D6c** | **Check-in challenges are always 6-digit codes, never links** — on email as well as SMS. | An emailed link opens a *new* browser context. The seller scanned the station QR in one tab, and tapping a link in Mail lands them in another with no `swap` or `printer` — signed in, and with no idea which station they are at. A code is typed into the tab that already holds the context, so it cannot be lost. It also keeps one mental model at a busy counter. |
 | **D7** | **Check-in mints a normal session.** No special "check-in token". The seller signs in exactly as they would anywhere else, and the QR only supplies context. | Plan 10 D8 — verification and login are the same act. A second, weaker credential path is how the first one gets bypassed. |
 | **D8** | **The station is a property of the session, not of the person.** `swapId` and `printerId` ride in the client, not on `SellerProfile`. | A seller may check in at one station this year and another next year. Persisting it would make a transient fact permanent. |
 
@@ -76,11 +78,12 @@ Staff stop being typists and go back to handling gear.
    │       (validates swap is active and printer belongs to the same org)
    │
    ├─ 2. person enters email OR phone
-   │       └─ POST /auth/login          ──▶ challengeId  (existing endpoint, unchanged)
+   │       └─ POST /auth/login  { purpose: 'checkin' }  ──▶ challengeId
    │            └─ no match? sign-up form (first, last, email, phone, address)
    │                 └─ POST /public/checkin/:swapId/register  ──▶ challengeId
    │
-   ├─ 3. code arrives by email or SMS
+   ├─ 3. a 6-digit code arrives, by email or SMS (D6c — never a link)
+   │       └─ typed into the same tab, which still holds swap + printer
    │       └─ POST /auth/challenges/:id/confirm  ──▶ session  (existing, unchanged)
    │            └─ contact stamped verified; this is the one flow where the contact
    │               is self-entered and therefore trustworthy
@@ -99,7 +102,7 @@ Staff stop being typists and go back to handling gear.
               physical pile against at handover
 ```
 
-Steps 2 and 3 are **existing endpoints reused unchanged**. Step 5 is the existing item
+Step 2 reuses `/auth/login` with one added `purpose`; step 3 is unchanged. Step 5 is the existing item
 endpoint with one added optional field. The genuinely new surface is a public context
 lookup, a registration entry point, a join, a reprint, and a finish.
 
@@ -307,18 +310,50 @@ is final — not at the start, when it would be empty.
 
 ## 7. Web work
 
-- **`/checkin` route on the seller site** — the QR destination. Reads `swap` and `printer`
-  from the query string, holds them for the session, and walks: context → sign in or
-  register → confirm → join → add items → finish. Every item save carries the `printerId`,
-  and the UI has to make the printing visible: which item is printing, whether the tag
-  came out, and a one-tap reprint when it did not.
-- **Mobile pass over the seller portal.** `BusinessSellerPage` is the item-entry surface
-  and was built for a desktop. It gets touch targets, a single-column form, and a camera
-  capture path for photos.
+### The check-in flow is its own surface
+
+`BusinessSellerPage` is **not** the check-in UI. It is a desktop portal for a business
+seller managing a catalogue from an office, and retrofitting it into a one-handed venue
+flow would serve neither well. Check-in gets purpose-built screens under `/checkin`, and
+the two share the API and nothing else.
+
+- **`/checkin`** — the QR destination. Reads `swap` and `printer` from the query string and
+  holds them for the whole session (D6c is what stops them being lost). Walks: context →
+  sign in or register → code → join → add items → finish.
+- **Item entry is the screen that matters.** One item at a time, one column, thumb-reachable
+  primary action. Printing has to be visible: which item is printing, whether the tag came
+  out, and a one-tap reprint when it did not.
 - **Fix the seller redirect** — derive from `membership.roles.includes('seller')` rather
   than the retired `business_seller` permission (§1).
-- **Station queue view** for staff, off the printers tab: depth, last-seen, failures,
-  retry.
+- **Station queue view** for staff, off the printers tab: depth, last-seen, failures, retry.
+
+### What phone-first actually means here
+
+Not a breakpoint. These are the constraints that change the design:
+
+- **Cold start in Safari.** The iOS camera app opens QR links in a fresh tab, so `/checkin`
+  must work unauthenticated, with no prior state, from a link alone.
+- **The keyboard eats the viewport.** Item entry has to stay usable in roughly 300px of
+  visible height, which rules out tall forms and fixed footers that end up behind the
+  keyboard.
+- **Inputs must not zoom.** iOS Safari zooms any focused input below 16px, and once zoomed
+  the layout is wrong for the rest of the session.
+- **The right keyboard per field.** `inputMode="decimal"` for price, `type="tel"` for
+  phone, `autocomplete` on the sign-up fields — a seller holding a ski should not be
+  hunting for the number key.
+- **Photos come from the camera**, via `capture="environment"`, and are downscaled in the
+  browser before upload. A modern phone photo is several megabytes and venue wifi is not.
+- **`100vh` is a lie on iOS.** Use `100dvh` and respect `env(safe-area-inset-*)`, or the
+  primary action sits under the home indicator.
+- **The session must survive backgrounding.** Taking a photo suspends the tab; coming back
+  must not mean signing in again.
+
+### Verification
+
+Responsive CSS is not evidence. Phase 5 is verified on a real phone-sized viewport with
+touch emulation, walking the whole flow, plus at least one pass on physical iOS hardware
+before a swap — the `100dvh`, zoom, and camera behaviours above are all ones the desktop
+browser will happily lie about.
 
 ---
 
@@ -338,7 +373,8 @@ no hardware needed.
 **Phase 4 — Check-in.** `PublicCheckinService`, register, join. Wire save-time enqueue into
 item creation, plus reprint and finish. Fix the seller redirect.
 
-**Phase 5 — Web.** `/checkin` route, mobile portal pass, station queue view.
+**Phase 5 — Web.** Purpose-built `/checkin` screens, station queue view. Verified on a
+phone viewport and on physical iOS.
 
 **Phase 6 — Hardening.** Reaping under load, queue-depth alerting, abandoned-job
 visibility, and a documented recovery path for "the printer died mid-swap".
@@ -363,7 +399,12 @@ visibility, and a documented recovery path for "the printer died mid-swap".
 - **No approval gate (D5)** means a mistyped price goes live immediately. Staff can edit
   after the fact, and the tag is the artefact that matters physically.
 - **The seller needs working connectivity at the venue.** Lodge wifi is not a given, and
-  the flow has no offline mode. Worth measuring before the first real swap.
+  the flow has no offline mode: a dropped connection mid-entry loses the item being typed.
+  This is the single most likely way check-in fails in the real world, and it is worth
+  measuring signal at the actual venue before the first swap rather than discovering it
+  with a queue of people.
+- **`purpose: 'checkin'` adds a fourth challenge purpose.** Small, but it means the code
+  path that decides link-vs-code now has two axes — channel and purpose — rather than one.
 
 ## 10. Open questions
 
@@ -380,7 +421,12 @@ visibility, and a documented recovery path for "the printer died mid-swap".
    against a list, so it probably wants every item and a count — more than
    `generateReceiptHeaderLabel` prints today. Worth designing against the actual handover
    conversation.
-4. **What stops a seller from walking off mid-check-in?** Items exist and tags are printed
+4. **Should item entry survive a dropped connection?** A local draft of the in-progress
+   item, replayed when the network returns, would cover the most likely venue failure. It
+   is real work and real state to reconcile, so it is deliberately not in this plan — but
+   if the connectivity measurement above comes back poor, it moves from optional to
+   required.
+5. **What stops a seller from walking off mid-check-in?** Items exist and tags are printed
    and stuck on gear that never reaches the floor. Staff need a way to see checked-in
    sellers who never finished — a station view of in-progress check-ins would cover both
    this and question 3.
