@@ -32,7 +32,10 @@ run(`rsync -az --delete -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
   ${SERVER}:/home/ec2-user/patrolkit/dist/`);
 
 // 3. Sync prisma migrations, web SPA, and package.json (for npm install on server)
-run(`rsync -az -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
+// --delete matters here: without it, migration folders removed locally survive
+// on the server and get replayed, which is how a squashed history collides with
+// its own baseline. Migrations were only ever added before, so this went unnoticed.
+run(`rsync -az --delete -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
   apps/api/prisma/ \
   ${SERVER}:/home/ec2-user/patrolkit/prisma/`);
 run(`rsync -az --delete -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
