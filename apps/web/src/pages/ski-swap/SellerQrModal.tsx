@@ -30,7 +30,7 @@ export default function SellerQrModal({ seller, onClose }: Props) {
     setPrinting(true);
     setPrintError(null);
     try {
-      await printQrLabel(seller.name, sellerUrl);
+      await printQrLabel(seller.displayName, sellerUrl);
     } catch (err) {
       setPrintError(err instanceof Error ? err.message : 'Print failed');
     } finally {
@@ -45,7 +45,7 @@ export default function SellerQrModal({ seller, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-white font-medium">QR Code — {seller.name}</h3>
+          <h3 className="text-white font-medium">QR Code — {seller.displayName}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-lg leading-none">×</button>
         </div>
 

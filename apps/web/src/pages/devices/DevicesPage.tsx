@@ -453,8 +453,8 @@ export default function DevicesPage() {
                     className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
                   >
                     <option value="">Org pool (unassigned)</option>
-                    {sellers.filter((s) => s.type === 'business').map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
+                    {sellers.filter((s) => s.businessName !== null).map((s) => (
+                      <option key={s.id} value={s.id}>{s.displayName}</option>
                     ))}
                   </select>
                 </div>

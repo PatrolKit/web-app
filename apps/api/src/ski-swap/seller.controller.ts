@@ -85,7 +85,7 @@ export class SellerController {
    * proves the contact without minting a session.
    */
   @Post(':sellerId/verify/:channel/initiate')
-  @HttpCode(204)
+  @HttpCode(200)
   @RequirePermissions('ski_swap:manage')
   async initiateVerification(
     @Param('orgId') orgId: string,
@@ -99,12 +99,15 @@ export class SellerController {
     const target = channel === 'email' ? seller.membership.user.email : seller.membership.user.phone;
     if (!target) throw new BadRequestException(`Seller has no ${channel} on record`);
 
-    await this.challenges.issue({
+    // The challenge id goes back to staff so they can confirm an OTP the seller
+    // reads out to them at the counter.
+    const issued = await this.challenges.issue({
       userId: seller.membership.userId,
       channel,
       target,
       purpose: 'verify',
     });
+    return { challengeId: issued.challengeId, devCode: issued.devCode };
   }
 
   /** Name-only cross-org lookup. The full record follows staff confirmation. */

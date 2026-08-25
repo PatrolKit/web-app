@@ -3,9 +3,15 @@ import { Navigate } from 'react-router-dom';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 
+type Channel = 'email' | 'phone';
+
 export default function LoginPage() {
-  const { user, isLoading } = useAuth();
-  const [email, setEmail] = useState('');
+  const { user, isLoading, login } = useAuth();
+  const [channel, setChannel] = useState<Channel>('email');
+  const [contact, setContact] = useState('');
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [devCode, setDevCode] = useState<string | undefined>();
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,12 +19,18 @@ export default function LoginPage() {
   // If the silent refresh already restored a session, skip the login page
   if (!isLoading && user) return <Navigate to="/dashboard" replace />;
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleRequest(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await api.auth.requestMagicLink(email);
+      const res = await api.auth.login(
+        channel === 'email' ? { email: contact } : { phone: contact },
+      );
+      // challengeId is null when nobody matches — deliberately indistinguishable
+      // from success, so the page says the same thing either way.
+      setChallengeId(res.challengeId);
+      setDevCode(res.devCode);
       setSent(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
@@ -27,15 +39,67 @@ export default function LoginPage() {
     }
   }
 
+  async function handleConfirm(e: React.FormEvent) {
+    e.preventDefault();
+    if (!challengeId) return;
+    setError('');
+    setLoading(true);
+    try {
+      const { accessToken } = await api.auth.confirmChallenge(challengeId, code.trim());
+      if (accessToken) await login(accessToken);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Sign-in failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (sent) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-surface-50 rounded-xl p-8 text-center">
-          <h1 className="text-2xl font-bold text-white mb-4">Check your email</h1>
-          <p className="text-gray-400">
-            If <span className="text-white">{email}</span> has an account, a sign-in link is on its
-            way. Check your inbox!
+        <div className="max-w-md w-full bg-surface-50 rounded-xl p-8">
+          <h1 className="text-2xl font-bold text-white mb-4">
+            {channel === 'email' ? 'Check your email' : 'Check your messages'}
+          </h1>
+          <p className="text-gray-400 mb-6">
+            If <span className="text-white">{contact}</span> has an account,{' '}
+            {channel === 'email' ? 'a sign-in link is on its way' : 'we sent a 6-digit code'}.
           </p>
+
+          {devCode && (
+            <p className="mb-4 text-xs text-amber-400 bg-amber-950/40 rounded p-3">
+              Notifications are switched off in this environment. Your code is{' '}
+              <span className="font-mono text-amber-200">{devCode}</span>
+            </p>
+          )}
+
+          {channel === 'phone' && challengeId && (
+            <form onSubmit={handleConfirm} className="space-y-4">
+              <input
+                inputMode="numeric"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="123456"
+                required
+                className="w-full bg-surface-100 border border-gray-700 rounded-lg px-4 py-3 text-white tracking-widest placeholder-gray-500 focus:outline-none focus:border-brand-600"
+              />
+              {error && <p className="text-red-400 text-sm">{error}</p>}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold rounded-lg px-4 py-3"
+              >
+                {loading ? 'Verifying…' : 'Sign in'}
+              </button>
+            </form>
+          )}
+
+          <button
+            onClick={() => { setSent(false); setCode(''); setError(''); }}
+            className="mt-6 text-sm text-gray-400 hover:text-white"
+          >
+            Use a different {channel === 'email' ? 'email' : 'number'}
+          </button>
         </div>
       </div>
     );
@@ -47,14 +111,31 @@ export default function LoginPage() {
         <h1 className="text-3xl font-bold mb-2">
           <span className="text-brand-600">Patrol</span>Kit
         </h1>
-        <p className="text-gray-400 mb-8">Sign in with your email</p>
+        <p className="text-gray-400 mb-6">Sign in with your email or phone number</p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex gap-2 mb-6">
+          {(['email', 'phone'] as const).map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => { setChannel(c); setContact(''); setError(''); }}
+              className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium ${
+                channel === c
+                  ? 'bg-brand-600 text-white'
+                  : 'bg-surface-100 text-gray-400 hover:text-white'
+              }`}
+            >
+              {c === 'email' ? 'Email' : 'Phone'}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={handleRequest} className="space-y-4">
           <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
+            type={channel === 'email' ? 'email' : 'tel'}
+            value={contact}
+            onChange={(e) => setContact(e.target.value)}
+            placeholder={channel === 'email' ? 'you@example.com' : '(555) 010-1001'}
             required
             className="w-full bg-surface-100 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-brand-600"
           />
@@ -62,9 +143,9 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white rounded-lg px-4 py-3 font-semibold transition"
+            className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold rounded-lg px-4 py-3"
           >
-            {loading ? 'Sending…' : 'Send sign-in link'}
+            {loading ? 'Sending…' : channel === 'email' ? 'Send sign-in link' : 'Send code'}
           </button>
         </form>
       </div>

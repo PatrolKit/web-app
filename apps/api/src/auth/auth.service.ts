@@ -29,23 +29,29 @@ export class AuthService {
   // ─── Login (email or phone) ──────────────────────────────────────────────────
 
   /**
-   * Issues a login challenge on whichever channel was supplied. Always resolves,
-   * whether or not the person exists — an error here would leak account
-   * existence. Returns null when there is nothing to send to.
+   * Issues a login challenge on whichever channel was supplied.
+   *
+   * When nobody matches, this returns a *decoy*: a well-formed challenge id that
+   * was never stored, so confirming it fails exactly like a wrong code. Callers
+   * therefore cannot tell a real account from an absent one — returning null
+   * here would make the response shape itself an enumeration oracle, which
+   * matters most for the phone flow, where the client needs an id to confirm
+   * against.
    */
   async requestLogin(input: { email?: string; phone?: string }): Promise<IssuedChallenge | null> {
     const email = normalizeEmail(input.email);
     const phone = normalizePhone(input.phone);
     if (!email && !phone) return null;
 
+    const channel = email ? 'email' : 'phone';
     const user = await this.prisma.user.findFirst({
       where: email ? { email } : { phone: phone! },
     });
-    if (!user) return null;
+    if (!user) return { challengeId: createId(), channel };
 
     return this.challenges.issue({
       userId: user.id,
-      channel: email ? 'email' : 'phone',
+      channel,
       target: (email ?? phone)!,
       purpose: 'login',
     });

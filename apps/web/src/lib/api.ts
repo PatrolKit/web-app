@@ -80,18 +80,41 @@ export class ApiError extends Error {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+/** Person fields are global (they live on User); businessName is org-scoped. */
+export type SellerWrite = Partial<{
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  email: string | null;
+  businessName: string | null;
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  payoutMethod: string | null;
+  payoutChannel: 'email' | 'phone' | null;
+}>;
+
 export const api = {
   auth: {
-    requestMagicLink: (email: string) =>
-      request<{ queued: boolean }>('/auth/magic-link', {
+    /** One login, two channels — pass exactly one of email or phone. */
+    login: (input: { email: string } | { phone: string }) =>
+      request<{
+        queued: true;
+        challengeId: string | null;
+        channel: 'email' | 'phone' | null;
+        /** Present only when OUTBOUND_NOTIFICATIONS is off, so dev can complete the flow. */
+        devCode?: string;
+      }>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email }),
+        body: JSON.stringify(input),
       }),
-    verifyMagicLink: (token: string) =>
-      request<{ accessToken: string }>('/auth/magic-link/verify', {
-        method: 'POST',
-        body: JSON.stringify({ token }),
-      }),
+    /** Confirming verifies the contact and, for login/invite, mints the session. */
+    confirmChallenge: (challengeId: string, code: string) =>
+      request<{ accessToken: string | null; verified: true }>(
+        `/auth/challenges/${challengeId}/confirm`,
+        { method: 'POST', body: JSON.stringify({ code }) },
+      ),
     refresh: () =>
       request<{ accessToken: string }>('/auth/refresh', { method: 'POST' }),
     logout: () =>
@@ -147,12 +170,12 @@ export const api = {
 
   members: {
     list: (orgId: string) => request<import('./api.types').MemberResponse[]>(`/orgs/${orgId}/members`),
-    invite: (orgId: string, data: { email: string; name?: string; permissions: string[] }) =>
+    invite: (orgId: string, data: { email: string; firstName?: string; lastName?: string; phone?: string; permissions: string[] }) =>
       request<import('./api.types').MemberResponse>(`/orgs/${orgId}/members`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    update: (orgId: string, userId: string, data: { status?: string; permissions?: string[] }) =>
+    update: (orgId: string, userId: string, data: { removed?: boolean; permissions?: string[] }) =>
       request<import('./api.types').MemberResponse>(`/orgs/${orgId}/members/${userId}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
@@ -289,20 +312,30 @@ export const api = {
     // Sellers
     listSellers: (orgId: string, query?: string) =>
       request<import('./api.types').SellerResponse[]>(`/orgs/${orgId}/ski-swap/sellers${query ? `?query=${encodeURIComponent(query)}` : ''}`),
-    createSeller: (orgId: string, data: { name: string; phone: string; email?: string; type?: 'individual' | 'business'; street?: string; city?: string; state?: string; zip?: string; payoutMethod?: string; payoutIdentifierType?: string; payoutIdentifier?: string }) =>
+    createSeller: (orgId: string, data: SellerWrite) =>
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers`, {
         method: 'POST', body: JSON.stringify(data),
       }),
-    patchSeller: (orgId: string, sellerId: string, data: Partial<{ name: string; phone: string; email: string | null; type: 'individual' | 'business'; street: string | null; city: string | null; state: string | null; zip: string | null; payoutMethod: string | null; payoutIdentifierType: string | null; payoutIdentifier: string | null }>) =>
+    patchSeller: (orgId: string, sellerId: string, data: SellerWrite) =>
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
     deleteSeller: (orgId: string, sellerId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, { method: 'DELETE' }),
-    initiateEmailVerification: (orgId: string, sellerId: string) =>
-      request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}/verify/email/initiate`, { method: 'POST' }),
-    initiatePhoneVerification: (orgId: string, sellerId: string) =>
-      request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}/verify/phone/initiate`, { method: 'POST' }),
+    initiateVerification: (orgId: string, sellerId: string, channel: 'email' | 'phone') =>
+      request<{ challengeId: string; devCode?: string }>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/verify/${channel}/initiate`,
+        { method: 'POST' },
+      ),
+    /** Name-only cross-org lookup; the full record follows staff confirmation. */
+    searchPeople: (orgId: string, input: { email?: string; phone?: string }) =>
+      request<import('./api.types').PersonSearchResult[]>(`/orgs/${orgId}/ski-swap/sellers/search`, {
+        method: 'POST', body: JSON.stringify(input),
+      }),
+    addSellerFromPerson: (orgId: string, userId: string) =>
+      request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers/from-person`, {
+        method: 'POST', body: JSON.stringify({ userId }),
+      }),
     downloadSellerTemplate: (orgId: string) => `/api/v1/orgs/${orgId}/ski-swap/sellers/import/template`,
     parseSellerCsv: (orgId: string, file: File) => {
       const form = new FormData();
@@ -326,23 +359,25 @@ export const api = {
     },
 
     // Business sellers (admin)
-    inviteBusinessSeller: (orgId: string, data: { name: string; email: string }) =>
+    inviteBusinessSeller: (orgId: string, data: { businessName: string; email: string }) =>
       request<import('./api.types').BusinessSellerMember>(`/orgs/${orgId}/ski-swap/business-sellers`, {
         method: 'POST', body: JSON.stringify(data),
       }),
     listBusinessSellers: (orgId: string) =>
       request<import('./api.types').BusinessSellerMember[]>(`/orgs/${orgId}/ski-swap/business-sellers`),
-    setBusinessSellerStatus: (orgId: string, userId: string, status: 'active' | 'disabled') =>
+    setBusinessSellerRemoved: (orgId: string, userId: string, removed: boolean) =>
       request<import('./api.types').BusinessSellerMember>(`/orgs/${orgId}/ski-swap/business-sellers/${userId}/status`, {
-        method: 'PATCH', body: JSON.stringify({ status }),
+        method: 'PATCH', body: JSON.stringify({ removed }),
       }),
+    searchBusinesses: (orgId: string, q: string) =>
+      request<{ businessName: string; userId: string }[]>(`/orgs/${orgId}/ski-swap/business-sellers/search?q=${encodeURIComponent(q)}`),
     removeBusinessSeller: (orgId: string, userId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/business-sellers/${userId}`, { method: 'DELETE' }),
 
     // Seller self-service
     sellerGetProfile: (orgId: string) =>
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/seller/me`),
-    sellerUpdateProfile: (orgId: string, data: Partial<{ name: string; phone: string; email: string | null; street: string | null; city: string | null; state: string | null; zip: string | null; payoutMethod: string | null; payoutIdentifierType: string | null; payoutIdentifier: string | null }>) =>
+    sellerUpdateProfile: (orgId: string, data: SellerWrite) =>
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/seller/me`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
@@ -476,16 +511,6 @@ export const api = {
   },
 
   public: {
-    confirmEmailVerification: (sellerId: string, token: string) =>
-      request<{ verified: boolean }>(`/public/sellers/${sellerId}/verify/email/confirm`, {
-        method: 'POST',
-        body: JSON.stringify({ token }),
-      }),
-    confirmPhoneVerification: (sellerId: string, code: string) =>
-      request<{ verified: boolean }>(`/public/sellers/${sellerId}/verify/phone/confirm`, {
-        method: 'POST',
-        body: JSON.stringify({ code }),
-      }),
     getSellerDetail: (sellerId: string) =>
       request<import('./api.types').PublicSellerDetailResponse>(`/public/sellers/${sellerId}`),
     getOrgBranding: (orgSlug: string) =>

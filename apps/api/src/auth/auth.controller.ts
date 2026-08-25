@@ -25,7 +25,8 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async login(@Body() body: LoginRequestDto): Promise<LoginResponse> {
     const issued = await this.authService.requestLogin(body);
-    // Uniform shape whether or not the account exists — no enumeration.
+    // Identical shape whether or not the account exists: an absent person still
+    // gets a (decoy) challenge id, so this response is not an enumeration oracle.
     return {
       queued: true,
       challengeId: issued?.challengeId ?? null,

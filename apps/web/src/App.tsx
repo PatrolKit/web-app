@@ -30,7 +30,6 @@ import OrgSellerLookupPage from './pages/public/OrgSellerLookupPage';
 import OrgAdminLayout from './pages/org/OrgAdminLayout';
 import OrgGeneralPage from './pages/org/OrgGeneralPage';
 import OrgResortsPage from './pages/org/OrgResortsPage';
-import VerifySellerPage from './pages/ski-swap/VerifySellerPage';
 
 // Evaluated once at module load — never changes for a given page load.
 const isSellerSite = window.location.hostname.startsWith('skiswap.');
@@ -64,7 +63,6 @@ export default function App() {
         <Route index element={<Navigate to="auth/login" replace />} />
         <Route path="auth/login" element={<LoginPage />} />
         <Route path="auth/verify" element={<VerifyPage />} />
-        <Route path="verify-seller" element={<VerifySellerPage />} />
         {/* Public seller-status page (no auth required) */}
         <Route path=":orgSlug/ski-swap/status" element={<SellerStatusPage />} />
         {/* Seller website public routes */}

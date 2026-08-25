@@ -333,13 +333,13 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
     const qrUrl = `${SELLER_SITE_URL}/s/${seller.id}`;
 
     if (previewMode) {
-      const headerUrl = await previewReceiptHeaderLabel(orgLogoUrl, date, seller.name, seller.phone, qrUrl, paperSize, margins);
+      const headerUrl = await previewReceiptHeaderLabel(orgLogoUrl, date, seller.displayName, seller.phone ?? '', qrUrl, paperSize, margins);
       const pageUrls = previewReceiptItemLabels(items, paperSize, margins);
       setPendingPreviews([headerUrl, ...pageUrls]);
       return;
     }
 
-    await conn.print(await generateReceiptHeaderLabel(orgLogoUrl, date, seller.name, seller.phone, qrUrl, paperSize, margins));
+    await conn.print(await generateReceiptHeaderLabel(orgLogoUrl, date, seller.displayName, seller.phone ?? '', qrUrl, paperSize, margins));
     for (const page of generateReceiptItemLabels(items, paperSize, margins)) {
       await conn.print(page);
     }

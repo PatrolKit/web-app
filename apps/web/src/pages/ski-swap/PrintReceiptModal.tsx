@@ -66,7 +66,7 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
         </div>
 
         <div>
-          <p className="text-white text-sm font-medium">{seller.name}</p>
+          <p className="text-white text-sm font-medium">{seller.displayName}</p>
           {!swapId ? (
             <p className="text-yellow-400 text-xs mt-1">No swap selected — select a swap first</p>
           ) : isLoading ? (

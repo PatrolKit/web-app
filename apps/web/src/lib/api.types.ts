@@ -3,18 +3,27 @@ export type DeviceRole = 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller' | 'Tim
 // Shared types used by the web API client
 // These mirror the API contract shapes (source of truth is apps/api/src/contracts/)
 
+export type OrgRole = 'seller' | 'patroller';
+
 export interface MembershipSummary {
   orgId: string;
   orgName: string;
   orgSlug: string;
-  status: string;
   permissions: string[];
+  /** Roles held at this org, derived from live profile rows. */
+  roles: OrgRole[];
 }
 
 export interface MeResponse {
   id: string;
-  email: string;
-  name: string;
+  email: string | null;
+  emailVerified: boolean;
+  phone: string | null;
+  phoneVerified: boolean;
+  firstName: string | null;
+  lastName: string | null;
+  /** Collapsed for display; never empty. */
+  displayName: string;
   isSuperAdmin: boolean;
   memberships: MembershipSummary[];
 }
@@ -30,11 +39,19 @@ export interface OrgResponse {
 
 export interface MemberResponse {
   userId: string;
-  email: string;
-  name: string;
-  status: string;
+  membershipId: string;
+  email: string | null;
+  emailVerified: boolean;
+  phone: string | null;
+  phoneVerified: boolean;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string;
   joinedAt: string;
+  /** Soft removal — null means a live member. */
+  removedAt: string | null;
   permissions: string[];
+  roles: OrgRole[];
 }
 
 export interface ImportOutcome {
@@ -91,33 +108,46 @@ export interface SwapResponse {
 }
 
 export interface SellerResponse {
+  /** SellerProfile id — the public /s/:sellerId identifier. */
   id: string;
   orgId: string;
-  type: 'individual' | 'business';
-  name: string;
-  phone: string;
+  userId: string;
+  /** Set means a business seller; null means individual. */
+  businessName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string;
+  phone: string | null;
   email: string | null;
   street: string | null;
   city: string | null;
   state: string | null;
   zip: string | null;
   payoutMethod: 'PAYPAL' | 'VENMO' | 'CHECK' | 'DONATE' | null;
-  payoutIdentifierType: 'EMAIL' | 'PHONE' | 'USER_HANDLE' | null;
-  payoutIdentifier: string | null;
-  payoutIdentifierConfirmedAt: string | null;
+  /** Payouts target a verified contact rather than a free-text identifier. */
+  payoutChannel: 'email' | 'phone' | null;
   emailVerifiedAt: string | null;
   phoneVerifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
+/** Cross-org lookup discloses a name and nothing more until staff confirm. */
+export interface PersonSearchResult {
+  userId: string;
+  displayName: string;
+  alreadyHere: boolean;
+}
+
 export interface BusinessSellerMember {
   userId: string;
-  email: string;
-  name: string;
-  status: string;
+  sellerId: string;
+  email: string | null;
+  businessName: string | null;
+  displayName: string;
+  phone: string | null;
   joinedAt: string;
-  seller: { id: string; name: string; email: string | null; phone: string } | null;
+  removedAt: string | null;
 }
 
 export interface ItemResponse {
@@ -134,7 +164,7 @@ export interface ItemResponse {
   squareSynced: boolean;
   donateProceeds: boolean;
   hasPrintedTag: boolean;
-  seller: { id: string; name: string; phone: string } | null;
+  seller: { id: string; displayName: string; phone: string | null } | null;
   photos: { id: string; url: string }[];
 }
 
@@ -250,6 +280,10 @@ export interface PatrollerResponse {
   displayName: string;
   nspId: string;
   patrolLevel: string | null;
+  email: string | null;
+  phone: string | null;
+  /** True once the person has proved control of either contact channel. */
+  contactVerified: boolean;
   active: boolean;
   deletedAt: string | null;
   updatedAt: string;

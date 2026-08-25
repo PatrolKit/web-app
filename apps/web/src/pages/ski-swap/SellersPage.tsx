@@ -10,19 +10,24 @@ import SellerImportModal from './SellerImportModal';
 import PrintReceiptModal from './PrintReceiptModal';
 
 interface SellerForm {
+  /** Drives the form only — a business seller is one whose businessName is set. */
   type: 'individual' | 'business' | '';
-  name: string; phone: string; email: string;
+  businessName: string;
+  firstName: string; lastName: string; phone: string; email: string;
   street: string; city: string; state: string; zip: string;
   payoutMethod: string;
-  payoutIdentifierType: string;
-  payoutIdentifier: string;
+  /** Payouts target a verified contact rather than a free-text identifier. */
+  payoutChannel: '' | 'email' | 'phone';
 }
 
 const emptyForm: SellerForm = {
-  type: '', name: '', phone: '', email: '',
+  type: '', businessName: '', firstName: '', lastName: '', phone: '', email: '',
   street: '', city: '', state: '', zip: '',
-  payoutMethod: 'CHECK', payoutIdentifierType: '', payoutIdentifier: '',
+  payoutMethod: 'CHECK', payoutChannel: '',
 };
+
+/** Sort keys the table exposes — all derived, so they are named explicitly. */
+type SellerSortKey = 'displayName' | 'email' | 'phone';
 
 export default function SellersPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
@@ -34,18 +39,19 @@ export default function SellersPage() {
   const [showImport, setShowImport] = useState(false);
   const [receiptSeller, setReceiptSeller] = useState<SellerResponse | null>(null);
   const [form, setForm] = useState<SellerForm>(emptyForm);
-  const [sortKey, setSortKey] = useState<keyof SellerResponse>('name');
+  const [sortKey, setSortKey] = useState<SellerSortKey>('displayName');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [phoneOtpSent, setPhoneOtpSent] = useState(false);
+  const [phoneChallengeId, setPhoneChallengeId] = useState<string | null>(null);
   const [phoneOtpInput, setPhoneOtpInput] = useState('');
   const [verifyMsg, setVerifyMsg] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  function handleSort(key: keyof SellerResponse) {
+  function handleSort(key: SellerSortKey) {
     if (key === sortKey) setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('asc'); }
   }
 
-  function SortHeader({ label, field }: { label: string; field: keyof SellerResponse }) {
+  function SortHeader({ label, field }: { label: string; field: SellerSortKey }) {
     const active = sortKey === field;
     return (
       <th
@@ -74,11 +80,11 @@ export default function SellersPage() {
     staleTime: 30_000,
   });
   // Build a map from email → member for quick lookup in the table
-  const memberByEmail = new Map(businessMembers.map((m) => [m.email.toLowerCase(), m]));
+  const memberByEmail = new Map(businessMembers.filter((m) => m.email).map((m) => [m.email!.toLowerCase(), m]));
 
   const inviteMutation = useMutation({
     mutationFn: () => api.skiSwap.inviteBusinessSeller(orgId, {
-      name: form.name,
+      businessName: form.businessName,
       email: form.email,
     }),
     onSuccess: () => {
@@ -90,8 +96,8 @@ export default function SellersPage() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: ({ userId, status }: { userId: string; status: 'active' | 'disabled' }) =>
-      api.skiSwap.setBusinessSellerStatus(orgId, userId, status),
+    mutationFn: ({ userId, removed }: { userId: string; removed: boolean }) =>
+      api.skiSwap.setBusinessSellerRemoved(orgId, userId, removed),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/business-sellers', orgId] }),
   });
 
@@ -105,22 +111,25 @@ export default function SellersPage() {
 
   const createMutation = useMutation({
     mutationFn: () => api.skiSwap.createSeller(orgId, {
-      type: form.type as 'individual' | 'business', name: form.name, phone: form.phone,
-      city: form.city || undefined, state: form.state || undefined, zip: form.zip || undefined,
-      payoutMethod: (form.payoutMethod || undefined) as never,
-      payoutIdentifierType: (form.payoutIdentifierType || undefined) as never,
-      payoutIdentifier: form.payoutIdentifier || undefined,
+      businessName: form.type === 'business' ? form.businessName : null,
+      firstName: form.firstName || null, lastName: form.lastName || null,
+      phone: form.phone || null, email: form.email || null,
+      street: form.street || null, city: form.city || null,
+      state: form.state || null, zip: form.zip || null,
+      payoutMethod: form.payoutMethod || null,
+      payoutChannel: form.payoutChannel || null,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] }); setShowForm(false); setForm(emptyForm); },
   });
 
   const patchMutation = useMutation({
     mutationFn: (s: SellerResponse) => api.skiSwap.patchSeller(orgId, s.id, {
-      type: (form.type || undefined) as 'individual' | 'business' | undefined, name: form.name, phone: form.phone,
-      city: form.city || null, state: form.state || null, zip: form.zip || null,
-      payoutMethod: (form.payoutMethod || null) as never,
-      payoutIdentifierType: (form.payoutIdentifierType || null) as never,
-      payoutIdentifier: form.payoutIdentifier || null,
+      firstName: form.firstName || null, lastName: form.lastName || null,
+      phone: form.phone || null, email: form.email || null,
+      street: form.street || null, city: form.city || null,
+      state: form.state || null, zip: form.zip || null,
+      payoutMethod: form.payoutMethod || null,
+      payoutChannel: form.payoutChannel || null,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] }); setEditSeller(null); setForm(emptyForm); },
   });
@@ -137,42 +146,53 @@ export default function SellersPage() {
   });
 
   const initiateEmailMutation = useMutation({
-    mutationFn: (sellerId: string) => api.skiSwap.initiateEmailVerification(orgId, sellerId),
+    mutationFn: (sellerId: string) => api.skiSwap.initiateVerification(orgId, sellerId, 'email'),
     onSuccess: () => {
       setVerifyMsg({ ok: true, msg: 'Verification email sent — ask the seller to check their inbox.' });
     },
   });
 
   const initiatePhoneMutation = useMutation({
-    mutationFn: (sellerId: string) => api.skiSwap.initiatePhoneVerification(orgId, sellerId),
-    onSuccess: () => {
+    mutationFn: (sellerId: string) => api.skiSwap.initiateVerification(orgId, sellerId, 'phone'),
+    onSuccess: (res) => {
+      setPhoneChallengeId(res.challengeId);
       setPhoneOtpSent(true);
-      setVerifyMsg({ ok: true, msg: 'SMS sent — enter the 6-digit code below.' });
+      setVerifyMsg({
+        ok: true,
+        msg: res.devCode
+          ? `Notifications are off — the code is ${res.devCode}.`
+          : 'SMS sent — enter the 6-digit code below.',
+      });
     },
   });
 
   const confirmPhoneMutation = useMutation({
-    mutationFn: ({ sellerId, code }: { sellerId: string; code: string }) =>
-      api.public.confirmPhoneVerification(sellerId, code),
+    mutationFn: ({ code }: { sellerId: string; code: string }) => {
+      if (!phoneChallengeId) throw new Error('No verification in progress');
+      return api.auth.confirmChallenge(phoneChallengeId, code);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] });
       setVerifyMsg({ ok: true, msg: 'Phone verified!' });
       setPhoneOtpInput('');
       setPhoneOtpSent(false);
+      setPhoneChallengeId(null);
     },
   });
 
   function openEdit(s: SellerResponse) {
     setEditSeller(s);
     setForm({
-      type: s.type, name: s.name, phone: s.phone, email: s.email ?? '',
+      type: s.businessName ? 'business' : 'individual',
+      businessName: s.businessName ?? '',
+      firstName: s.firstName ?? '', lastName: s.lastName ?? '',
+      phone: s.phone ?? '', email: s.email ?? '',
       street: s.street ?? '', city: s.city ?? '', state: s.state ?? '', zip: s.zip ?? '',
-      payoutMethod: s.payoutMethod ?? '', payoutIdentifierType: s.payoutIdentifierType ?? '',
-      payoutIdentifier: s.payoutIdentifier ?? '',
+      payoutMethod: s.payoutMethod ?? '', payoutChannel: s.payoutChannel ?? '',
     });
   }
 
-  function closeForm() { setShowForm(false); setEditSeller(null); setForm(emptyForm); setPhoneOtpSent(false); setPhoneOtpInput(''); setVerifyMsg(null); }
+  function closeForm() { setShowForm(false); setEditSeller(null); setForm(emptyForm); setPhoneOtpSent(false); setPhoneOtpInput(''); setPhoneChallengeId(null); setVerifyMsg(null); }
 
   const canManage = perms.has('ski_swap:manage');
 
@@ -180,8 +200,13 @@ export default function SellersPage() {
 
   const filtered = sellers.filter((s) => {
     const q = search.toLowerCase();
-    const matchesSearch = !q || s.name.toLowerCase().includes(q) || s.phone.includes(q) || (s.email ?? '').toLowerCase().includes(q);
-    const matchesType = typeFilter === 'all' || s.type === typeFilter;
+    const matchesSearch =
+      !q ||
+      s.displayName.toLowerCase().includes(q) ||
+      (s.phone ?? '').includes(q) ||
+      (s.email ?? '').toLowerCase().includes(q);
+    const sellerType = s.businessName ? 'business' : 'individual';
+    const matchesType = typeFilter === 'all' || sellerType === typeFilter;
     return matchesSearch && matchesType;
   });
 
@@ -271,11 +296,18 @@ export default function SellersPage() {
                   <div>
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Contact</p>
                     <div className="space-y-2">
-                      <label className="block">
-                        <span className="text-xs text-gray-400 mb-1 block">Name <span className="text-red-400">*</span></span>
-                        <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                          className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
-                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="block">
+                          <span className="text-xs text-gray-400 mb-1 block">First name <span className="text-red-400">*</span></span>
+                          <input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                            className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-400 mb-1 block">Last name <span className="text-red-400">*</span></span>
+                          <input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                            className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
+                        </label>
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <label className="block">
                           <span className="text-xs text-gray-400 mb-1 block">Phone <span className="text-red-400">*</span></span>
@@ -369,7 +401,7 @@ export default function SellersPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <label className="block">
                         <span className="text-gray-400 text-xs">Method</span>
-                        <select value={form.payoutMethod} onChange={(e) => setForm({ ...form, payoutMethod: e.target.value, payoutIdentifierType: '', payoutIdentifier: '' })}
+                        <select value={form.payoutMethod} onChange={(e) => setForm({ ...form, payoutMethod: e.target.value, payoutChannel: '' })}
                           className="mt-0.5 w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white">
                           <option value="">— not set —</option>
                           <option value="PAYPAL">PayPal</option>
@@ -380,20 +412,20 @@ export default function SellersPage() {
                       </label>
                       {form.payoutMethod && form.payoutMethod !== 'CHECK' && form.payoutMethod !== 'DONATE' && (
                         <label className="block">
-                          <span className="text-gray-400 text-xs">Identifier type</span>
-                          <select value={form.payoutIdentifierType} onChange={(e) => setForm({ ...form, payoutIdentifierType: e.target.value, payoutIdentifier: '' })}
+                          <span className="text-gray-400 text-xs">Send to</span>
+                          <select value={form.payoutChannel}
+                            onChange={(e) => setForm({ ...form, payoutChannel: e.target.value as SellerForm['payoutChannel'] })}
                             className="mt-0.5 w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white">
                             <option value="">— select —</option>
-                            <option value="EMAIL">Email</option>
-                            <option value="PHONE">Phone</option>
-                            <option value="USER_HANDLE">User handle</option>
+                            <option value="email">Their email</option>
+                            <option value="phone">Their phone</option>
                           </select>
                         </label>
                       )}
-                      {form.payoutIdentifierType && (
-                        <input value={form.payoutIdentifier} onChange={(e) => setForm({ ...form, payoutIdentifier: e.target.value })}
-                          placeholder={form.payoutIdentifierType === 'EMAIL' ? 'user@example.com' : form.payoutIdentifierType === 'PHONE' ? '555-123-4567' : '@handle'}
-                          className="col-span-2 bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
+                      {form.payoutChannel && (
+                        <p className="col-span-2 text-xs text-gray-500">
+                          Payouts go to the seller's {form.payoutChannel}. It must be verified first.
+                        </p>
                       )}
                     </div>
                   </div>
@@ -408,7 +440,7 @@ export default function SellersPage() {
                     <FontAwesomeIcon icon={faBuilding} className="w-3" /> Business
                     <span className="ml-1 underline">Change</span>
                   </button>
-                  <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  <input required value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })}
                     placeholder="Business name *"
                     className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
                   <input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -428,9 +460,9 @@ export default function SellersPage() {
                 </button>
                 <button type="button" onClick={closeForm}
                   className="text-gray-400 hover:text-white text-sm px-3 py-2">Cancel</button>
-{editSeller && editSeller.type !== 'business' && (
+{editSeller && editSeller.businessName === null && (
                   <button type="button"
-                    onClick={() => { if (confirm(`Delete "${editSeller.name}"?`)) { deleteMutation.mutate(editSeller.id); closeForm(); } }}
+                    onClick={() => { if (confirm(`Remove "${editSeller.displayName}"?`)) { deleteMutation.mutate(editSeller.id); closeForm(); } }}
                     className="text-xs text-red-500 hover:underline ml-auto">Delete</button>
                 )}
               </div>
@@ -449,7 +481,7 @@ export default function SellersPage() {
       <table className="w-full text-sm">
         <thead>
           <tr className="text-gray-400 text-left border-b border-gray-800">
-            <SortHeader label="Name"  field="name" />
+            <SortHeader label="Name"  field="displayName" />
             <SortHeader label="Email" field="email" />
             <SortHeader label="Phone" field="phone" />
             {canManage && <th className="pb-2">Actions</th>}
@@ -474,13 +506,13 @@ export default function SellersPage() {
           )}
           {filtered
             .sort((a, b) => {
-              const av = (a[sortKey] ?? '') as string;
-              const bv = (b[sortKey] ?? '') as string;
+              const av = a[sortKey] ?? '';
+              const bv = b[sortKey] ?? '';
               return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
             })
             .map((s) => (
             <tr key={s.id} className="border-b border-gray-900 hover:bg-surface-50">
-              <td className="py-2 pr-4 text-white">{s.name}</td>
+              <td className="py-2 pr-4 text-white">{s.displayName}</td>
               <td className="py-2 pr-4 text-gray-400">
                 <span className="flex items-center gap-1.5">
                   <span>{s.email ?? '—'}</span>
@@ -492,7 +524,7 @@ export default function SellersPage() {
               </td>
               <td className="py-2 pr-4 text-gray-400 font-mono text-xs">
                 <span className="flex items-center gap-1.5">
-                  <span>{s.phone}</span>
+                  <span>{s.phone ?? '—'}</span>
                   {s.phoneVerifiedAt
                     ? <FontAwesomeIcon icon={faCheckCircle} className="text-green-500 w-3 shrink-0" title={`Verified ${new Date(s.phoneVerifiedAt).toLocaleDateString()}`} />
                     : <FontAwesomeIcon icon={faCircle} className="text-gray-600 w-2.5 shrink-0" title="Not verified" />

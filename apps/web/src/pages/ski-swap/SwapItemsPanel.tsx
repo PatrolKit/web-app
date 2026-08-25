@@ -251,7 +251,7 @@ export default function SwapItemsPanel({
                   {item.donateProceeds && <span className="ml-1.5 text-xs" title="Donating proceeds to ski patrol">❤️</span>}
                 </td>
                 <td className="py-2 pr-4 text-gray-300">${(item.priceCents / 100).toFixed(2)}</td>
-                {sellers && <td className="py-2 pr-4 text-gray-400">{item.seller?.name ?? '—'}</td>}
+                {sellers && <td className="py-2 pr-4 text-gray-400">{item.seller?.displayName ?? '—'}</td>}
                 <td className="py-2 pr-4 text-gray-300">{item.inStock}</td>
                 <td className="py-2 pr-4 text-gray-300">{item.soldCount}</td>
                 <td className="py-2 pr-4">
@@ -359,7 +359,7 @@ export default function SwapItemsPanel({
               <SearchableSelect
                 value={form.sellerId}
                 onChange={(v) => setForm({ ...form, sellerId: v })}
-                options={sellers.map((s) => ({ value: s.id, label: s.name, sublabel: s.phone, keywords: s.email ?? '' }))}
+                options={sellers.map((s) => ({ value: s.id, label: s.displayName, sublabel: s.phone ?? '', keywords: s.email ?? '' }))}
                 placeholder="No seller assigned"
                 clearLabel="No seller assigned"
                 emptyMessage="No sellers match."

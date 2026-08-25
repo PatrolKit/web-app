@@ -4,6 +4,14 @@ import { useOutletContext } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { MemberResponse, ImportOutcome } from '../../lib/api.types';
 
+/** The invite form takes one name field; the API stores the parts separately. */
+function splitInviteName(raw: string): { firstName?: string; lastName?: string } {
+  const parts = raw.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return {};
+  if (parts.length === 1) return { firstName: parts[0] };
+  return { firstName: parts.slice(0, -1).join(' '), lastName: parts[parts.length - 1] };
+}
+
 export default function MembersPage() {
   const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
   const qc = useQueryClient();
@@ -29,7 +37,7 @@ export default function MembersPage() {
   });
 
   const inviteMutation = useMutation({
-    mutationFn: () => api.members.invite(orgId, { email: inviteEmail, name: inviteName || undefined, permissions: [] }),
+    mutationFn: () => api.members.invite(orgId, { email: inviteEmail, ...splitInviteName(inviteName), permissions: [] }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['members', orgId] }); setInviteEmail(''); setInviteName(''); },
   });
 
@@ -132,10 +140,10 @@ export default function MembersPage() {
           <tbody>{members.map((m: MemberResponse) => (
             <React.Fragment key={m.userId}>
               <tr className="border-b border-gray-800">
-                <td className="py-2 pr-4 text-white">{m.name}</td>
+                <td className="py-2 pr-4 text-white">{m.displayName}</td>
                 <td className="py-2 pr-4 text-gray-400">{m.email}</td>
                 <td className="py-2 pr-4">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${m.status === 'active' ? 'bg-green-900 text-green-400' : 'bg-gray-800 text-gray-400'}`}>{m.status}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${m.removedAt === null ? 'bg-green-900 text-green-400' : 'bg-gray-800 text-gray-400'}`}>{m.removedAt === null ? 'active' : 'removed'}</span>
                 </td>
                 <td className="py-2 pr-4 text-xs text-gray-500 max-w-xs truncate">{m.permissions.join(', ') || '—'}</td>
                 <td className="py-2 flex gap-3">

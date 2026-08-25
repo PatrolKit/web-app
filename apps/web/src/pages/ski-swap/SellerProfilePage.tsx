@@ -6,7 +6,7 @@ import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
 interface ProfileFormData {
-  name: string; phone: string; email: string;
+  firstName: string; lastName: string; phone: string; email: string;
   street: string; city: string; state: string; zip: string;
 }
 
@@ -20,14 +20,15 @@ export default function SellerProfilePage() {
     enabled: !!orgId,
   });
 
-  const [form, setForm] = useState<ProfileFormData>({ name: '', phone: '', email: '', street: '', city: '', state: '', zip: '' });
+  const [form, setForm] = useState<ProfileFormData>({ firstName: '', lastName: '', phone: '', email: '', street: '', city: '', state: '', zip: '' });
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     if (profile) {
       setForm({
-        name: profile.name,
-        phone: profile.phone,
+        firstName: profile.firstName ?? '',
+        lastName: profile.lastName ?? '',
+        phone: profile.phone ?? '',
         email: profile.email ?? '',
         street: profile.street ?? '',
         city: profile.city ?? '',
@@ -40,6 +41,9 @@ export default function SellerProfilePage() {
   const saveMutation = useMutation({
     mutationFn: () => api.skiSwap.sellerUpdateProfile(orgId, {
       ...form,
+      firstName: form.firstName || null,
+      lastName: form.lastName || null,
+      phone: form.phone || null,
       email: form.email || null,
       street: form.street || null,
       city: form.city || null,
@@ -51,7 +55,7 @@ export default function SellerProfilePage() {
 
   return (
     <div className="space-y-4 max-w-md">
-      {(['name', 'phone', 'email', 'street', 'city', 'state', 'zip'] as const).map((field) => (
+      {(['firstName', 'lastName', 'phone', 'email', 'street', 'city', 'state', 'zip'] as const).map((field) => (
         <div key={field}>
           <label className="block text-xs text-gray-400 mb-1 capitalize">{field}</label>
           {editing ? (
