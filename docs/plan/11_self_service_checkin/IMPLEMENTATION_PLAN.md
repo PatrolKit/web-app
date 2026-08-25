@@ -18,9 +18,11 @@ staff type their name, phone and address, then dictate every item. Instead:
 2. They scan the station's **QR code** with their own phone. It identifies the swap and
    the station's printer.
 3. They sign in — or sign up — with an email or phone number, proving it with a code.
-4. They enter their own items on their own phone.
-5. Tags print **at that station**, on that station's printer, without staff intervention.
-6. Staff take the physical goods, match them to the printed tags, and the seller leaves.
+4. They enter their own items on their own phone. **Each item's tags print as it is
+   saved**, on that station's printer.
+5. They collect each tag as it emerges and stick it on the item themselves.
+6. When they are done, staff verify the tagged pile against the seller's list and take
+   the goods.
 
 Staff stop being typists and go back to handling gear.
 
@@ -56,7 +58,9 @@ Staff stop being typists and go back to handling gear.
 | **D2** | **The server renders labels; the queue carries bytes.** A job payload is a finished 1-bit raster. Firmware claims a job, writes it to the print head, acks. | Label design churns — `add_printer_margins` and `update_default_margins` landed days apart. Under firmware rendering every margin tweak is a firmware rollout to hardware in a lodge. It also avoids two renderers (TypeScript canvas, C++ firmware) expected to produce identical output; they would drift, and drift shows up as tags that do not scan. |
 | **D3** | **Printers are registered devices** with a new `Ski Swap - Printer` role, using the existing `clientId`/secret → JWT flow. | Device auth already exists, is tested, and already scopes to an org. A printer is just another device. |
 | **D4** | **At-least-once delivery**, with claim → ack and a visibility timeout that returns unacked jobs to the queue. | A duplicate tag costs a strip of paper. A lost tag costs a seller their item. The asymmetry is not close. |
-| **D5** | **Self-entered items go live immediately** — no staff approval gate. | The seller is standing at the station and staff have the goods in hand. An approval queue would recreate the bottleneck this removes. |
+| **D5** | **Self-entered items go live immediately** — no staff approval gate. | Staff verify the physical pile at handover, which is the check that actually matters. An approval queue would recreate the bottleneck this removes. |
+| **D5b** | **Tags are enqueued when an item is saved**, not in a batch at the end. Saving is the print trigger. | The seller applies tags themselves, item by item, while the gear is in front of them. Batching would hand someone a stack of tags and a pile of gear and ask them to re-match the two. |
+| **D5c** | **An item prints once.** Editing a saved item does not reprint; `hasPrintedTag` guards it. Reprints are an explicit action. | A seller correcting a typo has already stuck the tag on. Silent reprinting produces a second tag with no home. |
 | **D6** | **`SwapPrinter` gains a device link rather than being replaced.** A printer row is Bluetooth-driven, device-driven, or both. | The Bluetooth path has to keep working while ESP-32 hardware is built and rolled out. |
 | **D7** | **Check-in mints a normal session.** No special "check-in token". The seller signs in exactly as they would anywhere else, and the QR only supplies context. | Plan 10 D8 — verification and login are the same act. A second, weaker credential path is how the first one gets bypassed. |
 | **D8** | **The station is a property of the session, not of the person.** `swapId` and `printerId` ride in the client, not on `SellerProfile`. | A seller may check in at one station this year and another next year. Persisting it would make a transient fact permanent. |
@@ -84,14 +88,24 @@ Staff stop being typists and go back to handling gear.
    ├─ 4. POST /orgs/:orgId/ski-swap/checkin/join   { swapId }
    │       └─ upsert membership + SellerProfile (individual)
    │
-   ├─ 5. seller enters items    (existing seller/me/items, unchanged)
+   ├─ 5. for each item:
+   │       POST /orgs/:orgId/ski-swap/seller/me/items  { ..., printerId }
+   │         └─ item created, then labelsPerItem tags enqueued for it
+   │              └─ ESP-32 claims, prints, acks  ──▶ seller peels tag, sticks it on
+   │       (mis-stick or jam → POST .../items/:itemId/reprint)
    │
-   └─ 6. POST /orgs/:orgId/ski-swap/checkin/print  { swapId, printerId }
-           └─ enqueue one PrintJob per label  ──▶ ESP-32 claims, prints, acks
+   └─ 6. POST /orgs/:orgId/ski-swap/checkin/finish  { swapId, printerId }
+           └─ enqueue the seller's summary receipt — the sheet staff verify the
+              physical pile against at handover
 ```
 
-Steps 2, 3 and 5 are **existing endpoints reused as-is**. The new surface is small: a
-public context lookup, a registration entry point, a join, and the print enqueue.
+Steps 2 and 3 are **existing endpoints reused unchanged**. Step 5 is the existing item
+endpoint with one added optional field. The genuinely new surface is a public context
+lookup, a registration entry point, a join, a reprint, and a finish.
+
+**The seller is standing at the printer waiting**, which makes this the one place latency
+is a product requirement rather than a nicety: from tapping Save to paper moving should
+stay inside a couple of seconds. §5 sizes the polling interval against that.
 
 ### Registration is deliberately separate from login
 
@@ -150,7 +164,7 @@ model PrintJob {
   swapId    String?
   sellerId  String?
 
-  /// item | receipt_header | qr | calibration — what the payload depicts.
+  /// item | receipt | qr | calibration — what the payload depicts.
   kind    String
   /// 1-bit raster, run-length encoded. Rendered at enqueue time, so a later
   /// template change never rewrites a job already queued.
@@ -199,10 +213,17 @@ Three endpoints, all device-authenticated, all scoped to the calling device's ow
 | `POST` | `/devices/me/print-jobs/:id/ack` | `status=printed`. Idempotent — acking a printed job is a no-op, so a retried ack after a dropped response is safe. |
 | `POST` | `/devices/me/print-jobs/:id/nack` | `status=queued` and clears the claim, so it retries immediately. Body carries `{error}`. After 5 attempts the job goes to `abandoned` rather than looping. |
 
-**Transport is short polling.** An ESP-32 holding a TLS socket open is the least reliable
-part of the system; a 2-second poll costs one small request per printer and recovers from
-a dropped connection by simply polling again. Long-polling or websockets can come later
-behind the same contract if idle latency matters.
+**Transport is short polling, at 1 second while a station is active.** An ESP-32 holding a
+TLS socket open is the least reliable part of the system, and a poll recovers from a
+dropped connection by simply polling again. The interval is a product constraint here, not
+a free choice: the seller is standing at the printer waiting for a tag they are about to
+stick on a ski, so worst-case pickup latency *is* the poll interval. One request per second
+per station is negligible at a dozen stations.
+
+The claim response carries a `backoffMs` the server can raise once a printer's queue has
+been empty for a while, so idle stations drop to a slower cadence without a firmware
+change. Long-polling can replace this later behind the same contract if a second proves
+too slow in practice.
 
 **The claim is a single atomic UPDATE**, not read-then-write:
 
@@ -221,17 +242,25 @@ work and a busy one self-heals.
 
 ### Enqueue
 
-`POST /orgs/:orgId/ski-swap/checkin/print` renders and enqueues, for the calling seller's
-items in the named swap:
+Enqueueing hangs off **item creation**, not a batch action (D5b). `POST
+/orgs/:orgId/ski-swap/seller/me/items` gains one optional field, `printerId`; when present
+the service renders and enqueues `labelsPerItem` tags for the item it just created, in the
+same request. Absent — the desktop portal, a business seller working from home — nothing
+prints and the endpoint behaves exactly as it does today. One code path, one added branch.
 
-- one `receipt_header` job, then
-- `labelsPerItem` × `item` jobs per item (`SkiSwapSettings.labelsPerItem`, already exists),
-- `seq` assigned in entry order.
+`hasPrintedTag` already exists on `SwapItem` and becomes the guard: set when the jobs are
+enqueued, and a later edit does not re-enqueue (D5c). That flag is also what makes the
+request safe to retry — a create whose response was lost will not double-print, because
+the retry either creates a fresh item or finds the flag already set.
 
-It is **idempotent per (seller, swap, item-set)** via the existing `IdempotencyService`, so
-a seller double-tapping "Print my tags" on a flaky venue connection does not double the
-paper. Items already printed carry `hasPrintedTag` — that flag already exists and becomes
-the reprint filter.
+**Reprints are explicit.** `POST .../items/:itemId/reprint { printerId }` re-enqueues one
+item — the answer to a jam, a mis-stick, or a tag that came out unreadable. It is the only
+path that deliberately prints an item twice.
+
+**Finish prints the summary.** `POST /orgs/:orgId/ski-swap/checkin/finish` enqueues a
+a `receipt` job summarising the seller's items for this swap. That sheet is what staff
+check the physical pile against at handover, so it is generated at the end when the list
+is final — not at the start, when it would be empty.
 
 ---
 
@@ -248,7 +277,10 @@ the reprint filter.
 
 - `POST /orgs/:orgId/ski-swap/checkin/join` — upserts membership + individual
   `SellerProfile` for the caller in this org.
-- `POST /orgs/:orgId/ski-swap/checkin/print` — renders and enqueues.
+- `POST /orgs/:orgId/ski-swap/seller/me/items/:itemId/reprint` — re-enqueues one item's
+  tags after a jam or a mis-stick.
+- `POST /orgs/:orgId/ski-swap/checkin/finish` — enqueues the seller's summary receipt for
+  staff to verify the pile against.
 
 ### New — device
 
@@ -264,6 +296,9 @@ the reprint filter.
 
 ### Changed
 
+- `POST /orgs/:orgId/ski-swap/seller/me/items` gains an optional `printerId`. When
+  present, the created item's tags are enqueued to that printer; when absent the endpoint
+  behaves exactly as it does today.
 - `SwapPrinter` responses gain `deviceId`, `lastSeenAt`, `queueDepth`.
 - `DEVICE_ROLES` gains `Ski Swap - Printer`.
 - Browser printing fetches rasters from the server instead of rendering locally.
@@ -274,7 +309,9 @@ the reprint filter.
 
 - **`/checkin` route on the seller site** — the QR destination. Reads `swap` and `printer`
   from the query string, holds them for the session, and walks: context → sign in or
-  register → confirm → join → items → print.
+  register → confirm → join → add items → finish. Every item save carries the `printerId`,
+  and the UI has to make the printing visible: which item is printing, whether the tag
+  came out, and a one-tap reprint when it did not.
 - **Mobile pass over the seller portal.** `BusinessSellerPage` is the item-entry surface
   and was built for a desktop. It gets touch targets, a single-column form, and a camera
   capture path for photos.
@@ -298,8 +335,8 @@ become one, before firmware exists.
 device endpoints, the `Ski Swap - Printer` role. Testable end to end with a fake device —
 no hardware needed.
 
-**Phase 4 — Check-in.** `PublicCheckinService`, register, join, enqueue. Fix the seller
-redirect.
+**Phase 4 — Check-in.** `PublicCheckinService`, register, join. Wire save-time enqueue into
+item creation, plus reprint and finish. Fix the seller redirect.
 
 **Phase 5 — Web.** `/checkin` route, mobile portal pass, station queue view.
 
@@ -314,8 +351,15 @@ visibility, and a documented recovery path for "the printer died mid-swap".
   build toolchain, but it is a native module and pins us to supported platforms.
 - **Duplicate tags are possible by construction (D4).** A printer that prints and then
   fails to ack will reprint on retry. Cheap, and the alternative loses tags.
-- **Short polling wastes requests when idle.** One small request per printer every two
-  seconds. At a dozen stations this is nothing; it would matter at hundreds.
+- **Short polling wastes requests when idle.** One request per printer per second while
+  active. At a dozen stations this is nothing; it would matter at hundreds, which is what
+  `backoffMs` is for.
+- **The seller is blocked on the printer.** Save-time printing ties the pace of check-in to
+  hardware: a jam or an out-of-paper printer stops that station, where batch printing would
+  have let them keep entering items and sort the paper out afterwards. That is the right
+  trade for tag-to-item accuracy, but it makes printer health a live operational concern
+  rather than a background one — which is why §6 exposes queue depth and last-seen to
+  staff.
 - **No approval gate (D5)** means a mistyped price goes live immediately. Staff can edit
   after the fact, and the tag is the artefact that matters physically.
 - **The seller needs working connectivity at the venue.** Lodge wifi is not a given, and
@@ -323,14 +367,20 @@ visibility, and a documented recovery path for "the printer died mid-swap".
 
 ## 10. Open questions
 
-1. **What happens when a seller checks in but never hands over the goods?** Items exist,
-   tags printed, nothing on the floor. Is there a reconciliation step, or does staff
-   deleting the items suffice?
-2. **Should the station QR expire or rotate?** As drawn it is a static printed code. Anyone
+1. **Should the station QR expire or rotate?** As drawn it is a static printed code. Anyone
    who photographs it can enqueue jobs to that printer from anywhere, which at worst wastes
    paper — but it is unauthenticated context, and worth a deliberate decision.
-3. **One printer per station, or a pool?** The schema assumes one. A busy venue might want
-   two printers behind one station QR, which changes the claim from "this device's printer"
-   to "any printer in this group".
-4. **Does the seller get a receipt?** `generateReceiptHeaderLabel` suggests a printed
-   summary. Confirm whether that is one header per batch, or a full itemised receipt.
+2. **Can two sellers use one station at the same time?** This is now the sharpest of these.
+   With save-time printing, two people entering items against one printer produce
+   interleaved tags, and neither knows which one just came out. The schema assumes one
+   printer per station; whether it also assumes *one seller at a time* is a floor-plan
+   decision that changes the UI (a station could show "now printing: Jane's Rossignol
+   skis") or the hardware count.
+3. **What does the finish receipt contain?** It exists to let staff verify a physical pile
+   against a list, so it probably wants every item and a count — more than
+   `generateReceiptHeaderLabel` prints today. Worth designing against the actual handover
+   conversation.
+4. **What stops a seller from walking off mid-check-in?** Items exist and tags are printed
+   and stuck on gear that never reaches the floor. Staff need a way to see checked-in
+   sellers who never finished — a station view of in-progress check-ins would cover both
+   this and question 3.
