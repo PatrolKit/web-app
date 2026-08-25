@@ -12,12 +12,17 @@ export default function AdministrationPage() {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showForm, setShowForm] = useState(false);
 
-  if (!perms.has('ski_swap:admin')) return <Navigate to="/dashboard/ski-swap" replace />;
+  // Every hook below runs unconditionally: React matches hooks by call order, so
+  // returning early above them would change the count between renders the moment
+  // permissions resolve. The redirect happens after them instead, and the query
+  // is gated on the same permission so a non-admin never issues a request they
+  // would be refused.
+  const isAdmin = perms.has('ski_swap:admin');
 
   const { data: config, isLoading } = useQuery({
     queryKey: ['ski-swap/config', orgId],
     queryFn: () => api.skiSwap.getConfig(orgId).catch(() => null),
-    enabled: !!orgId,
+    enabled: !!orgId && isAdmin,
   });
 
   const upsertMutation = useMutation({
@@ -44,6 +49,7 @@ export default function AdministrationPage() {
     onError: () => setTestResult({ success: false, message: 'Connection failed' }),
   });
 
+  if (!isAdmin) return <Navigate to="/dashboard/ski-swap" replace />;
   if (isLoading) return <p className="text-gray-400">Loading…</p>;
 
   return (

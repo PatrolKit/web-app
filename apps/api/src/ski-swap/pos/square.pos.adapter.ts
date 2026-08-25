@@ -92,7 +92,7 @@ class SquarePosAdapter implements IPosAdapter {
     }
 
     let resolvedCategoryId = item.categoryId;
-    let upsertRes = await this.doItemUpsert(item, resolvedCategoryId, existingVersion).catch(async (err) => {
+    const upsertRes = await this.doItemUpsert(item, resolvedCategoryId, existingVersion).catch(async (err) => {
       if (err instanceof SquareError) {
         console.error('[Square] catalog upsert error — codes:', err.errors.map((e) => `${e.code}/${e.category}`).join(', '));
       }

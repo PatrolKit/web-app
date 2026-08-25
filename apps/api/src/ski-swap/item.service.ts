@@ -10,7 +10,6 @@ import { S3Service } from './s3.service';
 import { IdempotencyService } from '../common/services/idempotency.service';
 import { formatSku } from './sku.util';
 import { createId } from '@paralleldrive/cuid2';
-import { extname } from 'path';
 import sharp from 'sharp';
 
 export interface ItemPhotoResponse { id: string; url: string; }

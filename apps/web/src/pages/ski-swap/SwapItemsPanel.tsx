@@ -304,7 +304,6 @@ export default function SwapItemsPanel({
 
             <input
               required
-              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus={!editItem}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
