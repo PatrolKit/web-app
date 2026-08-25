@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faUser, faBuilding, faPrint, faCheckCircle, faCircle } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
-import type { SellerResponse, BusinessSellerMember } from '../../lib/api.types';
+import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SellerImportModal from './SellerImportModal';
 import PrintReceiptModal from './PrintReceiptModal';
@@ -64,7 +64,7 @@ export default function SellersPage() {
     );
   }
 
-  const { data: sellers = [], isLoading } = useQuery({
+  const { data: sellers = [] } = useQuery({
     queryKey: ['ski-swap/sellers', orgId],
     // Fetch all sellers once; filtering is done client-side so the search input stays focused
     queryFn: () => api.skiSwap.listSellers(orgId),
@@ -72,15 +72,6 @@ export default function SellersPage() {
     staleTime: 30_000,
   });
 
-  const isAdmin = perms.has('ski_swap:admin');
-  const { data: businessMembers = [] } = useQuery<BusinessSellerMember[]>({
-    queryKey: ['ski-swap/business-sellers', orgId],
-    queryFn: () => api.skiSwap.listBusinessSellers(orgId),
-    enabled: !!orgId && isAdmin && typeFilter === 'business',
-    staleTime: 30_000,
-  });
-  // Build a map from email → member for quick lookup in the table
-  const memberByEmail = new Map(businessMembers.filter((m) => m.email).map((m) => [m.email!.toLowerCase(), m]));
 
   const inviteMutation = useMutation({
     mutationFn: () => api.skiSwap.inviteBusinessSeller(orgId, {
@@ -92,20 +83,6 @@ export default function SellersPage() {
       qc.invalidateQueries({ queryKey: ['ski-swap/business-sellers', orgId] });
       setShowForm(false);
       setForm(emptyForm);
-    },
-  });
-
-  const statusMutation = useMutation({
-    mutationFn: ({ userId, removed }: { userId: string; removed: boolean }) =>
-      api.skiSwap.setBusinessSellerRemoved(orgId, userId, removed),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/business-sellers', orgId] }),
-  });
-
-  const removeBusinessSellerMutation = useMutation({
-    mutationFn: (userId: string) => api.skiSwap.removeBusinessSeller(orgId, userId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] });
-      qc.invalidateQueries({ queryKey: ['ski-swap/business-sellers', orgId] });
     },
   });
 
@@ -195,8 +172,6 @@ export default function SellersPage() {
   function closeForm() { setShowForm(false); setEditSeller(null); setForm(emptyForm); setPhoneOtpSent(false); setPhoneOtpInput(''); setPhoneChallengeId(null); setVerifyMsg(null); }
 
   const canManage = perms.has('ski_swap:manage');
-
-  const showingBusinessFilter = typeFilter === 'business';
 
   const filtered = sellers.filter((s) => {
     const q = search.toLowerCase();

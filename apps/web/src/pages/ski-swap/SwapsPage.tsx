@@ -118,7 +118,7 @@ export default function SwapsPage() {
 
       {showForm && (
         <form
-          onSubmit={(e) => { e.preventDefault(); editSwap ? patchMutation.mutate(editSwap) : createMutation.mutate(); }}
+          onSubmit={(e) => { e.preventDefault(); if (editSwap) patchMutation.mutate(editSwap); else createMutation.mutate(); }}
           className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-4"
         >
           <h3 className="text-white font-medium">{editSwap ? 'Edit Swap' : 'New Swap'}</h3>

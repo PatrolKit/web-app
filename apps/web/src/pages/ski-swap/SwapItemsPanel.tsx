@@ -298,7 +298,7 @@ export default function SwapItemsPanel({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <form
             className="bg-surface-200 rounded-lg p-6 w-full max-w-md space-y-4"
-            onSubmit={(e) => { e.preventDefault(); editItem ? patchMutation.mutate() : createMutation.mutate(); }}
+            onSubmit={(e) => { e.preventDefault(); if (editItem) patchMutation.mutate(); else createMutation.mutate(); }}
           >
             <h2 className="text-white font-semibold">{editItem ? 'Edit Item' : 'Add Item'}</h2>
 

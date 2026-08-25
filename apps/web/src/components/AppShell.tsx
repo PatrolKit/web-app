@@ -2,7 +2,7 @@ import { Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPrint as faPrintDuo, faPrintSlash as faPrintSlashDuo, faCircleXmark as faCircleXmarkDuo } from '@fortawesome/pro-duotone-svg-icons';
+import { faPrint as faPrintDuo, faPrintSlash as faPrintSlashDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { PrinterProvider, usePrinter } from '../contexts/PrinterContext';
 import { api } from '../lib/api';
@@ -182,7 +182,7 @@ function PrintPreviewModal() {
 }
 
 function PrinterStatusBar() {
-  const { preferredPrinter, isPreferredConnected, connectPreferred, disconnectPreferred, setPaperSize, previewMode, setPreviewMode, pendingPreview, clearPendingPreview, isSupported } = usePrinter();
+  const { preferredPrinter, isPreferredConnected, connectPreferred, disconnectPreferred, setPaperSize, previewMode, setPreviewMode, isSupported } = usePrinter();
   const [isConnecting, setIsConnecting] = useState(false);
   const [showPopover, setShowPopover] = useState(false);
 

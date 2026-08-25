@@ -20,7 +20,6 @@ import SkiSwapDashboard from './pages/ski-swap/SkiSwapDashboard';
 import SwapsPage from './pages/ski-swap/SwapsPage';
 import ItemsPage from './pages/ski-swap/ItemsPage';
 import SellersPage from './pages/ski-swap/SellersPage';
-import SquareConfigPage from './pages/ski-swap/SquareConfigPage';
 import AdministrationPage from './pages/ski-swap/AdministrationPage';
 import BusinessSellerPage from './pages/ski-swap/BusinessSellerPage';
 import SellerProfilePage from './pages/ski-swap/SellerProfilePage';

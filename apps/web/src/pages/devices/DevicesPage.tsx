@@ -62,7 +62,7 @@ function ProvisioningCodeCard({ clientId, secret, onDismiss }: { clientId: strin
 export default function DevicesPage() {
   const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
   const qc = useQueryClient();
-  const { connections, connectPrinterById, registerConnection, printPrinterIdLabel, printCalibration } = usePrinter();
+  const { registerConnection, printPrinterIdLabel, printCalibration } = usePrinter();
   const canManagePrinters = perms.has('ski_swap:admin');
   const [activeTab, setActiveTab] = useState<Tab>('tablets');
   const [pendingTestPrint, setPendingTestPrint] = useState<SwapPrinterRecord | null>(null);

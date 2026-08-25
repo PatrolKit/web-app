@@ -6,7 +6,7 @@ import { PoweredByFooter } from './PoweredByFooter';
 export default function SellerStatusPage() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
   const [phone, setPhone] = useState('');
-  const [swapId, setSwapId] = useState('');
+  const [swapId] = useState('');
   const [result, setResult] = useState<PublicSellerLookupResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

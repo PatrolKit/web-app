@@ -28,7 +28,7 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
   });
   const items = itemsData?.items ?? [];
 
-  const { data: org, isLoading: orgLoading } = useQuery({
+  const { data: org } = useQuery({
     queryKey: ['orgs', orgId],
     queryFn: () => api.orgs.get(orgId),
     enabled,
