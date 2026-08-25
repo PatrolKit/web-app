@@ -571,32 +571,32 @@ returns `{ challengeId }` (plus the code itself while notifications are off).
 
 ## 14. Still outstanding
 
-- **The deployed database has not been wiped or re-migrated.** Local is done and
-  now sits on the squashed baseline; the deployed RDS instance still reports the
-  old 22 migrations.
+- **The deployed database is wiped and waiting for a deploy.** All 27 tables were
+  dropped on 2026-08-25, `_prisma_migrations` included, leaving an empty schema.
 
-  **The squash changes this procedure.** A plain `prisma migrate deploy` will now
-  *fail* there: `_prisma_migrations` names 22 folders that no longer exist on
-  disk, and Prisma refuses to continue. The database has to be dropped, not
-  migrated forward. `migrate reset` does exactly that — drop, apply the baseline,
-  seed — and is safe here only because the instance is development-only:
+  Dropping the migration table on purpose is what keeps the deploy simple: with
+  no rows naming folders that no longer exist, `release.mjs` runs start to finish
+  and its `migrate deploy` applies the squashed baseline to a clean database.
+  No manual `migrate reset` step is needed any more.
 
   ```
-  # 1. Ship the new code, but stop before migrations run.
-  #    release.mjs will fail at its `migrate deploy` step; that is expected.
   node scripts/release.mjs
-
-  # 2. Drop, re-migrate onto the baseline, and re-seed.
-  ssh -i ~/.ssh/patrolkit.pem ec2-user@patrolkit.io \
-    'cd /home/ec2-user/patrolkit && node_modules/.bin/prisma migrate reset --force'
-
-  # 3. Restart under pm2.
-  ssh -i ~/.ssh/patrolkit.pem ec2-user@patrolkit.io \
-    'cd /home/ec2-user/patrolkit && pm2 restart patrolkit'
   ```
 
-  Re-running `release.mjs` afterwards is then clean, because `migrate deploy`
-  finds the baseline already applied.
+  **A backup was taken first**, because the instance held more than expected —
+  1,433 `SwapSeller` rows, a `SquareConfig`, 3 resorts, 1 swap, 2 users; 1,723
+  rows across 27 tables. It is stored in two places:
+
+  - `ec2-user@patrolkit.io:/home/ec2-user/backups/patrolkit-pre-consolidation.json`
+  - `~/patrolkit-backups/patrolkit-pre-consolidation.json` (local copy)
+
+  It is a raw per-table JSON dump of the **old** schema, so it cannot be restored
+  by replaying it into the new one. Recovering that seller list would mean
+  transforming it through the consolidation rules in §5 — matching on email then
+  phone, one `User` per person, a `SellerProfile` per org membership.
+
+  **The live site is down until the deploy runs.** The process is still up and
+  `/healthz` returns 200, but every database-backed route now returns 500.
 - **`OUTBOUND_NOTIFICATIONS` must be set to `on`** wherever real delivery is
   wanted. It is off everywhere today, by design.
 - **The iOS app still reads the old seller contract** and will break until
