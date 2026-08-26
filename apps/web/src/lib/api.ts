@@ -130,6 +130,44 @@ export const api = {
       request<void>('/auth/logout', { method: 'POST' }),
   },
 
+  /**
+   * Self-service check-in. The first two calls are unauthenticated: the seller
+   * arrives with nothing but a QR code.
+   */
+  checkin: {
+    context: (swapId: string, stationId: string) =>
+      request<import('./api.types').CheckinContext>(
+        `/public/checkin/${swapId}?station=${encodeURIComponent(stationId)}`,
+      ),
+    register: (
+      swapId: string,
+      stationId: string,
+      body: { firstName?: string; lastName?: string; email?: string; phone?: string },
+    ) =>
+      request<{
+        queued: true;
+        challengeId: string;
+        channel: 'email' | 'phone';
+        devCode?: string;
+      }>(`/public/checkin/${swapId}/register?station=${encodeURIComponent(stationId)}`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    join: (orgId: string, swapId: string, stationId: string) =>
+      request<import('./api.types').CheckinContext & { sellerId: string }>(
+        `/orgs/${orgId}/ski-swap/checkin/join`,
+        { method: 'POST', body: JSON.stringify({ swapId, stationId }) },
+      ),
+    summary: (orgId: string, swapId: string) =>
+      request<import('./api.types').CheckinSummary>(
+        `/orgs/${orgId}/ski-swap/checkin/summary?swapId=${encodeURIComponent(swapId)}`,
+      ),
+    finish: (orgId: string, swapId: string, stationId: string) =>
+      request<{ itemCount: number; receiptPages: number; squareFailures: number }>(
+        `/orgs/${orgId}/ski-swap/checkin/finish`,
+        { method: 'POST', body: JSON.stringify({ swapId, stationId }) },
+      ),
+  },
+
   me: {
     get: () => request<import('./api.types').MeResponse>('/me'),
     patch: (name: string) =>
@@ -396,9 +434,21 @@ export const api = {
       request<{ items: import('./api.types').ItemResponse[]; total: number }>(
         `/orgs/${orgId}/ski-swap/seller/me/items${swapId ? `?swapId=${swapId}` : ''}`
       ),
-    sellerCreateItem: (orgId: string, data: { swapId: string; name: string; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean }) =>
+    /**
+     * `stationId` marks the item as entered at a check-in station: it decides
+     * where the tag prints and which counter mints the SKU. `idempotencyKey`
+     * makes a retry after a dropped response safe — venue wifi being what it is,
+     * without it a retry mints a second SKU and prints a second tag.
+     */
+    sellerCreateItem: (
+      orgId: string,
+      data: { swapId: string; name: string; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean; stationId?: string },
+      idempotencyKey?: string,
+    ) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items`, {
-        method: 'POST', body: JSON.stringify(data),
+        method: 'POST',
+        body: JSON.stringify(data),
+        ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
       }),
     sellerPatchItem: (orgId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; donateProceeds?: boolean; hasPrintedTag?: boolean }) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}`, {
@@ -406,6 +456,11 @@ export const api = {
       }),
     sellerDeleteItem: (orgId: string, itemId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}`, { method: 'DELETE' }),
+    /** Re-queues an item's tag, for one that jammed or came out unreadable. */
+    sellerReprintItem: (orgId: string, itemId: string, stationId: string) =>
+      request<{ queued: true }>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}/reprint`, {
+        method: 'POST', body: JSON.stringify({ stationId }),
+      }),
     sellerUploadPhoto: async (orgId: string, itemId: string, file: File): Promise<{ id: string; url: string }> => {
       const form = new FormData();
       form.append('image', file);
@@ -462,6 +517,30 @@ export const api = {
         { method: 'POST', body: JSON.stringify(body) },
       ),
 
+    // Check-in stations (staff)
+    listStations: (orgId: string) =>
+      request<import('./api.types').CheckinStationRecord[]>(`/orgs/${orgId}/ski-swap/stations`),
+    createStation: (orgId: string, name: string) =>
+      request<import('./api.types').CheckinStationRecord>(`/orgs/${orgId}/ski-swap/stations`, {
+        method: 'POST', body: JSON.stringify({ name }),
+      }),
+    patchStation: (
+      orgId: string,
+      stationId: string,
+      data: { name?: string; deviceId?: string | null; printerId?: string | null },
+    ) =>
+      request<import('./api.types').CheckinStationRecord>(`/orgs/${orgId}/ski-swap/stations/${stationId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    deleteStation: (orgId: string, stationId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/stations/${stationId}`, { method: 'DELETE' }),
+    stationQueue: (orgId: string, stationId: string) =>
+      request<import('./api.types').StationQueueStatus>(`/orgs/${orgId}/ski-swap/stations/${stationId}/queue`),
+    testStation: (orgId: string, stationId: string) =>
+      request<{ queued: true }>(`/orgs/${orgId}/ski-swap/stations/${stationId}/test`, { method: 'POST' }),
+    clearStationQueue: (orgId: string, stationId: string) =>
+      request<{ cleared: number }>(`/orgs/${orgId}/ski-swap/stations/${stationId}/queue`, { method: 'DELETE' }),
+
     // Settings
     getSettings: (orgId: string) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`),
@@ -472,6 +551,30 @@ export const api = {
   },
 
   timeClock: {
+    // Check-in stations (staff)
+    listStations: (orgId: string) =>
+      request<import('./api.types').CheckinStationRecord[]>(`/orgs/${orgId}/ski-swap/stations`),
+    createStation: (orgId: string, name: string) =>
+      request<import('./api.types').CheckinStationRecord>(`/orgs/${orgId}/ski-swap/stations`, {
+        method: 'POST', body: JSON.stringify({ name }),
+      }),
+    patchStation: (
+      orgId: string,
+      stationId: string,
+      data: { name?: string; deviceId?: string | null; printerId?: string | null },
+    ) =>
+      request<import('./api.types').CheckinStationRecord>(`/orgs/${orgId}/ski-swap/stations/${stationId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    deleteStation: (orgId: string, stationId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/stations/${stationId}`, { method: 'DELETE' }),
+    stationQueue: (orgId: string, stationId: string) =>
+      request<import('./api.types').StationQueueStatus>(`/orgs/${orgId}/ski-swap/stations/${stationId}/queue`),
+    testStation: (orgId: string, stationId: string) =>
+      request<{ queued: true }>(`/orgs/${orgId}/ski-swap/stations/${stationId}/test`, { method: 'POST' }),
+    clearStationQueue: (orgId: string, stationId: string) =>
+      request<{ cleared: number }>(`/orgs/${orgId}/ski-swap/stations/${stationId}/queue`, { method: 'DELETE' }),
+
     // Settings
     getSettings: (orgId: string) =>
       request<import('./api.types').TimeClockSettingsResponse>(`/orgs/${orgId}/time-clock/settings`),

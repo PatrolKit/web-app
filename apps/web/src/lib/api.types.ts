@@ -223,6 +223,30 @@ export interface SignInContext {
   stationId: string;
 }
 
+/** What a station QR resolves to, before anyone has signed in. */
+export interface CheckinContext {
+  orgId: string;
+  orgName: string;
+  orgLogoUrl: string | null;
+  swapId: string;
+  swapTitle: string;
+  stationId: string;
+  stationName: string;
+}
+
+export interface CheckinSummary {
+  sellerId: string;
+  sellerName: string;
+  items: {
+    id: string;
+    name: string;
+    sku: string;
+    priceCents: number;
+    hasPrintedTag: boolean;
+  }[];
+  totalCents: number;
+}
+
 export interface RenderLabelResponse {
   format: 'escpos' | 'png';
   /** Base64. One entry per label — a receipt's item list paginates. */
@@ -245,6 +269,9 @@ export interface StationQueueStatus {
   stationId: string;
   queued: number;
   claimed: number;
+  /** A recipe that no longer resolves — the item was deleted mid-print. */
+  failed: number;
+  /** Retried to the cap and given up on. */
   abandoned: number;
   oldestQueuedAt: string | null;
   deviceLastSeenAt: string | null;

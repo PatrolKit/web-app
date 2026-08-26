@@ -26,6 +26,11 @@ export interface ItemResponse {
 
 type SwapShape = { id: string; title: string; squareCategoryId: string; locationId: string; skuPrefix: string; skuCounter: number };
 
+/** Keys are client-supplied, so they are only ever meaningful within one swap. */
+function idempotencyScope(orgId: string, swapId: string): string {
+  return `item-create:${orgId}:${swapId}`;
+}
+
 /** What a Square push did: landed, was not configured, or errored. */
 export type PosSyncResult = 'synced' | 'skipped' | 'failed';
 
@@ -83,7 +88,7 @@ export class ItemService {
    */
   async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
-      const cached = await this.idempotency.getCached(idempotencyKey);
+      const cached = await this.idempotency.getCached(idempotencyScope(orgId, swapId), idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
     }
 
@@ -114,7 +119,11 @@ export class ItemService {
     const response = this.toResponse(refreshed, inventoryMap);
 
     if (idempotencyKey) {
-      await this.idempotency.save(idempotencyKey, response as unknown as Record<string, unknown>);
+      await this.idempotency.save(
+        idempotencyScope(orgId, swapId),
+        idempotencyKey,
+        response as unknown as Record<string, unknown>,
+      );
     }
 
     return response;

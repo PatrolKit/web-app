@@ -8,11 +8,12 @@ import { api } from '../../lib/api';
 import { connectFromDevice, DEFAULT_PRINTER_MARGINS, isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
 import type { PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
 import { usePrinter } from '../../contexts/PrinterContext';
+import StationsTab from './StationsTab';
 import type { DeviceItem, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 
 import type { DeviceRole } from '../../lib/api.types';
 
-type Tab = 'tablets' | 'printers';
+type Tab = 'tablets' | 'printers' | 'stations';
 
 const tabClass = (active: boolean) =>
   `text-sm px-3 py-1.5 rounded transition ${active ? 'bg-surface-100 text-white' : 'text-gray-400 hover:text-white'}`;
@@ -137,6 +138,14 @@ export default function DevicesPage() {
   const [editPrinterAssignedSellerId, setEditPrinterAssignedSellerId] = useState<string>('');
   const [editMargins, setEditMargins] = useState<PrinterMargins>(DEFAULT_PRINTER_MARGINS);
 
+  const { data: activeSwaps = [] } = useQuery({
+    queryKey: ['ski-swap/swaps', orgId, 'active'],
+    queryFn: () => api.skiSwap.listSwaps(orgId, true),
+    enabled: !!orgId && perms.has('ski_swap:report'),
+    staleTime: 60_000,
+  });
+  const activeSwap = activeSwaps[0] ?? null;
+
   const { data: printers = [] } = useQuery({
     queryKey: ['ski-swap/printers', orgId],
     queryFn: () => api.skiSwap.listPrinters(orgId),
@@ -245,7 +254,24 @@ export default function DevicesPage() {
             Printers
           </button>
         )}
+        {perms.has('ski_swap:report') && (
+          <button className={tabClass(activeTab === 'stations')} onClick={() => setActiveTab('stations')}>
+            Check-in stations
+          </button>
+        )}
       </nav>
+
+      {/* ── Check-in stations tab ────────────────────────────────────────── */}
+      {activeTab === 'stations' && (
+        <StationsTab
+          orgId={orgId}
+          devices={devices}
+          printers={printers}
+          // Stations outlive any one swap; the QR needs whichever is running.
+          swapId={activeSwap?.id ?? null}
+          canAdmin={canManagePrinters}
+        />
+      )}
 
       {/* ── Tablets tab ──────────────────────────────────────────────────── */}
       {activeTab === 'tablets' && (

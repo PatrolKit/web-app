@@ -95,13 +95,17 @@ const addItem = (name, priceCents, key) =>
     body: JSON.stringify({ swapId: swap.id, name, priceCents, quantity: 1, stationId: station.id }),
   }).then(unwrap);
 
-const item1 = await addItem('Volkl Kendo 88 skis, 177cm', 24900, 'key-1');
-const item2 = await addItem('Smith Vantage helmet, medium', 6500, 'key-2');
+// Fresh per run: keys are scoped to the swap, and this script makes a new swap
+// each time, but a fixed key would still replay the previous *run's* response
+// were that ever to change.
+const runKey = crypto.randomUUID();
+const item1 = await addItem('Volkl Kendo 88 skis, 177cm', 24900, `${runKey}-1`);
+const item2 = await addItem('Smith Vantage helmet, medium', 6500, `${runKey}-2`);
 ok('SKUs carry the station code', item1.sku.startsWith('CIS-Q-') && item2.sku.startsWith('CIS-Q-'),
    `${item1.sku}, ${item2.sku}`);
 ok('SKUs are sequential and distinct', item1.sku !== item2.sku, `${item1.sku} vs ${item2.sku}`);
 
-const retry = await addItem('Volkl Kendo 88 skis, 177cm', 24900, 'key-1');
+const retry = await addItem('Volkl Kendo 88 skis, 177cm', 24900, `${runKey}-1`);
 ok('a retried save returns the same item, not a second one', retry.id === item1.id,
    `${retry.id} vs ${item1.id}`);
 

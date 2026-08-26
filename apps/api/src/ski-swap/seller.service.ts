@@ -223,7 +223,7 @@ export class SellerService {
     idempotencyKey?: string,
   ): Promise<SellerResponse> {
     if (idempotencyKey) {
-      const cached = await this.idempotency.getCached(idempotencyKey);
+      const cached = await this.idempotency.getCached(`seller-create:${orgId}`, idempotencyKey);
       if (cached) return cached as unknown as SellerResponse;
     }
 
@@ -241,7 +241,11 @@ export class SellerService {
     const response = toSellerResponse(await this.findByIdOrThrow(profile.id));
 
     if (idempotencyKey) {
-      await this.idempotency.save(idempotencyKey, response as unknown as Record<string, unknown>);
+      await this.idempotency.save(
+        `seller-create:${orgId}`,
+        idempotencyKey,
+        response as unknown as Record<string, unknown>,
+      );
     }
     return response;
   }

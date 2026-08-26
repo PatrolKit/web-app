@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LabelRendererService } from './printing/label-renderer.service';
 import { PrintRecipeService, printTargetFor, type PrintRecipeKind } from './printing/print-recipe.service';
 import type { PrintTarget } from './printing/geometry';
+import type { StationQueueResponse } from '../contracts/ski-swap.contracts';
 
 /** How long a claimed job is held before it returns to the queue. */
 const CLAIM_SECONDS = 90;
@@ -270,15 +271,42 @@ export class PrintQueueService {
 
   // ─── Staff view ─────────────────────────────────────────────────────────────
 
-  async stationQueue(orgId: string, stationId: string) {
+  /**
+   * Enough to tell a busy station from a stuck one without reading logs.
+   *
+   * `deviceLastSeenAt` is the load-bearing field: a bridge polls about once a
+   * second, so depth alone says nothing — work queued behind a *silent* bridge
+   * is the failure, and work queued behind a working one is just a busy counter.
+   */
+  async stationQueue(orgId: string, stationId: string): Promise<StationQueueResponse> {
     const station = await this.station(orgId, stationId);
-    const [queued, claimed, failed, abandoned] = await Promise.all([
+    const [queued, claimed, failed, abandoned, oldest, device] = await Promise.all([
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'queued' } }),
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'claimed' } }),
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'failed' } }),
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'abandoned' } }),
+      this.prisma.printJob.findFirst({
+        where: { stationId: station.id, status: 'queued' },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+      station.deviceId
+        ? this.prisma.device.findUnique({
+            where: { id: station.deviceId },
+            select: { lastSeenAt: true },
+          })
+        : null,
     ]);
-    return { queued, claimed, failed, abandoned };
+
+    return {
+      stationId: station.id,
+      queued,
+      claimed,
+      failed,
+      abandoned,
+      oldestQueuedAt: oldest?.createdAt.toISOString() ?? null,
+      deviceLastSeenAt: device?.lastSeenAt?.toISOString() ?? null,
+    };
   }
 
   async clearQueue(orgId: string, stationId: string): Promise<number> {

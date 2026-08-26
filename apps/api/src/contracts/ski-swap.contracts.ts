@@ -432,6 +432,9 @@ export const StationQueueResponseSchema = z.object({
   stationId: z.string(),
   queued: z.number().int(),
   claimed: z.number().int(),
+  /** A recipe that no longer resolves — the item was deleted mid-print. */
+  failed: z.number().int(),
+  /** Retried to the cap and given up on. */
   abandoned: z.number().int(),
   oldestQueuedAt: z.string().nullable(),
   deviceLastSeenAt: z.string().nullable(),
