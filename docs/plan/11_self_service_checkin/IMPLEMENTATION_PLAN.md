@@ -80,19 +80,20 @@ adopt the web's geometry, and the two should be reconciled when iOS is next touc
 | **D9** | **`SwapPrinter` gains a device link rather than being replaced.** A printer row is Bluetooth-driven, device-driven, or both. | The Bluetooth path must keep working while ESP-32 hardware is built and rolled out. |
 | **D10** | **At-least-once delivery**, claim → ack with a visibility timeout returning unacked jobs to the queue. | A duplicate tag costs a strip of paper. A lost tag costs a seller their item. |
 | **D11** | **Tags enqueue when an item is saved**, not in a batch at the end. | The seller applies tags themselves, item by item, while the gear is in front of them. Batching hands someone a stack of labels and a pile of gear and asks them to re-match the two. |
-| **D12** | **An item prints once.** Editing does not reprint; `hasPrintedTag` guards it. Reprints are explicit. | A seller correcting a typo has already stuck the tag on. Silent reprinting produces a second tag with no home. |
-| **D13** | **The Square push leaves the item-save path**, batched at finish. | Latency, not correctness. `ItemService.create` awaits `syncItemToPos` *and* `fetchInventoryMap` — two Square round-trips on venue wifi, inside an interaction that must stay under a couple of seconds. Phantom inventory is not the argument: an item not on the floor cannot be scanned. |
-| **D14** | **SKUs are namespaced by station**: `PREFIX-C-NNNN`, one character of station code, counter per (swap, station). | The pattern iOS already uses, narrowed from three characters to one. It makes a separate self-check-in marker unnecessary — the station code already says where a tag came from — and deletes the shared-counter contention. |
-| **D15** | **No two *active* swaps in an org share a SKU prefix.** A mirror column written only while active, with a unique index. | A prefix derived from a title is not naturally unique: "Ski Swap 2026" and "Spring Sale 2026" both derive `SS26`. Scoping to active swaps keeps old prefixes reusable. |
+| **D12** | **An item prints once.** Editing does not reprint; the presence of print jobs for the item guards it. Reprints are explicit. | A seller correcting a typo has already stuck the tag on. Silent reprinting produces a second tag with no home. The guard is the queue rather than `hasPrintedTag`, because that flag means *paper came out* (D13) and is still false in the seconds between enqueue and ack — exactly when an edit is most likely. |
+| **D13** | **`hasPrintedTag` is set on ack, not on enqueue.** It means a tag physically emerged, and the printer is what reports that. | It is what the field already means — today the browser prints over Bluetooth and then PATCHes it — and the honest state to show a seller who is watching for paper. Setting it at enqueue would claim a tag exists the moment a job is queued, so a jam or an empty roll would leave an item marked printed with nothing stuck to it. |
+| **D14** | **The Square push leaves the item-save path**, batched at finish. | Latency, not correctness. `ItemService.create` awaits `syncItemToPos` *and* `fetchInventoryMap` — two Square round-trips on venue wifi, inside an interaction that must stay under a couple of seconds. Phantom inventory is not the argument: an item not on the floor cannot be scanned. |
+| **D15** | **SKUs are namespaced by station**: `PREFIX-C-NNNN`, one character of station code, counter per (swap, station). | The pattern iOS already uses, narrowed from three characters to one. It makes a separate self-check-in marker unnecessary — the station code already says where a tag came from — and deletes the shared-counter contention. |
+| **D16** | **No two *active* swaps in an org share a SKU prefix.** A mirror column written only while active, with a unique index. | A prefix derived from a title is not naturally unique: "Ski Swap 2026" and "Spring Sale 2026" both derive `SS26`. Scoping to active swaps keeps old prefixes reusable. |
 
 ### Sign-in
 
 | # | Decision | Rationale |
 |---|---|---|
-| **D16** | **Sign-in carries its context on the challenge record.** `/auth/login` accepts a structured `context`, stored on `ContactChallenge` and returned by confirm. | An emailed link opens a *new* browser context. The seller scanned the QR in one tab; tapping a link in Mail lands them in another with no `swap` or `printer` — signed in, standing at a printer, with no idea which one. Storing it on the record means the new tab can ask the server what the sign-in was *for*. |
-| **D17** | **The context is structured data the server interprets — never a URL, never read from the query string.** | Two failure modes, one rule. A free-form `returnTo` makes every sign-in link an open redirect. And a printer id read from the URL is attacker-controlled: edit the address bar, print on someone else's station. |
-| **D18** | **Each channel keeps the shape it is good at** — SMS a code, email a link — and **check-in leads with phone**. | With context solved, uniformity buys nothing. On iOS an input marked `autocomplete="one-time-code"` offers the SMS code in the keyboard bar as it arrives: one tap, no app switch. Email has no such affordance, so a link beats transcribing six digits. |
-| **D19** | **Confirmation requires a tap, not a page load.** | Challenges are single-use, and `VerifyPage` confirms inside a `useEffect` — anything that loads the URL first spends the token. Mail security scanners prefetch links; most do not run JavaScript, which is the only reason this is not already biting. Leaning harder on links makes that margin too thin. |
+| **D17** | **Sign-in carries its context on the challenge record.** `/auth/login` accepts a structured `context`, stored on `ContactChallenge` and returned by confirm. | An emailed link opens a *new* browser context. The seller scanned the QR in one tab; tapping a link in Mail lands them in another with no `swap` or `printer` — signed in, standing at a printer, with no idea which one. Storing it on the record means the new tab can ask the server what the sign-in was *for*. |
+| **D18** | **The context is structured data the server interprets — never a URL, never read from the query string.** | Two failure modes, one rule. A free-form `returnTo` makes every sign-in link an open redirect. And a printer id read from the URL is attacker-controlled: edit the address bar, print on someone else's station. |
+| **D19** | **Each channel keeps the shape it is good at** — SMS a code, email a link — and **check-in leads with phone**. | With context solved, uniformity buys nothing. On iOS an input marked `autocomplete="one-time-code"` offers the SMS code in the keyboard bar as it arrives: one tap, no app switch. Email has no such affordance, so a link beats transcribing six digits. |
+| **D20** | **Confirmation requires a tap, not a page load.** | Challenges are single-use, and `VerifyPage` confirms inside a `useEffect` — anything that loads the URL first spends the token. Mail security scanners prefetch links; most do not run JavaScript, which is the only reason this is not already biting. Leaning harder on links makes that margin too thin. |
 
 ---
 
@@ -106,12 +107,12 @@ adopt the web's geometry, and the two should be reconciled when iOS is next touc
    │
    ├─ 2. person enters phone or email
    │       └─ POST /auth/login  { phone|email, context: { swapId, printerId } }
-   │            └─ context validated, then stored on the challenge (D16, D17)
+   │            └─ context validated, then stored on the challenge (D17, D18)
    │            └─ no match? sign-up form (first, last, email, phone, address)
    │                 └─ POST /public/checkin/:swapId/register  ──▶ challengeId
    │
    ├─ 3. SMS → a 6-digit code, autofilled into this tab
-   │    email → a link, which opens a NEW tab (D18)
+   │    email → a link, which opens a NEW tab (D19)
    │       └─ POST /auth/challenges/:id/confirm
    │            ──▶ { accessToken, context: { swapId, printerId } }
    │            └─ either tab can resume: the station comes back from the server, not
@@ -209,7 +210,7 @@ The SKU **is** the barcode — `_drawPriceTag` renders `code128BModules(item.sku
 the item's identity at the register rather than a label on it. It carries no PII: a prefix
 derived from the swap title, a station code, and a counter.
 
-### Station namespacing (D14)
+### Station namespacing (D15)
 
 iOS already solved this. `PatrolKitStore.nextSku` returns `PREFIX-DEVICECODE-NNNN` with the
 counter held per (device, swap) in local SQLite, which is what lets offline iPads mint SKUs
@@ -269,14 +270,23 @@ the register.
 
 ### Ordering
 
-The item is created and committed first, *then* the label renders, *then* the job is
-enqueued, *then* `hasPrintedTag` is set. Rendering must not happen inside the create
-transaction: a canvas render is slow enough that holding write locks across it would
-serialise check-in unnecessarily.
+Within the save request: the item is created and committed, *then* the label renders,
+*then* the job is enqueued. That is where the request ends. Rendering must not happen
+inside the create transaction — a canvas render is slow enough that holding write locks
+across it would serialise check-in unnecessarily.
 
-The cost of committing first is that a render or enqueue failure leaves a saved item with
-`hasPrintedTag` false — which is exactly the recoverable state we want. The UI shows it
-unprinted and the seller taps reprint.
+`hasPrintedTag` is set later, by the **ack** (D13), once every job for that item has
+printed. With `labelsPerItem` above one an item has several jobs, so the flag flips when
+none remain unprinted, not on the first ack.
+
+That gives one honest failure state for four different failures. A render that throws, an
+enqueue that fails, a printer that jams, a roll that runs out — each leaves a saved item
+whose flag is still false. The UI shows it unprinted and the seller taps reprint; they
+never need to know which of those happened, because the remedy is the same.
+
+Retry safety comes from the idempotency key on create, not from the flag: a create whose
+response was lost is replayed under the same key and returns the original item rather than
+making a second one.
 
 ---
 
@@ -286,7 +296,7 @@ unprinted and the seller taps reprint.
 
 ```prisma
   /// What this sign-in was for, so the session can resume it whichever browser
-  /// context confirms. Structured and server-interpreted — never a URL (D17).
+  /// context confirms. Structured and server-interpreted — never a URL (D18).
   /// { swapId, printerId } today; other flows may add their own shapes.
   context Json?
 ```
@@ -331,7 +341,7 @@ seller signing in by email would be sent to the *admin* domain and land in the s
 branch, never reaching check-in — even with the context preserved perfectly. The context
 survives; the hostname does not.
 
-The fix keeps D17 intact: the server picks the origin from the *kind* of context on the
+The fix keeps D18 intact: the server picks the origin from the *kind* of context on the
 challenge rather than accepting one from the client. A challenge carrying check-in context
 builds against a new `SELLER_SITE_URL`; everything else keeps `APP_URL`. The destination
 stays server-determined, with no client-supplied URL anywhere near it.
@@ -350,6 +360,9 @@ model PrintJob {
   /// Set when a job belongs to a check-in; null for staff-initiated reprints.
   swapId    String?
   sellerId  String?
+  /// The item this tag depicts. Null for receipts and calibration. What lets an
+  /// ack flip `SwapItem.hasPrintedTag` once every tag for that item has printed.
+  itemId    String?
 
   /// item | receipt | qr | calibration — what the payload depicts.
   kind    String
@@ -375,6 +388,7 @@ model PrintJob {
   printer SwapPrinter  @relation(fields: [printerId], references: [id], onDelete: Cascade)
 
   @@index([printerId, status, seq])
+  @@index([itemId, status])
   @@index([status, claimUntil])
   @@index([orgId, createdAt])
 }
@@ -392,13 +406,13 @@ model PrintJob {
 ```
 
 `SkiSwap` swaps its single counter for per-station counters, and gains an active-only
-prefix mirror (D14, D15):
+prefix mirror (D15, D16):
 
 ```prisma
 model SkiSwap {
   skuPrefix       String
   /// Mirror of skuPrefix, written only while the swap is active. MySQL allows
-  /// many NULLs in a unique index, so inactive swaps never collide (D15).
+  /// many NULLs in a unique index, so inactive swaps never collide (D16).
   activeSkuPrefix String?
 
   skuCounters SwapSkuCounter[]
@@ -406,7 +420,7 @@ model SkiSwap {
   @@unique([orgId, activeSkuPrefix])
 }
 
-/// One counter per station per swap, so stations never contend (D14).
+/// One counter per station per swap, so stations never contend (D15).
 model SwapSkuCounter {
   id          String @id @default(cuid())
   swapId      String
@@ -432,7 +446,7 @@ Three endpoints, all device-authenticated, all scoped to the calling device's ow
 | Method | Path | Behaviour |
 |---|---|---|
 | `POST` | `/devices/me/print-jobs/claim` | Atomically claims up to `n` queued jobs, oldest `seq` first. Sets `status=claimed`, `claimUntil=now+90s`, increments `attempts`. Returns `{id, kind, seq, payload}` and a `backoffMs`. Empty array when idle. |
-| `POST` | `/devices/me/print-jobs/:id/ack` | `status=printed`. Idempotent — acking a printed job is a no-op, so a retried ack after a dropped response is safe. |
+| `POST` | `/devices/me/print-jobs/:id/ack` | `status=printed`, and sets `SwapItem.hasPrintedTag` once no unprinted jobs remain for that item (D13). Idempotent — acking a printed job is a no-op, so a retried ack after a dropped response is safe. |
 | `POST` | `/devices/me/print-jobs/:id/nack` | Returns the job to `queued` and clears the claim. Body carries `{error}`. After 5 attempts it goes to `abandoned` rather than looping. |
 
 **Transport is short polling, at 1 second while a station is active.** An ESP-32 holding a
@@ -464,16 +478,17 @@ gains one optional `printerId`; when present the service renders and enqueues
 seller working from home — nothing prints and the endpoint behaves as it does today. One
 code path, one branch.
 
-`hasPrintedTag` is the guard: set when jobs are enqueued, and a later edit does not
-re-enqueue (D12). It also makes the request safe to retry, since a create whose response
-was lost will either produce a fresh item or find the flag already set.
+An item is never enqueued twice: the service refuses when live jobs already exist for it
+(D12). The guard is the queue, not `hasPrintedTag` — that flag is still false in the
+seconds between enqueue and ack, which is exactly when a seller is most likely to spot a
+typo and edit.
 
 **Reprints are explicit.** `POST .../items/:itemId/reprint { printerId }` re-enqueues one
 item — the answer to a jam, a mis-stick, or an unreadable tag. It renders from the item's
 **stored** SKU and never increments a counter, so a reprint is byte-identical to the
 original. It is the only path that deliberately prints an item twice.
 
-**Finish** enqueues the receipt and pushes items to Square (D13).
+**Finish** enqueues the receipt and pushes items to Square (D14).
 
 **The receipt already exists and paginates itself.** `generateReceiptHeaderLabel` renders
 one label with the org logo, date, seller name, phone and a QR to their item-status page;
@@ -539,7 +554,7 @@ being theoretical.
 - `POST /orgs/:orgId/ski-swap/seller/me/items` gains an optional `printerId` and accepts an
   idempotency key, so an ambiguous failure can be retried safely.
 - **`ItemService.create` stops awaiting Square** for check-in items — `syncItemToPos` and
-  `fetchInventoryMap` both leave the save path (D13). Staff-created items are unchanged.
+  `fetchInventoryMap` both leave the save path (D14). Staff-created items are unchanged.
 - `SwapPrinter` responses gain `deviceId`, `lastSeenAt`, `queueDepth`.
 - `DEVICE_ROLES` gains `Ski Swap - Printer`.
 - Browser printing fetches rasters from the server instead of rendering locally.
@@ -567,12 +582,12 @@ nothing else.
   segments above dynamic ones, so this works, but it is load-bearing and worth a comment.
 - **`/checkin`** reads `swap` and `printer` from the query string and holds them for the
   session, and can also recover them from a confirm response when an emailed link lands the
-  seller in a fresh tab (D16). Walks: context → sign in or register → code → join → items →
+  seller in a fresh tab (D17). Walks: context → sign in or register → code → join → items →
   finish.
 - **Item entry is the screen that matters.** One item at a time, one column,
   thumb-reachable primary action. Printing must be visible: which item is printing, whether
   the tag came out, and a one-tap reprint when it did not.
-- **`VerifyPage` gains a confirm button** rather than firing on mount (D19), and routes
+- **`VerifyPage` gains a confirm button** rather than firing on mount (D20), and routes
   into check-in when the returned context carries a station.
 - **Fix the seller redirect** — derive from `membership.roles.includes('seller')` rather
   than the retired `business_seller` permission (§1).
@@ -591,7 +606,7 @@ Not a breakpoint. These are the constraints that change the design:
 - **The right keyboard per field.** `inputMode="decimal"` for price, `type="tel"` for
   phone, `autocomplete` on sign-up fields.
 - **`autocomplete="one-time-code"` on the SMS code input.** This is what makes the texted
-  code one tap rather than six keystrokes, and the entire reason D18 keeps SMS on codes.
+  code one tap rather than six keystrokes, and the entire reason D19 keeps SMS on codes.
 - **Photos come from the camera** via `capture="environment"`, downscaled in the browser
   before upload. A modern phone photo is several megabytes and venue wifi is not.
 - **`100vh` is a lie on iOS.** Use `100dvh` and respect `env(safe-area-inset-*)`, or the
@@ -615,8 +630,10 @@ Two cheap things stay, covering the brief blips that happen even on good wifi:
 - **Saves carry an idempotency key**, so a retry after an ambiguous failure cannot create
   the item twice. `IdempotencyService` already exists server-side.
 
-Every item shows saved or printing. A seller must never be unsure whether something is
-recorded.
+Every item shows **saved → printing → printed**, driven by `hasPrintedTag` rather than by
+optimism, plus a failed state when its jobs are abandoned. A seller watching for paper
+should see the same thing the printer reported, and must never be unsure whether something
+is recorded.
 
 ### Local development
 
@@ -660,7 +677,8 @@ per-station counters, and add the active-prefix constraint. A parallel-create te
 distinct SKUs.
 
 **Phase 6 — Check-in.** `PublicCheckinService`, register, join. Wire save-time enqueue into
-item creation in commit → render → enqueue → flag order, plus reprint. Move the Square push
+item creation in commit → render → enqueue order, with `hasPrintedTag` set by the ack;
+add reprint. Move the Square push
 into `finish` and call the existing receipt templates from it. Fix the seller redirect.
 
 **Phase 7 — Web.** `AuthProvider` over the seller-site branch, purpose-built `/checkin`
@@ -695,7 +713,7 @@ visibility, and a documented recovery path for "the printer died mid-swap".
   recover from, and cheaper than state that would be stale as often as it was right.
 - **No approval gate (D6)** means a mistyped price goes live immediately. Staff can edit
   after the fact, and the tag is the artefact that matters physically.
-- **13 characters is a hard ceiling** until the encoder changes (§5). D14 spends it exactly
+- **13 characters is a hard ceiling** until the encoder changes (§5). D15 spends it exactly
   — 6 prefix, 1 station, 4 counter, 2 separators — with nothing spare. Another field later
   means Code128-C, not another separator.
 - **32 station codes per org.** Ample once the pool is scoped to ski-swap devices, but a
@@ -704,14 +722,14 @@ visibility, and a documented recovery path for "the printer died mid-swap".
 - **SKU numbers are not contiguous.** A create that fails after the counter increments
   burns that number. Harmless for uniqueness, but reconciling a swap by counting SKUs
   rather than items will be wrong.
-- **Square goes stale during check-in.** Deferring the push to finish (D13) means items are
+- **Square goes stale during check-in.** Deferring the push to finish (D14) means items are
   invisible in Square until a seller finishes, so a swap in progress under-reports. Nothing
   consumes that mid-swap today, but it is a behaviour change.
 - **The seller site gains an authenticated surface.** It has been entirely public, which
   made it easy to reason about. Its routes now divide into public and not, and that
   division has to be maintained rather than assumed.
 - **`ContactChallenge` gains a `Json` context column** — a generic escape hatch on a
-  security-sensitive record. D17's rules are what keep it from drifting into a `returnTo`
+  security-sensitive record. D18's rules are what keep it from drifting into a `returnTo`
   field, and they need holding on review.
 - **An emailed link still means leaving the browser.** The seller taps a notification, Mail
   opens, they tap once more and land back in Safari. Fewer steps than transcribing six
