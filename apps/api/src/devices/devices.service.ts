@@ -18,7 +18,6 @@ import type {
   ProvisionDeviceResponse,
   DeviceTokenResponse,
 } from '../contracts/devices.contracts';
-import type { PermissionKey } from '../contracts/org.contracts';
 
 @Injectable()
 export class DevicesService {
