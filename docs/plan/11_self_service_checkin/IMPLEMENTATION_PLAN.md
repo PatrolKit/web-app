@@ -4,8 +4,8 @@
 > **Depends on:** [Plan 10](../10_user%20consolidation/IMPLEMENTATION_PLAN.md). The identity
 > half of this flow — `ContactChallenge`, two-channel login, `PersonService` matching,
 > `SellerProfile` — already exists and is deployed.
-> **Out of scope:** ESP-32 firmware. This plan defines the contract firmware implements and
-> builds everything on the server side of it.
+> **Out of scope:** ESP-32 firmware and its BLE provisioning protocol. This plan defines the
+> contract firmware implements and builds everything on the server side of it.
 
 ---
 
@@ -14,13 +14,11 @@
 A seller arrives at the venue with a box of gear. Today they queue at a counter while staff
 type their name, phone and address, then dictate every item. Instead:
 
-1. They are directed to a **station**, each with its own printer.
-2. They scan the station's **QR code** with their own phone. It identifies the swap and the
-   station's printer.
+1. They are directed to a **station** — a QR code and a printer.
+2. They scan it with their own phone. It identifies the swap and the station.
 3. They sign in — or sign up — with an email or phone number, proving it with a texted code
    or an emailed link.
-4. They enter their own items. **Each item's tags print as it is saved**, on that station's
-   printer.
+4. They enter their own items. **Each item's tags print as it is saved**, at that station.
 5. They collect each tag as it emerges and stick it on the item themselves.
 6. When they are done, staff verify the tagged pile against a printed receipt and take the
    goods.
@@ -34,10 +32,11 @@ Staff stop being typists and go back to handling gear.
 | Identity, matching, verified contacts | Done (Plan 10) |
 | Two-channel login + `ContactChallenge` | Done (Plan 10) |
 | Seller item CRUD, photos (`seller/me/items`) | Done — reused wholesale |
-| Label layout, rasterisation, receipt pagination | Exists, but **in the browser** (§4) |
-| Device auth (`clientId`/secret → JWT) | Done — reused for printers |
-| Seller portal UI (`ski-swap/my-items`) | A desktop catalogue tool on the admin host — *not* the check-in surface (§10) |
-| Print queue | **Does not exist** (§8) |
+| Label layout, rasterisation, receipt pagination | Exists, but **in the browser** (§5) |
+| Device auth (`clientId`/secret → JWT) | Done — reused for bridges |
+| `SwapPrinter` — Phomemo config, driven over BLE from a browser | Done, and unchanged (§4) |
+| Seller portal UI (`ski-swap/my-items`) | A desktop catalogue tool on the admin host — *not* the check-in surface (§11) |
+| Stations, print queue | **Do not exist** (§4, §9) |
 
 ### Defects this plan fixes
 
@@ -54,7 +53,7 @@ Staff stop being typists and go back to handling gear.
 what prints across 50 mm media on the M110. iOS still reports a 304-dot printable area and
 describes the 400-wide case as a separate "50 mm printer", leftovers from when 40×30 was
 the only paper. iOS is a separate repo already slated for update; the server renderer must
-adopt the web's geometry, and the two should be reconciled when iOS is next touched (§4).
+adopt the web's geometry, and the two should be reconciled when iOS is next touched (§5).
 
 ---
 
@@ -64,57 +63,64 @@ adopt the web's geometry, and the two should be reconciled when iOS is next touc
 
 | # | Decision | Rationale |
 |---|---|---|
-| **D1** | **The QR carries `swapId` and `printerId`.** Org is derived from the swap. | A swap belongs to exactly one org, so encoding both invites them to disagree. |
+| **D1** | **The QR carries `swapId` and `stationId`.** Org, bridge and printer are all derived from the station. | A swap belongs to one org and a station to one printer, so encoding them separately invites disagreement. It also means the QR survives every hardware change beneath it (D7). |
 | **D2** | **Check-in is hosted on the seller site**, at `skiswap.patrolkit.io/checkin`. | It is a seller-facing surface, and that host is where seller-facing surfaces live. It also keeps members of the public off the admin domain, where every other route is staff tooling. |
 | **D3** | **Phone-first, not a responsive desktop page.** Designed against a one-handed seller holding a ski, on venue wifi, in Safari. | Every seller arrives with a phone and nothing else — there is no desktop fallback to degrade to. |
 | **D4** | **Check-in mints a normal session.** No special "check-in token"; the QR only supplies context. | Plan 10 D8 — verification and login are the same act. A second, weaker credential path is how the first gets bypassed. |
-| **D5** | **The station belongs to the session, and is never recorded anywhere.** `swapId` and `printerId` live in the client and, for the span of a sign-in, on the challenge. Nothing persists which seller is at which station. | A seller may check in at one station this year and another next, so persisting it would make a transient fact permanent. Recording it *transiently* was considered and dropped: an exclusive claim is remotely seizable — anyone with a photo of the QR could lock out the person standing at the station — and a non-exclusive one is a label nobody reads, always slightly stale, telling staff something they can see by looking up. One seller per station is a floor-plan matter, and when it goes wrong the item description on the tag is what sorts it out. |
+| **D5** | **The station belongs to the session, and nothing records who is at which station.** `swapId` and `stationId` live in the client and, for the span of a sign-in, on the challenge. | A seller may check in at one station this year and another next, so persisting it would make a transient fact permanent. Recording it *transiently* was considered and dropped: an exclusive claim is remotely seizable — anyone with a photo of the QR could lock out the person standing there — and a non-exclusive one is a label nobody reads, stale whenever a seller wanders off, telling staff something they can see by looking up. One seller per station is a floor-plan matter, and when it slips the item description on the tag is what sorts it out. |
 | **D6** | **No staff approval gate.** Self-entered items go live immediately. | Staff verify the physical pile at handover, which is the check that matters. An approval queue would recreate the bottleneck this removes. |
+
+### Stations and hardware
+
+| # | Decision | Rationale |
+|---|---|---|
+| **D7** | **Three layers: `CheckinStation` → `Device` → `SwapPrinter`.** The ESP-32 is a *bridge* — wifi to the server, BLE to a Phomemo — not a printer. | Each layer fails and gets replaced independently, and the station is the only one that survives both. That matters because the station's code is the SKU namespace printed on every tag (D17): held on the bridge, a dead ESP-32 would change it mid-swap; held on the printer, a dead M110 would. The chain rather than a star also makes "no bridge, no station" structural — a seller's phone cannot drive BLE, which is the entire reason the queue exists. |
+| **D8** | **The bridge is a registered device** with role `Ski Swap - Network Printer`, and the queue endpoints are gated by a new **`ski_swap:print`** permission. | Device auth already exists, is tested and scopes to an org. The permission does the actual work: `device.role` is read nowhere in the codebase outside a dropdown, so a role alone would leave a Time Clock device free to claim print jobs. |
+| **D9** | **Association is dual, re-bindable, and mismatch is loud.** Server-side on `CheckinStation`; on the device, written over BLE at provisioning. The claim response carries the station id, and firmware refuses work that does not match what it was provisioned with. | The two sides can disagree — a mis-association would otherwise feed station A's jobs to a bridge physically sitting at station B, with no error anywhere. Re-binding has to be possible because hardware dies mid-swap; queued jobs survive it because they belong to the station, not the bridge (D11). |
 
 ### Printing
 
 | # | Decision | Rationale |
 |---|---|---|
-| **D7** | **The server renders labels; the queue carries bytes.** A job payload is a finished 1-bit raster. Firmware claims, writes to the head, acks. | Label design churns — `add_printer_margins` and `update_default_margins` landed days apart, and each would be a firmware rollout to hardware in a lodge. It also avoids a third renderer: the two that exist have **already** drifted on head width (§4), and drift shows up as tags that do not scan. |
-| **D8** | **Printers are registered devices** under a new `Ski Swap - Printer` role, using the existing `clientId`/secret → JWT flow. | Device auth already exists, is tested, and scopes to an org. A printer is just another device. |
-| **D9** | **`SwapPrinter` gains a device link rather than being replaced.** A printer row is Bluetooth-driven, device-driven, or both. | The Bluetooth path must keep working while ESP-32 hardware is built and rolled out. |
-| **D10** | **At-least-once delivery**, claim → ack with a visibility timeout returning unacked jobs to the queue. | A duplicate tag costs a strip of paper. A lost tag costs a seller their item. |
-| **D11** | **Tags enqueue when an item is saved**, not in a batch at the end. | The seller applies tags themselves, item by item, while the gear is in front of them. Batching hands someone a stack of labels and a pile of gear and asks them to re-match the two. |
-| **D12** | **An item prints once.** Editing does not reprint; the presence of print jobs for the item guards it. Reprints are explicit. | A seller correcting a typo has already stuck the tag on. Silent reprinting produces a second tag with no home. The guard is the queue rather than `hasPrintedTag`, because that flag means *paper came out* (D13) and is still false in the seconds between enqueue and ack — exactly when an edit is most likely. |
-| **D13** | **`hasPrintedTag` is set on ack, not on enqueue.** It means a tag physically emerged, and the printer is what reports that. | It is what the field already means — today the browser prints over Bluetooth and then PATCHes it — and the honest state to show a seller who is watching for paper. Setting it at enqueue would claim a tag exists the moment a job is queued, so a jam or an empty roll would leave an item marked printed with nothing stuck to it. |
-| **D14** | **The Square push leaves the item-save path**, batched at finish. | Latency, not correctness. `ItemService.create` awaits `syncItemToPos` *and* `fetchInventoryMap` — two Square round-trips on venue wifi, inside an interaction that must stay under a couple of seconds. Phantom inventory is not the argument: an item not on the floor cannot be scanned. |
-| **D15** | **SKUs are namespaced by station**: `PREFIX-C-NNNN`, one character of station code, counter per (swap, station). | The pattern iOS already uses, narrowed from three characters to one. It makes a separate self-check-in marker unnecessary — the station code already says where a tag came from — and deletes the shared-counter contention. |
-| **D16** | **No two *active* swaps in an org share a SKU prefix.** A mirror column written only while active, with a unique index. | A prefix derived from a title is not naturally unique: "Ski Swap 2026" and "Spring Sale 2026" both derive `SS26`. Scoping to active swaps keeps old prefixes reusable. |
+| **D10** | **The server renders labels; the queue carries bytes.** A job payload is a finished 1-bit raster; the bridge claims it, forwards the ESC/POS to the Phomemo over BLE, and acks. | Label design churns — `add_printer_margins` and `update_default_margins` landed days apart, and each would otherwise be a firmware rollout to hardware in a lodge. It also avoids a third renderer: the two that exist have **already** drifted on head width (§5), and drift shows up as tags that do not scan. Keeping firmware to "forward these bytes" is what makes that possible. |
+| **D11** | **The queue routes by station**, not by printer. `PrintJob.stationId` is where a job goes; `printerId` records what it was rendered for. | A job is "print this at station 3", not "print this on Phomemo serial X". Bound to the station it survives a printer being replaced mid-swap, where a job pointing at a retired `SwapPrinter` row would be orphaned with a seller standing at the counter. |
+| **D12** | **At-least-once delivery**, claim → ack with a visibility timeout returning unacked jobs to the queue. | A duplicate tag costs a strip of paper. A lost tag costs a seller their item. |
+| **D13** | **Tags enqueue when an item is saved**, not in a batch at the end. | The seller applies tags themselves, item by item, while the gear is in front of them. Batching hands someone a stack of labels and a pile of gear and asks them to re-match the two. |
+| **D14** | **An item prints once.** Editing does not reprint; the presence of live jobs for the item guards it. Reprints are explicit. | A seller correcting a typo has already stuck the tag on, and silent reprinting produces a second tag with no home. The guard is the queue rather than `hasPrintedTag`, because that flag means *paper came out* (D15) and is still false in the seconds between enqueue and ack — exactly when an edit is most likely. |
+| **D15** | **`hasPrintedTag` is set on ack, not on enqueue.** It means a tag physically emerged, and the bridge is what reports that. | It is what the field already means — today the browser prints over BLE and then PATCHes it — and the honest state to show a seller who is watching for paper. Setting it at enqueue would claim a tag exists the moment a job is queued, so a jam or an empty roll would leave an item marked printed with nothing stuck to it. |
+| **D16** | **The Square push leaves the item-save path**, batched at finish. | Latency, not correctness. `ItemService.create` awaits `syncItemToPos` *and* `fetchInventoryMap` — two Square round-trips on venue wifi, inside an interaction that must stay under a couple of seconds. Phantom inventory is not the argument: an item not on the floor cannot be scanned. |
+| **D17** | **SKUs are namespaced by station code**: `PREFIX-C-NNNN`, one character, counter per (swap, code). | The pattern iOS already uses for its check-in iPads, narrowed from three characters to one. It makes a separate self-check-in marker unnecessary — the code already says where a tag came from — and deletes the shared-counter contention that save-time printing would otherwise create. |
+| **D18** | **No two *active* swaps in an org share a SKU prefix.** A mirror column written only while active, with a unique index. | A prefix derived from a title is not naturally unique: "Ski Swap 2026" and "Spring Sale 2026" both derive `SS26`. Scoping to active swaps keeps old prefixes reusable. |
 
 ### Sign-in
 
 | # | Decision | Rationale |
 |---|---|---|
-| **D17** | **Sign-in carries its context on the challenge record.** `/auth/login` accepts a structured `context`, stored on `ContactChallenge` and returned by confirm. | An emailed link opens a *new* browser context. The seller scanned the QR in one tab; tapping a link in Mail lands them in another with no `swap` or `printer` — signed in, standing at a printer, with no idea which one. Storing it on the record means the new tab can ask the server what the sign-in was *for*. |
-| **D18** | **The context is structured data the server interprets — never a URL, never read from the query string.** | Two failure modes, one rule. A free-form `returnTo` makes every sign-in link an open redirect. And a printer id read from the URL is attacker-controlled: edit the address bar, print on someone else's station. |
-| **D19** | **Each channel keeps the shape it is good at** — SMS a code, email a link — and **check-in leads with phone**. | With context solved, uniformity buys nothing. On iOS an input marked `autocomplete="one-time-code"` offers the SMS code in the keyboard bar as it arrives: one tap, no app switch. Email has no such affordance, so a link beats transcribing six digits. |
-| **D20** | **Confirmation requires a tap, not a page load.** | Challenges are single-use, and `VerifyPage` confirms inside a `useEffect` — anything that loads the URL first spends the token. Mail security scanners prefetch links; most do not run JavaScript, which is the only reason this is not already biting. Leaning harder on links makes that margin too thin. |
+| **D19** | **Sign-in carries its context on the challenge record.** `/auth/login` accepts a structured `context`, stored on `ContactChallenge` and returned by confirm. | An emailed link opens a *new* browser context. The seller scanned the QR in one tab; tapping a link in Mail lands them in another with no `swap` or `station` — signed in, standing at a printer, with no idea which one. Storing it on the record means the new tab can ask the server what the sign-in was *for*. |
+| **D20** | **The context is structured data the server interprets — never a URL, never read from the query string.** | Two failure modes, one rule. A free-form `returnTo` makes every sign-in link an open redirect. And a station id read from the URL is attacker-controlled: edit the address bar, print at someone else's station. |
+| **D21** | **Each channel keeps the shape it is good at** — SMS a code, email a link — and **check-in leads with phone**. | With context solved, uniformity buys nothing. On iOS an input marked `autocomplete="one-time-code"` offers the SMS code in the keyboard bar as it arrives: one tap, no app switch. Email has no such affordance, so a link beats transcribing six digits. |
+| **D22** | **Confirmation requires a tap, not a page load.** | Challenges are single-use, and `VerifyPage` confirms inside a `useEffect` — anything that loads the URL first spends the token. Mail security scanners prefetch links; most do not run JavaScript, which is the only reason this is not already biting. Leaning harder on links makes that margin too thin. |
 
 ---
 
 ## 3. Flow
 
 ```
-   ┌─ station QR: https://skiswap.patrolkit.io/checkin?swap=<swapId>&printer=<printerId>
+   ┌─ station QR: https://skiswap.patrolkit.io/checkin?swap=<swapId>&station=<stationId>
    │
-   ├─ 1. GET /public/checkin/:swapId  ──▶ org name, logo, swap title, printer label
-   │       (validates the swap is active and the printer is in the same org)
+   ├─ 1. GET /public/checkin/:swapId  ──▶ org name, logo, swap title, station label
+   │       (validates the swap is active and the station is in the same org)
    │
    ├─ 2. person enters phone or email
-   │       └─ POST /auth/login  { phone|email, context: { swapId, printerId } }
-   │            └─ context validated, then stored on the challenge (D17, D18)
+   │       └─ POST /auth/login  { phone|email, context: { swapId, stationId } }
+   │            └─ context validated, then stored on the challenge (D19, D20)
    │            └─ no match? sign-up form (first, last, email, phone, address)
    │                 └─ POST /public/checkin/:swapId/register  ──▶ challengeId
    │
    ├─ 3. SMS → a 6-digit code, autofilled into this tab
-   │    email → a link, which opens a NEW tab (D19)
+   │    email → a link, which opens a NEW tab (D21)
    │       └─ POST /auth/challenges/:id/confirm
-   │            ──▶ { accessToken, context: { swapId, printerId } }
+   │            ──▶ { accessToken, context: { swapId, stationId } }
    │            └─ either tab can resume: the station comes back from the server, not
    │               from whichever tab happened to survive
    │            └─ contact stamped verified — the one flow where it is self-entered
@@ -124,22 +130,23 @@ adopt the web's geometry, and the two should be reconciled when iOS is next touc
    │       └─ upsert membership + individual SellerProfile
    │
    ├─ 5. for each item:
-   │       POST /orgs/:orgId/ski-swap/seller/me/items  { ..., printerId }
-   │         └─ item created, then labelsPerItem tags enqueued
-   │              └─ ESP-32 claims, prints, acks  ──▶ seller peels tag, sticks it on
+   │       POST /orgs/:orgId/ski-swap/seller/me/items  { ..., stationId }
+   │         └─ item created, then labelsPerItem tags enqueued to the station
+   │              └─ bridge claims, forwards to the Phomemo, acks
+   │                   ──▶ seller peels tag, sticks it on
    │       (jam or mis-stick → POST .../items/:itemId/reprint)
    │
-   └─ 6. POST /orgs/:orgId/ski-swap/checkin/finish  { swapId, printerId }
+   └─ 6. POST /orgs/:orgId/ski-swap/checkin/finish  { swapId, stationId }
            └─ receipt enqueued, items pushed to Square
 ```
 
 Steps 2 and 3 are existing endpoints with one added field each. Step 5 is the existing item
-endpoint plus an optional `printerId`. The genuinely new surface is a public context
+endpoint plus an optional `stationId`. The genuinely new surface is a public context
 lookup, registration, join, reprint and finish.
 
 **The seller is standing at the printer waiting**, which makes this the one place latency is
 a product requirement rather than a nicety: tapping Save to paper moving should stay inside
-a couple of seconds. §8 sizes the polling interval against that.
+a couple of seconds. §9 sizes the polling interval against that.
 
 ### Registration is deliberately separate from login
 
@@ -154,7 +161,90 @@ manufacture inert rows.
 
 ---
 
-## 4. Server-side label rendering
+## 4. Stations and printing hardware
+
+A station is three things stacked, each replaceable without disturbing the others:
+
+```
+CheckinStation        code "C", the QR's identity          ← stable
+   └─ Device          ESP-32 bridge: wifi ⇄ BLE            ← replaceable
+        └─ SwapPrinter Phomemo M110: paper size, margins   ← replaceable
+```
+
+The ESP-32 does not print. It bridges: it holds the device credentials, claims jobs over
+HTTPS, and forwards the ESC/POS bytes to a Phomemo over BLE. `SwapPrinter` therefore keeps
+its existing meaning exactly — `bluetoothName`, `paperSize` and the four margins describe
+the same physical printer a browser drives today, and the browser path continues to work
+untouched.
+
+### Schema
+
+```prisma
+model CheckinStation {
+  id    String @id @default(cuid())
+  orgId String
+  /// Human label — "Station 3".
+  name  String
+  /// One character. The SKU namespace printed on every tag from here (D17), drawn
+  /// from the same per-org pool as Device.skiSwapDeviceCode so the two never collide.
+  code  String @db.VarChar(1)
+
+  /// The bridge that serves this station. Re-bindable when hardware dies (D9).
+  deviceId  String?   @unique
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device    Device?      @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  printJobs PrintJob[]
+
+  @@unique([orgId, code])
+  @@index([orgId, deletedAt])
+}
+```
+
+`SwapPrinter` gains only the link to its bridge:
+
+```prisma
+  /// The bridge that drives this printer over BLE. Null for printers driven
+  /// directly from a browser, which is every printer today.
+  bridgeDeviceId String? @unique
+  bridgeDevice   Device? @relation("BridgedPrinter", fields: [bridgeDeviceId], references: [id], onDelete: SetNull)
+```
+
+Both links are 1:1 and enforced: a bridge holds one BLE connection, so one driving two
+printers is not physically on the table, and a station with two bridges has no way to
+choose between them.
+
+### Association
+
+The binding exists in two places that must agree — the database, and the ESP-32 itself,
+written over BLE during provisioning along with wifi credentials, the server URL and its
+client credentials.
+
+**Mismatch has to be loud.** If the database says bridge B serves station 3 but the ESP-32
+was provisioned believing it serves station 4, the server resolves jobs through the device
+and cheerfully feeds it station 3's work — while it sits physically at station 4. Wrong
+tags, right printer, no error anywhere. So the claim response carries the station id, and
+firmware refuses anything that does not match what it holds. A mis-association becomes a
+device that visibly will not print, rather than one that quietly prints the wrong thing.
+
+**Re-binding is a staff action**, because hardware fails mid-swap. Pointing a station at a
+new bridge preserves its code, its name and its queue — jobs belong to the station (D11),
+so nothing is orphaned. Re-binding a bridge that is already claimed clears the old
+association rather than leaving two stations pointing at one box.
+
+### Provisioning is out of scope, with one constraint
+
+The BLE protocol is the firmware team's. One thing about it is not negotiable from this
+side: **the payload carries a client secret.** An unauthenticated characteristic that hands
+credentials to whoever connects would undo the device auth model entirely. Pairing, a
+time-boxed provisioning window, or a physical factory-reset-to-provision mode all solve it
+— the choice is theirs, but it needs to be a choice.
+
+---
+## 5. Server-side label rendering
 
 The 867 lines in
 [`PhomemoPrinterService.ts`](../../apps/web/src/lib/printing/PhomemoPrinterService.ts) lay
@@ -195,36 +285,43 @@ apps/api/src/ski-swap/printing/
 **The browser then stops rendering.** The Bluetooth path fetches the same raster from the
 server and writes it over Web Bluetooth; `PhomemoPrinterService` keeps only transport —
 connect, write, disconnect. That collapses today's two renderers into one *before* firmware
-becomes a third, so the firmware team is not chasing a moving target.
+becomes a third, so the firmware team is not chasing a moving target. It is also what keeps
+the bridge dumb: a bridge that only forwards bytes never needs a firmware release to follow
+a margin change.
 
 **Golden-image tests.** Rendering has no natural assertion, so the port is verified by
 committing reference rasters for fixed inputs and asserting byte equality. Fixtures cover
-both media sizes and a full-width 13-character SKU (§5). They are also what the firmware
+both media sizes and a full-width 13-character SKU (§6). They are also what the firmware
 team tests against.
 
 ---
 
-## 5. SKUs
+## 6. SKUs
 
 The SKU **is** the barcode — `_drawPriceTag` renders `code128BModules(item.sku)`, so it is
 the item's identity at the register rather than a label on it. It carries no PII: a prefix
-derived from the swap title, a station code, and a counter.
+derived from the swap title, a one-character code, and a counter.
 
-### Station namespacing (D15)
+### The code identifies where a tag was minted (D17)
 
-iOS already solved this. `PatrolKitStore.nextSku` returns `PREFIX-DEVICECODE-NNNN` with the
-counter held per (device, swap) in local SQLite, which is what lets offline iPads mint SKUs
-without coordinating. Check-in adopts the same shape because a station *is* a device: the
-printer is a registered `Device` (D8), the QR names it, and it can carry a
-`skiSwapDeviceCode` like any other.
+iOS already established this. `PatrolKitStore.nextSku` returns `PREFIX-DEVICECODE-NNNN`
+with the counter held per (device, swap) in local SQLite, which is what lets offline
+check-in iPads mint SKUs without coordinating. Self-check-in uses the same shape, with the
+code belonging to the **station** rather than the hardware beneath it (D7) — so replacing a
+dead ESP-32 or a dead Phomemo mid-swap leaves the station's tags in the same namespace.
 
-So **no extra digit is needed to mark self-check-in items** — the station code already says
-where a tag came from, and reserving a code range makes it obvious at a glance.
+So **no extra digit is needed to mark self-check-in items**: the code already says where a
+tag came from, and reserving a range makes it obvious at a glance.
 
-It also removes the contention that save-time printing would otherwise create. Staff entry
-was serial; simultaneous creates across stations are now normal, and a per-station counter
-means they never share a row. A parallel-create test still asserts distinct SKUs, because
-the failure mode is a duplicate barcode selling the wrong item.
+It also removes the contention save-time printing would otherwise create. Staff entry was
+serial; simultaneous creates across stations are now normal, and a per-code counter means
+they never share a row. A parallel-create test still asserts distinct SKUs, because the
+failure mode is a duplicate barcode selling the wrong item.
+
+**Station codes and device codes share one pool.** Check-in iPads still mint from
+`Device.skiSwapDeviceCode`. If an iPad and a station both held `A` in one swap they would
+share a counter row — still unique SKUs, since the counter is atomic, but the code would
+stop identifying the origin. One allocator, drawing across both tables.
 
 ### The barcode ceiling is 13 characters
 
@@ -243,30 +340,29 @@ Dropping `moduleW` to 1 buys room but puts the X-dimension at 0.125 mm, below wh
 reliably at 203 dpi. Code128-C would encode digits two per symbol and buy real headroom, at
 the cost of a mode-switching encoder.
 
-**A one-character station code is what makes the budget work.** With three, a six-character
-prefix overflows: 6 + 1 + 3 + 1 + 4 = 15. **iOS has that bug today** — a swap titled
-"Annual Backcountry Ski Swap 2026" derives `ABSS26` and prints a barcode wider than the
-label, invisible only because prefixes have happened to be short. One character brings it
-to 13 exactly, so `deriveSkuPrefix` keeps its six-character cap and no live swap needs
-rewriting.
+**A one-character code is what makes the budget work.** With three, a six-character prefix
+overflows: 6 + 1 + 3 + 1 + 4 = 15. **iOS has that bug today** — a swap titled "Annual
+Backcountry Ski Swap 2026" derives `ABSS26` and prints a barcode wider than the label,
+invisible only because prefixes have happened to be short. One character brings it to 13
+exactly, so `deriveSkuPrefix` keeps its six-character cap and no live swap needs rewriting.
 
 ### Making one character enough
 
-The code pool is per-org, and today it is smaller and more crowded than it looks:
+The pool is per-org, and today it is smaller and more crowded than it looks:
 
 - **`generateSkiSwapCode` is base-26, letters only** — `A`…`Z`, then `AA`. Widening to
   letters plus digits reaches 36; excluding the glyphs that read ambiguously — `I`, `O`,
-  `0`, `1` — leaves **32**, which is the better trade, since the code prints as text under
-  the barcode and gets read aloud across a counter.
+  `0`, `1` — leaves **32**, the better trade, since the code prints as text under the
+  barcode and gets read aloud across a counter.
 - **Every device consumes a code**, whatever its role: `create` calls
-  `assignSkiSwapDeviceCode` unconditionally, so time-clock and signage devices eat ski-swap
+  `assignSkiSwapDeviceCode` unconditionally, so time-clock and signage devices eat the
   namespace. Scoping assignment to ski-swap roles reclaims most of the pool.
 
 **Exhaustion must be a hard error.** The generator spills to two characters at 27, which
 under a fixed-width budget silently produces a 14-character SKU and a barcode wider than
-the label. Running out has to fail loudly at device provisioning — where a human can free a
-code — rather than at print time, where it yields an unscannable tag nobody notices until
-the register.
+the label. Running out has to fail loudly when a station or device is provisioned — where a
+human can free a code — rather than at print time, where it yields an unscannable tag
+nobody notices until the register.
 
 ### Ordering
 
@@ -275,7 +371,7 @@ Within the save request: the item is created and committed, *then* the label ren
 inside the create transaction — a canvas render is slow enough that holding write locks
 across it would serialise check-in unnecessarily.
 
-`hasPrintedTag` is set later, by the **ack** (D13), once every job for that item has
+`hasPrintedTag` is set later, by the **ack** (D15), once every job for that item has
 printed. With `labelsPerItem` above one an item has several jobs, so the flag flips when
 none remain unprinted, not on the first ack.
 
@@ -289,24 +385,23 @@ response was lost is replayed under the same key and returns the original item r
 making a second one.
 
 ---
-
-## 6. Sign-in context
+## 7. Sign-in context
 
 `ContactChallenge` gains one nullable column:
 
 ```prisma
   /// What this sign-in was for, so the session can resume it whichever browser
-  /// context confirms. Structured and server-interpreted — never a URL (D18).
-  /// { swapId, printerId } today; other flows may add their own shapes.
+  /// context confirms. Structured and server-interpreted — never a URL (D20).
+  /// { swapId, stationId } today; other flows may add their own shapes.
   context Json?
 ```
 
 Three rules keep it safe:
 
-- **Validated at issue, not at use.** `swapId` must name an active swap and `printerId` a
-  printer in that swap's org. A challenge storing an invalid pairing would fail later, in
-  the new tab, where there is no good way to recover.
-- **Returned, never redirected to.** Confirm hands back `{ swapId, printerId }` and the
+- **Validated at issue, not at use.** `swapId` must name an active swap and `stationId` a
+  live station in that swap's org. A challenge storing an invalid pairing would fail later,
+  in the new tab, where there is no good way to recover.
+- **Returned, never redirected to.** Confirm hands back `{ swapId, stationId }` and the
   client decides what to render. The server never issues a redirect from stored context,
   which is what keeps this from becoming an open redirect.
 - **Scoped to the challenge.** It lives and dies with the row, gone once the challenge is
@@ -318,7 +413,9 @@ uses the same column rather than inventing its own workaround.
 
 ---
 
-## 7. Hosting on the seller site
+---
+
+## 8. Hosting on the seller site
 
 Caddy already serves `patrolkit.io`, `www.patrolkit.io` and `skiswap.patrolkit.io` from the
 same backend, and the SPA branches on hostname: `isSellerSite` is
@@ -341,33 +438,42 @@ seller signing in by email would be sent to the *admin* domain and land in the s
 branch, never reaching check-in — even with the context preserved perfectly. The context
 survives; the hostname does not.
 
-The fix keeps D18 intact: the server picks the origin from the *kind* of context on the
+The fix keeps D20 intact: the server picks the origin from the *kind* of context on the
 challenge rather than accepting one from the client. A challenge carrying check-in context
 builds against a new `SELLER_SITE_URL`; everything else keeps `APP_URL`. The destination
 stays server-determined, with no client-supplied URL anywhere near it.
 
 ---
 
-## 8. The print queue
+---
+---
+
+## 9. The print queue
 
 ### Schema
 
 ```prisma
 model PrintJob {
-  id        String @id @default(cuid())
-  orgId     String
-  printerId String
-  /// Set when a job belongs to a check-in; null for staff-initiated reprints.
-  swapId    String?
-  sellerId  String?
+  id    String @id @default(cuid())
+  orgId String
+  /// Where the job goes. Bound to the station, so it survives the bridge or the
+  /// printer being replaced beneath it (D11).
+  stationId String
+  /// What the raster was rendered against — paper size and margins are baked in
+  /// at enqueue. Provenance and diagnostics, never routing.
+  printerId String?
+
+  /// Set when a job belongs to a check-in; null for staff-initiated work.
+  swapId   String?
+  sellerId String?
   /// The item this tag depicts. Null for receipts and calibration. What lets an
   /// ack flip `SwapItem.hasPrintedTag` once every tag for that item has printed.
-  itemId    String?
+  itemId   String?
 
   /// item | receipt | qr | calibration — what the payload depicts.
   kind    String
-  /// 1-bit raster, run-length encoded. Rendered at enqueue time, so a later
-  /// template change never rewrites a job already queued.
+  /// 1-bit raster. Rendered at enqueue time, so a later template change never
+  /// rewrites a job already queued.
   payload Bytes
   /// Ordering within one seller's batch, so tags emerge in entry order.
   seq     Int    @default(0)
@@ -384,35 +490,24 @@ model PrintJob {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  printer SwapPrinter  @relation(fields: [printerId], references: [id], onDelete: Cascade)
+  org     Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  station CheckinStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
 
-  @@index([printerId, status, seq])
-  @@index([itemId, status])
+  @@index([stationId, status, seq])
   @@index([status, claimUntil])
+  @@index([itemId, status])
   @@index([orgId, createdAt])
 }
 ```
 
-`SwapPrinter` gains a device link (D9):
-
-```prisma
-  /// Set when this printer is an ESP-32 pulling from the queue rather than a
-  /// Bluetooth device driven by a browser.
-  deviceId   String?   @unique
-  lastSeenAt DateTime?
-
-  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-```
-
-`SkiSwap` swaps its single counter for per-station counters, and gains an active-only
-prefix mirror (D15, D16):
+`SkiSwap` swaps its single counter for per-code counters, and gains an active-only prefix
+mirror (D17, D18):
 
 ```prisma
 model SkiSwap {
   skuPrefix       String
   /// Mirror of skuPrefix, written only while the swap is active. MySQL allows
-  /// many NULLs in a unique index, so inactive swaps never collide (D16).
+  /// many NULLs in a unique index, so inactive swaps never collide (D18).
   activeSkuPrefix String?
 
   skuCounters SwapSkuCounter[]
@@ -420,17 +515,17 @@ model SkiSwap {
   @@unique([orgId, activeSkuPrefix])
 }
 
-/// One counter per station per swap, so stations never contend (D15).
+/// One counter per minting endpoint per swap, so they never contend (D17).
+/// `code` is a station code or a check-in device code — one shared per-org pool.
 model SwapSkuCounter {
   id          String @id @default(cuid())
   swapId      String
-  /// Device.skiSwapDeviceCode — one character, unique per org.
-  deviceCode  String @db.VarChar(1)
+  code        String @db.VarChar(1)
   lastCounter Int    @default(0)
 
   swap SkiSwap @relation(fields: [swapId], references: [id], onDelete: Cascade)
 
-  @@unique([swapId, deviceCode])
+  @@unique([swapId, code])
 }
 ```
 
@@ -441,12 +536,13 @@ already live.
 
 ### Firmware contract
 
-Three endpoints, all device-authenticated, all scoped to the calling device's own printer.
+Three endpoints, all device-authenticated, all requiring `ski_swap:print` (D8), all scoped
+to the station the calling bridge is bound to.
 
 | Method | Path | Behaviour |
 |---|---|---|
-| `POST` | `/devices/me/print-jobs/claim` | Atomically claims up to `n` queued jobs, oldest `seq` first. Sets `status=claimed`, `claimUntil=now+90s`, increments `attempts`. Returns `{id, kind, seq, payload}` and a `backoffMs`. Empty array when idle. |
-| `POST` | `/devices/me/print-jobs/:id/ack` | `status=printed`, and sets `SwapItem.hasPrintedTag` once no unprinted jobs remain for that item (D13). Idempotent — acking a printed job is a no-op, so a retried ack after a dropped response is safe. |
+| `POST` | `/devices/me/print-jobs/claim` | Resolves the calling device to its station, then atomically claims up to `n` queued jobs, oldest `seq` first. Sets `status=claimed`, `claimUntil=now+90s`, increments `attempts`. Returns `{stationId, backoffMs, jobs: [{id, kind, seq, payload}]}`. The `stationId` is the interlock (D9) — firmware refuses a response that does not match its provisioning. |
+| `POST` | `/devices/me/print-jobs/:id/ack` | `status=printed`, and sets `SwapItem.hasPrintedTag` once no unprinted jobs remain for that item (D15). Idempotent — acking a printed job is a no-op, so a retried ack after a dropped response is safe. |
 | `POST` | `/devices/me/print-jobs/:id/nack` | Returns the job to `queued` and clears the claim. Body carries `{error}`. After 5 attempts it goes to `abandoned` rather than looping. |
 
 **Transport is short polling, at 1 second while a station is active.** An ESP-32 holding a
@@ -462,39 +558,40 @@ change. Long-polling can replace this later behind the same contract.
 ```sql
 UPDATE PrintJob SET status='claimed', claimedAt=NOW(3), claimUntil=NOW(3)+INTERVAL 90 SECOND,
        attempts=attempts+1, claimToken=?
- WHERE printerId=? AND (status='queued' OR (status='claimed' AND claimUntil < NOW(3)))
+ WHERE stationId=? AND (status='queued' OR (status='claimed' AND claimUntil < NOW(3)))
  ORDER BY seq, createdAt LIMIT ?
 ```
 
-then select the rows bearing that token. Two printers racing, or one whose earlier claim
-expired mid-print, cannot both win the same row. Reaping rides on the same query — an idle
-system does no work and a busy one self-heals — rather than running as a scheduled sweep.
+then select the rows bearing that token. Two bridges racing — which happens for a moment
+during a re-bind — or one whose earlier claim expired mid-print, cannot both win the same
+row. Reaping rides on the same query, so an idle system does no work and a busy one
+self-heals, rather than needing a scheduled sweep.
 
 ### Enqueue, reprint, finish
 
-**Enqueue hangs off item creation** (D11). `POST /orgs/:orgId/ski-swap/seller/me/items`
-gains one optional `printerId`; when present the service renders and enqueues
+**Enqueue hangs off item creation** (D13). `POST /orgs/:orgId/ski-swap/seller/me/items`
+gains one optional `stationId`; when present the service renders and enqueues
 `labelsPerItem` tags for the item it just created. Absent — the desktop portal, a business
 seller working from home — nothing prints and the endpoint behaves as it does today. One
 code path, one branch.
 
 An item is never enqueued twice: the service refuses when live jobs already exist for it
-(D12). The guard is the queue, not `hasPrintedTag` — that flag is still false in the
+(D14). The guard is the queue, not `hasPrintedTag` — that flag is still false in the
 seconds between enqueue and ack, which is exactly when a seller is most likely to spot a
 typo and edit.
 
-**Reprints are explicit.** `POST .../items/:itemId/reprint { printerId }` re-enqueues one
+**Reprints are explicit.** `POST .../items/:itemId/reprint { stationId }` re-enqueues one
 item — the answer to a jam, a mis-stick, or an unreadable tag. It renders from the item's
 **stored** SKU and never increments a counter, so a reprint is byte-identical to the
 original. It is the only path that deliberately prints an item twice.
 
-**Finish** enqueues the receipt and pushes items to Square (D14).
+**Finish** enqueues the receipt and pushes items to Square (D16).
 
 **The receipt already exists and paginates itself.** `generateReceiptHeaderLabel` renders
 one label with the org logo, date, seller name, phone and a QR to their item-status page;
 `generateReceiptItemLabels` takes `{name, sku, priceCents}[]` and returns as many labels as
 the list needs. So the receipt is a header job followed by *n* item jobs sharing a `seq`.
-No new label design — this is the existing code ported alongside the tag templates (§4).
+No new label design — this is the existing code ported alongside the tag templates (§5).
 
 ### What stops someone printing from off-site
 
@@ -505,7 +602,7 @@ that is worth:
    inert.
 2. **They must sign in**, proving an email or phone. There is no anonymous path, and every
    job is attributable to a verified contact.
-3. **Queue depth is capped per printer**, and staff can see and clear it (§9).
+3. **Queue depth is capped per station**, and staff can see and clear it (§10).
 
 The residual risk is that an identified person wastes some paper, visibly, while a swap is
 running — and deliberately *not* solved by locking the station to one seller, because a
@@ -518,12 +615,12 @@ being theoretical.
 
 ---
 
-## 9. API surface
+## 10. API surface
 
 ### New — public
 
-- `GET /public/checkin/:swapId` — org name, logo, swap title, printer label. Validates the
-  swap is active and the printer belongs to the same org. Throttled.
+- `GET /public/checkin/:swapId` — org name, logo, swap title, station label. Validates the
+  swap is active and the station belongs to the same org. Throttled.
 - `POST /public/checkin/:swapId/register` — creates an unverified person and issues a
   challenge. Throttled hard.
 
@@ -543,31 +640,40 @@ being theoretical.
 
 ### New — staff
 
-- `GET /orgs/:orgId/ski-swap/printers/:printerId/queue` — depth, last-seen, failures. Staff
+- `GET|POST /orgs/:orgId/ski-swap/stations` — list and create stations; allocates a code.
+- `PATCH /orgs/:orgId/ski-swap/stations/:stationId` — rename, or re-bind to a different
+  bridge (D9).
+- `GET /orgs/:orgId/ski-swap/stations/:stationId/queue` — depth, last-seen, failures. Staff
   need to see a stuck station without reading logs.
-- `POST /orgs/:orgId/ski-swap/printers/:printerId/test` — enqueues a calibration label.
+- `POST /orgs/:orgId/ski-swap/stations/:stationId/test` — enqueues a calibration label,
+  which exercises the whole chain: server, bridge, BLE link, printer.
+- `DELETE /orgs/:orgId/ski-swap/stations/:stationId/queue` — clears a station's queue, for
+  when a printer is swapped and the baked-in geometry no longer matches.
 
 ### Changed
 
-- `POST /auth/login` gains an optional structured `context` (§6), validated at issue.
+- `POST /auth/login` gains an optional structured `context` (§7), validated at issue.
 - `POST /auth/challenges/:id/confirm` returns that `context` alongside the session.
-- `POST /orgs/:orgId/ski-swap/seller/me/items` gains an optional `printerId` and accepts an
+- `POST /orgs/:orgId/ski-swap/seller/me/items` gains an optional `stationId` and accepts an
   idempotency key, so an ambiguous failure can be retried safely.
 - **`ItemService.create` stops awaiting Square** for check-in items — `syncItemToPos` and
-  `fetchInventoryMap` both leave the save path (D14). Staff-created items are unchanged.
-- `SwapPrinter` responses gain `deviceId`, `lastSeenAt`, `queueDepth`.
-- `DEVICE_ROLES` gains `Ski Swap - Printer`.
+  `fetchInventoryMap` both leave the save path (D16). Staff-created items are unchanged.
+- `SwapPrinter` gains `bridgeDeviceId`; responses gain the bound station where there is one.
+- `DEVICE_ROLES` gains `Ski Swap - Network Printer`; `PermissionKeySchema` gains
+  `ski_swap:print`.
+- `assignSkiSwapDeviceCode` is scoped to ski-swap roles and shares its pool with station
+  codes (§6).
 - Browser printing fetches rasters from the server instead of rendering locally.
 
 ### Configuration
 
 - `SELLER_SITE_URL` — the origin sign-in links use when a challenge carries check-in
-  context (§7). `https://skiswap.patrolkit.io` in production; the same origin as `APP_URL`
+  context (§8). `https://skiswap.patrolkit.io` in production; the same origin as `APP_URL`
   locally, where there is no subdomain.
 
 ---
 
-## 10. Web work
+## 11. Web work
 
 ### Check-in is its own surface
 
@@ -580,18 +686,19 @@ nothing else.
   bare `<Routes>` with no `AuthProvider`. That branch gains the provider, and `/checkin`
   must be declared ahead of the existing `:orgSlug` catch-all — React Router ranks static
   segments above dynamic ones, so this works, but it is load-bearing and worth a comment.
-- **`/checkin`** reads `swap` and `printer` from the query string and holds them for the
+- **`/checkin`** reads `swap` and `station` from the query string and holds them for the
   session, and can also recover them from a confirm response when an emailed link lands the
-  seller in a fresh tab (D17). Walks: context → sign in or register → code → join → items →
+  seller in a fresh tab (D19). Walks: context → sign in or register → code → join → items →
   finish.
 - **Item entry is the screen that matters.** One item at a time, one column,
   thumb-reachable primary action. Printing must be visible: which item is printing, whether
   the tag came out, and a one-tap reprint when it did not.
-- **`VerifyPage` gains a confirm button** rather than firing on mount (D20), and routes
+- **`VerifyPage` gains a confirm button** rather than firing on mount (D22), and routes
   into check-in when the returned context carries a station.
 - **Fix the seller redirect** — derive from `membership.roles.includes('seller')` rather
   than the retired `business_seller` permission (§1).
-- **Station queue view** for staff, off the printers tab: depth, last-seen, failures, retry.
+- **Stations tab** for staff: create a station, bind or re-bind its bridge, watch queue
+  depth and last-seen, send a test print, clear a queue.
 
 ### What phone-first means here
 
@@ -606,7 +713,7 @@ Not a breakpoint. These are the constraints that change the design:
 - **The right keyboard per field.** `inputMode="decimal"` for price, `type="tel"` for
   phone, `autocomplete` on sign-up fields.
 - **`autocomplete="one-time-code"` on the SMS code input.** This is what makes the texted
-  code one tap rather than six keystrokes, and the entire reason D19 keeps SMS on codes.
+  code one tap rather than six keystrokes, and the entire reason D21 keeps SMS on codes.
 - **Photos come from the camera** via `capture="environment"`, downscaled in the browser
   before upload. A modern phone photo is several megabytes and venue wifi is not.
 - **`100vh` is a lie on iOS.** Use `100dvh` and respect `env(safe-area-inset-*)`, or the
@@ -620,7 +727,7 @@ Venue connectivity is a **venue-readiness commitment**, not something the softwa
 An offline outbox would hold saves and replay them on reconnect — but since tags are
 enqueued server-side, nothing could print until the network returned, so a run of tags
 would emerge at once and the seller would be back to matching labels against a pile. That
-is precisely the batch model D11 rejected; machinery whose best case is the outcome we
+is precisely the batch model D13 rejected; machinery whose best case is the outcome we
 designed against is not worth building.
 
 Two cheap things stay, covering the brief blips that happen even on good wifi:
@@ -651,7 +758,7 @@ happily lie about.
 
 ---
 
-## 11. Work breakdown
+## 12. Work breakdown
 
 **Phase 1 — Server-side rendering.** Port layout to `@napi-rs/canvas`; move the rasteriser
 and ESC/POS builders; golden-image fixtures including a full-width 13-character SKU. Carry
@@ -660,11 +767,12 @@ rather than a constant. Nothing calls it yet.
 
 **Phase 2 — Browser renders via the server.** Point the Bluetooth path at the new endpoint
 and strip layout from `PhomemoPrinterService`, leaving transport. Two renderers become one,
-before firmware exists.
+before firmware becomes a third.
 
-**Phase 3 — Queue.** `PrintJob`, `SwapPrinter.deviceId`, the atomic claim, the three device
-endpoints, the `Ski Swap - Printer` role. Testable end to end with a fake device — no
-hardware needed.
+**Phase 3 — Stations and the queue.** `CheckinStation`, `SwapPrinter.bridgeDeviceId`, the
+`Ski Swap - Network Printer` role and `ski_swap:print` permission, `PrintJob`, the atomic
+claim and the three device endpoints. Testable end to end with a fake bridge — no hardware
+needed, and it is what the firmware team codes against.
 
 **Phase 4 — Sign-in context and link origin.** `ContactChallenge.context` plumbed through
 login and confirm with issue-time validation; `SELLER_SITE_URL` and origin selection driven
@@ -672,64 +780,73 @@ by the context's shape; `VerifyPage` converted to tap-to-confirm. Small, and ind
 useful — it is what lets any flow survive a sign-in.
 
 **Phase 5 — SKUs.** Narrow `skiSwapDeviceCode` to one character over a 32-glyph alphabet,
-scope its assignment to ski-swap roles, make exhaustion a hard error, move generation to
-per-station counters, and add the active-prefix constraint. A parallel-create test asserts
-distinct SKUs.
+scope its assignment to ski-swap roles, share the pool with station codes, make exhaustion
+a hard error, move generation to per-code counters, and add the active-prefix constraint. A
+parallel-create test asserts distinct SKUs.
 
 **Phase 6 — Check-in.** `PublicCheckinService`, register, join. Wire save-time enqueue into
-item creation in commit → render → enqueue order, with `hasPrintedTag` set by the ack;
-add reprint. Move the Square push
-into `finish` and call the existing receipt templates from it. Fix the seller redirect.
+item creation in commit → render → enqueue order, with `hasPrintedTag` set by the ack; add
+reprint. Move the Square push into `finish` and call the existing receipt templates from
+it. Fix the seller redirect.
 
 **Phase 7 — Web.** `AuthProvider` over the seller-site branch, purpose-built `/checkin`
-screens leading with phone sign-in, local draft persistence, station queue view, and a
+screens leading with phone sign-in, local draft persistence, the staff stations tab, and a
 `skiswap.localhost` dev path. Verified against the seller host — the admin host exercises
 the wrong branch entirely.
 
 **Phase 8 — Hardening.** Reaping under load, queue-depth alerting, abandoned-job
-visibility, and a documented recovery path for "the printer died mid-swap".
+visibility, and a documented recovery path for "the bridge died mid-swap".
 
 ---
 
-## 12. Accepted costs
+## 13. Accepted costs
 
 - **A rendering dependency in the API.** `@napi-rs/canvas` ships prebuilt binaries, so no
   build toolchain, but it is a native module and pins us to supported platforms.
+- **Three layers to provision instead of one.** A working station means a `CheckinStation`,
+  a bound bridge, and a `SwapPrinter` — with the BLE side of the association agreeing.
+  That is more to get wrong at setup, bought in exchange for each layer being replaceable
+  without disturbing the others (D7).
+- **Baked geometry can go stale.** A raster is rendered against the printer's paper size
+  and margins at enqueue. Swap the printer with jobs queued and those bytes carry the old
+  geometry; the remedy is clearing the station's queue and reprinting, not re-rendering,
+  because a job that could be re-rendered would have to carry a recipe rather than bytes
+  and unpick D10.
 - **40 mm media is under-served.** Both sizes render at the full 400-dot head width, so
   40×30 depends on margins to stay on the label. `50x30` is the size that matters and is
   correct; if 40×30 returns it wants its own inset, not a new head geometry.
-- **Duplicate tags are possible by construction (D10).** A printer that prints and fails to
+- **Duplicate tags are possible by construction (D12).** A bridge that prints and fails to
   ack will reprint on retry. Cheap, and the alternative loses tags.
+- **Two sellers at one station produce interleaved tags.** Nothing prevents it, by design
+  (D5): the floor plan keeps stations to one seller at a time, and when it slips the item
+  description on the tag is what tells people whose is whose. Cheaper to recover from than
+  state that would be stale as often as it was right.
 - **The seller is blocked on the printer.** Save-time printing ties the pace of check-in to
   hardware: a jam or an empty roll stops that station, where batch printing would have let
-  entry continue. The right trade for tag-to-item accuracy, but it makes printer health a
-  live operational concern — which is why §9 exposes queue depth and last-seen.
-- **Check-in requires the network, by choice (§10).** A station with no connectivity cannot
+  entry continue. The right trade for tag-to-item accuracy, but it makes station health a
+  live operational concern — which is why §10 exposes queue depth and last-seen.
+- **Check-in requires the network, by choice (§11).** A station with no connectivity cannot
   check anyone in. Venue wifi is a hard dependency, worth verifying before doors open
   rather than with a queue of people waiting.
-- **Two sellers at one station produce interleaved tags.** Nothing prevents it, by
-  design (D5): the floor plan is what keeps stations to one seller at a time, and when it
-  slips the item description on the tag is what tells people whose is whose. Cheap to
-  recover from, and cheaper than state that would be stale as often as it was right.
 - **No approval gate (D6)** means a mistyped price goes live immediately. Staff can edit
   after the fact, and the tag is the artefact that matters physically.
-- **13 characters is a hard ceiling** until the encoder changes (§5). D15 spends it exactly
-  — 6 prefix, 1 station, 4 counter, 2 separators — with nothing spare. Another field later
+- **13 characters is a hard ceiling** until the encoder changes (§6). D17 spends it exactly
+  — 6 prefix, 1 code, 4 counter, 2 separators — with nothing spare. Another field later
   means Code128-C, not another separator.
-- **32 station codes per org.** Ample once the pool is scoped to ski-swap devices, but a
-  ceiling where there was none: the generator used to spill to two characters rather than
-  run out.
+- **32 codes per org, shared between stations and check-in devices.** Ample once the pool
+  is scoped to ski-swap roles, but a ceiling where there was none: the generator used to
+  spill to two characters rather than run out.
 - **SKU numbers are not contiguous.** A create that fails after the counter increments
   burns that number. Harmless for uniqueness, but reconciling a swap by counting SKUs
   rather than items will be wrong.
-- **Square goes stale during check-in.** Deferring the push to finish (D14) means items are
+- **Square goes stale during check-in.** Deferring the push to finish (D16) means items are
   invisible in Square until a seller finishes, so a swap in progress under-reports. Nothing
   consumes that mid-swap today, but it is a behaviour change.
 - **The seller site gains an authenticated surface.** It has been entirely public, which
   made it easy to reason about. Its routes now divide into public and not, and that
   division has to be maintained rather than assumed.
 - **`ContactChallenge` gains a `Json` context column** — a generic escape hatch on a
-  security-sensitive record. D18's rules are what keep it from drifting into a `returnTo`
+  security-sensitive record. D20's rules are what keep it from drifting into a `returnTo`
   field, and they need holding on review.
 - **An emailed link still means leaving the browser.** The seller taps a notification, Mail
   opens, they tap once more and land back in Safari. Fewer steps than transcribing six
@@ -738,7 +855,7 @@ visibility, and a documented recovery path for "the printer died mid-swap".
 
 ---
 
-## 13. Open question: retiring the unauthenticated lookup
+## 14. Open question: retiring the unauthenticated lookup
 
 Everything else has been answered and folded into the decisions above. This one remains:
 **should the public `/s/:sellerId` page survive** once sellers can sign in?
