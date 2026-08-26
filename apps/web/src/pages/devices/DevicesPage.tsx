@@ -12,6 +12,7 @@ import StationsTab from './StationsTab';
 import type { AppShellContext } from '../../components/AppShell';
 import type { DeviceItem, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 
+import { DEVICE_ROLES } from '../../lib/api.types';
 import type { DeviceRole } from '../../lib/api.types';
 
 type Tab = 'tablets' | 'printers' | 'stations';
@@ -97,7 +98,7 @@ export default function DevicesPage() {
 
   const provisionMutation = useMutation({
     mutationFn: () =>
-      api.devices.provision(orgId, { name: provisionName, role: provisionRole, permissions: [] }),
+      api.devices.provision(orgId, { name: provisionName, role: provisionRole }),
     onSuccess: (d) => {
       setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret });
       setProvisionName('');
@@ -318,10 +319,15 @@ export default function DevicesPage() {
                 onChange={(e) => setProvisionRole(e.target.value as typeof provisionRole)}
                 className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
               >
-                <option value="Ski Swap - Check-In">Ski Swap - Check-In</option>
-                <option value="Ski Swap - Bulk Seller">Ski Swap - Bulk Seller</option>
-                <option value="Time Clock">Time Clock</option>
+                {DEVICE_ROLES.map((r) => (
+                  <option key={r.value} value={r.value}>{r.value}</option>
+                ))}
               </select>
+              {/* "Network Printer Adapter" says nothing about what the box does
+                  or what to do with it next. */}
+              <p className="text-xs text-gray-500">
+                {DEVICE_ROLES.find((r) => r.value === provisionRole)?.hint}
+              </p>
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={() => setShowProvisionForm(false)} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
                 <button
@@ -358,10 +364,9 @@ export default function DevicesPage() {
                         onChange={(e) => setEditingRole({ id: d.id, value: e.target.value as typeof editingRole.value })}
                         className="text-xs bg-surface-100 border border-gray-600 rounded px-2 py-0.5 text-white"
                       >
-                        <option value="Ski Swap - Check-In">Ski Swap - Check-In</option>
-                        <option value="Ski Swap - Bulk Seller">Ski Swap - Bulk Seller</option>
-                        <option value="Time Clock">Time Clock</option>
-                <option value="Time Clock">Time Clock</option>
+                        {DEVICE_ROLES.map((r) => (
+                          <option key={r.value} value={r.value}>{r.value}</option>
+                        ))}
                       </select>
                       <button onClick={() => updateRoleMutation.mutate({ id: d.id, role: editingRole.value })} disabled={updateRoleMutation.isPending} className="text-xs text-green-400 hover:underline">Save</button>
                       <button onClick={() => setEditingRole(null)} className="text-xs text-gray-500 hover:underline">Cancel</button>

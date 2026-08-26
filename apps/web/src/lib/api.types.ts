@@ -1,9 +1,23 @@
-export type DeviceRole =
-  | 'Ski Swap - Check-In'
-  | 'Ski Swap - Bulk Seller'
-  /** An ESP-32 bridging wifi to a Phomemo over BLE — it forwards bytes, nothing more. */
-  | 'Ski Swap - Network Printer Adapter'
-  | 'Time Clock';
+/**
+ * Every kind of device that can be provisioned, in the order the UI offers them.
+ *
+ * One list, because there are two dropdowns — provisioning and editing — and
+ * hand-maintaining both is how the network printer adapter ended up impossible
+ * to provision after the server already supported it.
+ *
+ * Mirrors `DeviceRoleSchema` in apps/api/src/contracts/devices.contracts.ts.
+ */
+export const DEVICE_ROLES = [
+  { value: 'Ski Swap - Check-In', hint: 'A tablet staff use to check sellers in.' },
+  { value: 'Ski Swap - Bulk Seller', hint: 'A tablet for a business seller entering their own stock.' },
+  {
+    value: 'Ski Swap - Network Printer Adapter',
+    hint: 'An ESP-32 that bridges wifi to a Phomemo over Bluetooth. Assign it to a check-in station once provisioned.',
+  },
+  { value: 'Time Clock', hint: 'A tablet patrollers clock in and out on.' },
+] as const;
+
+export type DeviceRole = (typeof DEVICE_ROLES)[number]['value'];
 
 // Shared types used by the web API client
 // These mirror the API contract shapes (source of truth is apps/api/src/contracts/)

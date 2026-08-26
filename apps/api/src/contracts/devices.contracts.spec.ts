@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { ProvisionDeviceSchema, DeviceListItemSchema, DeviceMeResponseSchema, DeviceRoleSchema } from './devices.contracts';
 
 describe('Devices contracts', () => {
@@ -68,5 +70,27 @@ describe('Devices contracts', () => {
     expect(fields).toContain('orgName');
     expect(fields).toContain('role');
     expect(fields).not.toContain('status');
+  });
+});
+
+/**
+ * The web app keeps its own copy of the role list, because it needs a label and
+ * a hint per role that the server has no use for. That copy is what the
+ * provisioning dropdown renders — so a role added here and forgotten there is a
+ * role nobody can provision, which is exactly what happened to the network
+ * printer adapter.
+ */
+describe('DeviceRole parity with the web app', () => {
+  const webTypes = fs.readFileSync(
+    path.join(__dirname, '..', '..', '..', 'web', 'src', 'lib', 'api.types.ts'),
+    'utf8',
+  );
+
+  it('offers every server role in the web UI', () => {
+    const block = webTypes.match(/export const DEVICE_ROLES = \[([\s\S]*?)\] as const;/);
+    expect(block).not.toBeNull();
+
+    const offered = [...block![1].matchAll(/value: '([^']+)'/g)].map((m) => m[1]);
+    expect(offered.sort()).toEqual([...DeviceRoleSchema.options].sort());
   });
 });

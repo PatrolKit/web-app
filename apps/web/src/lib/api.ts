@@ -256,7 +256,10 @@ export const api = {
 
   devices: {
     list: (orgId: string) => request<import('./api.types').DeviceItem[]>(`/orgs/${orgId}/devices`),
-    provision: (orgId: string, data: { name: string; role: import('./api.types').DeviceRole; permissions: string[] }) =>
+    // No permissions: a device is authorised by its role alone since the
+    // identity consolidation, and the schema is strict — sending the retired
+    // field failed every provision request.
+    provision: (orgId: string, data: { name: string; role: import('./api.types').DeviceRole }) =>
       request<import('./api.types').ProvisionedDevice>(`/orgs/${orgId}/devices`, {
         method: 'POST',
         body: JSON.stringify(data),
