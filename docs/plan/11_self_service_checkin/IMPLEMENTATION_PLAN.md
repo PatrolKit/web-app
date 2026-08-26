@@ -75,7 +75,7 @@ adopt the web's geometry, and the two should be reconciled when iOS is next touc
 | # | Decision | Rationale |
 |---|---|---|
 | **D7** | **Three layers: `CheckinStation` → `Device` → `SwapPrinter`.** The ESP-32 is a *bridge* — wifi to the server, BLE to a Phomemo — not a printer. | Each layer fails and gets replaced independently, and the station is the only one that survives both. That matters because the station's code is the SKU namespace printed on every tag (D17): held on the bridge, a dead ESP-32 would change it mid-swap; held on the printer, a dead M110 would. The chain rather than a star also makes "no bridge, no station" structural — a seller's phone cannot drive BLE, which is the entire reason the queue exists. |
-| **D8** | **The bridge is a registered device** with role `Ski Swap - Network Printer`, and the queue endpoints are gated by a new **`ski_swap:print`** permission. | Device auth already exists, is tested and scopes to an org. The permission does the actual work: `device.role` is read nowhere in the codebase outside a dropdown, so a role alone would leave a Time Clock device free to claim print jobs. |
+| **D8** | **The bridge is a registered device** with role `Ski Swap - Network Printer Adapter`, and the queue endpoints are gated by a new **`ski_swap:print`** permission. | Device auth already exists, is tested and scopes to an org. The permission does the actual work: `device.role` is read nowhere in the codebase outside a dropdown, so a role alone would leave a Time Clock device free to claim print jobs. |
 | **D9** | **Association is dual, re-bindable, and mismatch is loud.** Server-side on `CheckinStation`; on the device, written over BLE at provisioning. The claim response carries the station id, and firmware refuses work that does not match what it was provisioned with. | The two sides can disagree — a mis-association would otherwise feed station A's jobs to a bridge physically sitting at station B, with no error anywhere. Re-binding has to be possible because hardware dies mid-swap; queued jobs survive it because they belong to the station, not the bridge (D11). |
 
 ### Printing
@@ -659,7 +659,7 @@ being theoretical.
 - **`ItemService.create` stops awaiting Square** for check-in items — `syncItemToPos` and
   `fetchInventoryMap` both leave the save path (D16). Staff-created items are unchanged.
 - `SwapPrinter` gains `bridgeDeviceId`; responses gain the bound station where there is one.
-- `DEVICE_ROLES` gains `Ski Swap - Network Printer`; `PermissionKeySchema` gains
+- `DEVICE_ROLES` gains `Ski Swap - Network Printer Adapter`; `PermissionKeySchema` gains
   `ski_swap:print`.
 - `assignSkiSwapDeviceCode` is scoped to ski-swap roles and shares its pool with station
   codes (§6).
@@ -770,7 +770,7 @@ and strip layout from `PhomemoPrinterService`, leaving transport. Two renderers 
 before firmware becomes a third.
 
 **Phase 3 — Stations and the queue.** `CheckinStation`, `SwapPrinter.bridgeDeviceId`, the
-`Ski Swap - Network Printer` role and `ski_swap:print` permission, `PrintJob`, the atomic
+`Ski Swap - Network Printer Adapter` role and `ski_swap:print` permission, `PrintJob`, the atomic
 claim and the three device endpoints. Testable end to end with a fake bridge — no hardware
 needed, and it is what the firmware team codes against.
 
