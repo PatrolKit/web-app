@@ -798,9 +798,14 @@ and strip layout from `PhomemoPrinterService`, leaving transport. Two renderers 
 before firmware becomes a third.
 
 **Phase 3 — Stations and the queue.** `CheckinStation`, `SwapPrinter.bridgeDeviceId`, the
-`Ski Swap - Network Printer Adapter` role, the device-authorisation cutover (§10), `PrintJob`,
-the atomic claim and the three device endpoints. Testable end to end with a fake bridge — no hardware
-needed, and it is what the firmware team codes against.
+`Ski Swap - Network Printer Adapter` role, `PrintJob`, the atomic claim and the three device
+endpoints. Testable end to end with a fake bridge — no hardware needed, and it is what the
+firmware team codes against.
+
+Sequence the authorisation cutover (§10) *within* this phase: annotate every existing device
+route with its role and prove coverage first, then remove the bypass, then add the queue
+endpoints. Removing the bypass before the annotations exist would break every device in the
+field.
 
 **Phase 4 — Sign-in context and link origin.** `ContactChallenge.context` plumbed through
 login and confirm with issue-time validation; `SELLER_SITE_URL` and origin selection driven
@@ -873,6 +878,13 @@ visibility, and a documented recovery path for "the bridge died mid-swap".
 - **The seller site gains an authenticated surface.** It has been entirely public, which
   made it easy to reason about. Its routes now divide into public and not, and that
   division has to be maintained rather than assumed.
+- **Device authorisation changes under every device endpoint (§10).** The queue is the
+  reason, but the guard is shared, so eleven existing controllers change behaviour at the
+  same time. Bounded and testable — roles and routes are both enumerable — but it is not a
+  change confined to check-in.
+- **A device's role goes stale for up to an hour.** It rides in the token rather than being
+  looked up per request, because the claim endpoint polls once a second. Re-roling a device
+  takes effect at the next token refresh.
 - **`ContactChallenge` gains a `Json` context column** — a generic escape hatch on a
   security-sensitive record. D20's rules are what keep it from drifting into a `returnTo`
   field, and they need holding on review.
