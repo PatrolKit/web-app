@@ -66,7 +66,8 @@ ok('an unknown station is refused', wrongStation.status === 404, String(wrongSta
 
 const reg = await fetch(`${BASE}/public/checkin/${swap.id}/register?station=${station.id}`, {
   method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ firstName: 'Dana', lastName: 'Reyes', phone: '5550199001' }),
+  // Contact only — the name is settled after the contact is proven.
+  body: JSON.stringify({ phone: '5550199001' }),
 }).then(unwrap);
 ok('registering sends a code on the phone channel', reg.channel === 'phone' && !!reg.challengeId,
    JSON.stringify(reg).slice(0, 120));
@@ -98,6 +99,23 @@ const joinAgain = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/join`, {
   method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
 }).then(unwrap);
 ok('joining twice is idempotent', joinAgain.sellerId === joined.sellerId);
+
+// A person nobody has seen before has no name, so check-in asks for one — and
+// only then. A seller the roster already knows is never asked.
+ok('a brand-new seller is asked for a name', joined.needsName === true, String(joined.needsName));
+
+await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me`, {
+  method: 'PATCH', headers: H, body: JSON.stringify({ firstName: 'Dana', lastName: 'Reyes' }),
+});
+
+const rejoined = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/join`, {
+  method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
+}).then(unwrap);
+ok('a seller we already know is not asked again', rejoined.needsName === false, String(rejoined.needsName));
+
+// The name a register call cannot set is the one the receipt needs.
+ok('the name reaches the seller record',
+   (await prisma.user.findFirst({ where: { phone: '+15550199001' } })).firstName === 'Dana');
 
 // ─── Items ───────────────────────────────────────────────────────────────────
 

@@ -70,7 +70,7 @@ export class CheckinService {
   async register(
     swapId: string,
     stationId: string,
-    input: { firstName?: string; lastName?: string; email?: string; phone?: string },
+    input: { email?: string; phone?: string },
   ): Promise<IssuedChallenge> {
     const ctx = await this.context(swapId, stationId);
 
@@ -104,6 +104,11 @@ export class CheckinService {
   async join(userId: string, swapId: string, stationId: string) {
     const ctx = await this.context(swapId, stationId);
 
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+
     const membership = await this.people.upsertMembership(userId, ctx.orgId);
     const seller = await this.prisma.sellerProfile.upsert({
       where: { membershipId: membership.id },
@@ -114,7 +119,16 @@ export class CheckinService {
       select: { id: true },
     });
 
-    return { ...ctx, sellerId: seller.id };
+    return {
+      ...ctx,
+      sellerId: seller.id,
+      /**
+       * Nothing to print on a receipt but a phone number. Asked once, here,
+       * rather than up front where it would be discarded for everyone already
+       * on the roster.
+       */
+      needsName: !user.firstName && !user.lastName,
+    };
   }
 
   /**

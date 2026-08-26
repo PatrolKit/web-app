@@ -142,7 +142,7 @@ export const api = {
     register: (
       swapId: string,
       stationId: string,
-      body: { firstName?: string; lastName?: string; email?: string; phone?: string },
+      body: { email?: string; phone?: string },
     ) =>
       request<{
         queued: true;
@@ -153,7 +153,7 @@ export const api = {
         method: 'POST', body: JSON.stringify(body),
       }),
     join: (orgId: string, swapId: string, stationId: string) =>
-      request<import('./api.types').CheckinContext & { sellerId: string }>(
+      request<import('./api.types').CheckinContext & { sellerId: string; needsName: boolean }>(
         `/orgs/${orgId}/ski-swap/checkin/join`,
         { method: 'POST', body: JSON.stringify({ swapId, stationId }) },
       ),

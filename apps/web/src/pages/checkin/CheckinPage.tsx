@@ -5,6 +5,7 @@ import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { CheckinShell, ErrorNote } from './shared';
 import SignInStep from './SignInStep';
+import NameStep from './NameStep';
 import ItemsStep from './ItemsStep';
 import FinishStep from './FinishStep';
 import type { CheckinContext } from '../../lib/api.types';
@@ -24,7 +25,8 @@ export default function CheckinPage() {
   const stationId = params.get('station') ?? '';
   const { user, isLoading: authLoading } = useAuth();
 
-  const [joined, setJoined] = useState<(CheckinContext & { sellerId: string }) | null>(null);
+  const [joined, setJoined] = useState<(CheckinContext & { sellerId: string; needsName: boolean }) | null>(null);
+  const [namedThisSession, setNamedThisSession] = useState(false);
   const [joinError, setJoinError] = useState('');
   const [finished, setFinished] = useState(false);
 
@@ -91,6 +93,12 @@ export default function CheckinPage() {
   }
 
   if (finished) return <FinishStep context={context} />;
+
+  // Only a first-time seller sees this; everyone the roster already knows goes
+  // straight to entering items.
+  if (joined.needsName && !namedThisSession) {
+    return <NameStep context={context} onDone={() => setNamedThisSession(true)} />;
+  }
 
   return <ItemsStep context={context} onFinished={() => setFinished(true)} />;
 }

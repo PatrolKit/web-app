@@ -28,8 +28,6 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
 
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
   const [code, setCode] = useState('');
 
   const [challengeId, setChallengeId] = useState('');
@@ -42,9 +40,9 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
     setBusy(true);
     setError('');
     try {
+      // Contact only. Who this is gets settled by the lookup on the server, and
+      // a name — if we turn out not to have one — is asked for after.
       const res = await api.checkin.register(context.swapId, context.stationId, {
-        firstName: firstName.trim() || undefined,
-        lastName: lastName.trim() || undefined,
         ...(useEmail ? { email: email.trim() } : { phone: phone.trim() }),
       });
       setChallengeId(res.challengeId);
@@ -128,23 +126,6 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
       logoUrl={context.orgLogoUrl}
     >
       <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <input
-            className={inputClass}
-            placeholder="First name"
-            autoComplete="given-name"
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-          />
-          <input
-            className={inputClass}
-            placeholder="Last name"
-            autoComplete="family-name"
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-          />
-        </div>
-
         {/* Phone sits on the left and starts selected: an SMS code offers itself
             in the iOS keyboard bar, which email cannot match. Both are one tap,
             so nothing is hidden behind a link. */}

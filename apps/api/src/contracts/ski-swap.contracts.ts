@@ -263,10 +263,18 @@ export const CheckinContextSchema = z
   .object({ swapId: z.string().min(1), stationId: z.string().min(1) })
   .strict();
 
+/**
+ * A contact and nothing else.
+ *
+ * No name: most sellers are already on the roster, and a name supplied here
+ * would be discarded for them — `resolveOrCreate` fills gaps and never
+ * overwrites. Asking before we know who this is would also reveal whether a
+ * number is already known to the org, which the rest of the auth design goes to
+ * some trouble to avoid. The name is settled after the contact is proven, and
+ * only when there isn't one.
+ */
 export const CheckinRegisterSchema = z
   .object({
-    firstName: z.string().trim().max(80).optional(),
-    lastName: z.string().trim().max(80).optional(),
     email: z.string().trim().toLowerCase().email().optional(),
     phone: z.string().trim().min(7).max(32).optional(),
   })
