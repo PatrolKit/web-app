@@ -7,7 +7,9 @@ type Channel = 'email' | 'phone';
 
 export default function LoginPage() {
   const { user, isLoading, login } = useAuth();
-  const [channel, setChannel] = useState<Channel>('email');
+  // Phone leads: an SMS code offers itself in the iOS keyboard bar, which an
+  // emailed link cannot match.
+  const [channel, setChannel] = useState<Channel>('phone');
   const [contact, setContact] = useState('');
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [code, setCode] = useState('');
@@ -77,6 +79,9 @@ export default function LoginPage() {
             <form onSubmit={handleConfirm} className="space-y-4">
               <input
                 inputMode="numeric"
+                // Offers the texted code in the iOS keyboard bar as it arrives.
+                autoComplete="one-time-code"
+                maxLength={6}
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="123456"
@@ -111,21 +116,22 @@ export default function LoginPage() {
         <h1 className="text-3xl font-bold mb-2">
           <span className="text-brand-600">Patrol</span>Kit
         </h1>
-        <p className="text-gray-400 mb-6">Sign in with your email or phone number</p>
+        <p className="text-gray-400 mb-6">Sign in with your phone number or email</p>
 
         <div className="flex gap-2 mb-6">
-          {(['email', 'phone'] as const).map((c) => (
+          {(['phone', 'email'] as const).map((c) => (
             <button
               key={c}
               type="button"
               onClick={() => { setChannel(c); setContact(''); setError(''); }}
+              aria-pressed={channel === c}
               className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium ${
                 channel === c
                   ? 'bg-brand-600 text-white'
                   : 'bg-surface-100 text-gray-400 hover:text-white'
               }`}
             >
-              {c === 'email' ? 'Email' : 'Phone'}
+              {c === 'phone' ? 'Phone' : 'Email'}
             </button>
           ))}
         </div>
@@ -133,6 +139,8 @@ export default function LoginPage() {
         <form onSubmit={handleRequest} className="space-y-4">
           <input
             type={channel === 'email' ? 'email' : 'tel'}
+            inputMode={channel === 'email' ? 'email' : 'tel'}
+            autoComplete={channel === 'email' ? 'email' : 'tel'}
             value={contact}
             onChange={(e) => setContact(e.target.value)}
             placeholder={channel === 'email' ? 'you@example.com' : '(555) 010-1001'}
