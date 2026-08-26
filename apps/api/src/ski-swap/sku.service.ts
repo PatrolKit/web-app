@@ -23,21 +23,37 @@ export class SkuService {
   async next(swapId: string, code: string | null): Promise<string> {
     const key = code ?? SERVER_SKU_CODE;
 
-    // Upsert-then-increment in one statement: the unique index on
-    // (swapId, code) is what serialises two stations racing on their first item.
-    const counter = await this.prisma.swapSkuCounter.upsert({
-      where: { swapId_code: { swapId, code: key } },
-      update: { lastCounter: { increment: 1 } },
-      create: { id: createId(), swapId, code: key, lastCounter: 1 },
-      select: { lastCounter: true },
-    });
-
     const swap = await this.prisma.skiSwap.findUniqueOrThrow({
       where: { id: swapId },
       select: { skuPrefix: true },
     });
 
-    return formatSku(swap.skuPrefix, key, counter.lastCounter);
+    return formatSku(swap.skuPrefix, key, await this.claimCounter(swapId, key));
+  }
+
+  /**
+   * Claims the next counter value for a (swap, code) pair.
+   *
+   * Deliberately not `prisma.upsert`, which is two statements: concurrent
+   * callers all find no row and all attempt the insert, so every one but the
+   * winner fails on the unique index. That is not a rare race — it is the
+   * *first two items* at a station, entered seconds apart.
+   *
+   * `INSERT ... ON DUPLICATE KEY UPDATE` is one atomic statement, and MySQL's
+   * `LAST_INSERT_ID(expr)` smuggles the value this statement assigned back out
+   * on the session. The interactive transaction is what pins the connection, so
+   * the read cannot land on a different one and see someone else's number.
+   */
+  private async claimCounter(swapId: string, code: string): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        INSERT INTO SwapSkuCounter (id, swapId, code, lastCounter)
+        VALUES (${createId()}, ${swapId}, ${code}, LAST_INSERT_ID(1))
+        ON DUPLICATE KEY UPDATE lastCounter = LAST_INSERT_ID(lastCounter + 1)`;
+
+      const [row] = await tx.$queryRaw<{ n: bigint }[]>`SELECT LAST_INSERT_ID() AS n`;
+      return Number(row.n);
+    });
   }
 
   /**

@@ -19,7 +19,13 @@ const sshCapture = (cmd) =>
   }).trim();
 
 // 1. Build API and web
+//
+// The API build is incremental, and its tsbuildinfo outlives `rm -rf dist` —
+// which leaves a dist holding only whatever changed since. That is invisible
+// locally (the running server is already loaded) and fatal here, because step 2
+// rsyncs with --delete. Start from nothing.
 console.log('Building...');
+run('rm -rf apps/api/dist apps/api/tsconfig.tsbuildinfo');
 run('pnpm --filter api build');
 run('pnpm --filter web build', {
   env: { ...process.env, VITE_SELLER_SITE_URL: process.env.VITE_SELLER_SITE_URL ?? 'https://skiswap.patrolkit.io' },

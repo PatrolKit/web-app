@@ -28,9 +28,25 @@ describe('sku.util', () => {
 });
 
 describe('SkuService', () => {
+  /**
+   * The counter claim is raw SQL — its concurrency guarantee lives in MySQL and
+   * is covered by scripts/smoke-sku-concurrency.mjs against a real database.
+   * What a mock can honestly check is which code a claim is made against, so
+   * that is what these capture: the interpolated parameters of the statement.
+   */
   function makePrisma() {
+    const claims: unknown[][] = [];
     return {
-      swapSkuCounter: { upsert: jest.fn().mockResolvedValue({ lastCounter: 7 }) },
+      claims,
+      $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) =>
+        fn({
+          $executeRaw: (_strings: TemplateStringsArray, ...params: unknown[]) => {
+            claims.push(params);
+            return Promise.resolve(1);
+          },
+          $queryRaw: () => Promise.resolve([{ n: 7n }]),
+        }),
+      ),
       skiSwap: { findUniqueOrThrow: jest.fn().mockResolvedValue({ skuPrefix: 'SS26' }) },
       device: { findMany: jest.fn().mockResolvedValue([]) },
       checkinStation: { findMany: jest.fn().mockResolvedValue([]) },
@@ -40,16 +56,15 @@ describe('SkuService', () => {
   it('increments the counter belonging to that code, not a shared one', async () => {
     const prisma = makePrisma();
     expect(await new SkuService(asPrisma(prisma)).next('swap1', 'B')).toBe('SS26-B-0007');
-    expect(prisma.swapSkuCounter.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { swapId_code: { swapId: 'swap1', code: 'B' } } }),
-    );
+    // (id, swapId, code) — the pair the ON DUPLICATE KEY clause keys on.
+    expect(prisma.claims[0].slice(1)).toEqual(['swap1', 'B']);
   });
 
   it('routes server-minted SKUs to a reserved counter that is never allocatable', async () => {
     const prisma = makePrisma();
     expect(await new SkuService(asPrisma(prisma)).next('swap1', null)).toBe('SS26-0007');
-    const { where } = prisma.swapSkuCounter.upsert.mock.calls[0][0];
-    expect(SKU_CODE_ALPHABET).not.toContain(where.swapId_code.code);
+    const code = prisma.claims[0][2] as string;
+    expect(SKU_CODE_ALPHABET).not.toContain(code);
   });
 
   it('allocates the first free code across stations and devices alike', async () => {

@@ -108,14 +108,31 @@ export class SwapService {
       }
     }
 
-    const updated = await this.prisma.skiSwap.update({
-      where: { id: swapId },
-      data: {
-        ...(data.title !== undefined ? { title: data.title, skuPrefix: newSkuPrefix } : {}),
-        ...(data.active !== undefined ? { active: data.active } : {}),
-        ...(data.locationId !== undefined ? { locationId: data.locationId } : {}),
-      },
-    });
+    // `activeSkuPrefix` mirrors `skuPrefix` only while the swap is live. MySQL
+    // permits many NULLs in a unique index, so inactive swaps never collide —
+    // which is what stops two running swaps minting the same SKU. Recomputed on
+    // every patch because either half of the pair can move: activating a swap,
+    // or renaming one that is already active.
+    const willBeActive = data.active !== undefined ? data.active : swap.active;
+
+    const updated = await this.prisma.skiSwap
+      .update({
+        where: { id: swapId },
+        data: {
+          ...(data.title !== undefined ? { title: data.title, skuPrefix: newSkuPrefix } : {}),
+          ...(data.active !== undefined ? { active: data.active } : {}),
+          ...(data.locationId !== undefined ? { locationId: data.locationId } : {}),
+          activeSkuPrefix: willBeActive ? newSkuPrefix : null,
+        },
+      })
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) {
+          throw new ConflictException(
+            `Another running swap already issues "${newSkuPrefix}" SKUs. Rename one, or close the other first.`,
+          );
+        }
+        throw err;
+      });
 
     return this.toResponse(updated);
   }
@@ -205,4 +222,9 @@ export class SwapService {
       updatedAt: swap.updatedAt.toISOString(),
     };
   }
+}
+
+/** A collision on the (orgId, activeSkuPrefix) index — two live swaps, one prefix. */
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
 }
