@@ -15,7 +15,7 @@ import type { DeviceItem, SellerResponse, SwapPrinterRecord } from '../../lib/ap
 import { DEVICE_ROLES } from '../../lib/api.types';
 import type { DeviceRole } from '../../lib/api.types';
 
-type Tab = 'tablets' | 'printers' | 'stations';
+type Tab = 'devices' | 'printers' | 'stations';
 
 const tabClass = (active: boolean) =>
   `text-sm px-3 py-1.5 rounded transition ${active ? 'bg-surface-100 text-white' : 'text-gray-400 hover:text-white'}`;
@@ -88,11 +88,11 @@ export default function DevicesPage() {
   const { registerConnection, printPrinterIdLabel, printCalibration } = usePrinter();
   const canManagePrinters = hasSkiSwap && perms.has('ski_swap:admin');
   const canSeeStations = hasSkiSwap && perms.has('ski_swap:report');
-  const [activeTab, setActiveTab] = useState<Tab>('tablets');
+  const [activeTab, setActiveTab] = useState<Tab>('devices');
   const [pendingTestPrint, setPendingTestPrint] = useState<SwapPrinterRecord | null>(null);
   const [isPrintingId, setIsPrintingId] = useState<string | null>(null);
 
-  // ─── Tablets state ────────────────────────────────────────────────────────
+  // ─── Provisioned devices state ────────────────────────────────────────────
   const [provisionName, setProvisionName] = useState('');
   const [provisionRole, setProvisionRole] = useState<DeviceRole>('Ski Swap - Check-In');
   const [showProvisionForm, setShowProvisionForm] = useState(false);
@@ -164,8 +164,8 @@ export default function DevicesPage() {
   // The module can be switched off while someone is sitting on one of its tabs.
   // Falling back beats leaving them on a blank page with no tab highlighted.
   useEffect(() => {
-    if (activeTab === 'printers' && !canManagePrinters) setActiveTab('tablets');
-    if (activeTab === 'stations' && !canSeeStations) setActiveTab('tablets');
+    if (activeTab === 'printers' && !canManagePrinters) setActiveTab('devices');
+    if (activeTab === 'stations' && !canSeeStations) setActiveTab('devices');
   }, [activeTab, canManagePrinters, canSeeStations]);
 
   const { data: activeSwaps = [] } = useQuery({
@@ -276,8 +276,8 @@ export default function DevicesPage() {
 
       {/* Tab bar */}
       <nav className="flex items-center gap-1 border-b border-gray-800 pb-1">
-        <button className={tabClass(activeTab === 'tablets')} onClick={() => setActiveTab('tablets')}>
-          Tablets
+        <button className={tabClass(activeTab === 'devices')} onClick={() => setActiveTab('devices')}>
+          Provisioned Devices
         </button>
         {canManagePrinters && (
           <button className={tabClass(activeTab === 'printers')} onClick={() => setActiveTab('printers')}>
@@ -303,8 +303,8 @@ export default function DevicesPage() {
         />
       )}
 
-      {/* ── Tablets tab ──────────────────────────────────────────────────── */}
-      {activeTab === 'tablets' && (
+      {/* ── Provisioned devices tab ──────────────────────────────────────── */}
+      {activeTab === 'devices' && (
         <div className="space-y-4">
           {perms.has('devices:provision') && (
             <div className="flex justify-end">
