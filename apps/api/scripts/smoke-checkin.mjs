@@ -4,9 +4,18 @@
 //
 //   PORT=4001 node apps/api/dist/src/main.js &
 //   node apps/api/scripts/smoke-checkin.mjs
+//
+// On a host with delivery switched on, the register step really does hand a
+// message to SNS. The number below is inside +1 555-01xx, reserved for
+// fictional use and not routable to a person, so the send fails at the carrier
+// rather than reaching anyone. Do not swap it for a number you own.
 
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
+// Node 18 has no global `crypto`; the deployed host runs 18.
+import { randomUUID } from 'crypto';
+
+import { smokeOrg, forceChallengeCode } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
@@ -14,7 +23,7 @@ const unwrap = async (r) => { const b = await r.json(); return b && b.success &&
 const ok = (label, cond, extra = '') =>
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? ' — ' + extra : ''}`);
 
-const org = await prisma.organization.findFirst();
+const org = await smokeOrg(prisma);
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 const SEED = 'checkin-smoke';
@@ -59,8 +68,12 @@ const reg = await fetch(`${BASE}/public/checkin/${swap.id}/register?station=${st
   method: 'POST', headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ firstName: 'Dana', lastName: 'Reyes', phone: '5550199001' }),
 }).then(unwrap);
-ok('registering sends a code on the phone channel', reg.channel === 'phone' && !!reg.devCode,
+ok('registering sends a code on the phone channel', reg.channel === 'phone' && !!reg.challengeId,
    JSON.stringify(reg).slice(0, 120));
+
+// Production withholds the code, correctly — so take the database route rather
+// than the API one. Only delivery is bypassed; confirm is the real endpoint.
+const code = reg.devCode ?? await forceChallengeCode(prisma, reg.challengeId);
 
 const created = await prisma.user.findFirst({ where: { phone: '+15550199001' } });
 ok('the person is created unverified', !!created && created.phoneVerifiedAt === null,
@@ -68,7 +81,7 @@ ok('the person is created unverified', !!created && created.phoneVerifiedAt === 
 
 const session = await fetch(`${BASE}/auth/challenges/${reg.challengeId}/confirm`, {
   method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ code: reg.devCode }),
+  body: JSON.stringify({ code }),
 }).then(unwrap);
 ok('confirming returns the sign-in context',
    session.context?.stationId === station.id && session.context?.swapId === swap.id,
@@ -98,7 +111,7 @@ const addItem = (name, priceCents, key) =>
 // Fresh per run: keys are scoped to the swap, and this script makes a new swap
 // each time, but a fixed key would still replay the previous *run's* response
 // were that ever to change.
-const runKey = crypto.randomUUID();
+const runKey = randomUUID();
 const item1 = await addItem('Volkl Kendo 88 skis, 177cm', 24900, `${runKey}-1`);
 const item2 = await addItem('Smith Vantage helmet, medium', 6500, `${runKey}-2`);
 ok('SKUs carry the station code', item1.sku.startsWith('CIS-Q-') && item2.sku.startsWith('CIS-Q-'),

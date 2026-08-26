@@ -15,6 +15,18 @@ import {
 } from './shared';
 import type { CheckinContext, CheckinSummary } from '../../lib/api.types';
 
+/**
+ * A key unique to one save attempt.
+ *
+ * `crypto.randomUUID` needs iOS 15.4, and this is the one screen guaranteed to
+ * meet older phones — a seller's handset is whatever they own. The fallback only
+ * has to be unique among one person's saves, not globally.
+ */
+function idempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `k-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** Survives a reload, a backgrounded tab, and Safari discarding the page. */
 function draftKey(swapId: string) {
   return `patrolkit:checkin:draft:${swapId}`;
@@ -81,7 +93,7 @@ export default function ItemsStep({
     setError('');
     // Generated per attempt, kept across retries of that attempt: the point is
     // that a dropped response does not mint a second SKU and print a second tag.
-    const key = crypto.randomUUID();
+    const key = idempotencyKey();
     try {
       const item = await api.skiSwap.sellerCreateItem(
         context.orgId,

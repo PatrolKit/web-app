@@ -65,6 +65,22 @@ ssh('cd /home/ec2-user/patrolkit && node_modules/.bin/prisma migrate deploy');
 console.log('Seeding database...');
 ssh('cd /home/ec2-user/patrolkit && node_modules/.bin/ts-node --project prisma/tsconfig.seed.json prisma/seed.ts');
 
+// 6a. Warn if the seller-site origin is unset.
+// It falls back to localhost, which is right for development and silently wrong
+// here: every check-in sign-in link and every receipt QR would point at a
+// machine the seller does not have. The symptom is a dead link days later.
+const sellerSite = sshCapture(
+  "grep -E '^SELLER_SITE_URL=' /home/ec2-user/patrolkit/.env || true",
+);
+if (!sellerSite) {
+  console.warn(
+    '\n  WARNING: SELLER_SITE_URL is not set on the server.\n' +
+    '  Check-in sign-in links and receipt QR codes will point at localhost.\n' +
+    '  Set SELLER_SITE_URL=https://skiswap.patrolkit.io in\n' +
+    '  /home/ec2-user/patrolkit/.env and restart.\n',
+  );
+}
+
 // 6. Warn if outbound notifications are switched off on the server.
 // The switch is fail-closed, so an unset variable means no email or SMS is
 // ever delivered — and the symptom is silence, not an error. Surfacing it

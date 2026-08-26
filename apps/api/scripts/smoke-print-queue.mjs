@@ -12,13 +12,15 @@
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 
+import { smokeOrg } from './_fixture.mjs';
+
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
 const unwrap = async (r) => { const b = await r.json(); return b && b.success && 'data' in b ? b.data : b; };
 const ok = (label, cond, extra = '') =>
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? ' — ' + extra : ''}`);
 
-const org = await prisma.organization.findFirst();
+const org = await smokeOrg(prisma);
 console.log('org:', org.id, org.name);
 
 // Clean any prior run

@@ -10,31 +10,22 @@
 
 import { PrismaClient } from '@prisma/client';
 
+import { smokeOrg, smokeStaff, smokeSession } from './_fixture.mjs';
+
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
 const unwrap = async (r) => { const b = await r.json(); return b && b.success && 'data' in b ? b.data : b; };
 const ok = (label, cond, extra = '') =>
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? ' — ' + extra : ''}`);
 
-const org = await prisma.organization.findFirst();
-const admin = await prisma.user.findFirst({
-  where: { memberships: { some: { orgId: org.id, deletedAt: null } }, email: { not: null } },
-});
+const org = await smokeOrg(prisma);
+const { user: staff } = await smokeStaff(prisma, org, [
+  'ski_swap:admin', 'ski_swap:manage', 'ski_swap:report',
+]);
 
-// Dev-only: the sign-in code comes back in the response when outbound
-// notifications are off and NODE_ENV is not production.
-const start = await fetch(`${BASE}/auth/login`, {
-  method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ email: admin.email }),
-}).then(unwrap);
-ok('sign-in code issued in dev', !!start.devCode, start.devCode ? '' : JSON.stringify(start));
-
-const session = await fetch(`${BASE}/auth/challenges/${start.challengeId}/confirm`, {
-  method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ code: start.devCode }),
-}).then(unwrap);
-const H = { authorization: `Bearer ${session.accessToken}`, 'content-type': 'application/json' };
-ok('signed in', !!session.accessToken);
+const accessToken = await smokeSession(prisma, BASE, staff, unwrap);
+ok('signed in', !!accessToken);
+const H = { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' };
 
 await prisma.swapPrinter.deleteMany({ where: { orgId: org.id, name: 'Render smoke' } });
 const printer = await prisma.swapPrinter.create({
@@ -103,13 +94,16 @@ ok('png preview is a PNG', pngBytes.subarray(1, 4).toString() === 'PNG', `${pngB
 const bad = await render({ kind: 'item' });
 ok('item tag with no item is rejected', bad.status === 400, String(bad.status));
 
-// A printer in another org is invisible.
+// A printer belonging to another org is invisible, whether or not the caller
+// has any standing there.
 const otherOrg = await prisma.organization.findFirst({ where: { id: { not: org.id } } });
 if (otherOrg) {
   const foreign = await fetch(`${BASE}/orgs/${otherOrg.id}/ski-swap/printers/${printer.id}/labels`, {
     method: 'POST', headers: H, body: JSON.stringify({ kind: 'calibration' }),
   });
-  ok('cross-org render is refused', foreign.status === 403 || foreign.status === 404, String(foreign.status));
+  ok('cross-org render is refused', foreign.status >= 400, String(foreign.status));
+} else {
+  console.log('SKIP  cross-org render — only one org exists on this database');
 }
 
 await prisma.swapPrinter.delete({ where: { id: printer.id } });

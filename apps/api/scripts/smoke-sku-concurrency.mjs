@@ -10,12 +10,14 @@
 import { PrismaClient } from '@prisma/client';
 import { SkuService } from '../dist/src/ski-swap/sku.service.js';
 
+import { smokeOrg } from './_fixture.mjs';
+
 const prisma = new PrismaClient();
 const sku = new SkuService(prisma);
 const ok = (label, cond, extra = '') =>
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? ' — ' + extra : ''}`);
 
-const org = await prisma.organization.findFirst();
+const org = await smokeOrg(prisma);
 await prisma.skiSwap.deleteMany({ where: { orgId: org.id, title: 'SKU concurrency swap' } });
 const swap = await prisma.skiSwap.create({
   data: { orgId: org.id, title: 'SKU concurrency swap', squareCategoryId: 'sku', skuPrefix: 'SKU' },
