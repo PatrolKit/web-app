@@ -395,9 +395,44 @@ enqueued, and a later edit does not re-enqueue (D5c). That flag is also what mak
 request safe to retry — a create whose response was lost will not double-print, because
 the retry either creates a fresh item or finds the flag already set.
 
+### SKUs, and what has to happen before a tag can render
+
+The SKU is the barcode. `_drawPriceTag` renders `code128BModules(item.sku)`, so the SKU is
+what the register scans — it is the item's identity, not a label on it. It is already free
+of PII: `formatSku` produces `PREFIX-NNNN` from a prefix derived from the swap title and an
+atomic counter, e.g. `SS26-0042`. Nothing about the seller appears on the tag.
+
+It also already exists before printing, because `ItemService.create` increments
+`SkiSwap.skuCounter` and formats the SKU before writing the row. Save-time printing does not
+change that. What it changes is that this path is now **concurrent**.
+
+**Ordering.** The item is created and committed first, *then* the label renders, *then* the
+job is enqueued, *then* `hasPrintedTag` is set. Rendering must not happen inside the
+create transaction: it would hold the `SkiSwap` row lock — the one every station contends
+on for its SKU — across a canvas render, serialising every station in the venue behind one
+label. The cost of committing first is that a render or enqueue failure leaves a saved item
+with `hasPrintedTag` still false, which is exactly the recoverable state we want: the UI
+shows it as unprinted and the seller taps reprint.
+
+**Concurrency needs a real test.** Staff entry was serial — one person typing at one
+counter. Self-check-in makes simultaneous item creation across stations the normal case,
+and every one of them contends on a single `SkiSwap.skuCounter` row. Prisma's `update`
+returns the row it wrote and holds the lock until commit, so this should be safe, but
+"should be" is not good enough here: a duplicate SKU is a duplicate barcode, and a
+duplicate barcode sells the wrong item at the register. Phase 5 gets an explicit test that
+hammers `create` from parallel callers and asserts every SKU is distinct.
+
+**Four digits is closer to the ceiling than it looks.** `padStart(4, '0')` implies 9,999
+items per swap. A large swap with a thousand-plus sellers averaging five items each is
+already in that range, and self-check-in exists to make entering more items easier. Nothing
+truncates past 9,999 — the string simply grows — but the barcode grows with it, and the
+label is 400 dots wide. Worth rendering a five-digit SKU during Phase 1 to confirm it still
+fits and scans.
+
 **Reprints are explicit.** `POST .../items/:itemId/reprint { printerId }` re-enqueues one
-item — the answer to a jam, a mis-stick, or a tag that came out unreadable. It is the only
-path that deliberately prints an item twice.
+item — the answer to a jam, a mis-stick, or a tag that came out unreadable. It renders from
+the item's **stored** SKU and never increments the counter, so a reprint is byte-identical
+to the original. It is the only path that deliberately prints an item twice.
 
 **Finish prints the receipt, pushes to Square, and releases the station.** `POST
 /orgs/:orgId/ski-swap/checkin/finish` does three things in order: enqueues the receipt,
@@ -563,7 +598,8 @@ browser will happily lie about.
 ## 10. Work breakdown
 
 **Phase 1 — Server-side rendering.** Port layout to `@napi-rs/canvas`; move the rasteriser
-and ESC/POS builders; golden-image fixtures. Carry the **web's** geometry — 400-dot head,
+and ESC/POS builders; golden-image fixtures, including a five-digit SKU to confirm the
+barcode still fits 400 dots (§7). Carry the **web's** geometry — 400-dot head,
 50 bytes per row — since that is what prints correctly on 50 mm media today, and make it an
 input from the printer record rather than a constant. No behaviour change yet: nothing
 calls the renderer.
@@ -582,7 +618,8 @@ driven by the context's shape (§5). Convert `VerifyPage` to tap-to-confirm (D6f
 and independently useful — it is what lets any flow survive a sign-in.
 
 **Phase 5 — Check-in.** `PublicCheckinService`, register, join. Wire save-time enqueue into
-item creation, plus reprint. Move the Square push out of the save path into `finish` (D10),
+item creation in the commit → render → enqueue → flag order (§7), with a parallel-create
+test asserting SKU uniqueness. Add reprint. Move the Square push out of the save path into `finish` (D10),
 and call the existing header + item receipt templates from it. Fix the seller redirect.
 
 **Phase 6 — Web.** `AuthProvider` over the seller-site branch, purpose-built `/checkin`
@@ -621,6 +658,14 @@ visibility, and a documented recovery path for "the printer died mid-swap".
   an outbox whose best case reproduces the batch printing D5b rejected — but it makes
   venue wifi a hard dependency, worth verifying before doors open rather than with a queue
   of people waiting.
+- **SKU numbers are not contiguous.** A create that fails after the counter increments
+  burns that number. Harmless for uniqueness, but anyone reconciling a swap by counting
+  SKUs rather than items will be wrong.
+- **SKUs are unique per swap, not per org.** `@@unique([swapId, sku])`, and `deriveSkuPrefix`
+  is a function of the title — two swaps in one org with similar names can derive the same
+  prefix and issue the same SKU. Check-in is unambiguous because the QR names the swap, and
+  Square resolves by its own catalog id, but anything that looks an item up by SKU alone
+  within an org would be.
 - **Square goes stale during check-in.** Deferring the push to finish (D10) means items are
   invisible in Square until a seller finishes, so a swap in progress under-reports. Nothing
   consumes that mid-swap today, but it is a behaviour change from item-by-item sync.
