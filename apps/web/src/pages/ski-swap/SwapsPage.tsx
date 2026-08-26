@@ -130,26 +130,33 @@ export default function SwapsPage() {
               className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
           </label>
 
+          {/* These come from Square, not from PatrolKit — the list is whatever
+              the connected Square account has. Saying so avoids it reading as a
+              venue or an address, which is what "Location" suggests on its own. */}
           <label className="block">
-            <span className="text-gray-400 text-xs uppercase">Location</span>
+            <span className="text-gray-400 text-xs uppercase">Square Location</span>
             {locationsLoading ? (
-              <p className="mt-1 text-gray-500 text-sm">Loading locations…</p>
+              <p className="mt-1 text-gray-500 text-sm">Loading locations from Square…</p>
             ) : locationsError ? (
               <p className="mt-1 text-red-400 text-sm">
-                {locationsError instanceof ApiError ? locationsError.message : 'Could not load locations'}
+                {locationsError instanceof ApiError ? locationsError.message : 'Could not load locations from Square'}
               </p>
             ) : locations.length === 0 ? (
-              <p className="mt-1 text-red-400 text-sm">No active locations found. Check your Square credentials.</p>
+              <p className="mt-1 text-red-400 text-sm">
+                No active locations found in Square. Check your Square credentials under Administration.
+              </p>
             ) : (
               <>
                 <select required value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })}
                   className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white">
-                  {locations.length > 1 && <option value="">Select a location…</option>}
+                  {locations.length > 1 && <option value="">Select a Square location…</option>}
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
-                {locations.length === 1 && (
-                  <p className="mt-1 text-gray-500 text-xs">One location found — selected automatically.</p>
-                )}
+                <p className="mt-1 text-gray-500 text-xs">
+                  {locations.length === 1 ? 'One Square location found — selected automatically. ' : ''}
+                  Items in this swap are listed and their inventory tracked against this
+                  location in your Square account. It is not the venue address.
+                </p>
               </>
             )}
           </label>
