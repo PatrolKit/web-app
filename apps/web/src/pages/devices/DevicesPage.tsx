@@ -124,31 +124,40 @@ function BridgeProvisioningPanel({
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2">
-            <input
-              value={ssid}
-              onChange={(e) => setSsid(e.target.value)}
-              placeholder="Wi-Fi network"
-              className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
-            />
-            <input
-              type="password"
-              value={psk}
-              onChange={(e) => setPsk(e.target.value)}
-              placeholder="Wi-Fi password"
-              className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
-            />
+            <label className="block">
+              <span className="block text-xs text-gray-400 mb-1">Wi-Fi network</span>
+              <input
+                value={ssid}
+                onChange={(e) => setSsid(e.target.value)}
+                placeholder="Network name"
+                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-xs text-gray-400 mb-1">Wi-Fi password</span>
+              <input
+                type="password"
+                value={psk}
+                onChange={(e) => setPsk(e.target.value)}
+                placeholder="Blank if open"
+                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+              />
+            </label>
           </div>
 
-          <select
-            value={printerName}
-            onChange={(e) => setPrinterName(e.target.value)}
-            className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
-          >
-            {printers.length === 0 && <option value="">No printers registered yet</option>}
-            {printers.map((p) => (
-              <option key={p.id} value={p.bluetoothName}>{p.name} ({p.bluetoothName})</option>
-            ))}
-          </select>
+          <label className="block">
+            <span className="block text-xs text-gray-400 mb-1">Printer this bridge drives</span>
+            <select
+              value={printerName}
+              onChange={(e) => setPrinterName(e.target.value)}
+              className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+            >
+              {printers.length === 0 && <option value="">No printers registered yet</option>}
+              {printers.map((p) => (
+                <option key={p.id} value={p.bluetoothName}>{p.name} ({p.bluetoothName})</option>
+              ))}
+            </select>
+          </label>
 
           {status && !done && (
             <p className="text-xs text-gray-400">{describeBridgeState(status)}</p>
@@ -180,6 +189,11 @@ function describeBridgeState(status: BridgeStatus): string {
 
 function ProvisioningCodeCard({ clientId, secret, role, printers, onDismiss }: { clientId: string; secret: string; role: DeviceRole | null; printers: SwapPrinterRecord[]; onDismiss: () => void }) {
   const [copied, setCopied] = useState(false);
+  // A bridge takes its credentials over Bluetooth, so the code is dead weight
+  // there. Every other role is an iOS tablet, and the code is the only way it
+  // gets provisioned.
+  const isBridge = role === 'Ski Swap - Network Printer Adapter';
+
   const payload = JSON.stringify({
     v: 1, cid: clientId, sec: secret,
     api: `${window.location.protocol}//${window.location.host}/api/v1`,
@@ -202,23 +216,27 @@ function ProvisioningCodeCard({ clientId, secret, role, printers, onDismiss }: {
 
   return (
     <div className="bg-green-900/30 border border-green-700 rounded-lg p-4">
-      <p className="text-green-400 font-medium mb-4">Device provisioned — scan or copy the code now</p>
-      <div className="flex flex-col items-center gap-3">
-        <div className="bg-white p-3 rounded">
-          <QRCode value={payload} size={200} />
-        </div>
-        <p className="text-xs text-gray-400">Scan with PatrolKit iOS, or copy below</p>
-        <button
-          onClick={copy}
-          className="text-sm bg-brand-500 hover:bg-brand-600 text-white px-6 py-2 rounded w-full max-w-xs transition-colors"
-        >
-          {copied ? 'Copied!' : 'Copy provisioning code'}
-        </button>
-      </div>
+      <p className="text-green-400 font-medium mb-4">
+        {isBridge ? 'Device provisioned — set it up now' : 'Device provisioned — scan or copy the code now'}
+      </p>
 
-      {role === 'Ski Swap - Network Printer Adapter' && (
+      {isBridge ? (
         <BridgeProvisioningPanel clientId={clientId} secret={secret} printers={printers} />
+      ) : (
+        <div className="flex flex-col items-center gap-3">
+          <div className="bg-white p-3 rounded">
+            <QRCode value={payload} size={200} />
+          </div>
+          <p className="text-xs text-gray-400">Scan with PatrolKit iOS, or copy below</p>
+          <button
+            onClick={copy}
+            className="text-sm bg-brand-500 hover:bg-brand-600 text-white px-6 py-2 rounded w-full max-w-xs transition-colors"
+          >
+            {copied ? 'Copied!' : 'Copy provisioning code'}
+          </button>
+        </div>
       )}
+
       <button onClick={onDismiss} className="mt-4 text-xs text-gray-500 hover:underline block">Dismiss</button>
     </div>
   );
