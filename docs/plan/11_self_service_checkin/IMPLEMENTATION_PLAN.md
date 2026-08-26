@@ -1,6 +1,8 @@
 # Plan 11 — Self-Service Check-In
 
-> **Status:** Draft — for review.
+> **Status:** Implemented on `feat/self-checkin` and deployed to `patrolkit.io`. Kept as the
+> design record.
+> **Companion:** [`RUNBOOK.md`](./RUNBOOK.md) — what to do when something breaks at a venue.
 > **Depends on:** [Plan 10](../10_user%20consolidation/IMPLEMENTATION_PLAN.md). The identity
 > half of this flow — `ContactChallenge`, two-channel login, `PersonService` matching,
 > `SellerProfile` — already exists and is deployed.
