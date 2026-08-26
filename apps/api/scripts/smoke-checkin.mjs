@@ -1,0 +1,197 @@
+// Walks a whole self-service check-in against a running API and real database:
+// station QR → register → confirm → join → two items → reprint → finish, then
+// drains the queue as the bridge would.
+//
+//   PORT=4001 node apps/api/dist/src/main.js &
+//   node apps/api/scripts/smoke-checkin.mjs
+
+import { PrismaClient } from '@prisma/client';
+import argon2 from 'argon2';
+
+const prisma = new PrismaClient();
+const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
+const unwrap = async (r) => { const b = await r.json(); return b && b.success && 'data' in b ? b.data : b; };
+const ok = (label, cond, extra = '') =>
+  console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? ' — ' + extra : ''}`);
+
+const org = await prisma.organization.findFirst();
+
+// ─── Fixtures ────────────────────────────────────────────────────────────────
+const SEED = 'checkin-smoke';
+await prisma.printJob.deleteMany({ where: { orgId: org.id } });
+await prisma.swapItem.deleteMany({ where: { orgId: org.id, swap: { title: 'Check-in smoke swap' } } });
+await prisma.skiSwap.deleteMany({ where: { orgId: org.id, title: 'Check-in smoke swap' } });
+await prisma.checkinStation.deleteMany({ where: { orgId: org.id, name: 'Smoke station' } });
+await prisma.device.deleteMany({ where: { clientId: `${SEED}-bridge` } });
+await prisma.swapPrinter.deleteMany({ where: { orgId: org.id, name: 'Smoke printer' } });
+const priorUser = await prisma.user.findFirst({ where: { phone: '+15550199001' } });
+if (priorUser) await prisma.user.delete({ where: { id: priorUser.id } });
+
+const swap = await prisma.skiSwap.create({
+  data: {
+    orgId: org.id, title: 'Check-in smoke swap', squareCategoryId: 'smoke',
+    skuPrefix: 'CIS', active: true, activeSkuPrefix: 'CIS',
+  },
+});
+const device = await prisma.device.create({
+  data: {
+    orgId: org.id, name: 'Smoke bridge', clientId: `${SEED}-bridge`,
+    secretHash: await argon2.hash('smoke-secret'), role: 'Ski Swap - Network Printer Adapter',
+  },
+});
+const printer = await prisma.swapPrinter.create({
+  data: { orgId: org.id, name: 'Smoke printer', bluetoothName: 'M110-CI', bridgeDeviceId: device.id },
+});
+const station = await prisma.checkinStation.create({
+  data: { orgId: org.id, name: 'Smoke station', code: 'Q', deviceId: device.id, printerId: printer.id },
+});
+
+// ─── The seller's walk ───────────────────────────────────────────────────────
+
+const ctx = await fetch(`${BASE}/public/checkin/${swap.id}?station=${station.id}`).then(unwrap);
+ok('station QR resolves to a swap and a station',
+   ctx.swapId === swap.id && ctx.stationName === 'Smoke station', JSON.stringify(ctx).slice(0, 120));
+
+const wrongStation = await fetch(`${BASE}/public/checkin/${swap.id}?station=nope`);
+ok('an unknown station is refused', wrongStation.status === 404, String(wrongStation.status));
+
+const reg = await fetch(`${BASE}/public/checkin/${swap.id}/register?station=${station.id}`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ firstName: 'Dana', lastName: 'Reyes', phone: '5550199001' }),
+}).then(unwrap);
+ok('registering sends a code on the phone channel', reg.channel === 'phone' && !!reg.devCode,
+   JSON.stringify(reg).slice(0, 120));
+
+const created = await prisma.user.findFirst({ where: { phone: '+15550199001' } });
+ok('the person is created unverified', !!created && created.phoneVerifiedAt === null,
+   created ? `verifiedAt=${created.phoneVerifiedAt}` : 'missing');
+
+const session = await fetch(`${BASE}/auth/challenges/${reg.challengeId}/confirm`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ code: reg.devCode }),
+}).then(unwrap);
+ok('confirming returns the sign-in context',
+   session.context?.stationId === station.id && session.context?.swapId === swap.id,
+   JSON.stringify(session.context));
+
+const H = { authorization: `Bearer ${session.accessToken}`, 'content-type': 'application/json' };
+
+const joined = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/join`, {
+  method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
+}).then(unwrap);
+ok('joining creates a seller profile', !!joined.sellerId, JSON.stringify(joined).slice(0, 100));
+
+const joinAgain = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/join`, {
+  method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
+}).then(unwrap);
+ok('joining twice is idempotent', joinAgain.sellerId === joined.sellerId);
+
+// ─── Items ───────────────────────────────────────────────────────────────────
+
+const addItem = (name, priceCents, key) =>
+  fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items`, {
+    method: 'POST',
+    headers: { ...H, ...(key ? { 'idempotency-key': key } : {}) },
+    body: JSON.stringify({ swapId: swap.id, name, priceCents, quantity: 1, stationId: station.id }),
+  }).then(unwrap);
+
+const item1 = await addItem('Volkl Kendo 88 skis, 177cm', 24900, 'key-1');
+const item2 = await addItem('Smith Vantage helmet, medium', 6500, 'key-2');
+ok('SKUs carry the station code', item1.sku.startsWith('CIS-Q-') && item2.sku.startsWith('CIS-Q-'),
+   `${item1.sku}, ${item2.sku}`);
+ok('SKUs are sequential and distinct', item1.sku !== item2.sku, `${item1.sku} vs ${item2.sku}`);
+
+const retry = await addItem('Volkl Kendo 88 skis, 177cm', 24900, 'key-1');
+ok('a retried save returns the same item, not a second one', retry.id === item1.id,
+   `${retry.id} vs ${item1.id}`);
+
+const settings = await prisma.skiSwapSettings.findUnique({ where: { orgId: org.id } });
+const perItem = settings?.labelsPerItem ?? 1;
+let jobs = await prisma.printJob.count({ where: { stationId: station.id, kind: 'item' } });
+ok('saving queued a tag per item', jobs === perItem * 2, `${jobs} jobs for 2 items @ ${perItem}`);
+
+ok('hasPrintedTag is still false before anything printed',
+   (await prisma.swapItem.findUnique({ where: { id: item1.id } })).hasPrintedTag === false);
+
+// An edit must not queue a second tag.
+await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/${item1.id}`, {
+  method: 'PATCH', headers: H, body: JSON.stringify({ priceCents: 22900 }),
+});
+jobs = await prisma.printJob.count({ where: { stationId: station.id, kind: 'item' } });
+ok('editing does not queue another tag', jobs === perItem * 2, `${jobs} jobs`);
+
+// ─── The bridge drains the queue ─────────────────────────────────────────────
+
+const tok = await fetch(`${BASE}/auth/device/token`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ clientId: `${SEED}-bridge`, clientSecret: 'smoke-secret' }),
+}).then(unwrap);
+const DH = { authorization: `Bearer ${tok.accessToken}`, 'content-type': 'application/json' };
+
+async function drain() {
+  let printed = 0;
+  for (let i = 0; i < 20; i++) {
+    const claim = await fetch(`${BASE}/devices/me/print-jobs/claim?limit=8`, { method: 'POST', headers: DH }).then(unwrap);
+    if (!claim.jobs.length) break;
+    for (const job of claim.jobs) {
+      await fetch(`${BASE}/devices/me/print-jobs/${job.id}/ack`, { method: 'POST', headers: DH });
+      printed++;
+    }
+  }
+  return printed;
+}
+
+const printedTags = await drain();
+ok('the bridge printed every queued tag', printedTags === perItem * 2, `${printedTags} tags`);
+ok('hasPrintedTag flips only once paper came out',
+   (await prisma.swapItem.findUnique({ where: { id: item1.id } })).hasPrintedTag === true);
+
+// The item tag reflects the *edited* price, because the render waited for the claim.
+const printedJob = await prisma.printJob.findFirst({ where: { itemId: item1.id }, orderBy: { createdAt: 'asc' } });
+ok('the edit reached the tag rather than requiring a reprint', printedJob.status === 'printed');
+
+// ─── Reprint ─────────────────────────────────────────────────────────────────
+
+const rp = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/${item1.id}/reprint`, {
+  method: 'POST', headers: H, body: JSON.stringify({ stationId: station.id }),
+});
+ok('reprint is accepted', rp.status === 202, String(rp.status));
+ok('reprint queued exactly one more tag', (await drain()) === 1);
+
+// ─── Finish ──────────────────────────────────────────────────────────────────
+
+const summary = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/summary?swapId=${swap.id}`, { headers: H }).then(unwrap);
+ok('the summary totals the items', summary.items.length === 2 && summary.totalCents === 22900 + 6500,
+   `${summary.items.length} items, ${summary.totalCents}c`);
+ok('the summary names the seller', summary.sellerName === 'Dana Reyes', summary.sellerName);
+
+const finish = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/finish`, {
+  method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
+}).then(unwrap);
+ok('finishing queues a receipt', finish.receiptPages >= 2, JSON.stringify(finish));
+
+const receiptJobs = await prisma.printJob.count({
+  where: { stationId: station.id, kind: { in: ['receipt_header', 'receipt_items'] } },
+});
+ok('the receipt is header plus item pages', receiptJobs === finish.receiptPages, `${receiptJobs} jobs`);
+ok('the bridge prints the receipt too', (await drain()) === receiptJobs);
+
+// ─── Someone else's item ─────────────────────────────────────────────────────
+
+const stranger = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/${item1.id}/reprint`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ stationId: station.id }),
+});
+ok('an unauthenticated reprint is refused', stranger.status === 401, String(stranger.status));
+
+// ─── Cleanup ─────────────────────────────────────────────────────────────────
+await prisma.printJob.deleteMany({ where: { stationId: station.id } });
+await prisma.swapItem.deleteMany({ where: { swapId: swap.id } });
+await prisma.swapSkuCounter.deleteMany({ where: { swapId: swap.id } });
+await prisma.skiSwap.delete({ where: { id: swap.id } });
+await prisma.checkinStation.delete({ where: { id: station.id } });
+await prisma.swapPrinter.delete({ where: { id: printer.id } });
+await prisma.device.delete({ where: { id: device.id } });
+await prisma.user.deleteMany({ where: { phone: '+15550199001' } });
+await prisma.$disconnect();

@@ -26,6 +26,9 @@ export interface ItemResponse {
 
 type SwapShape = { id: string; title: string; squareCategoryId: string; locationId: string; skuPrefix: string; skuCounter: number };
 
+/** What a Square push did: landed, was not configured, or errored. */
+export type PosSyncResult = 'synced' | 'skipped' | 'failed';
+
 @Injectable()
 export class ItemService {
   constructor(
@@ -69,7 +72,16 @@ export class ItemService {
     return this.toResponse(item, inventoryMap);
   }
 
-  async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null }, idempotencyKey?: string): Promise<ItemResponse> {
+  /**
+   * Creates an item.
+   *
+   * `deferPos` is what makes self-service check-in fast enough to stand at: a
+   * save otherwise awaits two Square round-trips on venue wifi, inside an
+   * interaction the seller is watching. Deferred, the push happens in a batch at
+   * finish (D17) — and an item that is not on the floor yet cannot be sold at
+   * the register in the meantime.
+   */
+  async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -90,10 +102,15 @@ export class ItemService {
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true },
     });
 
-    await this.syncItemToPos(orgId, swap, item);
+    if (!data.deferPos) await this.syncItemToPos(orgId, swap, item);
 
-    const refreshed = await this.prisma.swapItem.findUniqueOrThrow({ where: { id: item.id }, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true } });
-    const inventoryMap = await this.fetchInventoryMap(orgId, swap, [refreshed]);
+    const refreshed = data.deferPos
+      ? item
+      : await this.prisma.swapItem.findUniqueOrThrow({ where: { id: item.id }, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true } });
+    // Inventory is a Square read, so it goes with the write it belongs to.
+    const inventoryMap = data.deferPos
+      ? new Map<string, number>()
+      : await this.fetchInventoryMap(orgId, swap, [refreshed]);
     const response = this.toResponse(refreshed, inventoryMap);
 
     if (idempotencyKey) {
@@ -217,10 +234,26 @@ export class ItemService {
     return swap;
   }
 
-  private async syncItemToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, item: { id: string; name: string; description: string | null; priceCents: number; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null }): Promise<void> {
-    if (!swap.locationId) return;
+  /**
+   * Pushes one already-saved item to Square. The batched half of D17 — check-in
+   * defers every push to finish, and this is what finish calls.
+   */
+  async syncToPos(orgId: string, swapId: string, itemId: string): Promise<PosSyncResult> {
+    const swap = await this.findSwapOrThrow(orgId, swapId);
+    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, swapId } });
+    return this.syncItemToPos(orgId, swap, item);
+  }
+
+  /**
+   * Swallows Square failures, and reports which of the three things happened.
+   * Save paths ignore the result — a POS outage must not fail a save — but the
+   * batched push at check-in finish tells the seller what actually landed, and
+   * "Square is not configured" is not a failure to report.
+   */
+  private async syncItemToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, item: { id: string; name: string; description: string | null; priceCents: number; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null }): Promise<PosSyncResult> {
+    if (!swap.locationId) return 'skipped';
     const pos = await this.posFactory.forOrg(orgId);
-    if (!pos) return;
+    if (!pos) return 'skipped';
     try {
       const result = await pos.syncItem(
         { posItemId: item.squareItemId ?? undefined, posVariationId: item.squareVariationId ?? undefined, name: item.name, description: item.description ?? undefined, priceCents: item.priceCents, sku: item.sku, categoryId: swap.squareCategoryId, categoryName: swap.title },
@@ -232,7 +265,11 @@ export class ItemService {
         await this.prisma.skiSwap.update({ where: { id: swap.id }, data: { squareCategoryId: result.resolvedCategoryId } });
       }
       await this.prisma.swapItem.update({ where: { id: item.id }, data: { squareItemId: result.posItemId, squareVariationId: result.posVariationId, lastSyncedAt: new Date() } });
-    } catch (err) { console.error('[Square] syncItemToPos failed:', err); }
+      return 'synced';
+    } catch (err) {
+      console.error('[Square] syncItemToPos failed:', err);
+      return 'failed';
+    }
   }
 
   private async fetchInventoryMap(orgId: string, swap: { locationId: string }, items: { squareVariationId: string | null }[]): Promise<Map<string, number>> {

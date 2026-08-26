@@ -1,4 +1,9 @@
-export type DeviceRole = 'Ski Swap - Check-In' | 'Ski Swap - Bulk Seller' | 'Time Clock';
+export type DeviceRole =
+  | 'Ski Swap - Check-In'
+  | 'Ski Swap - Bulk Seller'
+  /** An ESP-32 bridging wifi to a Phomemo over BLE — it forwards bytes, nothing more. */
+  | 'Ski Swap - Network Printer Adapter'
+  | 'Time Clock';
 
 // Shared types used by the web API client
 // These mirror the API contract shapes (source of truth is apps/api/src/contracts/)

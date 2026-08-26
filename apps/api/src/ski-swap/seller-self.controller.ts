@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   UploadedFile,
+  Headers,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -23,6 +24,7 @@ import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { SellerSelfService } from './seller-self.service';
 import { PatchSellerDto, SellerItemCreateDto, SellerItemUpdateDto } from '../contracts/ski-swap.contracts';
 import { PrinterService } from './printer.service';
+import { ReprintItemDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/seller/me')
 @UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, SellerProfileGuard)
@@ -75,8 +77,23 @@ export class SellerSelfController {
     @Param('orgId') orgId: string,
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: SellerItemCreateDto,
+    // Venue wifi drops mid-request. A retried save with the same key returns
+    // the first item rather than minting a second SKU and a second tag.
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.sellerSelfService.createItem(orgId, user.userId, body);
+    return this.sellerSelfService.createItem(orgId, user.userId, body, idempotencyKey);
+  }
+
+  /** For a tag that jammed, smudged, or never came out. */
+  @Post('items/:itemId/reprint')
+  @HttpCode(202)
+  reprintItem(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('itemId') itemId: string,
+    @Body() body: ReprintItemDto,
+  ) {
+    return this.sellerSelfService.reprintItem(orgId, user.userId, itemId, body.stationId);
   }
 
   @Get('items/:itemId')

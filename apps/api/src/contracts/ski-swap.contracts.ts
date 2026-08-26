@@ -249,8 +249,37 @@ export const SellerItemCreateSchema = z
     priceCents: z.number().int().positive(),
     quantity: z.number().int().positive(),
     donateProceeds: z.boolean().default(false),
+    /**
+     * Present when the item is being entered at a check-in station: it decides
+     * where the tag prints and which counter mints the SKU. Absent for a
+     * business seller entering items from their own desk.
+     */
+    stationId: z.string().optional(),
   })
   .strict();
+
+/** Check-in endpoints all name the pair the station QR encodes. */
+export const CheckinContextSchema = z
+  .object({ swapId: z.string().min(1), stationId: z.string().min(1) })
+  .strict();
+
+export const CheckinRegisterSchema = z
+  .object({
+    firstName: z.string().trim().max(80).optional(),
+    lastName: z.string().trim().max(80).optional(),
+    email: z.string().trim().toLowerCase().email().optional(),
+    phone: z.string().trim().min(7).max(32).optional(),
+  })
+  .strict()
+  .refine((v) => Boolean(v.email) || Boolean(v.phone), {
+    message: 'An email address or mobile number is required',
+  });
+
+export const ReprintItemSchema = z.object({ stationId: z.string().min(1) }).strict();
+
+export class ReprintItemDto extends createZodDto(ReprintItemSchema) {}
+export class CheckinContextDto extends createZodDto(CheckinContextSchema) {}
+export class CheckinRegisterDto extends createZodDto(CheckinRegisterSchema) {}
 
 export const SellerItemUpdateSchema = z
   .object({

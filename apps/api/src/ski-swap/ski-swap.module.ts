@@ -29,6 +29,8 @@ import { BusinessSellerService } from './business-seller.service';
 import { BusinessSellerController } from './business-seller.controller';
 import { PrinterService } from './printer.service';
 import { PrinterController } from './printer.controller';
+import { CheckinService } from './checkin.service';
+import { CheckinController, PublicCheckinController } from './checkin.controller';
 import { StationService } from './station.service';
 import { StationController } from './station.controller';
 import { PrintQueueService } from './print-queue.service';
@@ -37,9 +39,10 @@ import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { SkiSwapSettingsController } from './ski-swap-settings.controller';
 import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
+import { IdentityModule } from '../common/identity/identity.module';
 
 @Module({
-  imports: [AuthModule, PermissionsModule],
+  imports: [AuthModule, PermissionsModule, IdentityModule],
   controllers: [
     SquareConfigController,
     SwapController,
@@ -53,6 +56,8 @@ import { PermissionsModule } from '../permissions/permissions.module';
     PrinterController,
     SkiSwapSettingsController,
     StationController,
+    CheckinController,
+    PublicCheckinController,
     PrintJobController,
   ],
   providers: [
@@ -77,6 +82,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
     PrinterService,
     SkiSwapSettingsService,
     StationService,
+    CheckinService,
     PrintQueueService,
   ],
   exports: [SquareCryptoService, SquareClientService],

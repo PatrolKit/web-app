@@ -39,7 +39,10 @@ function DefaultDashboardRedirect() {
   const perms = new Set(membership?.permissions ?? []);
   if (perms.has('users:read')) return <Navigate to="members" replace />;
   if (perms.has('ski_swap:report')) return <Navigate to="ski-swap" replace />;
-  if (perms.has('business_seller')) return <Navigate to="ski-swap/my-items" replace />;
+  // Being a seller is a role derived from a live profile row, not a permission.
+  // `business_seller` was retired with the identity consolidation, so this test
+  // had been quietly failing for every seller.
+  if (membership?.roles.includes('seller')) return <Navigate to="ski-swap/my-items" replace />;
   if (perms.has('org:read')) return <Navigate to="modules" replace />;
   return <Navigate to="members" replace />;
 }

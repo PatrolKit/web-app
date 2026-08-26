@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ItemService } from './item.service';
 import type { SellerResponse } from '../contracts/ski-swap.contracts';
 import { SellerService } from './seller.service';
+import { PrintQueueService } from './print-queue.service';
+import { SkiSwapSettingsService } from './ski-swap-settings.service';
 
 @Injectable()
 export class SellerSelfService {
@@ -10,6 +12,8 @@ export class SellerSelfService {
     private readonly prisma: PrismaService,
     private readonly itemService: ItemService,
     private readonly sellerService: SellerService,
+    private readonly printQueue: PrintQueueService,
+    private readonly settings: SkiSwapSettingsService,
   ) {}
 
   // ─── Seller record ────────────────────────────────────────────────────────
@@ -84,15 +88,81 @@ export class SellerSelfService {
     return this.itemService.get(orgId, item.swapId, itemId);
   }
 
+  /**
+   * Saves an item and, at a station, queues its tag.
+   *
+   * Order matters: create, commit, then enqueue. A job queued before the row is
+   * visible can be claimed and rendered against an item that is not there yet.
+   * The render itself is deferred to the claim (D11), and `hasPrintedTag` is set
+   * by the ack — the flag means paper came out, so only the printer can report
+   * it.
+   */
   async createItem(
     orgId: string,
     userId: string,
-    data: { swapId: string; name: string; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean },
+    data: {
+      swapId: string;
+      name: string;
+      description?: string;
+      priceCents: number;
+      quantity: number;
+      donateProceeds?: boolean;
+      stationId?: string;
+    },
+    idempotencyKey?: string,
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: data.swapId, orgId, active: true } });
     if (!swap) throw new NotFoundException('Active swap not found');
-    return this.itemService.create(orgId, data.swapId, { ...data, sellerId: seller.id });
+
+    const station = data.stationId
+      ? await this.prisma.checkinStation.findFirst({
+          where: { id: data.stationId, orgId, deletedAt: null },
+          select: { id: true, code: true },
+        })
+      : null;
+    if (data.stationId && !station) throw new NotFoundException('Station not found');
+
+    const item = await this.itemService.create(
+      orgId,
+      data.swapId,
+      {
+        ...data,
+        sellerId: seller.id,
+        // The station's code namespaces the SKU, so two stations minting at the
+        // same instant never touch the same counter row.
+        stationCode: station?.code ?? null,
+        // At a station the seller is watching this save happen; Square waits
+        // for the batch at finish (D17).
+        deferPos: !!station,
+      },
+      idempotencyKey,
+    );
+
+    if (station) {
+      const { labelsPerItem } = await this.settings.get(orgId);
+      await this.printQueue.enqueueItemTags({
+        orgId,
+        stationId: station.id,
+        swapId: data.swapId,
+        sellerId: seller.id,
+        itemId: item.id,
+        count: labelsPerItem,
+      });
+    }
+
+    return item;
+  }
+
+  /**
+   * Re-queues one item's tags, for a tag that jammed or came out unreadable.
+   * The only path that deliberately prints an item twice.
+   */
+  async reprintItem(orgId: string, userId: string, itemId: string, stationId: string) {
+    const seller = await this.getSellerRecord(orgId, userId);
+    await this.requireOwnership(orgId, seller.id, itemId);
+    await this.printQueue.reprintItem(orgId, stationId, itemId);
+    return { queued: true };
   }
 
   async updateItem(
