@@ -7,6 +7,13 @@ import { faBluetooth, faPrint as faPrintDuo } from '@fortawesome/pro-duotone-svg
 import { api } from '../../lib/api';
 import { connectFromDevice, DEFAULT_PRINTER_MARGINS, isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
 import type { PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
+import {
+  currentBaseUrl,
+  isProvisionableOrigin,
+  isWebBluetoothSupported as isBridgeBluetoothSupported,
+  provisionBridge,
+  type BridgeStatus,
+} from '../../lib/printing/BridgeProvisioningService';
 import { usePrinter } from '../../contexts/PrinterContext';
 import StationsTab from './StationsTab';
 import type { AppShellContext } from '../../components/AppShell';
@@ -36,7 +43,142 @@ function MutationError({ error }: { error: unknown }) {
   );
 }
 
-function ProvisioningCodeCard({ clientId, secret, onDismiss }: { clientId: string; secret: string; onDismiss: () => void }) {
+/**
+ * Sets a bridge up over Bluetooth: Wi-Fi, which printer to drive, and its own
+ * server credentials.
+ *
+ * Lives on the card that appears right after provisioning or a secret rotation,
+ * because that is the only moment the client secret exists — the server never
+ * returns it again. Dismiss the card without doing this and the bridge has to be
+ * rotated before it can be set up.
+ */
+function BridgeProvisioningPanel({
+  clientId,
+  secret,
+  printers,
+}: {
+  clientId: string;
+  secret: string;
+  printers: SwapPrinterRecord[];
+}) {
+  const [ssid, setSsid] = useState('');
+  const [psk, setPsk] = useState('');
+  const [printerName, setPrinterName] = useState(printers[0]?.bluetoothName ?? '');
+  const [status, setStatus] = useState<BridgeStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const baseUrl = currentBaseUrl();
+  const httpsOk = isProvisionableOrigin(baseUrl);
+  const supported = isBridgeBluetoothSupported();
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const final = await provisionBridge(
+        { ssid: ssid.trim(), psk, printerBluetoothName: printerName, baseUrl, clientId, clientSecret: secret },
+        setStatus,
+      );
+      setStatus(final);
+      setDone(true);
+    } catch (err) {
+      // A cancelled picker is a decision, not a failure.
+      if ((err as { name?: string })?.name === 'NotFoundError') return;
+      setError(err instanceof Error ? err.message : 'Provisioning failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (done) {
+    return (
+      <div className="mt-4 border-t border-green-800 pt-4">
+        <p className="text-green-400 text-sm">
+          Bridge online{status?.device ? ` — ${status.device}` : ''}. Assign it to a check-in
+          station to start printing.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 border-t border-green-800 pt-4 space-y-3 text-left">
+      <p className="text-white text-sm font-medium">Set up this bridge over Bluetooth</p>
+      <p className="text-xs text-gray-400">
+        Hold the board&apos;s BOOT button while powering it on if it has been set up before —
+        a bridge that has already reached the server refuses further changes.
+      </p>
+
+      {!supported ? (
+        <p className="text-amber-400 text-xs">
+          Bluetooth setup needs Chrome or Edge. Copy the code above and use the iOS app instead.
+        </p>
+      ) : !httpsOk ? (
+        <p className="text-amber-400 text-xs">
+          The bridge only accepts an https server, and this page is on {baseUrl}. Provision from
+          the deployed site rather than a local dev server.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              value={ssid}
+              onChange={(e) => setSsid(e.target.value)}
+              placeholder="Wi-Fi network"
+              className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+            />
+            <input
+              type="password"
+              value={psk}
+              onChange={(e) => setPsk(e.target.value)}
+              placeholder="Wi-Fi password"
+              className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+            />
+          </div>
+
+          <select
+            value={printerName}
+            onChange={(e) => setPrinterName(e.target.value)}
+            className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+          >
+            {printers.length === 0 && <option value="">No printers registered yet</option>}
+            {printers.map((p) => (
+              <option key={p.id} value={p.bluetoothName}>{p.name} ({p.bluetoothName})</option>
+            ))}
+          </select>
+
+          {status && !done && (
+            <p className="text-xs text-gray-400">{describeBridgeState(status)}</p>
+          )}
+          {error && <p className="text-red-400 text-xs">{error}</p>}
+
+          <button
+            onClick={run}
+            disabled={busy || !ssid.trim() || !printerName}
+            className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm rounded px-4 py-2"
+          >
+            {busy ? 'Setting up…' : 'Set up over Bluetooth'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The board reports which step it is on; a failure otherwise looks like a slow success. */
+function describeBridgeState(status: BridgeStatus): string {
+  switch (status.state) {
+    case 'wifi_connecting': return 'Joining Wi-Fi…';
+    case 'server_connecting': return 'Wi-Fi joined. Reaching the server…';
+    case 'online': return 'Online.';
+    default: return 'Waiting for the bridge…';
+  }
+}
+
+function ProvisioningCodeCard({ clientId, secret, role, printers, onDismiss }: { clientId: string; secret: string; role: DeviceRole | null; printers: SwapPrinterRecord[]; onDismiss: () => void }) {
   const [copied, setCopied] = useState(false);
   const payload = JSON.stringify({
     v: 1, cid: clientId, sec: secret,
@@ -73,6 +215,10 @@ function ProvisioningCodeCard({ clientId, secret, onDismiss }: { clientId: strin
           {copied ? 'Copied!' : 'Copy provisioning code'}
         </button>
       </div>
+
+      {role === 'Ski Swap - Network Printer Adapter' && (
+        <BridgeProvisioningPanel clientId={clientId} secret={secret} printers={printers} />
+      )}
       <button onClick={onDismiss} className="mt-4 text-xs text-gray-500 hover:underline block">Dismiss</button>
     </div>
   );
@@ -104,6 +250,8 @@ export default function DevicesPage() {
     id: string;
     clientId: string;
     secret: string;
+    /** Decides whether the card offers Bluetooth setup — only a bridge takes it. */
+    role: DeviceRole | null;
   } | null>(null);
 
   const { data: devices = [], isLoading } = useQuery({
@@ -116,7 +264,7 @@ export default function DevicesPage() {
     mutationFn: () =>
       api.devices.provision(orgId, { name: provisionName, role: provisionRole }),
     onSuccess: (d) => {
-      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret });
+      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, role: provisionRole });
       setProvisionName('');
       setProvisionRole('Ski Swap - Check-In');
       setShowProvisionForm(false);
@@ -128,7 +276,7 @@ export default function DevicesPage() {
     mutationFn: (id: string) => api.devices.rotateSecret(orgId, id),
     onSuccess: (d, id) => {
       const device = devices.find((dev) => dev.id === id);
-      setRevealedSecret({ id, clientId: device?.clientId ?? '', secret: d.clientSecret });
+      setRevealedSecret({ id, clientId: device?.clientId ?? '', secret: d.clientSecret, role: device?.role ?? null });
     },
   });
 
@@ -362,6 +510,8 @@ export default function DevicesPage() {
             <ProvisioningCodeCard
               clientId={revealedSecret.clientId}
               secret={revealedSecret.secret}
+              role={revealedSecret.role}
+              printers={printers}
               onDismiss={() => setRevealedSecret(null)}
             />
           )}
