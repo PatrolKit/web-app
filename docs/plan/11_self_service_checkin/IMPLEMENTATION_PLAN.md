@@ -77,6 +77,8 @@ Staff stop being typists and go back to handling gear.
 | **D7** | **Check-in mints a normal session.** No special "check-in token". The seller signs in exactly as they would anywhere else, and the QR only supplies context. | Plan 10 D8 — verification and login are the same act. A second, weaker credential path is how the first one gets bypassed. |
 | **D9** | **A station tracks its current seller, but never blocks.** `SwapPrinter.activeSellerId` is set on join, last-claim-wins, and cleared on finish. It is an operational label, not a lock. | An exclusive claim would be worse than the problem it solved: anyone with a photo of the QR could seize a station remotely and lock out the person standing at it, turning wasted paper into denial of service. Last-claim-wins removes that — a remote claimant is displaced the moment the real seller acts, and the real seller is the one actually doing things. What the field still buys is operational: staff can see who is at each station, and `finish` has something to clear. |
 | **D10** | **The Square push moves out of the item-save path**, batched at finish. | Latency, not correctness. `ItemService.create` awaits `syncItemToPos` *and* `fetchInventoryMap` before returning — two Square round-trips on venue wifi, inside the save→print interaction that §3 says must stay under a couple of seconds. Batching them at finish takes them off the critical path and collapses 2N calls into one pass. Phantom inventory is *not* the argument: an item that is not physically on the floor cannot be scanned at the register, so it is a reporting artefact rather than a way to sell something that does not exist. |
+| **D11** | **SKUs are namespaced by station**, matching the format iOS already uses: `PREFIX-CODE-NNNN`, with the counter held per (swap, station) rather than per swap. | It is the pattern that already works — `Device.skiSwapDeviceCode` is what lets offline iPads mint SKUs without coordinating — and it makes a separate self-check-in marker unnecessary, because the station code already says where a tag came from. It also deletes the contention: stations never share a counter row, so the duplicate-SKU race stops existing rather than being tested around. |
+| **D12** | **No two *active* swaps in an org share a SKU prefix.** Enforced by a mirror column written only while a swap is active, with a unique index — the same shape as `verifiedEmail` in Plan 10. | A prefix derived from a title is not naturally unique: "Ski Swap 2026" and "Spring Sale 2026" both derive `SS26`. Scoping to active swaps rather than all time keeps old prefixes reusable while making a live collision impossible. |
 | **D8** | **The station is a property of the session, not of the person.** `swapId` and `printerId` live in the client and, for the span of a sign-in, on the challenge (D6c) — never on `SellerProfile`. | A seller may check in at one station this year and another next. Persisting it on the person would make a transient fact permanent, and would quietly become wrong the first time someone moves stations mid-swap. |
 
 ---
@@ -302,6 +304,40 @@ model PrintJob {
 }
 ```
 
+`SkiSwap` changes shape (D11, D12): the single `skuCounter` int gives way to a per-station
+counter table, and an active-only prefix mirror enforces uniqueness.
+
+```prisma
+model SkiSwap {
+  skuPrefix       String
+  /// Mirror of skuPrefix, written only while the swap is active. MySQL allows
+  /// many NULLs in a unique index, so inactive swaps never collide (D12).
+  activeSkuPrefix String?
+
+  skuCounters SwapSkuCounter[]
+
+  @@unique([orgId, activeSkuPrefix])
+}
+
+/// One counter per station per swap, so stations never contend (D11).
+model SwapSkuCounter {
+  id          String @id @default(cuid())
+  swapId      String
+  /// Device.skiSwapDeviceCode — three characters, unique per org.
+  deviceCode  String @db.VarChar(3)
+  lastCounter Int    @default(0)
+
+  swap SkiSwap @relation(fields: [swapId], references: [id], onDelete: Cascade)
+
+  @@unique([swapId, deviceCode])
+}
+```
+
+Activating a swap writes `activeSkuPrefix`; deactivating clears it. A collision surfaces at
+activation with a clear error rather than silently issuing duplicate SKUs, and
+`deriveSkuPrefix` disambiguates at creation by appending a digit when the derived prefix is
+already live.
+
 `SwapPrinter` gains (D6, D9):
 
 ```prisma
@@ -414,20 +450,56 @@ label. The cost of committing first is that a render or enqueue failure leaves a
 with `hasPrintedTag` still false, which is exactly the recoverable state we want: the UI
 shows it as unprinted and the seller taps reprint.
 
-**Concurrency needs a real test.** Staff entry was serial — one person typing at one
-counter. Self-check-in makes simultaneous item creation across stations the normal case,
-and every one of them contends on a single `SkiSwap.skuCounter` row. Prisma's `update`
-returns the row it wrote and holds the lock until commit, so this should be safe, but
-"should be" is not good enough here: a duplicate SKU is a duplicate barcode, and a
-duplicate barcode sells the wrong item at the register. Phase 5 gets an explicit test that
-hammers `create` from parallel callers and asserts every SKU is distinct.
+**Concurrency stops being a worry, but is still worth a test.** Staff entry was serial —
+one person typing at one counter — while self-check-in makes simultaneous creates across
+stations normal. D11 removes the shared row that would have made that a race: each station
+increments its own counter. A test still hammers `create` from parallel callers and asserts
+distinct SKUs, because the failure mode is a duplicate barcode selling the wrong item, and
+that deserves a guard rather than an argument.
 
-**Four digits is closer to the ceiling than it looks.** `padStart(4, '0')` implies 9,999
-items per swap. A large swap with a thousand-plus sellers averaging five items each is
-already in that range, and self-check-in exists to make entering more items easier. Nothing
-truncates past 9,999 — the string simply grows — but the barcode grows with it, and the
-label is 400 dots wide. Worth rendering a five-digit SKU during Phase 1 to confirm it still
-fits and scans.
+### The SKU gets a station namespace (D11)
+
+iOS already solved this problem, and better than a flag would. `PatrolKitStore.nextSku`
+returns `PREFIX-DEVICECODE-NNNN` — e.g. `SS26-A01-0042` — with the counter held **per
+(device, swap)** in local SQLite. `Device.skiSwapDeviceCode` is three characters and unique
+per org, so every check-in iPad owns its own number space and can mint SKUs offline without
+coordinating with anything.
+
+Self-check-in should adopt the same format, because a station **is** a device: the printer
+is a registered `Device` (D3), the QR already names it, and it can carry a
+`skiSwapDeviceCode` like any other. That means **no extra digit is needed to mark
+self-check-in items** — the station's own code already says where a tag came from, and
+reserving a code range (say, codes beginning `S`) makes it obvious at a glance.
+
+Three things fall out, and one is a constraint worth knowing before committing:
+
+**It removes the contention.** A per-(swap, station) counter means stations never share a
+row, so the parallel-create race disappears rather than needing to be tested around. That
+needs a small table — `SwapSkuCounter { swapId, deviceCode, lastCounter }` keyed
+`@@unique([swapId, deviceCode])`, incremented by upsert — replacing the single
+`SkiSwap.skuCounter` int.
+
+**The barcode has a hard ceiling of 13 characters.** Code128-B is `11n + 35` modules at 2
+dots each, and the usable width is 400 dots less the default 28-dot right margin:
+
+| Chars | Dots | Fits in 372 | Example |
+|---|---|---|---|
+| 9 | 268 | yes | `SS26-0042` |
+| 12 | 334 | yes | `SS26-A01-042` |
+| 13 | 356 | yes | `SS26-A01-0042` |
+| 14 | 378 | **no** | `SSW26-A01-0042` |
+
+So "a few more digits" is not free — the iOS format already uses all 13. Dropping
+`moduleW` to 1 would buy room but puts the X-dimension at 0.125 mm, below what scans
+reliably at 203 dpi. Code128-C would encode the digits two per symbol and buy real
+headroom, at the cost of a mode-switching encoder.
+
+**Which means the prefix has to be capped at 4.** `deriveSkuPrefix` currently allows six
+characters, and 6 + 1 + 3 + 1 + 4 = 15 — over the ceiling. A swap titled "Annual
+Backcountry Ski Swap 2026" derives `ABSS26` and would produce a barcode wider than the
+label. **iOS has this bug today**; it is invisible only because prefixes have happened to
+be short. Capping the derivation at 4 gives `SS26-A01-0042` = 13 exactly, and 4 characters
+is still enough to carry initials plus a year.
 
 **Reprints are explicit.** `POST .../items/:itemId/reprint { printerId }` re-enqueues one
 item — the answer to a jam, a mis-stick, or a tag that came out unreadable. It renders from
@@ -598,8 +670,8 @@ browser will happily lie about.
 ## 10. Work breakdown
 
 **Phase 1 — Server-side rendering.** Port layout to `@napi-rs/canvas`; move the rasteriser
-and ESC/POS builders; golden-image fixtures, including a five-digit SKU to confirm the
-barcode still fits 400 dots (§7). Carry the **web's** geometry — 400-dot head,
+and ESC/POS builders; golden-image fixtures, including a full-width 13-character SKU to pin
+the barcode ceiling (§7). Carry the **web's** geometry — 400-dot head,
 50 bytes per row — since that is what prints correctly on 50 mm media today, and make it an
 input from the printer record rather than a constant. No behaviour change yet: nothing
 calls the renderer.
@@ -617,9 +689,10 @@ login and confirm, with issue-time validation. `SELLER_SITE_URL`, and origin sel
 driven by the context's shape (§5). Convert `VerifyPage` to tap-to-confirm (D6f). Small,
 and independently useful — it is what lets any flow survive a sign-in.
 
-**Phase 5 — Check-in.** `PublicCheckinService`, register, join. Wire save-time enqueue into
-item creation in the commit → render → enqueue → flag order (§7), with a parallel-create
-test asserting SKU uniqueness. Add reprint. Move the Square push out of the save path into `finish` (D10),
+**Phase 5 — Check-in.** `PublicCheckinService`, register, join. Move SKU generation to
+per-station counters and cap the prefix at 4 (D11); add the active-prefix constraint (D12).
+Wire save-time enqueue into item creation in the commit → render → enqueue → flag order
+(§7), with a parallel-create test asserting SKU uniqueness. Add reprint. Move the Square push out of the save path into `finish` (D10),
 and call the existing header + item receipt templates from it. Fix the seller redirect.
 
 **Phase 6 — Web.** `AuthProvider` over the seller-site branch, purpose-built `/checkin`
@@ -661,11 +734,13 @@ visibility, and a documented recovery path for "the printer died mid-swap".
 - **SKU numbers are not contiguous.** A create that fails after the counter increments
   burns that number. Harmless for uniqueness, but anyone reconciling a swap by counting
   SKUs rather than items will be wrong.
-- **SKUs are unique per swap, not per org.** `@@unique([swapId, sku])`, and `deriveSkuPrefix`
-  is a function of the title — two swaps in one org with similar names can derive the same
-  prefix and issue the same SKU. Check-in is unambiguous because the QR names the swap, and
-  Square resolves by its own catalog id, but anything that looks an item up by SKU alone
-  within an org would be.
+- **13 characters is a hard ceiling** until the encoder changes (§7). D11 spends the budget
+  deliberately — 4 prefix, 3 station, 4 counter — leaving no room for another field. Adding
+  one later means Code128-C, not another separator.
+- **Capping the prefix at 4 changes existing swaps' derivation.** Stored prefixes are not
+  rewritten, so live swaps keep theirs; only newly derived ones shorten. A swap already
+  carrying a 6-character prefix will still overflow under the namespaced format and needs
+  its prefix shortened by hand.
 - **Square goes stale during check-in.** Deferring the push to finish (D10) means items are
   invisible in Square until a seller finishes, so a swap in progress under-reports. Nothing
   consumes that mid-swap today, but it is a behaviour change from item-by-item sync.
