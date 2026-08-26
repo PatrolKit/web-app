@@ -34,10 +34,10 @@ Staff stop being typists and go back to handling gear.
 | Identity, matching, verified contacts | Done (Plan 10) |
 | Two-channel login + `ContactChallenge` | Done (Plan 10) |
 | Seller item CRUD, photos (`seller/me/items`) | Done — reused wholesale |
-| Seller portal UI (`ski-swap/my-items`) | Exists — a desktop catalogue tool, *not* the check-in surface (§8) |
+| Seller portal UI (`ski-swap/my-items`) | Exists — a desktop catalogue tool on the admin host, *not* the check-in surface (§9) |
 | Label layout and rasterisation | Exists, but **in the browser** — §4 |
 | Device auth (`clientId`/secret → JWT) | Done — reused for printers |
-| Print queue | **Does not exist** — §6 |
+| Print queue | **Does not exist** — §7 |
 
 ### Two defects this plan fixes, and one it records
 
@@ -68,7 +68,8 @@ Staff stop being typists and go back to handling gear.
 | **D5b** | **Tags are enqueued when an item is saved**, not in a batch at the end. Saving is the print trigger. | The seller applies tags themselves, item by item, while the gear is in front of them. Batching would hand someone a stack of tags and a pile of gear and ask them to re-match the two. |
 | **D5c** | **An item prints once.** Editing a saved item does not reprint; `hasPrintedTag` guards it. Reprints are an explicit action. | A seller correcting a typo has already stuck the tag on. Silent reprinting produces a second tag with no home. |
 | **D6** | **`SwapPrinter` gains a device link rather than being replaced.** A printer row is Bluetooth-driven, device-driven, or both. | The Bluetooth path has to keep working while ESP-32 hardware is built and rolled out. |
-| **D6b** | **Check-in is a phone-first flow, not a responsive desktop one.** It is designed against a one-handed seller holding a ski, on venue wifi, in Safari. | Every seller arrives with a phone and nothing else — there is no desktop fallback to degrade to. Treating mobile as the target rather than a breakpoint is the difference between a flow that works at a counter and one that technically renders. |
+| **D6a** | **Check-in is hosted on the seller site**, at `https://skiswap.patrolkit.io/checkin`. | It is a seller-facing surface, and `skiswap.` is where seller-facing surfaces live. It also keeps the QR off the admin domain: nothing about check-in should route a member of the public through `patrolkit.io`, where every other route is staff tooling. |
+| **D6b** | **Check-in is phone-first, not a responsive desktop page.** It is designed against a one-handed seller holding a ski, on venue wifi, in Safari. | Every seller arrives with a phone and nothing else — there is no desktop fallback to degrade to. Treating mobile as the target rather than a breakpoint is the difference between a flow that works at a counter and one that technically renders. |
 | **D6c** | **Sign-in carries its context on the challenge record.** `/auth/login` accepts a structured `context`; it is stored on `ContactChallenge` and returned by confirm. | An emailed link opens a *new* browser context. The seller scanned the station QR in one tab, and tapping a link in Mail lands them in another with no `swap` or `printer` — signed in, standing at a printer, with no idea which one. Storing the context on the record means the new tab can ask the server what this sign-in was *for*, so nothing depends on which tab the person ends up in. |
 | **D6d** | **The context is structured data the server interprets — never a URL, and never read from the query string.** `{swapId, printerId}`, validated against each other. | Two failure modes, both avoided by the same rule. A free-form `returnTo` makes every sign-in link an open redirect: a genuine link that authenticates you and *then* bounces you to a lookalike. And a printer id read from the URL is attacker-controlled — edit the address bar, print someone else's tags on your station. |
 | **D6e** | **Each channel keeps the shape it is good at**: SMS sends a code, email sends a link. | With context solved, uniformity buys nothing. On iOS an input marked `autocomplete="one-time-code"` offers the SMS code in the keyboard bar the moment it arrives — one tap, no app switch. Email has no such affordance, so a code there means reading six digits, switching apps, and typing them correctly; a link is one tap and cannot be mistyped. |
@@ -81,7 +82,7 @@ Staff stop being typists and go back to handling gear.
 ## 3. Flow
 
 ```
-   ┌─ station QR: /checkin?swap=<swapId>&printer=<printerId>
+   ┌─ station QR: https://skiswap.patrolkit.io/checkin?swap=<swapId>&printer=<printerId>
    │
    ├─ 1. GET /public/checkin/:swapId  ──▶ org name, logo, swap title, printer label
    │       (validates swap is active and printer belongs to the same org)
@@ -122,7 +123,7 @@ lookup, a registration entry point, a join, a reprint, and a finish.
 
 **The seller is standing at the printer waiting**, which makes this the one place latency
 is a product requirement rather than a nicety: from tapping Save to paper moving should
-stay inside a couple of seconds. §6 sizes the polling interval against that.
+stay inside a couple of seconds. §7 sizes the polling interval against that.
 
 ### Registration is deliberately separate from login
 
@@ -201,7 +202,37 @@ that drift.
 
 ---
 
-## 5. Sign-in context
+## 5. Hosting on the seller site
+
+Caddy already serves `patrolkit.io`, `www.patrolkit.io` and `skiswap.patrolkit.io` from the
+same backend, and the SPA branches on hostname — `isSellerSite` in `App.tsx` is
+`hostname.startsWith('skiswap.')`. Check-in slots into that branch. Three consequences,
+one of which is a genuine break.
+
+**The seller site has no authentication today.** Its routes render *outside*
+`AuthProvider`; every page there is public. Check-in is the first authenticated surface on
+that host, so the provider has to wrap the seller-site branch too. The public pages keep
+working unchanged — they simply never consult it.
+
+**Sessions already work across the subdomain.** The refresh cookie is issued with
+`domain=patrolkit.io`, which covers `skiswap.patrolkit.io`, and Caddy proxies both hosts to
+the same API, so calls stay same-origin. Nothing to change — but it is worth stating,
+because it is the sort of thing that looks broken the first time someone tries it from the
+wrong host.
+
+**Emailed sign-in links currently point at the wrong site.** This one breaks the flow.
+`ContactChallengeService` builds every link from a single `APP_URL`, which in production is
+`https://patrolkit.io`. A seller who checks in at a station and signs in by email would be
+sent to the *admin* domain, land in the staff SPA branch, and never reach check-in — even
+though D6c preserved the context perfectly. The context survived; the hostname did not.
+
+The fix keeps D6d intact: the server picks the origin from the *kind* of context on the
+challenge, rather than accepting one from the client. A challenge carrying check-in context
+builds its link against a new `SELLER_SITE_URL`; everything else keeps using `APP_URL`.
+That way the link destination is still server-determined and there is still no
+client-supplied URL anywhere near it.
+
+## 6. Sign-in context
 
 `ContactChallenge` gains one nullable column:
 
@@ -227,7 +258,7 @@ This is deliberately generic. The immediate need is check-in, but any flow that 
 survive a sign-in — deep-linking to an item, claiming a seller page from a printed QR —
 uses the same column rather than inventing its own workaround.
 
-## 6. The print queue
+## 7. The print queue
 
 ### Schema
 
@@ -340,7 +371,7 @@ is final — not at the start, when it would be empty.
 
 ---
 
-## 7. API surface
+## 8. API surface
 
 ### New — public
 
@@ -370,9 +401,15 @@ is final — not at the start, when it would be empty.
   Staff need to see that a station is stuck without reading logs.
 - `POST /orgs/:orgId/ski-swap/printers/:printerId/test` — enqueues a calibration label.
 
+### Configuration
+
+- `SELLER_SITE_URL` — new. The origin sign-in links use when a challenge carries check-in
+  context (§5). `https://skiswap.patrolkit.io` in production; the same origin as `APP_URL`
+  locally, where there is no subdomain.
+
 ### Changed
 
-- `POST /auth/login` gains an optional structured `context` (§5), validated at issue and
+- `POST /auth/login` gains an optional structured `context` (§6), validated at issue and
   stored on the challenge.
 - `POST /auth/challenges/:id/confirm` returns that `context` alongside the session, so a
   browser context that did not start the sign-in can still resume it.
@@ -385,7 +422,7 @@ is final — not at the start, when it would be empty.
 
 ---
 
-## 8. Web work
+## 9. Web work
 
 ### The check-in flow is its own surface
 
@@ -394,6 +431,10 @@ seller managing a catalogue from an office, and retrofitting it into a one-hande
 flow would serve neither well. Check-in gets purpose-built screens under `/checkin`, and
 the two share the API and nothing else.
 
+- **`/checkin` lives in the seller-site branch of `App.tsx`** (D6a), which today returns a
+  bare `<Routes>` with no `AuthProvider`. That branch gains the provider, and `/checkin`
+  must be declared ahead of the existing `:orgSlug` catch-all — React Router ranks static
+  segments above dynamic ones, so this works, but it is load-bearing and worth a comment.
 - **`/checkin`** — the QR destination. Reads `swap` and `printer` from the query string and
   holds them for the whole session, and can also recover them from a confirm response when
   an emailed link lands the seller in a fresh tab (D6c). Walks: context →
@@ -432,6 +473,14 @@ Not a breakpoint. These are the constraints that change the design:
 - **The session must survive backgrounding.** Taking a photo suspends the tab; coming back
   must not mean signing in again.
 
+### Local development
+
+`isSellerSite` keys off `hostname.startsWith('skiswap.')`, so on `localhost:3000` the
+seller branch never activates and check-in is unreachable. Browsers resolve any
+`*.localhost` name to the loopback address, so `http://skiswap.localhost:3000` exercises
+the real branch without touching `/etc/hosts` — Vite needs `server.host` set to accept it.
+Worth wiring up in Phase 6 rather than discovering during the first venue test.
+
 ### Verification
 
 Responsive CSS is not evidence. Phase 5 is verified on a real phone-sized viewport with
@@ -441,7 +490,7 @@ browser will happily lie about.
 
 ---
 
-## 9. Work breakdown
+## 10. Work breakdown
 
 **Phase 1 — Server-side rendering.** Port layout to `@napi-rs/canvas`; move the rasteriser
 and ESC/POS builders; golden-image fixtures. Carry the **web's** geometry — 400-dot head,
@@ -457,22 +506,25 @@ become one, before firmware exists.
 device endpoints, the `Ski Swap - Printer` role. Testable end to end with a fake device —
 no hardware needed.
 
-**Phase 4 — Sign-in context.** `ContactChallenge.context`, plumbed through login and
-confirm, with issue-time validation. Convert `VerifyPage` to tap-to-confirm (D6f). Small,
+**Phase 4 — Sign-in context and link origin.** `ContactChallenge.context`, plumbed through
+login and confirm, with issue-time validation. `SELLER_SITE_URL`, and origin selection
+driven by the context's shape (§5). Convert `VerifyPage` to tap-to-confirm (D6f). Small,
 and independently useful — it is what lets any flow survive a sign-in.
 
 **Phase 5 — Check-in.** `PublicCheckinService`, register, join. Wire save-time enqueue into
 item creation, plus reprint and finish. Fix the seller redirect.
 
-**Phase 6 — Web.** Purpose-built `/checkin` screens, station queue view. Verified on a
-phone viewport and on physical iOS.
+**Phase 6 — Web.** `AuthProvider` over the seller-site branch, purpose-built `/checkin`
+screens, station queue view, and a `skiswap.localhost` dev path. Verified on a phone
+viewport and on physical iOS, **against the seller host** — the admin host would exercise
+the wrong branch entirely.
 
 **Phase 7 — Hardening.** Reaping under load, queue-depth alerting, abandoned-job
 visibility, and a documented recovery path for "the printer died mid-swap".
 
 ---
 
-## 10. Accepted costs
+## 11. Accepted costs
 
 - **A rendering dependency in the API.** `@napi-rs/canvas` ships prebuilt binaries, so no
   build toolchain, but it is a native module and pins us to supported platforms.
@@ -488,7 +540,7 @@ visibility, and a documented recovery path for "the printer died mid-swap".
   hardware: a jam or an out-of-paper printer stops that station, where batch printing would
   have let them keep entering items and sort the paper out afterwards. That is the right
   trade for tag-to-item accuracy, but it makes printer health a live operational concern
-  rather than a background one — which is why §7 exposes queue depth and last-seen to
+  rather than a background one — which is why §8 exposes queue depth and last-seen to
   staff.
 - **No approval gate (D5)** means a mistyped price goes live immediately. Staff can edit
   after the fact, and the tag is the artefact that matters physically.
@@ -497,6 +549,10 @@ visibility, and a documented recovery path for "the printer died mid-swap".
   This is the single most likely way check-in fails in the real world, and it is worth
   measuring signal at the actual venue before the first swap rather than discovering it
   with a queue of people.
+- **The seller site gains an authenticated surface.** It has been entirely public until
+  now, which made it easy to reason about. Adding `AuthProvider` there is small, but it
+  means the host is no longer trivially safe to expose — its routes now divide into public
+  and not, and that division has to be maintained rather than assumed.
 - **`ContactChallenge` gains a `Json` context column.** A generic escape hatch on a
   security-sensitive record. D6d's rules — structured only, validated at issue, returned
   rather than redirected to — are what keep it from drifting into a `returnTo` field, and
@@ -506,7 +562,7 @@ visibility, and a documented recovery path for "the printer died mid-swap".
   transcribing six digits, but more than the SMS path, and it depends on their mail app
   behaving. Sellers who pick SMS get the better flow, and the UI can nudge that way.
 
-## 11. Open questions
+## 12. Open questions
 
 1. **Should the station QR expire or rotate?** As drawn it is a static printed code. Anyone
    who photographs it can enqueue jobs to that printer from anywhere, which at worst wastes
