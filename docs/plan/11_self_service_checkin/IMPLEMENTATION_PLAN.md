@@ -72,9 +72,11 @@ Staff stop being typists and go back to handling gear.
 | **D6b** | **Check-in is phone-first, not a responsive desktop page.** It is designed against a one-handed seller holding a ski, on venue wifi, in Safari. | Every seller arrives with a phone and nothing else — there is no desktop fallback to degrade to. Treating mobile as the target rather than a breakpoint is the difference between a flow that works at a counter and one that technically renders. |
 | **D6c** | **Sign-in carries its context on the challenge record.** `/auth/login` accepts a structured `context`; it is stored on `ContactChallenge` and returned by confirm. | An emailed link opens a *new* browser context. The seller scanned the station QR in one tab, and tapping a link in Mail lands them in another with no `swap` or `printer` — signed in, standing at a printer, with no idea which one. Storing the context on the record means the new tab can ask the server what this sign-in was *for*, so nothing depends on which tab the person ends up in. |
 | **D6d** | **The context is structured data the server interprets — never a URL, and never read from the query string.** `{swapId, printerId}`, validated against each other. | Two failure modes, both avoided by the same rule. A free-form `returnTo` makes every sign-in link an open redirect: a genuine link that authenticates you and *then* bounces you to a lookalike. And a printer id read from the URL is attacker-controlled — edit the address bar, print someone else's tags on your station. |
-| **D6e** | **Each channel keeps the shape it is good at**: SMS sends a code, email sends a link. | With context solved, uniformity buys nothing. On iOS an input marked `autocomplete="one-time-code"` offers the SMS code in the keyboard bar the moment it arrives — one tap, no app switch. Email has no such affordance, so a code there means reading six digits, switching apps, and typing them correctly; a link is one tap and cannot be mistyped. |
+| **D6e** | **Each channel keeps the shape it is good at**: SMS sends a code, email sends a link. **Check-in leads with phone**; email is the secondary option. | With context solved, uniformity buys nothing. On iOS an input marked `autocomplete="one-time-code"` offers the SMS code in the keyboard bar the moment it arrives — one tap, no app switch. Email has no such affordance, so a code there means reading six digits, switching apps, and typing them correctly; a link is one tap and cannot be mistyped. |
 | **D6f** | **Confirmation requires a tap, not a page load.** The verify screen presents a button rather than firing on mount. | Challenges are single-use. `VerifyPage` currently confirms inside a `useEffect`, so anything that loads the URL before the human does spends the token and the seller sees "invalid or expired". Mail security scanners do prefetch links; most do not run JavaScript, which is the only reason this is not already biting. Leaning harder on links makes that margin too thin to rely on. |
 | **D7** | **Check-in mints a normal session.** No special "check-in token". The seller signs in exactly as they would anywhere else, and the QR only supplies context. | Plan 10 D8 — verification and login are the same act. A second, weaker credential path is how the first one gets bypassed. |
+| **D9** | **A station holds one seller at a time, and only that seller can enqueue to it.** `SwapPrinter` carries `activeSellerId`; joining claims a free station, finishing releases it, and staff can force-release. | This is the answer to "anyone who photographs the QR can print from anywhere". They still can't: enqueueing requires an active session, a verified contact, *and* holding the station — and if a remote attacker holds it, the seller standing at the counter cannot, which staff notice immediately. It also makes one-seller-at-a-time structural rather than a floor-plan convention, so tags can never interleave. |
+| **D10** | **Items reach Square at finish, not at save.** The tag prints on save; the Square catalog item and its inventory are created when the seller finishes. | `ItemService.create` currently calls `syncItemToPos`, which creates the item with `trackInventory: true` and sets initial inventory — so today a saved item is immediately sellable at the register. An abandoned check-in would leave phantom stock a cashier can sell, and a customer paying for skis that are not on the floor is a different order of problem from a stray database row. This keeps D5 intact: nobody approves the seller's *content*, the goods just have to exist. |
 | **D8** | **The station is a property of the session, not of the person.** `swapId` and `printerId` live in the client and, for the span of a sign-in, on the challenge (D6c) — never on `SellerProfile`. | A seller may check in at one station this year and another next. Persisting it on the person would make a transient fact permanent, and would quietly become wrong the first time someone moves stations mid-swap. |
 
 ---
@@ -300,15 +302,28 @@ model PrintJob {
 }
 ```
 
-`SwapPrinter` gains (D6):
+`SwapPrinter` gains (D6, D9):
 
 ```prisma
   /// Set when this printer is an ESP-32 pulling from the queue rather than a
   /// Bluetooth device driven by a browser.
   deviceId   String?  @unique
   lastSeenAt DateTime?
-  device     Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  /// The seller currently checked in at this station. Enqueue is refused for
+  /// anyone else — this is what stops a photographed QR printing from off-site.
+  activeSellerId String?
+  activeSince    DateTime?
+
+  device        Device?        @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  activeSeller  SellerProfile? @relation("StationOccupant", fields: [activeSellerId], references: [id], onDelete: SetNull)
 ```
+
+**Claiming a station.** `join` binds the caller when `activeSellerId` is null, or when
+`activeSince` is older than an idle timeout — a seller who wanders off must not lock a
+station forever. `finish` releases it, and staff can force-release from the station queue
+view for the case that always happens eventually. Attempting to join an occupied station
+returns a clear "this station is in use" rather than silently queueing behind someone.
 
 ### Firmware contract
 
@@ -319,6 +334,25 @@ Three endpoints, all device-authenticated, all scoped to the calling device's ow
 | `POST` | `/devices/me/print-jobs/claim` | Atomically claims up to `n` queued jobs for this device's printer, oldest `seq` first. Sets `status=claimed`, `claimUntil=now+90s`, increments `attempts`. Returns `{id, kind, seq, payload}`. Empty array when idle. |
 | `POST` | `/devices/me/print-jobs/:id/ack` | `status=printed`. Idempotent — acking a printed job is a no-op, so a retried ack after a dropped response is safe. |
 | `POST` | `/devices/me/print-jobs/:id/nack` | `status=queued` and clears the claim, so it retries immediately. Body carries `{error}`. After 5 attempts the job goes to `abandoned` rather than looping. |
+
+### What stops someone printing from off-site
+
+The station QR is printed and static, so it will be photographed. Four things bound what
+that is worth:
+
+1. **The swap must be active.** Enqueue is refused otherwise, so an out-of-season QR is
+   inert.
+2. **They must sign in**, which means proving an email or phone. There is no anonymous
+   path, and every job is attributable to a verified contact.
+3. **They must hold the station** (D9). One seller at a time, so a remote attacker can only
+   print while occupying a station that the person physically standing there then cannot
+   use — which surfaces as a complaint at the counter within seconds.
+4. **Queue depth is capped per printer**, and staff can see and clear it (§8).
+
+None of these makes it impossible. Together they turn "anyone can print from anywhere" into
+"an identified person can waste a little paper, visibly, while a swap is running". That is
+a reasonable place to stop; rotating codes would need a screen at each station rather than
+a printed label.
 
 **Transport is short polling, at 1 second while a station is active.** An ESP-32 holding a
 TLS socket open is the least reliable part of the system, and a poll recovers from a
@@ -364,10 +398,20 @@ the retry either creates a fresh item or finds the flag already set.
 item — the answer to a jam, a mis-stick, or a tag that came out unreadable. It is the only
 path that deliberately prints an item twice.
 
-**Finish prints the summary.** `POST /orgs/:orgId/ski-swap/checkin/finish` enqueues a
-a `receipt` job summarising the seller's items for this swap. That sheet is what staff
-check the physical pile against at handover, so it is generated at the end when the list
-is final — not at the start, when it would be empty.
+**Finish prints the receipt, pushes to Square, and releases the station.** `POST
+/orgs/:orgId/ski-swap/checkin/finish` does three things in order: enqueues the receipt,
+creates the Square catalog items and inventory for everything entered (D10), and clears
+`activeSellerId` so the next seller can claim the station.
+
+The receipt carries date and time, the seller's contact details, a QR to their item-status
+page, and a line per item — description, SKU, price.
+
+**That does not fit on one 50×30 label.** A label is 400×224 dots; a header and QR consume
+most of it, and the item list is unbounded. So the receipt is **a sequence of label jobs**:
+a header label with the QR and contact block, then continuation labels holding a few line
+items each, sharing a `seq` so they emerge in order. Staff end up with a short strip of
+labels rather than a receipt — a consequence of die-cut media, not a design choice, and
+worth confirming against how handover actually works before building it (§12).
 
 ---
 
@@ -386,8 +430,8 @@ is final — not at the start, when it would be empty.
   `SellerProfile` for the caller in this org.
 - `POST /orgs/:orgId/ski-swap/seller/me/items/:itemId/reprint` — re-enqueues one item's
   tags after a jam or a mis-stick.
-- `POST /orgs/:orgId/ski-swap/checkin/finish` — enqueues the seller's summary receipt for
-  staff to verify the pile against.
+- `POST /orgs/:orgId/ski-swap/checkin/finish` — enqueues the receipt, pushes items to
+  Square (D10), releases the station.
 
 ### New — device
 
@@ -400,6 +444,8 @@ is final — not at the start, when it would be empty.
 - `GET /orgs/:orgId/ski-swap/printers/:printerId/queue` — queue depth, last-seen, failures.
   Staff need to see that a station is stuck without reading logs.
 - `POST /orgs/:orgId/ski-swap/printers/:printerId/test` — enqueues a calibration label.
+- `POST /orgs/:orgId/ski-swap/printers/:printerId/release` — force-releases a station whose
+  seller left without finishing (D9).
 
 ### Configuration
 
@@ -415,7 +461,10 @@ is final — not at the start, when it would be empty.
   browser context that did not start the sign-in can still resume it.
 - `POST /orgs/:orgId/ski-swap/seller/me/items` gains an optional `printerId`. When
   present, the created item's tags are enqueued to that printer; when absent the endpoint
-  behaves exactly as it does today.
+  behaves exactly as it does today. It also accepts an idempotency key, so an offline
+  outbox can replay safely.
+- **`ItemService.create` stops calling `syncItemToPos`** for check-in items; the Square push
+  moves to `finish` (D10). Staff-created items are unaffected.
 - `SwapPrinter` responses gain `deviceId`, `lastSeenAt`, `queueDepth`.
 - `DEVICE_ROLES` gains `Ski Swap - Printer`.
 - Browser printing fetches rasters from the server instead of rendering locally.
@@ -473,6 +522,27 @@ Not a breakpoint. These are the constraints that change the design:
 - **The session must survive backgrounding.** Taking a photo suspends the tab; coming back
   must not mean signing in again.
 
+### Surviving a spotty network
+
+Venue wifi is assumed unreliable, so item entry has to tolerate losing it mid-check-in.
+
+- **Drafts persist locally.** The in-progress item is written to `localStorage` on every
+  change, so a reload or a backgrounded tab never loses typing.
+- **Saves queue.** A save with no network is held in a local outbox and replayed on
+  reconnect, in entry order, each carrying an **idempotency key** so a replay after an
+  ambiguous failure cannot create the item twice. `IdempotencyService` already exists
+  server-side and is what makes this safe.
+- **The UI is explicit about state.** Every item shows saved, queued, or printing. A seller
+  must never be unsure whether something is recorded.
+
+**This degrades to the batch model D5b rejected, and that is the honest trade.** Tags are
+enqueued server-side, so nothing prints while the connection is down. When it returns, a
+run of tags emerges at once and the seller is back to matching a stack of labels against a
+pile of gear. The mitigations are that tags carry the item name prominently, they print in
+entry order, and the UI says how many are pending — but the workflow *is* worse offline.
+That argues for treating connectivity as a venue-readiness problem (a check before doors
+open) rather than something the software fully absorbs.
+
 ### Local development
 
 `isSellerSite` keys off `hostname.startsWith('skiswap.')`, so on `localhost:3000` the
@@ -511,11 +581,13 @@ login and confirm, with issue-time validation. `SELLER_SITE_URL`, and origin sel
 driven by the context's shape (§5). Convert `VerifyPage` to tap-to-confirm (D6f). Small,
 and independently useful — it is what lets any flow survive a sign-in.
 
-**Phase 5 — Check-in.** `PublicCheckinService`, register, join. Wire save-time enqueue into
-item creation, plus reprint and finish. Fix the seller redirect.
+**Phase 5 — Check-in.** `PublicCheckinService`, register, join with station claiming (D9).
+Wire save-time enqueue into item creation, plus reprint. Move the Square push to `finish`
+(D10) and build the multi-label receipt. Fix the seller redirect.
 
 **Phase 6 — Web.** `AuthProvider` over the seller-site branch, purpose-built `/checkin`
-screens, station queue view, and a `skiswap.localhost` dev path. Verified on a phone
+screens leading with phone sign-in, the offline outbox and draft persistence, station queue
+view with force-release, and a `skiswap.localhost` dev path. Verified on a phone
 viewport and on physical iOS, **against the seller host** — the admin host would exercise
 the wrong branch entirely.
 
@@ -544,6 +616,13 @@ visibility, and a documented recovery path for "the printer died mid-swap".
   staff.
 - **No approval gate (D5)** means a mistyped price goes live immediately. Staff can edit
   after the fact, and the tag is the artefact that matters physically.
+- **Offline entry degrades to batch printing (§9).** Tags cannot print while the network is
+  down, so they arrive in a burst on reconnect and the seller is back to matching labels
+  against a pile — exactly what D5b set out to avoid. Acceptable as a fallback, not as the
+  normal path.
+- **A station can be held by someone who is not there.** D9's idle timeout and staff
+  force-release are the mitigation, but until a real swap sets that timeout, a stranded
+  station needs a human.
 - **The seller needs working connectivity at the venue.** Lodge wifi is not a given, and
   the flow has no offline mode: a dropped connection mid-entry loses the item being typed.
   This is the single most likely way check-in fails in the real world, and it is worth
@@ -564,29 +643,46 @@ visibility, and a documented recovery path for "the printer died mid-swap".
 
 ## 12. Open questions
 
-1. **Should the station QR expire or rotate?** As drawn it is a static printed code. Anyone
-   who photographs it can enqueue jobs to that printer from anywhere, which at worst wastes
-   paper — but it is unauthenticated context, and worth a deliberate decision.
-2. **Can two sellers use one station at the same time?** This is now the sharpest of these.
-   With save-time printing, two people entering items against one printer produce
-   interleaved tags, and neither knows which one just came out. The schema assumes one
-   printer per station; whether it also assumes *one seller at a time* is a floor-plan
-   decision that changes the UI (a station could show "now printing: Jane's Rossignol
-   skis") or the hardware count.
-3. **What does the finish receipt contain?** It exists to let staff verify a physical pile
-   against a list, so it probably wants every item and a count — more than
-   `generateReceiptHeaderLabel` prints today. Worth designing against the actual handover
-   conversation.
-4. **Should the check-in screen prefer phone over email?** D6e makes SMS materially
-   smoother — autofilled code, never leaves the tab — while email costs an app switch.
-   Offering both equally is honest; leading with phone is faster. That is a copy and
-   layout decision, not an architectural one, but it wants making deliberately.
-5. **Should item entry survive a dropped connection?** A local draft of the in-progress
-   item, replayed when the network returns, would cover the most likely venue failure. It
-   is real work and real state to reconcile, so it is deliberately not in this plan — but
-   if the connectivity measurement above comes back poor, it moves from optional to
-   required.
-6. **What stops a seller from walking off mid-check-in?** Items exist and tags are printed
-   and stuck on gear that never reaches the floor. Staff need a way to see checked-in
-   sellers who never finished — a station view of in-progress check-ins would cover both
-   this and question 3.
+Answered, and folded into the decisions above: station QRs are valid only while the swap is
+active and bounded by D9; one seller per station; receipt contents per §7; phone leads over
+email; spotty connectivity is planned for (§9); abandoned check-ins are handled by D10.
+
+1. **Does the receipt survive being a strip of labels?** §7 splits it across several 50×30
+   labels because the item list cannot fit on one. If handover works better with a single
+   sheet, that means different media on a different printer — a real hardware question, not
+   a formatting one, and better answered by watching one handover than by guessing.
+2. **What is the station idle timeout?** D9 releases a station whose seller wandered off,
+   but too short strands someone mid-entry and too long blocks the queue. Wants a number
+   from a real swap; staff force-release covers the gap until then.
+3. **Should the public `/s/:sellerId` page survive?** See below.
+
+## 13. Retiring the unauthenticated lookup
+
+Worth doing, but not yet, and not entirely.
+
+**Already gone.** The weakest part — `seller-find`, which matched an email against the last
+four digits of a phone number — was removed in Plan 10. That was the one that let a
+stranger guess their way to a record.
+
+**What is left is different in kind.** `/s/:sellerId` is a capability URL: an unguessable
+cuid handed to a specific person, printed on their receipt QR. It leaks nothing to someone
+who does not have it. Requiring sign-in would still be *better* — a link, once shared,
+cannot be un-shared — but the gap is narrower than it looks.
+
+**Two things block retiring it.**
+
+The first is the receipt QR itself. §7 prints it so a seller can check "did my skis sell?"
+without signing in. If that page requires auth, the QR becomes a sign-in prompt — though in
+practice they scanned it with the phone they checked in on, whose session is still valid, so
+it would usually just work.
+
+The second is the real blocker: **staff-created sellers cannot sign in.** The Sellers tab
+still creates people from a name and a typed phone number, with no verified contact. They
+have no way to authenticate, so an authenticated status page would lock them out entirely.
+That path exists precisely for people who cannot or will not use a phone.
+
+**So the sequence is:** keep `/s/:sellerId` while self-check-in proves itself; point the
+receipt QR at an authenticated page that falls back to sign-in; and revisit once the share
+of sellers with a verified contact is high enough that the capability URL is serving an
+edge case rather than a population. That is a data question, and check-in is what produces
+the data.
