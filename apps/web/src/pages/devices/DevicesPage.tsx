@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import QRCode from 'react-qr-code';
@@ -9,6 +9,7 @@ import { connectFromDevice, DEFAULT_PRINTER_MARGINS, isWebBluetoothSupported } f
 import type { PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
 import { usePrinter } from '../../contexts/PrinterContext';
 import StationsTab from './StationsTab';
+import type { AppShellContext } from '../../components/AppShell';
 import type { DeviceItem, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 
 import type { DeviceRole } from '../../lib/api.types';
@@ -61,10 +62,15 @@ function ProvisioningCodeCard({ clientId, secret, onDismiss }: { clientId: strin
 }
 
 export default function DevicesPage() {
-  const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
+  const { orgId, perms, isModuleEnabled } = useOutletContext<AppShellContext>();
+  // Printers and check-in stations are ski-swap hardware. Without the module
+  // they are dead weight on this page, and their endpoints refuse the calls
+  // anyway — so the tabs would only offer errors.
+  const hasSkiSwap = isModuleEnabled('ski_swap');
   const qc = useQueryClient();
   const { registerConnection, printPrinterIdLabel, printCalibration } = usePrinter();
-  const canManagePrinters = perms.has('ski_swap:admin');
+  const canManagePrinters = hasSkiSwap && perms.has('ski_swap:admin');
+  const canSeeStations = hasSkiSwap && perms.has('ski_swap:report');
   const [activeTab, setActiveTab] = useState<Tab>('tablets');
   const [pendingTestPrint, setPendingTestPrint] = useState<SwapPrinterRecord | null>(null);
   const [isPrintingId, setIsPrintingId] = useState<string | null>(null);
@@ -138,10 +144,17 @@ export default function DevicesPage() {
   const [editPrinterAssignedSellerId, setEditPrinterAssignedSellerId] = useState<string>('');
   const [editMargins, setEditMargins] = useState<PrinterMargins>(DEFAULT_PRINTER_MARGINS);
 
+  // The module can be switched off while someone is sitting on one of its tabs.
+  // Falling back beats leaving them on a blank page with no tab highlighted.
+  useEffect(() => {
+    if (activeTab === 'printers' && !canManagePrinters) setActiveTab('tablets');
+    if (activeTab === 'stations' && !canSeeStations) setActiveTab('tablets');
+  }, [activeTab, canManagePrinters, canSeeStations]);
+
   const { data: activeSwaps = [] } = useQuery({
     queryKey: ['ski-swap/swaps', orgId, 'active'],
     queryFn: () => api.skiSwap.listSwaps(orgId, true),
-    enabled: !!orgId && perms.has('ski_swap:report'),
+    enabled: !!orgId && canSeeStations,
     staleTime: 60_000,
   });
   const activeSwap = activeSwaps[0] ?? null;
@@ -254,7 +267,7 @@ export default function DevicesPage() {
             Printers
           </button>
         )}
-        {perms.has('ski_swap:report') && (
+        {canSeeStations && (
           <button className={tabClass(activeTab === 'stations')} onClick={() => setActiveTab('stations')}>
             Check-in stations
           </button>
@@ -262,7 +275,7 @@ export default function DevicesPage() {
       </nav>
 
       {/* ── Check-in stations tab ────────────────────────────────────────── */}
-      {activeTab === 'stations' && (
+      {activeTab === 'stations' && canSeeStations && (
         <StationsTab
           orgId={orgId}
           devices={devices}

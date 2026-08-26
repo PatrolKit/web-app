@@ -5,7 +5,6 @@ import AppShell from './components/AppShell';
 import LoginPage from './pages/auth/LoginPage';
 import VerifyPage from './pages/auth/VerifyPage';
 import MembersPage from './pages/members/MembersPage';
-import ModulesPage from './pages/modules/ModulesPage';
 import DevicesPage from './pages/devices/DevicesPage';
 import AdminPage from './pages/admin/AdminPage';
 import SkiSwapLayout from './pages/ski-swap/SkiSwapLayout';
@@ -29,6 +28,7 @@ import OrgSellerLookupPage from './pages/public/OrgSellerLookupPage';
 import OrgAdminLayout from './pages/org/OrgAdminLayout';
 import OrgGeneralPage from './pages/org/OrgGeneralPage';
 import OrgResortsPage from './pages/org/OrgResortsPage';
+import OrgModulesPage from './pages/org/OrgModulesPage';
 import CheckinPage from './pages/checkin/CheckinPage';
 
 // Evaluated once at module load — never changes for a given page load.
@@ -44,7 +44,7 @@ function DefaultDashboardRedirect() {
   // `business_seller` was retired with the identity consolidation, so this test
   // had been quietly failing for every seller.
   if (membership?.roles.includes('seller')) return <Navigate to="ski-swap/my-items" replace />;
-  if (perms.has('org:read')) return <Navigate to="modules" replace />;
+  if (perms.has('org:manage')) return <Navigate to="org-admin" replace />;
   return <Navigate to="members" replace />;
 }
 
@@ -87,12 +87,14 @@ export default function App() {
         <Route path="dashboard" element={<AppShell />}>
           <Route index element={<DefaultDashboardRedirect />} />
           <Route path="members" element={<MembersPage />} />
-          <Route path="modules" element={<ModulesPage />} />
           <Route path="devices" element={<DevicesPage />} />
           <Route path="admin" element={<AdminPage />} />
+          {/* Modules used to be its own nav item; keep old links working. */}
+          <Route path="modules" element={<Navigate to="/dashboard/org-admin/modules" replace />} />
           <Route path="org-admin" element={<OrgAdminLayout />}>
             <Route index element={<OrgGeneralPage />} />
             <Route path="resorts" element={<OrgResortsPage />} />
+            <Route path="modules" element={<OrgModulesPage />} />
           </Route>
           <Route path="ski-swap" element={<SkiSwapLayout />}>
             <Route index element={<SkiSwapDashboard />} />

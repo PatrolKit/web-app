@@ -7,6 +7,19 @@ import { useAuth } from '../contexts/AuthContext';
 import { PrinterProvider, usePrinter } from '../contexts/PrinterContext';
 import { api } from '../lib/api';
 
+/**
+ * What every page under the shell receives.
+ *
+ * Pages declare this shape inline today; new consumers should import it, so
+ * there is one place that says what the context carries.
+ */
+export interface AppShellContext {
+  orgId: string;
+  perms: Set<string>;
+  /** True when the org has this module turned on. Gates nav items and page sections alike. */
+  isModuleEnabled: (key: string) => boolean;
+}
+
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `block px-3 py-2 rounded text-sm transition ${isActive ? 'bg-surface-100 text-white' : 'text-gray-300 hover:bg-surface-100 hover:text-white'}`;
 
@@ -103,9 +116,6 @@ export default function AppShell() {
           {perms.has('users:read') && (
             <NavLink to="members" className={navClass}>Members</NavLink>
           )}
-          {perms.has('org:read') && (
-            <NavLink to="modules" className={navClass}>Modules</NavLink>
-          )}
           {perms.has('org:manage') && (
             <NavLink to="org-admin" className={navClass}>Org Admin</NavLink>
           )}
@@ -136,7 +146,10 @@ export default function AppShell() {
 
       {/* Main */}
       <main className="flex-1 p-8 overflow-auto">
-        <Outlet context={{ orgId: activeOrgId, perms }} />
+        {/* `isModuleEnabled` travels with the context so a page gates its own
+            sections the same way the nav does — one definition of "enabled",
+            including the fallback for a user who cannot read the org. */}
+        <Outlet context={{ orgId: activeOrgId, perms, isModuleEnabled }} />
       </main>
       <PrintPreviewModal />
     </div>

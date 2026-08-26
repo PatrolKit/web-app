@@ -20,6 +20,7 @@ export default function OrgAdminLayout() {
       <nav className="flex items-center gap-1 border-b border-gray-800 pb-1">
         <NavLink to="" end className={navClass}>General</NavLink>
         <NavLink to="resorts" className={navClass}>Resorts</NavLink>
+        <NavLink to="modules" className={navClass}>Modules</NavLink>
       </nav>
 
       <Outlet context={{ orgId, perms } satisfies OrgAdminContext} />
