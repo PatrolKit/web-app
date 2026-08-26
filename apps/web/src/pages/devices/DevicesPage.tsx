@@ -20,6 +20,22 @@ type Tab = 'tablets' | 'printers' | 'stations';
 const tabClass = (active: boolean) =>
   `text-sm px-3 py-1.5 rounded transition ${active ? 'bg-surface-100 text-white' : 'text-gray-400 hover:text-white'}`;
 
+/**
+ * Renders whatever a mutation failed with.
+ *
+ * Every write on this page used to fail silently — the form simply sat there,
+ * which is how a provision request that 400'd on every submit went unnoticed.
+ */
+function MutationError({ error }: { error: unknown }) {
+  if (!error) return null;
+  const message = error instanceof Error ? error.message : 'Something went wrong';
+  return (
+    <p className="text-red-400 text-xs bg-red-950/40 border border-red-900 rounded px-2 py-1.5">
+      {message}
+    </p>
+  );
+}
+
 function ProvisioningCodeCard({ clientId, secret, onDismiss }: { clientId: string; secret: string; onDismiss: () => void }) {
   const [copied, setCopied] = useState(false);
   const payload = JSON.stringify({
@@ -139,7 +155,7 @@ export default function DevicesPage() {
   // Holds the BluetoothDevice from the scan so the first print needs no picker
   const scannedDeviceRef = useRef<BluetoothDevice | null>(null);
   const [showPrinterForm, setShowPrinterForm] = useState(false);
-  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [printerFormError, setPrinterFormError] = useState<string | null>(null);
   const [editingPrinter, setEditingPrinter] = useState<SwapPrinterRecord | null>(null);
   const [editPrinterName, setEditPrinterName] = useState('');
   const [editPrinterAssignedSellerId, setEditPrinterAssignedSellerId] = useState<string>('');
@@ -177,7 +193,7 @@ export default function DevicesPage() {
     onSuccess: async (created) => {
       qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] });
       setShowPrinterForm(false);
-      setProvisionError(null);
+      setPrinterFormError(null);
       setPrinterName('');
       setPrinterBtName('');
       setPrinterPaperSize('');
@@ -193,7 +209,7 @@ export default function DevicesPage() {
         } catch { /* ignore — user can connect via nav bar */ }
       }
     },
-    onError: (err: Error) => setProvisionError(err.message),
+    onError: (err: Error) => setPrinterFormError(err.message),
   });
 
   async function handleTestPrint(printer: SwapPrinterRecord) {
@@ -293,7 +309,7 @@ export default function DevicesPage() {
           {perms.has('devices:provision') && (
             <div className="flex justify-end">
               <button
-                onClick={() => { setShowProvisionForm(true); setProvisionName(''); setProvisionRole('Ski Swap - Check-In'); }}
+                onClick={() => { setShowProvisionForm(true); setProvisionName(''); setProvisionRole('Ski Swap - Check-In'); provisionMutation.reset(); }}
                 className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
               >
                 + Provision Device
@@ -328,8 +344,9 @@ export default function DevicesPage() {
               <p className="text-xs text-gray-500">
                 {DEVICE_ROLES.find((r) => r.value === provisionRole)?.hint}
               </p>
+              <MutationError error={provisionMutation.error} />
               <div className="flex gap-2 justify-end">
-                <button type="button" onClick={() => setShowProvisionForm(false)} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
+                <button type="button" onClick={() => { setShowProvisionForm(false); provisionMutation.reset(); }} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
                 <button
                   type="submit"
                   disabled={provisionMutation.isPending}
@@ -348,6 +365,8 @@ export default function DevicesPage() {
               onDismiss={() => setRevealedSecret(null)}
             />
           )}
+
+          <MutationError error={rotateMutation.error ?? revokeMutation.error ?? updateRoleMutation.error} />
 
           <div className="space-y-3">
             {devices.map((d: DeviceItem) => (
@@ -403,7 +422,7 @@ export default function DevicesPage() {
         <div className="space-y-4">
           <div className="flex justify-end">
             <button
-              onClick={() => { setShowPrinterForm(true); setPrinterName(''); setPrinterBtName(''); setPrinterPaperSize(''); setProvisionError(null); }}
+              onClick={() => { setShowPrinterForm(true); setPrinterName(''); setPrinterBtName(''); setPrinterPaperSize(''); setPrinterFormError(null); }}
               className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
             >
               + Provision Printer
@@ -452,9 +471,9 @@ export default function DevicesPage() {
                 <option value="40x30">40 × 30 mm</option>
                 <option value="50x30">50 × 30 mm</option>
               </select>
-              {provisionError && <p className="text-red-400 text-xs">{provisionError}</p>}
+              {printerFormError && <p className="text-red-400 text-xs">{printerFormError}</p>}
               <div className="flex gap-2 justify-end">
-                <button type="button" onClick={() => { setShowPrinterForm(false); scannedDeviceRef.current = null; setProvisionError(null); }} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
+                <button type="button" onClick={() => { setShowPrinterForm(false); scannedDeviceRef.current = null; setPrinterFormError(null); }} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
                 <button
                   type="submit"
                   disabled={createPrinterMutation.isPending || !printerName || !printerBtName || !printerPaperSize}
@@ -531,6 +550,8 @@ export default function DevicesPage() {
           )}
 
           <div className="space-y-2">
+            <MutationError error={patchPrinterMutation.error ?? deletePrinterMutation.error} />
+
             {printers.map((p: SwapPrinterRecord) => (
               <div key={p.id} className="bg-surface-50 rounded-lg p-4 flex items-center justify-between">
                 <div>
