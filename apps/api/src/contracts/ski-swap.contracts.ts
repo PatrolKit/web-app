@@ -370,3 +370,64 @@ export type PublicSellerDetailResponse = z.infer<typeof PublicSellerDetailRespon
 export const SellerFindResponseSchema = z.object({ sellerId: z.string() });
 export type SellerFindResponse = z.infer<typeof SellerFindResponseSchema>;
 
+
+// ─── Check-in stations ───────────────────────────────────────────────────────
+
+export const CreateStationSchema = z.object({ name: z.string().min(1).max(60) }).strict();
+
+export const UpdateStationSchema = z
+  .object({
+    name: z.string().min(1).max(60).optional(),
+    deviceId: z.string().nullable().optional(),
+    printerId: z.string().nullable().optional(),
+  })
+  .strict();
+
+export const StationResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string(),
+  deviceId: z.string().nullable(),
+  deviceName: z.string().nullable(),
+  deviceLastSeenAt: z.string().nullable(),
+  printerId: z.string().nullable(),
+  printerName: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export class CreateStationDto extends createZodDto(CreateStationSchema) {}
+export class UpdateStationDto extends createZodDto(UpdateStationSchema) {}
+export type StationResponse = z.infer<typeof StationResponseSchema>;
+
+export const StationQueueResponseSchema = z.object({
+  stationId: z.string(),
+  queued: z.number().int(),
+  claimed: z.number().int(),
+  abandoned: z.number().int(),
+  oldestQueuedAt: z.string().nullable(),
+  deviceLastSeenAt: z.string().nullable(),
+});
+
+export type StationQueueResponse = z.infer<typeof StationQueueResponseSchema>;
+
+// ─── Print queue (device-facing) ─────────────────────────────────────────────
+
+export const NackJobSchema = z.object({ error: z.string().max(500).optional() }).strict();
+
+export const ClaimedJobSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  seq: z.number().int(),
+  /** Base64 ESC/POS, ready to hand straight to the printer over BLE. */
+  payload: z.string(),
+});
+
+export const ClaimResponseSchema = z.object({
+  stationId: z.string(),
+  backoffMs: z.number().int(),
+  jobs: z.array(ClaimedJobSchema),
+});
+
+export class NackJobDto extends createZodDto(NackJobSchema) {}
+export type ClaimedJob = z.infer<typeof ClaimedJobSchema>;
+export type ClaimResponse = z.infer<typeof ClaimResponseSchema>;

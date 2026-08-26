@@ -4,8 +4,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SkuService } from '../ski-swap/sku.service';
 import { JwtService } from '../auth/jwt.service';
 import { AuditService } from '../common/audit/audit.service';
 import { createId } from '@paralleldrive/cuid2';
@@ -19,9 +19,21 @@ import type {
   DeviceTokenResponse,
 } from '../contracts/devices.contracts';
 
+/**
+ * Only ski-swap devices take a SKU code. Time-clock and signage devices were
+ * consuming a namespace they never print into, which matters now the code is a
+ * single character and the pool is 32 wide.
+ */
+const SKI_SWAP_ROLES = new Set<string>([
+  'Ski Swap - Check-In',
+  'Ski Swap - Bulk Seller',
+  'Ski Swap - Network Printer Adapter',
+]);
+
 @Injectable()
 export class DevicesService {
   constructor(
+    private readonly skuService: SkuService,
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly auditService: AuditService,
@@ -39,7 +51,9 @@ export class DevicesService {
     const secretHash = await argon2.hash(clientSecret, { type: argon2.argon2id });
 
     const { device } = await this.prisma.$transaction(async (tx) => {
-      const skiSwapDeviceCode = await this.assignSkiSwapDeviceCode(orgId, tx);
+      const skiSwapDeviceCode = SKI_SWAP_ROLES.has(data.role)
+        ? await this.skuService.allocateCode(orgId)
+        : null;
       const device = await tx.device.create({
         data: {
           id: createId(),
@@ -164,34 +178,7 @@ export class DevicesService {
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-  private async assignSkiSwapDeviceCode(
-    orgId: string,
-    tx: Prisma.TransactionClient,
-  ): Promise<string> {
-    const devices = await tx.device.findMany({
-      where: { orgId },
-      select: { skiSwapDeviceCode: true },
-    });
-    const existing = new Set(
-      devices.map((d) => d.skiSwapDeviceCode).filter((c): c is string => c !== null),
-    );
-    let n = 1;
-    while (true) {
-      const code = this.generateSkiSwapCode(n);
-      if (!existing.has(code)) return code;
-      n++;
-    }
-  }
 
-  private generateSkiSwapCode(n: number): string {
-    let code = '';
-    let remainder = n;
-    while (remainder > 0) {
-      code = String.fromCharCode(((remainder - 1) % 26) + 65) + code;
-      remainder = Math.floor((remainder - 1) / 26);
-    }
-    return code;
-  }
 
 
   // ─── Device me ───────────────────────────────────────────────────────────────
@@ -212,7 +199,7 @@ export class DevicesService {
 
     await this.prisma.$transaction(async (tx) => {
       if (!skiSwapDeviceCode) {
-        skiSwapDeviceCode = await this.assignSkiSwapDeviceCode(device.orgId, tx);
+        skiSwapDeviceCode = await this.skuService.allocateCode(device.orgId);
         await tx.device.update({ where: { id: deviceId }, data: { lastSeenAt: new Date(), skiSwapDeviceCode } });
       } else {
         await tx.device.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } });

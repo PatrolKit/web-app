@@ -27,6 +27,10 @@ import { BusinessSellerService } from './business-seller.service';
 import { BusinessSellerController } from './business-seller.controller';
 import { PrinterService } from './printer.service';
 import { PrinterController } from './printer.controller';
+import { StationService } from './station.service';
+import { StationController } from './station.controller';
+import { PrintQueueService } from './print-queue.service';
+import { PrintJobController } from './print-job.controller';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { SkiSwapSettingsController } from './ski-swap-settings.controller';
 import { AuthModule } from '../auth/auth.module';
@@ -46,6 +50,8 @@ import { PermissionsModule } from '../permissions/permissions.module';
     BusinessSellerController,
     PrinterController,
     SkiSwapSettingsController,
+    StationController,
+    PrintJobController,
   ],
   providers: [
     IdempotencyService,
@@ -66,6 +72,8 @@ import { PermissionsModule } from '../permissions/permissions.module';
     BusinessSellerService,
     PrinterService,
     SkiSwapSettingsService,
+    StationService,
+    PrintQueueService,
   ],
   exports: [SquareCryptoService, SquareClientService],
 })

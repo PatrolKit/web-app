@@ -6,6 +6,9 @@ import { createZodDto } from 'nestjs-zod';
 export const DeviceRoleSchema = z.enum([
   'Ski Swap - Check-In',
   'Ski Swap - Bulk Seller',
+  /// An ESP-32 bridging wifi to a Phomemo over BLE. It never prints anything
+  /// itself — it claims jobs, forwards the bytes, and acks.
+  'Ski Swap - Network Printer Adapter',
   'Time Clock',
 ]);
 export type DeviceRole = z.infer<typeof DeviceRoleSchema>;
