@@ -5,11 +5,13 @@ import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
+import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { TimeClockReportService } from './report.service';
 
 @Controller('orgs/:orgId/time-clock/reports')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@RequireDeviceRole('Time Clock')
 @RequireModule('time_tracking')
 export class TimeClockReportController {
   constructor(private readonly reportService: TimeClockReportService) {}

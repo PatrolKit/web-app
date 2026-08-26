@@ -16,6 +16,7 @@ import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
+import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { SwapService } from './swap.service';
@@ -23,6 +24,7 @@ import { CreateSwapDto, PatchSwapDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/swaps')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@RequireDeviceRole('Ski Swap - Check-In', 'Ski Swap - Bulk Seller')
 @RequireModule('ski_swap')
 export class SwapController {
   constructor(private readonly swapService: SwapService) {}

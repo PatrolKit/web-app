@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { IdempotencyService } from '../common/services/idempotency.service';
+import { SkuService } from './sku.service';
+import { LabelRendererService } from './printing/label-renderer.service';
 import { SquareCryptoService } from './square-crypto.service';
 import { SquareClientService } from './square-client.service';
 import { SquareConfigService } from './square-config.service';
@@ -47,6 +49,8 @@ import { PermissionsModule } from '../permissions/permissions.module';
   ],
   providers: [
     IdempotencyService,
+    SkuService,
+    LabelRendererService,
     SquareCryptoService,
     SquareClientService,
     SquareConfigService,

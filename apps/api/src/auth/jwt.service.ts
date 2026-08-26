@@ -12,7 +12,7 @@ export interface DeviceTokenPayload {
   sub: string; // clientId
   deviceId: string;
   orgId: string;
-  permissions: string[];
+  role: string;
 }
 
 const PLACEHOLDER = 'REPLACE_WITH_BASE64_ED25519_PRIVATE_KEY_PEM';
@@ -71,12 +71,12 @@ export class JwtService implements OnModuleInit {
     sub: string;
     deviceId: string;
     orgId: string;
-    permissions: string[];
+    role: string;
   }): Promise<string> {
     return new SignJWT({
       deviceId: payload.deviceId,
       orgId: payload.orgId,
-      permissions: payload.permissions,
+      role: payload.role,
     })
       .setProtectedHeader({ alg: 'EdDSA' })
       .setSubject(payload.sub)
@@ -98,7 +98,7 @@ export class JwtService implements OnModuleInit {
       sub: payload.sub as string,
       deviceId: payload['deviceId'] as string,
       orgId: payload['orgId'] as string,
-      permissions: payload['permissions'] as string[],
+      role: payload['role'] as string,
     };
   }
 }

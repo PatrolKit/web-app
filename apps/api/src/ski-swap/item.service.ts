@@ -8,7 +8,7 @@ import { PosAdapterFactory } from './pos/pos.adapter';
 import { SellerService, SELLER_NAME_INCLUDE, sellerDisplayName, type SellerNameRow } from './seller.service';
 import { S3Service } from './s3.service';
 import { IdempotencyService } from '../common/services/idempotency.service';
-import { formatSku } from './sku.util';
+import { SkuService } from './sku.service';
 import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
 
@@ -34,6 +34,7 @@ export class ItemService {
     private readonly sellerService: SellerService,
     private readonly s3: S3Service,
     private readonly idempotency: IdempotencyService,
+    private readonly skuService: SkuService,
   ) {}
 
   async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string }): Promise<{ items: ItemResponse[]; total: number }> {
@@ -68,7 +69,7 @@ export class ItemService {
     return this.toResponse(item, inventoryMap);
   }
 
-  async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string }, idempotencyKey?: string): Promise<ItemResponse> {
+  async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -81,8 +82,7 @@ export class ItemService {
     if (data.sku) {
       sku = data.sku;
     } else {
-      const updatedSwap = await this.prisma.skiSwap.update({ where: { id: swapId }, data: { skuCounter: { increment: 1 } } });
-      sku = formatSku(updatedSwap.skuPrefix, updatedSwap.skuCounter);
+      sku = await this.skuService.next(swapId, data.stationCode ?? null);
     }
 
     const item = await this.prisma.swapItem.create({

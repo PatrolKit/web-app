@@ -56,10 +56,6 @@ export class DevicesService {
       return { device };
     });
 
-    if (data.permissions.length > 0) {
-      await this.assignDevicePermissions(device.id, data.permissions as PermissionKey[]);
-    }
-
     await this.auditService.log({
       actorType: 'user',
       actorId: actorUserId,
@@ -67,7 +63,7 @@ export class DevicesService {
       action: 'device.provisioned',
       targetType: 'device',
       targetId: device.id,
-      metadata: { name: data.name, permissions: data.permissions },
+      metadata: { name: data.name, role: data.role },
     });
 
     return {
@@ -77,7 +73,6 @@ export class DevicesService {
       name: device.name,
       role: device.role as DeviceRole,
       orgId,
-      permissions: data.permissions as PermissionKey[],
       createdAt: device.createdAt,
     };
   }
@@ -87,7 +82,6 @@ export class DevicesService {
   async listDevices(orgId: string): Promise<DeviceListItem[]> {
     const devices = await this.prisma.device.findMany({
       where: { orgId },
-      include: { permissions: { include: { permission: true } } },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -97,7 +91,6 @@ export class DevicesService {
       name: d.name,
       role: d.role as DeviceRole,
       orgId: d.orgId,
-      permissions: d.permissions.map((dp) => dp.permission.key as PermissionKey),
       lastSeenAt: d.lastSeenAt,
       createdAt: d.createdAt,
     }));
@@ -108,7 +101,6 @@ export class DevicesService {
   async getDeviceToken(clientId: string, clientSecret: string): Promise<DeviceTokenResponse> {
     const device = await this.prisma.device.findUnique({
       where: { clientId },
-      include: { permissions: { include: { permission: true } } },
     });
 
     // Constant-time-ish check: always verify even if not found
@@ -119,13 +111,11 @@ export class DevicesService {
       throw new UnauthorizedException('Invalid device credentials');
     }
 
-    const permissions = device.permissions.map((dp) => dp.permission.key);
-
     const accessToken = await this.jwtService.signDeviceToken({
       sub: clientId,
       deviceId: device.id,
       orgId: device.orgId,
-      permissions,
+      role: device.role,
     });
 
     await this.prisma.device.update({
@@ -204,13 +194,6 @@ export class DevicesService {
     return code;
   }
 
-  private async assignDevicePermissions(deviceId: string, keys: PermissionKey[]): Promise<void> {
-    const perms = await this.prisma.permission.findMany({ where: { key: { in: keys } } });
-    await this.prisma.devicePermission.createMany({
-      data: perms.map((p) => ({ deviceId, permissionId: p.id })),
-      skipDuplicates: true,
-    });
-  }
 
   // ─── Device me ───────────────────────────────────────────────────────────────
 
@@ -219,7 +202,6 @@ export class DevicesService {
       where: { id: deviceId },
       include: {
         org: true,
-        permissions: { include: { permission: true } },
       },
     });
 
@@ -244,7 +226,6 @@ export class DevicesService {
       role: device.role as DeviceRole,
       orgId: device.orgId,
       orgName: device.org.name,
-      permissions: device.permissions.map((dp) => dp.permission.key),
       skiSwapDeviceCode,
       sellerSiteUrl: process.env.SELLER_SITE_URL ?? 'https://skiswap.patrolkit.io',
       orgLogoUrl: device.org.logoUrl ?? null,
@@ -260,7 +241,6 @@ export class DevicesService {
   ): Promise<DeviceListItem> {
     const device = await this.prisma.device.findUnique({
       where: { id: deviceId },
-      include: { permissions: { include: { permission: true } } },
     });
 
     if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
@@ -268,7 +248,6 @@ export class DevicesService {
     const updated = await this.prisma.device.update({
       where: { id: deviceId },
       data: { role },
-      include: { permissions: { include: { permission: true } } },
     });
 
     return {
@@ -277,7 +256,6 @@ export class DevicesService {
       name: updated.name,
       role: updated.role as DeviceRole,
       orgId: updated.orgId,
-      permissions: updated.permissions.map((dp) => dp.permission.key as PermissionKey),
       lastSeenAt: updated.lastSeenAt,
       createdAt: updated.createdAt,
     };

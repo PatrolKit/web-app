@@ -23,8 +23,8 @@ export class SquareConfigService {
       this.prisma.swapItem.deleteMany({ where: { orgId } }),
       this.prisma.sellerProfile.deleteMany({ where: { membership: { orgId } } }),
     ]);
-    // Reset all SKU counters so numbering starts fresh
-    await this.prisma.skiSwap.updateMany({ where: { orgId }, data: { skuCounter: 0 } });
+    // Reset every minting endpoint's counter so numbering starts fresh.
+    await this.prisma.swapSkuCounter.deleteMany({ where: { swap: { orgId } } });
     return { deletedItems: deletedItems.count, deletedSellers: deletedSellers.count };
   }
 

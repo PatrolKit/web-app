@@ -3,13 +3,13 @@ import { ProvisionDeviceSchema, DeviceListItemSchema, DeviceMeResponseSchema, De
 describe('Devices contracts', () => {
   it('accepts a valid provision request', () => {
     expect(
-      ProvisionDeviceSchema.safeParse({ name: 'Patrol A', role: 'Ski Swap - Check-In', permissions: ['devices:read'] }).success,
+      ProvisionDeviceSchema.safeParse({ name: 'Patrol A', role: 'Ski Swap - Check-In' }).success,
     ).toBe(true);
   });
 
   it('accepts a provision request with a valid role', () => {
     expect(
-      ProvisionDeviceSchema.safeParse({ name: 'Patrol A', role: 'Ski Swap - Check-In', permissions: [] }).success,
+      ProvisionDeviceSchema.safeParse({ name: 'Patrol A', role: 'Ski Swap - Check-In' }).success,
     ).toBe(true);
   });
 
@@ -37,9 +37,9 @@ describe('Devices contracts', () => {
     ).toBe(false);
   });
 
-  it('defaults permissions to empty array', () => {
+  it('accepts a name and role alone — the role is what authorises the device', () => {
     const r = ProvisionDeviceSchema.parse({ name: 'X', role: 'Ski Swap - Bulk Seller' });
-    expect(r.permissions).toEqual([]);
+    expect(r).toEqual({ name: 'X', role: 'Ski Swap - Bulk Seller' });
   });
 
   it('clientSecret absent from list item schema', () => {

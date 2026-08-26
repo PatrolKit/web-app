@@ -184,7 +184,6 @@ export class AuthService {
     const argon2 = await import('argon2');
     const device = await this.prisma.device.findUnique({
       where: { clientId },
-      include: { permissions: { include: { permission: true } } },
     });
 
     const hash = device?.secretHash ?? '$argon2id$v=19$m=65536,t=3,p=4$placeholder';
@@ -194,12 +193,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid device credentials');
     }
 
-    const permissions = device.permissions.map((dp) => dp.permission.key);
+    // The role rides in the token: the print-job claim polls once a second, and
+    // a lookup per request to ask what kind of device this is would be a
+    // database round-trip for a constant. It goes stale for at most one token
+    // lifetime, which is the price of not querying on every poll.
     const accessToken = await this.jwtService.signDeviceToken({
       sub: clientId,
       deviceId: device.id,
       orgId: device.orgId,
-      permissions,
+      role: device.role,
     });
 
     await this.prisma.device.update({

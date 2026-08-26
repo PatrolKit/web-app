@@ -79,6 +79,8 @@ model Organization {
   swapItems       SwapItem[]
   swapPrinters    SwapPrinter[]
   skiSwapSettings SkiSwapSettings?
+  checkinStations CheckinStation[]
+  printJobs       PrintJob[]
 
   resorts           Resort[]
   timeClockEvents   TimeClockEvent[]
@@ -122,7 +124,6 @@ model Permission {
   createdAt   DateTime @default(now())
 
   memberships MembershipPermission[]
-  devices     DevicePermission[]
 }
 
 model MembershipPermission {
@@ -157,6 +158,11 @@ model ContactChallenge {
   codeHash String
   /// Capped at 5. A 6-digit OTP needs a per-challenge counter, not just an IP throttle.
   attempts Int @default(0)
+
+  /// What this sign-in was for, so the session can resume it whichever browser
+  /// context confirms. Structured and server-interpreted — never a URL, and
+  /// never read from the query string.
+  context Json?
 
   expiresAt DateTime
   usedAt    DateTime?
@@ -213,26 +219,21 @@ model Device {
   name              String
   clientId          String    @unique
   secretHash        String
+  /// Authorises the device on its own. There is no per-device permission set —
+  /// a device's job is its role.
   role              String    @db.VarChar(100)
   lastSeenAt        DateTime?
   createdBy         String?
   createdAt         DateTime  @default(now())
-  skiSwapDeviceCode String?   @db.VarChar(3)
+  /// One character, unique per org. Shares a pool with CheckinStation.code so a
+  /// SKU's namespace character always identifies exactly one minting endpoint.
+  skiSwapDeviceCode String?   @db.VarChar(1)
 
-  org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  permissions DevicePermission[]
+  org             Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  checkinStation  CheckinStation?
+  bridgedPrinter  SwapPrinter?    @relation("BridgedPrinter")
 
   @@unique([orgId, skiSwapDeviceCode])
-}
-
-model DevicePermission {
-  deviceId     String
-  permissionId String
-
-  device     Device     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@id([deviceId, permissionId])
 }
 
 model AuditLog {
@@ -280,15 +281,20 @@ model SkiSwap {
   locationId       String   @default("") // Square Location ID for inventory ops
   active           Boolean  @default(false)
   skuPrefix        String
-  skuCounter       Int      @default(0)
+  /// Mirror of skuPrefix, written only while the swap is active. MySQL allows
+  /// many NULLs in a unique index, so inactive swaps never collide — which is
+  /// what stops two live swaps issuing the same SKU.
+  activeSkuPrefix  String?
   createdBy        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  items SwapItem[]
+  org         Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  items       SwapItem[]
+  skuCounters SwapSkuCounter[]
 
   @@unique([orgId, title])
+  @@unique([orgId, activeSkuPrefix])
   @@index([orgId, active])
 }
 
@@ -370,15 +376,111 @@ model SwapPrinter {
   marginLeft       Int      @default(8)
   marginRight      Int      @default(16)
   assignedSellerId String?
+  /// The bridge that drives this printer over BLE. Null for printers driven
+  /// straight from a browser, which is every printer today.
+  bridgeDeviceId   String?  @unique
   createdBy        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  org    Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  seller SellerProfile? @relation(fields: [assignedSellerId], references: [id], onDelete: SetNull)
+  org          Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  seller       SellerProfile?  @relation(fields: [assignedSellerId], references: [id], onDelete: SetNull)
+  bridgeDevice Device?         @relation("BridgedPrinter", fields: [bridgeDeviceId], references: [id], onDelete: SetNull)
+  stations     CheckinStation[]
 
   @@index([orgId])
   @@index([assignedSellerId])
+}
+
+/// A place a seller checks themselves in: a QR code and a printer, with a bridge
+/// between. The station is the layer that survives replacing either piece of
+/// hardware beneath it, which is why it owns the SKU namespace character.
+model CheckinStation {
+  id    String @id @default(cuid())
+  orgId String
+  /// Human label — "Station 3".
+  name  String
+  /// One character. The SKU namespace printed on every tag from here, drawn from
+  /// the same per-org pool as Device.skiSwapDeviceCode.
+  code  String @db.VarChar(1)
+
+  /// The bridge serving this station. Re-bindable: hardware dies mid-swap, and
+  /// queued jobs survive because they belong to the station, not the bridge.
+  deviceId  String?   @unique
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device    Device?      @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  printer   SwapPrinter? @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  printerId String?
+  printJobs PrintJob[]
+
+  @@unique([orgId, code])
+  @@index([orgId, deletedAt])
+}
+
+/// A label waiting to print. Holds a recipe rather than bytes: the raster is
+/// rendered when the job is claimed, so a job adapts to whichever printer is
+/// actually attached at that moment.
+model PrintJob {
+  id    String @id @default(cuid())
+  orgId String
+  /// Where the job goes.
+  stationId String
+  /// Which printer it was queued against. Diagnostics only — the render
+  /// resolves the station's current printer at claim time.
+  printerId String?
+
+  /// Set when a job belongs to a check-in; null for staff-initiated work.
+  swapId   String?
+  sellerId String?
+  /// The item this tag depicts. Null for receipts and calibration. What lets an
+  /// ack flip SwapItem.hasPrintedTag once every tag for that item has printed.
+  itemId   String?
+
+  /// item | receipt_header | receipt_items | qr | calibration
+  kind String
+  /// Anything the recipe needs beyond the ids above — the page index of a
+  /// paginated receipt, the text of a QR label.
+  params Json?
+  /// Ordering within one seller's batch, so tags emerge in entry order.
+  seq  Int @default(0)
+
+  /// queued | claimed | printed | failed | abandoned
+  status     String    @default("queued")
+  claimToken String?
+  claimedAt  DateTime?
+  /// Claim expiry. A job past this with status=claimed returns to the queue.
+  claimUntil DateTime?
+  printedAt  DateTime?
+  attempts   Int       @default(0)
+  lastError  String?   @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org     Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  station CheckinStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@index([stationId, status, seq])
+  @@index([status, claimUntil])
+  @@index([itemId, status])
+  @@index([orgId, createdAt])
+}
+
+/// One SKU counter per minting endpoint per swap, so stations never contend.
+/// `code` is a station code or a check-in device code — one shared per-org pool.
+model SwapSkuCounter {
+  id          String @id @default(cuid())
+  swapId      String
+  code        String @db.VarChar(1)
+  lastCounter Int    @default(0)
+
+  swap SkiSwap @relation(fields: [swapId], references: [id], onDelete: Cascade)
+
+  @@unique([swapId, code])
 }
 
 model SkiSwapSettings {

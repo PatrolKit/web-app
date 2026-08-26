@@ -38,7 +38,7 @@ export class OrDeviceAuthGuard implements CanActivate {
         deviceId: payload.deviceId,
         orgId: payload.orgId,
         clientId: payload.sub,
-        permissions: payload.permissions,
+        role: payload.role,
       };
       return true;
     } catch (err) {

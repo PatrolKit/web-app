@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
-import { PermissionKeySchema } from './org.contracts';
 
 // ─── Role enumeration ─────────────────────────────────────────────────────────
 
@@ -17,7 +16,6 @@ export const ProvisionDeviceSchema = z
   .object({
     name: z.string().min(1).max(100),
     role: DeviceRoleSchema,
-    permissions: z.array(PermissionKeySchema).default([]),
   })
   .strict();
 
@@ -28,7 +26,6 @@ export const ProvisionDeviceResponseSchema = z.object({
   name: z.string(),
   role: DeviceRoleSchema,
   orgId: z.string(),
-  permissions: z.array(PermissionKeySchema),
   createdAt: z.date(),
 });
 
@@ -40,7 +37,6 @@ export const DeviceListItemSchema = z.object({
   name: z.string(),
   role: DeviceRoleSchema,
   orgId: z.string(),
-  permissions: z.array(PermissionKeySchema),
   lastSeenAt: z.date().nullable(),
   createdAt: z.date(),
 });
@@ -60,7 +56,6 @@ export const DeviceMeResponseSchema = z.object({
   role: DeviceRoleSchema,
   orgId: z.string(),
   orgName: z.string(),
-  permissions: z.array(z.string()),
   skiSwapDeviceCode: z.string().nullable(),
   sellerSiteUrl: z.string(),
   orgLogoUrl: z.string().nullable().optional(),

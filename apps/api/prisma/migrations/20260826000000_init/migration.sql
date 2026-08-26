@@ -87,6 +87,7 @@ CREATE TABLE `ContactChallenge` (
     `purpose` VARCHAR(191) NOT NULL,
     `codeHash` VARCHAR(191) NOT NULL,
     `attempts` INTEGER NOT NULL DEFAULT 0,
+    `context` JSON NULL,
     `expiresAt` DATETIME(3) NOT NULL,
     `usedAt` DATETIME(3) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -146,19 +147,11 @@ CREATE TABLE `Device` (
     `lastSeenAt` DATETIME(3) NULL,
     `createdBy` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    `skiSwapDeviceCode` VARCHAR(3) NULL,
+    `skiSwapDeviceCode` VARCHAR(1) NULL,
 
     UNIQUE INDEX `Device_clientId_key`(`clientId`),
     UNIQUE INDEX `Device_orgId_skiSwapDeviceCode_key`(`orgId`, `skiSwapDeviceCode`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- CreateTable
-CREATE TABLE `DevicePermission` (
-    `deviceId` VARCHAR(191) NOT NULL,
-    `permissionId` VARCHAR(191) NOT NULL,
-
-    PRIMARY KEY (`deviceId`, `permissionId`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
@@ -211,13 +204,14 @@ CREATE TABLE `SkiSwap` (
     `locationId` VARCHAR(191) NOT NULL DEFAULT '',
     `active` BOOLEAN NOT NULL DEFAULT false,
     `skuPrefix` VARCHAR(191) NOT NULL,
-    `skuCounter` INTEGER NOT NULL DEFAULT 0,
+    `activeSkuPrefix` VARCHAR(191) NULL,
     `createdBy` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
     INDEX `SkiSwap_orgId_active_idx`(`orgId`, `active`),
     UNIQUE INDEX `SkiSwap_orgId_title_key`(`orgId`, `title`),
+    UNIQUE INDEX `SkiSwap_orgId_activeSkuPrefix_key`(`orgId`, `activeSkuPrefix`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -286,12 +280,72 @@ CREATE TABLE `SwapPrinter` (
     `marginLeft` INTEGER NOT NULL DEFAULT 8,
     `marginRight` INTEGER NOT NULL DEFAULT 16,
     `assignedSellerId` VARCHAR(191) NULL,
+    `bridgeDeviceId` VARCHAR(191) NULL,
     `createdBy` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
+    UNIQUE INDEX `SwapPrinter_bridgeDeviceId_key`(`bridgeDeviceId`),
     INDEX `SwapPrinter_orgId_idx`(`orgId`),
     INDEX `SwapPrinter_assignedSellerId_idx`(`assignedSellerId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `CheckinStation` (
+    `id` VARCHAR(191) NOT NULL,
+    `orgId` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `code` VARCHAR(1) NOT NULL,
+    `deviceId` VARCHAR(191) NULL,
+    `deletedAt` DATETIME(3) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+    `printerId` VARCHAR(191) NULL,
+
+    UNIQUE INDEX `CheckinStation_deviceId_key`(`deviceId`),
+    INDEX `CheckinStation_orgId_deletedAt_idx`(`orgId`, `deletedAt`),
+    UNIQUE INDEX `CheckinStation_orgId_code_key`(`orgId`, `code`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `PrintJob` (
+    `id` VARCHAR(191) NOT NULL,
+    `orgId` VARCHAR(191) NOT NULL,
+    `stationId` VARCHAR(191) NOT NULL,
+    `printerId` VARCHAR(191) NULL,
+    `swapId` VARCHAR(191) NULL,
+    `sellerId` VARCHAR(191) NULL,
+    `itemId` VARCHAR(191) NULL,
+    `kind` VARCHAR(191) NOT NULL,
+    `params` JSON NULL,
+    `seq` INTEGER NOT NULL DEFAULT 0,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'queued',
+    `claimToken` VARCHAR(191) NULL,
+    `claimedAt` DATETIME(3) NULL,
+    `claimUntil` DATETIME(3) NULL,
+    `printedAt` DATETIME(3) NULL,
+    `attempts` INTEGER NOT NULL DEFAULT 0,
+    `lastError` VARCHAR(500) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `PrintJob_stationId_status_seq_idx`(`stationId`, `status`, `seq`),
+    INDEX `PrintJob_status_claimUntil_idx`(`status`, `claimUntil`),
+    INDEX `PrintJob_itemId_status_idx`(`itemId`, `status`),
+    INDEX `PrintJob_orgId_createdAt_idx`(`orgId`, `createdAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `SwapSkuCounter` (
+    `id` VARCHAR(191) NOT NULL,
+    `swapId` VARCHAR(191) NOT NULL,
+    `code` VARCHAR(1) NOT NULL,
+    `lastCounter` INTEGER NOT NULL DEFAULT 0,
+
+    UNIQUE INDEX `SwapSkuCounter_swapId_code_key`(`swapId`, `code`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -428,12 +482,6 @@ ALTER TABLE `OrgModule` ADD CONSTRAINT `OrgModule_moduleKey_fkey` FOREIGN KEY (`
 ALTER TABLE `Device` ADD CONSTRAINT `Device_orgId_fkey` FOREIGN KEY (`orgId`) REFERENCES `Organization`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `DevicePermission` ADD CONSTRAINT `DevicePermission_deviceId_fkey` FOREIGN KEY (`deviceId`) REFERENCES `Device`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `DevicePermission` ADD CONSTRAINT `DevicePermission_permissionId_fkey` FOREIGN KEY (`permissionId`) REFERENCES `Permission`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `SquareConfig` ADD CONSTRAINT `SquareConfig_orgId_fkey` FOREIGN KEY (`orgId`) REFERENCES `Organization`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -459,6 +507,27 @@ ALTER TABLE `SwapPrinter` ADD CONSTRAINT `SwapPrinter_orgId_fkey` FOREIGN KEY (`
 
 -- AddForeignKey
 ALTER TABLE `SwapPrinter` ADD CONSTRAINT `SwapPrinter_assignedSellerId_fkey` FOREIGN KEY (`assignedSellerId`) REFERENCES `SellerProfile`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `SwapPrinter` ADD CONSTRAINT `SwapPrinter_bridgeDeviceId_fkey` FOREIGN KEY (`bridgeDeviceId`) REFERENCES `Device`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `CheckinStation` ADD CONSTRAINT `CheckinStation_orgId_fkey` FOREIGN KEY (`orgId`) REFERENCES `Organization`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `CheckinStation` ADD CONSTRAINT `CheckinStation_deviceId_fkey` FOREIGN KEY (`deviceId`) REFERENCES `Device`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `CheckinStation` ADD CONSTRAINT `CheckinStation_printerId_fkey` FOREIGN KEY (`printerId`) REFERENCES `SwapPrinter`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PrintJob` ADD CONSTRAINT `PrintJob_orgId_fkey` FOREIGN KEY (`orgId`) REFERENCES `Organization`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PrintJob` ADD CONSTRAINT `PrintJob_stationId_fkey` FOREIGN KEY (`stationId`) REFERENCES `CheckinStation`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `SwapSkuCounter` ADD CONSTRAINT `SwapSkuCounter_swapId_fkey` FOREIGN KEY (`swapId`) REFERENCES `SkiSwap`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `SkiSwapSettings` ADD CONSTRAINT `SkiSwapSettings_orgId_fkey` FOREIGN KEY (`orgId`) REFERENCES `Organization`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

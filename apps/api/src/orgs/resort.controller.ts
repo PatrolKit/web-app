@@ -3,6 +3,7 @@ import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
+import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { ResortService } from './resort.service';
 import { CreateResortDto, PatchResortDto } from '../contracts/org.contracts';
 
@@ -13,6 +14,7 @@ import { CreateResortDto, PatchResortDto } from '../contracts/org.contracts';
  */
 @Controller('orgs/:orgId/resorts')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, PermissionsGuard)
+@RequireDeviceRole('Time Clock')
 export class ResortController {
   constructor(private readonly resortService: ResortService) {}
 

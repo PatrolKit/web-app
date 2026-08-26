@@ -6,7 +6,8 @@ export interface AuthenticatedDevice {
   deviceId: string;
   orgId: string;
   clientId: string;
-  permissions: string[];
+  /** What the device is allowed to do. A device's job is its role. */
+  role: string;
 }
 
 @Injectable()
@@ -28,7 +29,7 @@ export class DeviceAuthGuard implements CanActivate {
         deviceId: payload.deviceId,
         orgId: payload.orgId,
         clientId: payload.sub,
-        permissions: payload.permissions,
+        role: payload.role,
       };
       return true;
     } catch {
