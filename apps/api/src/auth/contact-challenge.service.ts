@@ -5,6 +5,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { SmsService } from '../sms/sms.service';
+import type { SignInContext } from '../contracts/auth.contracts';
 
 export type ChallengeChannel = 'email' | 'phone';
 /** `login` mints a session on confirm; `verify` only stamps; `invite` does both. */
@@ -64,6 +65,12 @@ export class ContactChallengeService {
     target: string;
     purpose: ChallengePurpose;
     orgName?: string;
+    /**
+     * Validated by the caller before it gets here — an invalid pairing stored
+     * now would fail at confirm, in a new tab, where there is nothing to do
+     * about it.
+     */
+    context?: SignInContext;
   }): Promise<IssuedChallenge> {
     const { userId, channel, target, purpose } = params;
 
@@ -87,10 +94,19 @@ export class ContactChallengeService {
         purpose,
         codeHash: sha256(rawCode),
         expiresAt: new Date(Date.now() + TTL_SECONDS[purpose] * 1000),
+        ...(params.context ? { context: params.context } : {}),
       },
     });
 
-    await this.dispatch(challenge.id, channel, target, rawCode, purpose, params.orgName);
+    await this.dispatch({
+      challengeId: challenge.id,
+      channel,
+      target,
+      rawCode,
+      purpose,
+      orgName: params.orgName,
+      context: params.context,
+    });
 
     // Two independent conditions, deliberately. Suppression says nothing was
     // delivered; non-production says it is safe to say what the code was. A
@@ -114,7 +130,10 @@ export class ContactChallengeService {
    * unique index is what enforces "at most one person may hold a verified claim
    * to a contact". A rejection there means someone else already proved it.
    */
-  async confirm(challengeId: string, rawCode: string): Promise<{ userId: string; purpose: ChallengePurpose }> {
+  async confirm(
+    challengeId: string,
+    rawCode: string,
+  ): Promise<{ userId: string; purpose: ChallengePurpose; context: SignInContext | null }> {
     const challenge = await this.prisma.contactChallenge.findUnique({ where: { id: challengeId } });
 
     if (!challenge || challenge.usedAt || challenge.expiresAt < new Date()) {
@@ -155,24 +174,38 @@ export class ContactChallengeService {
       throw err;
     }
 
-    return { userId: challenge.userId, purpose: challenge.purpose as ChallengePurpose };
+    return {
+      userId: challenge.userId,
+      purpose: challenge.purpose as ChallengePurpose,
+      // Scoped to the challenge: it dies with the row, so nothing about a
+      // station outlives the sign-in that needed it.
+      context: (challenge.context as SignInContext | null) ?? null,
+    };
   }
 
-  private async dispatch(
-    challengeId: string,
-    channel: ChallengeChannel,
-    target: string,
-    rawCode: string,
-    purpose: ChallengePurpose,
-    orgName?: string,
-  ): Promise<void> {
+  private async dispatch(params: {
+    challengeId: string;
+    channel: ChallengeChannel;
+    target: string;
+    rawCode: string;
+    purpose: ChallengePurpose;
+    orgName?: string;
+    context?: SignInContext;
+  }): Promise<void> {
+    const { challengeId, channel, target, rawCode, purpose, orgName, context } = params;
+
     if (channel === 'phone') {
       await this.sms.send(target, `Your PatrolKit code is: ${rawCode}. It expires in 15 minutes.`);
       return;
     }
 
-    const appUrl = this.config.get<string>('app.appUrl', 'http://localhost:3000');
-    const url = `${appUrl}/app/auth/verify?c=${challengeId}&t=${rawCode}`;
+    // The link has to open on the origin the person is actually standing on. A
+    // seller checking in at a station is on skiswap.*, and a link back to the
+    // staff app drops them somewhere they have no business being.
+    const origin = context?.stationId
+      ? this.config.get<string>('app.sellerSiteUrl', 'http://localhost:3000')
+      : this.config.get<string>('app.appUrl', 'http://localhost:3000');
+    const url = `${origin.replace(/\/$/, '')}/app/auth/verify?c=${challengeId}&t=${rawCode}`;
 
     // Fire-and-forget: delivery failure must never surface as an auth error,
     // which would leak whether the account exists.

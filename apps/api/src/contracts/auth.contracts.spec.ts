@@ -3,6 +3,7 @@ import {
   ChallengeConfirmSchema,
   AuthTokenResponseSchema,
   DeviceTokenRequestSchema,
+  SignInContextSchema,
 } from './auth.contracts';
 
 describe('Auth contracts', () => {
@@ -37,6 +38,37 @@ describe('Auth contracts', () => {
 
     it('rejects unknown fields (strict)', () => {
       expect(LoginRequestSchema.safeParse({ email: 'a@b.com', extra: true }).success).toBe(false);
+    });
+
+    it('carries a sign-in context', () => {
+      const result = LoginRequestSchema.safeParse({
+        email: 'a@b.com',
+        context: { swapId: 'swap1', stationId: 'station1' },
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('SignInContextSchema', () => {
+    it('accepts a swap and station pair', () => {
+      expect(
+        SignInContextSchema.safeParse({ swapId: 's', stationId: 't' }).success,
+      ).toBe(true);
+    });
+
+    // The whole point of ids over a URL: nothing here can name a destination.
+    it('rejects a URL smuggled in as an extra field', () => {
+      expect(
+        SignInContextSchema.safeParse({
+          swapId: 's',
+          stationId: 't',
+          redirect: 'https://evil.example.com',
+        }).success,
+      ).toBe(false);
+    });
+
+    it('rejects a partial pair', () => {
+      expect(SignInContextSchema.safeParse({ swapId: 's' }).success).toBe(false);
     });
   });
 

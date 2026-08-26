@@ -209,6 +209,15 @@ export interface SwapPrinterRecord {
   assignedSellerName: string | null;
 }
 
+/**
+ * What a sign-in was for. Ids, never a URL — the client decides where to go, so
+ * a stored redirect target can never become an open redirect.
+ */
+export interface SignInContext {
+  swapId: string;
+  stationId: string;
+}
+
 export interface RenderLabelResponse {
   format: 'escpos' | 'png';
   /** Base64. One entry per label — a receipt's item list paginates. */

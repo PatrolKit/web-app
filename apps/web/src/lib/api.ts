@@ -97,8 +97,13 @@ export type SellerWrite = Partial<{
 
 export const api = {
   auth: {
-    /** One login, two channels — pass exactly one of email or phone. */
-    login: (input: { email: string } | { phone: string }) =>
+    /**
+     * One login, two channels — pass exactly one of email or phone.
+     *
+     * `context` says what the sign-in was for. It comes back from confirm, so
+     * the flow survives a magic link opening in a fresh tab.
+     */
+    login: (input: ({ email: string } | { phone: string }) & { context?: import('./api.types').SignInContext }) =>
       request<{
         queued: true;
         challengeId: string | null;
@@ -111,7 +116,11 @@ export const api = {
       }),
     /** Confirming verifies the contact and, for login/invite, mints the session. */
     confirmChallenge: (challengeId: string, code: string) =>
-      request<{ accessToken: string | null; verified: true }>(
+      request<{
+        accessToken: string | null;
+        verified: true;
+        context?: import('./api.types').SignInContext | null;
+      }>(
         `/auth/challenges/${challengeId}/confirm`,
         { method: 'POST', body: JSON.stringify({ code }) },
       ),

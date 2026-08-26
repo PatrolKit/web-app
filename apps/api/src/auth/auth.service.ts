@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from './jwt.service';
@@ -7,6 +7,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { createHash, randomBytes } from 'crypto';
 import type { Request, Response } from 'express';
 import type { DeviceTokenResponse } from '../contracts/devices.contracts';
+import type { SignInContext } from '../contracts/auth.contracts';
 import { normalizeEmail, normalizePhone } from '../common/util/person';
 
 const REFRESH_COOKIE = 'refresh_token';
@@ -38,10 +39,18 @@ export class AuthService {
    * matters most for the phone flow, where the client needs an id to confirm
    * against.
    */
-  async requestLogin(input: { email?: string; phone?: string }): Promise<IssuedChallenge | null> {
+  async requestLogin(input: {
+    email?: string;
+    phone?: string;
+    context?: SignInContext;
+  }): Promise<IssuedChallenge | null> {
     const email = normalizeEmail(input.email);
     const phone = normalizePhone(input.phone);
     if (!email && !phone) return null;
+
+    // Before the decoy branch, so a bad context fails the same way for everyone
+    // — checking it only for real accounts would make the error an oracle.
+    if (input.context) await this.assertContextIsLive(input.context);
 
     const channel = email ? 'email' : 'phone';
     const user = await this.prisma.user.findFirst({
@@ -54,7 +63,29 @@ export class AuthService {
       channel,
       target: (email ?? phone)!,
       purpose: 'login',
+      context: input.context,
     });
+  }
+
+  /**
+   * Checks a sign-in context names things that exist right now.
+   *
+   * Validated here rather than at confirm because confirm often happens in a
+   * different tab, minutes later, with the person already at the counter — the
+   * wrong place to discover the station was retired.
+   */
+  private async assertContextIsLive(context: SignInContext): Promise<void> {
+    const swap = await this.prisma.skiSwap.findFirst({
+      where: { id: context.swapId, active: true },
+      select: { orgId: true },
+    });
+    if (!swap) throw new BadRequestException('This swap is not currently running');
+
+    const station = await this.prisma.checkinStation.findFirst({
+      where: { id: context.stationId, orgId: swap.orgId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!station) throw new BadRequestException('That check-in station is not set up');
   }
 
   /**
@@ -66,14 +97,14 @@ export class AuthService {
     code: string,
     res: Response,
     meta: { ipAddress?: string; userAgent?: string },
-  ): Promise<{ accessToken: string | null; verified: true }> {
-    const { userId, purpose } = await this.challenges.confirm(challengeId, code);
+  ): Promise<{ accessToken: string | null; verified: true; context: SignInContext | null }> {
+    const { userId, purpose, context } = await this.challenges.confirm(challengeId, code);
 
-    if (purpose === 'verify') return { accessToken: null, verified: true };
+    if (purpose === 'verify') return { accessToken: null, verified: true, context };
 
     const accessToken = await this.jwtService.signAccessToken(userId);
     await this.issueRefreshCookie(userId, res, meta);
-    return { accessToken, verified: true };
+    return { accessToken, verified: true, context };
   }
 
   /** 30-day invite challenge for a newly-created business seller. */
