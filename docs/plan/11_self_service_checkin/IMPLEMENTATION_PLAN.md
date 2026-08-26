@@ -39,7 +39,7 @@ Staff stop being typists and go back to handling gear.
 | Device auth (`clientId`/secret → JWT) | Done — reused for printers |
 | Print queue | **Does not exist** — §6 |
 
-### Three defects this plan fixes
+### Two defects this plan fixes, and one it records
 
 - **`PublicCheckinService` was never built.** Plan 10 lists it in §9, §10 and Phase 3, and
   that plan is marked implemented. The endpoint does not exist. This plan is where it
@@ -48,11 +48,11 @@ Staff stop being typists and go back to handling gear.
   routes on `perms.has('business_seller')`, a permission Plan 10 retired (D12), so the
   redirect can never fire and a signed-in seller lands on the members page. The
   destination this whole flow delivers people to is currently unreachable.
-- **Browser printing uses the wrong head width on 40 mm printers.** The web hardcodes a
-  400-dot / 50-byte head for every paper size; a Phomemo M110's head is 320 dots / 40
-  bytes. iOS gets this right and the browser does not. Whether it currently misprints or
-  is simply never pointed at an M110 is worth establishing — either way the server
-  renderer must not inherit the assumption. See §4.
+- **iOS and the web disagree on print-head width.** The web's 400 dots is correct for the
+  M110 on 50 mm media; iOS still reports a 304-dot printable area and treats the 400-wide
+  case as a different printer. Out of scope to fix here — iOS is a separate repo already
+  slated for update — but the server renderer must adopt the web's geometry, not the iOS
+  numbers, and the two should be reconciled when iOS is next touched. See §4.
 
 ---
 
@@ -61,7 +61,7 @@ Staff stop being typists and go back to handling gear.
 | # | Decision | Rationale |
 |---|---|---|
 | **D1** | **The QR carries `swapId` and `printerId`.** Org is derived from the swap, not encoded separately. | One less thing to keep consistent. A swap belongs to exactly one org, so encoding both invites them to disagree. |
-| **D2** | **The server renders labels; the queue carries bytes.** A job payload is a finished 1-bit raster. Firmware claims a job, writes it to the print head, acks. | Label design churns — `add_printer_margins` and `update_default_margins` landed days apart. Under firmware rendering every margin tweak is a firmware rollout to hardware in a lodge. It also avoids a third renderer. There are already two — TypeScript canvas and Swift — and they have **already** drifted: they disagree about print-head width, so the browser writes a 50-byte row header to a 40-byte head (§4). Adding C++ firmware to that would be the third implementation expected to produce identical output, and drift here shows up as tags that do not scan. |
+| **D2** | **The server renders labels; the queue carries bytes.** A job payload is a finished 1-bit raster. Firmware claims a job, writes it to the print head, acks. | Label design churns — `add_printer_margins` and `update_default_margins` landed days apart. Under firmware rendering every margin tweak is a firmware rollout to hardware in a lodge. It also avoids a third renderer. There are already two — TypeScript canvas and Swift — and they have **already** drifted on print-head width, the most fundamental parameter there is (§4). Adding C++ firmware would make a third implementation expected to produce identical output, and drift here shows up as tags that do not scan. |
 | **D3** | **Printers are registered devices** with a new `Ski Swap - Printer` role, using the existing `clientId`/secret → JWT flow. | Device auth already exists, is tested, and already scopes to an org. A printer is just another device. |
 | **D4** | **At-least-once delivery**, with claim → ack and a visibility timeout that returns unacked jobs to the queue. | A duplicate tag costs a strip of paper. A lost tag costs a seller their item. The asymmetry is not close. |
 | **D5** | **Self-entered items go live immediately** — no staff approval gate. | Staff verify the physical pile at handover, which is the check that actually matters. An approval queue would recreate the bottleneck this removes. |
@@ -144,30 +144,36 @@ The 867 lines in
 do layout on a `<canvas>`, `rasterise()` to `boolean[][]`, then wrap in ESC/POS raster
 commands. This moves to the API.
 
-### Geometry is per printer model, not one number
+### Geometry
 
-| | Head | Left dead-zone | Content | Rows sent | Bytes/row |
+There is **one printer**: the Phomemo M110. Its head is **400 dots** (50 mm at 8 dots/mm)
+and it prints the full width of 50 mm media. Paper size is a property of the *media*, not
+of the head.
+
+| | Head | Content | Rows sent | Bytes/row | Raw size |
 |---|---|---|---|---|---|
-| Phomemo M110 (`40x30`) | 320 dots (40 mm) | 16 dots | **304 × 224** | 240 | 40 |
-| 50 mm printer (`50x30`) | 400 dots (50 mm) | none | **400 × 224** | 240 | 50 |
+| `50x30` — the one that matters | 400 dots | **400 × 224** | 240 | 50 | 12 KB |
+| `40x30` — legacy media | 400 dots | narrower, inset | 240 | 50 | 12 KB |
 
-Both are 8 dots/mm, and both send 240 rows — 224 of content plus 8 blank feed rows top and
-bottom. A rendered label is therefore **9.6 KB on an M110 and 12 KB on a 50 mm head**, raw.
-Small enough that the queue can carry finished rasters without thinking about it.
+240 rows is 224 of content plus 8 blank feed rows top and bottom. 12 KB raw is small enough
+that the queue can carry finished rasters without thinking about it.
 
-**The two existing clients disagree about this**, which is the strongest argument for
-D2 that this plan has. The iOS `LabelGenerator.swift` keys geometry off paper size and
-carries a calibrated 16-dot dead-zone for the M110. The web
-`PhomemoPrinterService.ts` hardcodes `HEAD_WIDTH_DOTS = 400` / `HEAD_WIDTH_BYTES = 50`
-for *both* sizes and writes that width straight into the `GS v 0` header. On an M110 the
-browser therefore declares 50 bytes per row to a 40-byte head. The iOS source even carries
-a comment saying its branding geometry "matches PhomemoPrinterService.ts" — they were
-meant to be parallel, and they have silently drifted. See §1.
+`50x30` is the target. `40x30` is narrower media under the same 400-dot head, so its
+content has to be inset to stay on the label — that is what margins are for, and it is not
+a different head geometry.
 
-So the server renderer takes geometry as **input**, from the printer record, rather than
-holding a constant. `SwapPrinter` should carry an explicit model — head width, dead-zone,
-dots/mm — rather than inferring it from `paperSize`, which works only for as long as label
-size and head geometry happen to correspond.
+**The clients disagree about this, and that is the strongest argument for D2 this plan
+has.** The web is right: `HEAD_WIDTH_DOTS = 400` / `HEAD_WIDTH_BYTES = 50`, which is what
+actually prints across 50 mm media today. The iOS side carries stale numbers from when
+40×30 was the only paper — `PrinterModel.phomemoM110.printableArea` still reports 304, and
+`LabelGenerator.swift` describes the 400-wide case as a separate "50 mm printer" as though
+it were different hardware. It is the same M110. The iOS source even claims its branding
+geometry "matches PhomemoPrinterService.ts"; the two have quietly diverged, and the *only*
+reason it has not caused visible damage is that iOS defaults conservatively narrow.
+
+So the renderer takes geometry as **input** from the printer record rather than holding a
+constant — not because heads differ today, but because two implementations already proved
+they will disagree about a hardcoded one.
 
 **Approach:** port the layout to `@napi-rs/canvas` — a prebuilt-binary Skia canvas with
 the same 2D API, so the drawing code transfers nearly unchanged, and no native build
@@ -188,10 +194,10 @@ That collapses today's two paths into one before the ESP-32 arrives, so the firm
 not chasing a moving target.
 
 **Golden-image tests.** Rendering has no natural assertion, so the port is verified by
-committing reference rasters for a fixed set of inputs and asserting byte equality —
-**one set per head geometry**, since head width is exactly where the two existing clients
-diverged. Those same fixtures are what the firmware team tests against, and they are what
-would have caught the drift in §1.
+committing reference rasters for a fixed set of inputs and asserting byte equality.
+Fixtures cover both media sizes, since width is exactly where the two existing clients
+diverged. They are also what the firmware team tests against, and what would have caught
+that drift.
 
 ---
 
@@ -438,10 +444,10 @@ browser will happily lie about.
 ## 9. Work breakdown
 
 **Phase 1 — Server-side rendering.** Port layout to `@napi-rs/canvas`; move the rasteriser
-and ESC/POS builders; golden-image fixtures per head geometry. **Resolve the 320 vs 400
-discrepancy first** — the port must not carry the bug forward, and the iOS geometry is the
-calibrated one. Give `SwapPrinter` an explicit model rather than inferring head width from
-paper size. No behaviour change yet: nothing calls the renderer.
+and ESC/POS builders; golden-image fixtures. Carry the **web's** geometry — 400-dot head,
+50 bytes per row — since that is what prints correctly on 50 mm media today, and make it an
+input from the printer record rather than a constant. No behaviour change yet: nothing
+calls the renderer.
 
 **Phase 2 — Browser renders via the server.** Point the Bluetooth path at the new
 endpoint; strip layout from `PhomemoPrinterService`, leaving transport. Two renderers
@@ -470,10 +476,9 @@ visibility, and a documented recovery path for "the printer died mid-swap".
 
 - **A rendering dependency in the API.** `@napi-rs/canvas` ships prebuilt binaries, so no
   build toolchain, but it is a native module and pins us to supported platforms.
-- **Correcting the head width changes what prints.** If a 40 mm printer is in use today and
-  has been coping with a 400-dot raster, fixing the geometry shifts its output. That is the
-  right direction, but the first print after Phase 1 wants checking against a physical
-  label rather than assumed.
+- **40 mm media is under-served.** Both sizes render at the full 400-dot head width today,
+  so 40×30 depends on margins to stay on the label. `50x30` is the size that matters and it
+  is correct; if 40×30 comes back into use it wants its own inset, not a new head geometry.
 - **Duplicate tags are possible by construction (D4).** A printer that prints and then
   fails to ack will reprint on retry. Cheap, and the alternative loses tags.
 - **Short polling wastes requests when idle.** One request per printer per second while
