@@ -77,7 +77,7 @@ Staff stop being typists and go back to handling gear.
 | **D7** | **Check-in mints a normal session.** No special "check-in token". The seller signs in exactly as they would anywhere else, and the QR only supplies context. | Plan 10 D8 — verification and login are the same act. A second, weaker credential path is how the first one gets bypassed. |
 | **D9** | **A station tracks its current seller, but never blocks.** `SwapPrinter.activeSellerId` is set on join, last-claim-wins, and cleared on finish. It is an operational label, not a lock. | An exclusive claim would be worse than the problem it solved: anyone with a photo of the QR could seize a station remotely and lock out the person standing at it, turning wasted paper into denial of service. Last-claim-wins removes that — a remote claimant is displaced the moment the real seller acts, and the real seller is the one actually doing things. What the field still buys is operational: staff can see who is at each station, and `finish` has something to clear. |
 | **D10** | **The Square push moves out of the item-save path**, batched at finish. | Latency, not correctness. `ItemService.create` awaits `syncItemToPos` *and* `fetchInventoryMap` before returning — two Square round-trips on venue wifi, inside the save→print interaction that §3 says must stay under a couple of seconds. Batching them at finish takes them off the critical path and collapses 2N calls into one pass. Phantom inventory is *not* the argument: an item that is not physically on the floor cannot be scanned at the register, so it is a reporting artefact rather than a way to sell something that does not exist. |
-| **D11** | **SKUs are namespaced by station**, matching the format iOS already uses: `PREFIX-CODE-NNNN`, with the counter held per (swap, station) rather than per swap. | It is the pattern that already works — `Device.skiSwapDeviceCode` is what lets offline iPads mint SKUs without coordinating — and it makes a separate self-check-in marker unnecessary, because the station code already says where a tag came from. It also deletes the contention: stations never share a counter row, so the duplicate-SKU race stops existing rather than being tested around. |
+| **D11** | **SKUs are namespaced by station**: `PREFIX-C-NNNN`, one character of station code, counter held per (swap, station). Same shape as the format iOS already uses, with the code narrowed from three characters to one. | It is the pattern that already works — `Device.skiSwapDeviceCode` is what lets offline iPads mint SKUs without coordinating — and it makes a separate self-check-in marker unnecessary, because the station code already says where a tag came from. It also deletes the contention: stations never share a counter row, so the duplicate-SKU race stops existing rather than being tested around. |
 | **D12** | **No two *active* swaps in an org share a SKU prefix.** Enforced by a mirror column written only while a swap is active, with a unique index — the same shape as `verifiedEmail` in Plan 10. | A prefix derived from a title is not naturally unique: "Ski Swap 2026" and "Spring Sale 2026" both derive `SS26`. Scoping to active swaps rather than all time keeps old prefixes reusable while making a live collision impossible. |
 | **D8** | **The station is a property of the session, not of the person.** `swapId` and `printerId` live in the client and, for the span of a sign-in, on the challenge (D6c) — never on `SellerProfile`. | A seller may check in at one station this year and another next. Persisting it on the person would make a transient fact permanent, and would quietly become wrong the first time someone moves stations mid-swap. |
 
@@ -323,8 +323,8 @@ model SkiSwap {
 model SwapSkuCounter {
   id          String @id @default(cuid())
   swapId      String
-  /// Device.skiSwapDeviceCode — three characters, unique per org.
-  deviceCode  String @db.VarChar(3)
+  /// Device.skiSwapDeviceCode — one character, unique per org (D11).
+  deviceCode  String @db.VarChar(1)
   lastCounter Int    @default(0)
 
   swap SkiSwap @relation(fields: [swapId], references: [id], onDelete: Cascade)
@@ -473,6 +473,25 @@ reserving a code range (say, codes beginning `S`) makes it obvious at a glance.
 
 Three things fall out, and one is a constraint worth knowing before committing:
 
+**One character is enough, but only after two fixes.** The pool is per-org, and today it is
+smaller and more crowded than 36 suggests:
+
+- **`generateSkiSwapCode` is base-26, letters only** — `A`…`Z`, then `AA`. Widening to
+  `A`–`Z` plus digits gets to 36. Excluding the glyphs that read ambiguously under a
+  barcode — `I`, `O`, `0`, `1` — leaves **32**, which is the better trade: the code is
+  printed as text beneath the barcode and gets read aloud across a counter.
+- **Every device consumes a code**, whatever its role. `create` calls
+  `assignSkiSwapDeviceCode` unconditionally, so time-clock and signage devices are eating
+  ski-swap namespace. Scoping assignment to ski-swap roles is a small change and reclaims
+  most of the pool — without it, an org with a dozen time clocks starts a third of the way
+  through its 32.
+
+**Exhaustion has to be a hard error.** The generator currently spills to two characters at
+27 (`AA`), which under a fixed-width budget silently produces a 14-character SKU and a
+barcode wider than the label. Once the code is one character, running out must fail loudly
+at device provisioning — where a human can free a code — rather than at print time, where
+it produces an unscannable tag nobody notices until the register.
+
 **It removes the contention.** A per-(swap, station) counter means stations never share a
 row, so the parallel-create race disappears rather than needing to be tested around. That
 needs a small table — `SwapSkuCounter { swapId, deviceCode, lastCounter }` keyed
@@ -480,26 +499,26 @@ needs a small table — `SwapSkuCounter { swapId, deviceCode, lastCounter }` key
 `SkiSwap.skuCounter` int.
 
 **The barcode has a hard ceiling of 13 characters.** Code128-B is `11n + 35` modules at 2
-dots each, and the usable width is 400 dots less the default 28-dot right margin:
+dots each, against 400 dots of head less the default 28-dot right margin:
 
-| Chars | Dots | Fits in 372 | Example |
+| Format | Chars | Dots | Fits in 372 |
 |---|---|---|---|
-| 9 | 268 | yes | `SS26-0042` |
-| 12 | 334 | yes | `SS26-A01-042` |
-| 13 | 356 | yes | `SS26-A01-0042` |
-| 14 | 378 | **no** | `SSW26-A01-0042` |
+| `SS26-0042` (today, server) | 9 | 268 | yes |
+| `SS26-A-0042` | 11 | 312 | yes |
+| `ABSS26-A-0042` — **the budget** | 13 | 356 | yes |
+| `ABSS26-A-00042` | 14 | 378 | **no** |
+| `ABSS26-A01-0042` — iOS format, long prefix | 15 | 400 | **no** |
 
-So "a few more digits" is not free — the iOS format already uses all 13. Dropping
-`moduleW` to 1 would buy room but puts the X-dimension at 0.125 mm, below what scans
-reliably at 203 dpi. Code128-C would encode the digits two per symbol and buy real
+Dropping `moduleW` to 1 would buy room but puts the X-dimension at 0.125 mm, below what
+scans reliably at 203 dpi. Code128-C would encode digits two per symbol and buy real
 headroom, at the cost of a mode-switching encoder.
 
-**Which means the prefix has to be capped at 4.** `deriveSkuPrefix` currently allows six
-characters, and 6 + 1 + 3 + 1 + 4 = 15 — over the ceiling. A swap titled "Annual
-Backcountry Ski Swap 2026" derives `ABSS26` and would produce a barcode wider than the
-label. **iOS has this bug today**; it is invisible only because prefixes have happened to
-be short. Capping the derivation at 4 gives `SS26-A01-0042` = 13 exactly, and 4 characters
-is still enough to carry initials plus a year.
+**A one-character code is what makes the budget work.** With three characters, a
+six-character prefix overflows: 6 + 1 + 3 + 1 + 4 = 15. **iOS has that bug today** — a swap
+titled "Annual Backcountry Ski Swap 2026" derives `ABSS26` and would print a barcode wider
+than the label, invisible only because prefixes have happened to be short. Narrowing the
+code to one character brings it to 13 exactly, so `deriveSkuPrefix` keeps its existing
+six-character cap and no live swap needs its prefix rewritten.
 
 **Reprints are explicit.** `POST .../items/:itemId/reprint { printerId }` re-enqueues one
 item — the answer to a jam, a mis-stick, or a tag that came out unreadable. It renders from
@@ -689,8 +708,10 @@ login and confirm, with issue-time validation. `SELLER_SITE_URL`, and origin sel
 driven by the context's shape (§5). Convert `VerifyPage` to tap-to-confirm (D6f). Small,
 and independently useful — it is what lets any flow survive a sign-in.
 
-**Phase 5 — Check-in.** `PublicCheckinService`, register, join. Move SKU generation to
-per-station counters and cap the prefix at 4 (D11); add the active-prefix constraint (D12).
+**Phase 5 — Check-in.** `PublicCheckinService`, register, join. Narrow
+`skiSwapDeviceCode` to one character over a 32-glyph alphabet, scope its assignment to
+ski-swap roles, and make exhaustion a hard error; move SKU generation to per-station
+counters (D11); add the active-prefix constraint (D12).
 Wire save-time enqueue into item creation in the commit → render → enqueue → flag order
 (§7), with a parallel-create test asserting SKU uniqueness. Add reprint. Move the Square push out of the save path into `finish` (D10),
 and call the existing header + item receipt templates from it. Fix the seller redirect.
@@ -734,13 +755,13 @@ visibility, and a documented recovery path for "the printer died mid-swap".
 - **SKU numbers are not contiguous.** A create that fails after the counter increments
   burns that number. Harmless for uniqueness, but anyone reconciling a swap by counting
   SKUs rather than items will be wrong.
-- **13 characters is a hard ceiling** until the encoder changes (§7). D11 spends the budget
-  deliberately — 4 prefix, 3 station, 4 counter — leaving no room for another field. Adding
-  one later means Code128-C, not another separator.
-- **Capping the prefix at 4 changes existing swaps' derivation.** Stored prefixes are not
-  rewritten, so live swaps keep theirs; only newly derived ones shorten. A swap already
-  carrying a 6-character prefix will still overflow under the namespaced format and needs
-  its prefix shortened by hand.
+- **13 characters is a hard ceiling** until the encoder changes (§7). D11 spends it exactly
+  — 6 prefix, 1 station, 4 counter, 2 separators — with nothing spare. Adding another field
+  later means Code128-C, not another separator.
+- **32 station codes per org.** Ample once the pool is scoped to ski-swap devices, but it is
+  a ceiling where there was none: the generator used to spill to two characters rather than
+  run out. An org running more than 32 concurrent ski-swap devices would have to retire one
+  to provision another.
 - **Square goes stale during check-in.** Deferring the push to finish (D10) means items are
   invisible in Square until a seller finishes, so a swap in progress under-reports. Nothing
   consumes that mid-swap today, but it is a behaviour change from item-by-item sync.
