@@ -67,7 +67,7 @@ adopt the web's geometry, and the two should be reconciled when iOS is next touc
 | **D2** | **Check-in is hosted on the seller site**, at `skiswap.patrolkit.io/checkin`. | It is a seller-facing surface, and that host is where seller-facing surfaces live. It also keeps members of the public off the admin domain, where every other route is staff tooling. |
 | **D3** | **Phone-first, not a responsive desktop page.** Designed against a one-handed seller holding a ski, on venue wifi, in Safari. | Every seller arrives with a phone and nothing else — there is no desktop fallback to degrade to. |
 | **D4** | **Check-in mints a normal session.** No special "check-in token"; the QR only supplies context. | Plan 10 D8 — verification and login are the same act. A second, weaker credential path is how the first gets bypassed. |
-| **D5** | **The station belongs to the session, and nothing records who is at which station.** `swapId` and `stationId` live in the client and, for the span of a sign-in, on the challenge. | A seller may check in at one station this year and another next, so persisting it would make a transient fact permanent. Recording it *transiently* was considered and dropped: an exclusive claim is remotely seizable — anyone with a photo of the QR could lock out the person standing there — and a non-exclusive one is a label nobody reads, stale whenever a seller wanders off, telling staff something they can see by looking up. One seller per station is a floor-plan matter, and when it slips the item description on the tag is what sorts it out. |
+| **D5** | **The station belongs to the session, and nothing records who is at which station.** `swapId` and `stationId` live in the client and, for the span of a sign-in, on the challenge. | Persisting it would make a transient fact permanent — a seller checks in at one station this year and another next. Recording it *transiently* was considered and dropped too: an exclusive claim is remotely seizable, so anyone with a photo of the QR could lock out the person standing there, and a non-exclusive one is a stale label telling staff what they can see by looking up. One seller per station is a floor-plan matter, and when it slips the item description on the tag is what sorts it out. |
 | **D6** | **No staff approval gate.** Self-entered items go live immediately. | Staff verify the physical pile at handover, which is the check that matters. An approval queue would recreate the bottleneck this removes. |
 
 ### Stations and hardware
@@ -223,12 +223,9 @@ The binding exists in two places that must agree — the database, and the ESP-3
 written over BLE during provisioning along with wifi credentials, the server URL and its
 client credentials.
 
-**Mismatch has to be loud.** If the database says bridge B serves station 3 but the ESP-32
-was provisioned believing it serves station 4, the server resolves jobs through the device
-and cheerfully feeds it station 3's work — while it sits physically at station 4. Wrong
-tags, right printer, no error anywhere. So the claim response carries the station id, and
-firmware refuses anything that does not match what it holds. A mis-association becomes a
-device that visibly will not print, rather than one that quietly prints the wrong thing.
+**Mismatch is caught by the claim response** (D9), which carries the station id for firmware
+to check against its provisioning. A mis-association becomes a bridge that visibly will not
+print, rather than one that quietly prints another station's tags.
 
 **Re-binding is a staff action**, because hardware fails mid-swap. Pointing a station at a
 new bridge preserves its code, its name and its queue — jobs belong to the station (D11),
@@ -244,6 +241,7 @@ time-boxed provisioning window, or a physical factory-reset-to-provision mode al
 — the choice is theirs, but it needs to be a choice.
 
 ---
+
 ## 5. Server-side label rendering
 
 The 867 lines in
@@ -302,7 +300,7 @@ The SKU **is** the barcode — `_drawPriceTag` renders `code128BModules(item.sku
 the item's identity at the register rather than a label on it. It carries no PII: a prefix
 derived from the swap title, a one-character code, and a counter.
 
-### The code identifies where a tag was minted (D17)
+### The code identifies where a tag was minted
 
 iOS already established this. `PatrolKitStore.nextSku` returns `PREFIX-DEVICECODE-NNNN`
 with the counter held per (device, swap) in local SQLite, which is what lets offline
@@ -364,27 +362,8 @@ the label. Running out has to fail loudly when a station or device is provisione
 human can free a code — rather than at print time, where it yields an unscannable tag
 nobody notices until the register.
 
-### Ordering
-
-Within the save request: the item is created and committed, *then* the label renders,
-*then* the job is enqueued. That is where the request ends. Rendering must not happen
-inside the create transaction — a canvas render is slow enough that holding write locks
-across it would serialise check-in unnecessarily.
-
-`hasPrintedTag` is set later, by the **ack** (D15), once every job for that item has
-printed. With `labelsPerItem` above one an item has several jobs, so the flag flips when
-none remain unprinted, not on the first ack.
-
-That gives one honest failure state for four different failures. A render that throws, an
-enqueue that fails, a printer that jams, a roll that runs out — each leaves a saved item
-whose flag is still false. The UI shows it unprinted and the seller taps reprint; they
-never need to know which of those happened, because the remedy is the same.
-
-Retry safety comes from the idempotency key on create, not from the flag: a create whose
-response was lost is replayed under the same key and returns the original item rather than
-making a second one.
-
 ---
+
 ## 7. Sign-in context
 
 `ContactChallenge` gains one nullable column:
@@ -410,8 +389,6 @@ Three rules keep it safe:
 This is deliberately generic. Check-in is the immediate need, but any flow that has to
 survive a sign-in — deep-linking to an item, claiming a seller page from a printed QR —
 uses the same column rather than inventing its own workaround.
-
----
 
 ---
 
@@ -443,9 +420,6 @@ challenge rather than accepting one from the client. A challenge carrying check-
 builds against a new `SELLER_SITE_URL`; everything else keeps `APP_URL`. The destination
 stays server-determined, with no client-supplied URL anywhere near it.
 
----
-
----
 ---
 
 ## 9. The print queue
@@ -579,6 +553,24 @@ An item is never enqueued twice: the service refuses when live jobs already exis
 (D14). The guard is the queue, not `hasPrintedTag` — that flag is still false in the
 seconds between enqueue and ack, which is exactly when a seller is most likely to spot a
 typo and edit.
+
+**Ordering within the save request.** The item is created and committed, *then* the label
+renders, *then* the job is enqueued. That is where the request ends. Rendering must not
+happen inside the create transaction — a canvas render is slow enough that holding write
+locks across it would serialise check-in unnecessarily.
+
+`hasPrintedTag` is set later, by the **ack** (D15), once every job for that item has
+printed. With `labelsPerItem` above one an item has several jobs, so the flag flips when
+none remain unprinted, not on the first ack.
+
+That gives one honest failure state for four different failures. A render that throws, an
+enqueue that fails, a printer that jams, a roll that runs out — each leaves a saved item
+whose flag is still false. The UI shows it unprinted and the seller taps reprint; they
+never need to know which of those happened, because the remedy is the same.
+
+Retry safety comes from the idempotency key on create, not from the flag: a create whose
+response was lost is replayed under the same key and returns the original item rather than
+making a second one.
 
 **Reprints are explicit.** `POST .../items/:itemId/reprint { stationId }` re-enqueues one
 item — the answer to a jam, a mis-stick, or an unreadable tag. It renders from the item's
@@ -727,8 +719,8 @@ Venue connectivity is a **venue-readiness commitment**, not something the softwa
 An offline outbox would hold saves and replay them on reconnect — but since tags are
 enqueued server-side, nothing could print until the network returned, so a run of tags
 would emerge at once and the seller would be back to matching labels against a pile. That
-is precisely the batch model D13 rejected; machinery whose best case is the outcome we
-designed against is not worth building.
+is precisely the batch model D13 rejected, and machinery whose best case reproduces the
+outcome it was built to avoid is not worth building.
 
 Two cheap things stay, covering the brief blips that happen even on good wifi:
 
@@ -770,8 +762,8 @@ and strip layout from `PhomemoPrinterService`, leaving transport. Two renderers 
 before firmware becomes a third.
 
 **Phase 3 — Stations and the queue.** `CheckinStation`, `SwapPrinter.bridgeDeviceId`, the
-`Ski Swap - Network Printer Adapter` role and `ski_swap:print` permission, `PrintJob`, the atomic
-claim and the three device endpoints. Testable end to end with a fake bridge — no hardware
+`Ski Swap - Network Printer Adapter` role and `ski_swap:print` permission, `PrintJob`, the
+atomic claim and the three device endpoints. Testable end to end with a fake bridge — no hardware
 needed, and it is what the firmware team codes against.
 
 **Phase 4 — Sign-in context and link origin.** `ContactChallenge.context` plumbed through
