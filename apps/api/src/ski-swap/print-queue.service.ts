@@ -170,6 +170,29 @@ export class PrintQueueService {
     });
     if (!station) throw new NotFoundException('This device is not bound to a station');
 
+    // Give up on expired claims that have already had their attempts.
+    //
+    // Without this the sweep below re-claims them forever: a bridge that dies
+    // mid-print never acks and never nacks, so nothing ever moves the job past
+    // `claimed`, and the only path to `abandoned` — nack — is never taken. One
+    // job that hangs a printer would block its station for the rest of the swap.
+    const abandoned = await this.prisma.$executeRaw`
+      UPDATE PrintJob
+         SET status = 'abandoned',
+             claimToken = NULL,
+             claimUntil = NULL,
+             lastError = COALESCE(lastError, 'Claimed but never acknowledged')
+       WHERE stationId = ${station.id}
+         AND status = 'claimed'
+         AND claimUntil < NOW(3)
+         AND attempts >= ${MAX_ATTEMPTS}`;
+    if (abandoned > 0) {
+      this.logger.warn(
+        { stationId: station.id, abandoned },
+        'Abandoned print jobs that were claimed but never acknowledged',
+      );
+    }
+
     const token = createId();
     await this.prisma.$executeRaw`
       UPDATE PrintJob
@@ -179,6 +202,7 @@ export class PrintQueueService {
              claimUntil = DATE_ADD(NOW(3), INTERVAL ${CLAIM_SECONDS} SECOND),
              attempts = attempts + 1
        WHERE stationId = ${station.id}
+         AND attempts < ${MAX_ATTEMPTS}
          AND (status = 'queued' OR (status = 'claimed' AND claimUntil < NOW(3)))
        ORDER BY seq, createdAt
        LIMIT ${limit}`;

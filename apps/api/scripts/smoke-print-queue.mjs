@@ -12,7 +12,7 @@
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 
-import { smokeOrg } from './_fixture.mjs';
+import { smokeOrg, smokeStaff, smokeSession } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
@@ -112,6 +112,46 @@ const foreign = await fetch(`${BASE}/devices/me/print-jobs/claim`, {
   method: 'POST', headers: { authorization: `Bearer ${tok2.accessToken}` },
 });
 ok('unbound bridge is told so, not fed jobs', foreign.status === 404, String(foreign.status));
+
+// ─── The reaper ──────────────────────────────────────────────────────────────
+// A bridge that dies mid-print never acks and never nacks. The claim has to
+// both recover those jobs and, eventually, stop trying — otherwise one job that
+// hangs a printer blocks its station for the rest of the swap.
+
+await prisma.printJob.deleteMany({ where: { stationId: station.id } });
+const stuck = await prisma.printJob.create({
+  data: { orgId: org.id, stationId: station.id, kind: 'calibration' },
+});
+
+// Expire the claim by hand rather than waiting 90 seconds for it.
+const expire = (attempts) =>
+  prisma.printJob.update({
+    where: { id: stuck.id },
+    data: { status: 'claimed', claimToken: 'stale', claimUntil: new Date(Date.now() - 1000), attempts },
+  });
+
+await expire(1);
+const recovered = await fetch(`${BASE}/devices/me/print-jobs/claim`, { method: 'POST', headers: H }).then(unwrap);
+ok('an expired claim returns to the queue', recovered.jobs.length === 1, `${recovered.jobs.length} jobs`);
+
+await expire(5); // MAX_ATTEMPTS
+const afterCap = await fetch(`${BASE}/devices/me/print-jobs/claim`, { method: 'POST', headers: H }).then(unwrap);
+ok('a job past its attempts is not re-claimed', afterCap.jobs.length === 0, `${afterCap.jobs.length} jobs`);
+ok('and is abandoned rather than left claimed',
+   (await prisma.printJob.findUnique({ where: { id: stuck.id } })).status === 'abandoned',
+   (await prisma.printJob.findUnique({ where: { id: stuck.id } })).status);
+
+// Staff can see it, which is the whole point of abandoning rather than looping
+// forever. This needs a *person's* session — H above is the bridge's.
+const { user: staff } = await smokeStaff(prisma, org, ['ski_swap:report', 'ski_swap:manage']);
+const staffToken = await smokeSession(prisma, BASE, staff, unwrap);
+const depth = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/queue`, {
+  headers: { authorization: `Bearer ${staffToken}` },
+}).then(unwrap);
+ok('the station reports it as abandoned, not queued',
+   depth.abandoned === 1 && depth.queued === 0, JSON.stringify(depth));
+
+await prisma.printJob.deleteMany({ where: { stationId: station.id } });
 
 // A device of the wrong role is refused outright
 const checkin = await prisma.device.create({
