@@ -6,6 +6,13 @@ import type { CheckinContext } from '../../lib/api.types';
 
 type Mode = 'contact' | 'code' | 'sent';
 
+function channelTabClass(active: boolean): string {
+  return [
+    'py-2.5 rounded-md text-base font-medium transition-colors',
+    active ? 'bg-brand-600 text-white' : 'text-gray-400 hover:text-gray-200',
+  ].join(' ');
+}
+
 /**
  * Proving who you are, phone first.
  *
@@ -138,6 +145,28 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
           />
         </div>
 
+        {/* Phone sits on the left and starts selected: an SMS code offers itself
+            in the iOS keyboard bar, which email cannot match. Both are one tap,
+            so nothing is hidden behind a link. */}
+        <div className="grid grid-cols-2 gap-2 p-1 bg-surface-100 rounded-lg">
+          <button
+            type="button"
+            aria-pressed={!useEmail}
+            className={channelTabClass(!useEmail)}
+            onClick={() => { setUseEmail(false); setError(''); }}
+          >
+            Phone
+          </button>
+          <button
+            type="button"
+            aria-pressed={useEmail}
+            className={channelTabClass(useEmail)}
+            onClick={() => { setUseEmail(true); setError(''); }}
+          >
+            Email
+          </button>
+        </div>
+
         {useEmail ? (
           <input
             className={inputClass}
@@ -164,12 +193,6 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
 
         <button className={primaryButtonClass} disabled={busy || contact.length < 5} onClick={sendCode}>
           {busy ? 'Sending…' : useEmail ? 'Email me a link' : 'Text me a code'}
-        </button>
-        <button
-          className="w-full text-sm text-gray-400 hover:text-gray-200 py-2"
-          onClick={() => { setUseEmail((v) => !v); setError(''); }}
-        >
-          {useEmail ? 'Use my phone number instead' : 'Use my email instead'}
         </button>
       </div>
 
