@@ -100,4 +100,29 @@ if (outbound !== 'OUTBOUND_NOTIFICATIONS=on') {
 console.log('Restarting app...');
 ssh('pm2 delete patrolkit 2>/dev/null; set -a && source /home/ec2-user/patrolkit/.env && set +a && cd /home/ec2-user/patrolkit && pm2 start dist/src/main.js --name patrolkit && pm2 save');
 
+// 8. Prove the app actually came back.
+//
+// Step 7 deletes the pm2 process before starting the new one, so anything that
+// fails in between leaves the site down — and the script would otherwise print
+// "Done." over a 502. Poll until it answers, and fail loudly if it never does.
+console.log('Waiting for the app to come back...');
+let healthy = false;
+for (let attempt = 1; attempt <= 15; attempt++) {
+  const code = execSync(
+    'curl -s -o /dev/null -w "%{http_code}" https://patrolkit.io/api/v1/healthz || true',
+    { encoding: 'utf8' },
+  ).trim();
+  if (code === '200') { healthy = true; break; }
+  execSync('sleep 2');
+}
+
+if (!healthy) {
+  console.error(
+    '\n  FAILED: the app did not come back after the restart.\n' +
+    '  It may be stopped entirely — step 7 deletes the pm2 process first.\n' +
+    '  Check: ssh ... "pm2 list && pm2 logs patrolkit --lines 50 --nostream"\n',
+  );
+  process.exit(1);
+}
+
 console.log('\nDone. https://patrolkit.io/api/v1/healthz');
