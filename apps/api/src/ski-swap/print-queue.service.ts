@@ -224,7 +224,9 @@ export class PrintQueueService {
           id: job.id,
           kind: job.kind as PrintJobKind,
           seq: job.seq,
-          payload: Buffer.from(this.renderer.toPrintJob(rows)).toString('base64'),
+          // A bare raster, not a finished job: the firmware wraps it in ESC/POS
+          // itself and adds its own feed rows.
+          payload: this.renderer.toRaster(rows).toString('base64'),
         });
       } catch (err) {
         // Nobody is watching a claim the way a seller watches a save, so a

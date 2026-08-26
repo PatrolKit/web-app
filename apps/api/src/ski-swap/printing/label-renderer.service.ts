@@ -95,9 +95,27 @@ export class LabelRendererService {
     return calibrationPattern(target.paperSize, target.margins);
   }
 
-  /** Wraps a raster in the ESC/POS preamble the printer expects. */
+  /**
+   * Wraps a raster in the ESC/POS preamble the printer expects.
+   *
+   * For the browser, which writes these bytes straight to a Phomemo over Web
+   * Bluetooth. The ESP-32 bridge takes `toRaster` instead — it builds the
+   * ESC/POS itself, and would double-wrap this.
+   */
   toPrintJob(rows: boolean[][]): Uint8Array {
     return buildPrintJob(rows);
+  }
+
+  /**
+   * The bare 1-bit bitmap, packed for the wire.
+   *
+   * What the bridge receives. Print energy, speed and the blank feed rows are
+   * per-printer hardware tuning that the firmware owns, and its ESC/POS builder
+   * is byte-verified against ours by its own host suite — so sending a finished
+   * job would throw that away and risk a double wrap.
+   */
+  toRaster(rows: boolean[][]): Buffer {
+    return packRaster(rows);
   }
 
   /**
@@ -154,6 +172,24 @@ export class LabelRendererService {
 
     return rasterise(ctx, fullW, fullH);
   }
+}
+
+/**
+ * Row-major, one bit per dot, MSB is the leftmost dot, 1 = burn.
+ *
+ * The printer's wire format, and the format the golden fixtures are stored in —
+ * so a fixture is literally the bytes the bridge is handed.
+ */
+export function packRaster(rows: boolean[][]): Buffer {
+  const width = rows[0]?.length ?? 0;
+  const bytesPerRow = Math.ceil(width / 8);
+  const out = Buffer.alloc(rows.length * bytesPerRow);
+  rows.forEach((row, y) => {
+    for (let x = 0; x < width; x++) {
+      if (row[x]) out[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x % 8);
+    }
+  });
+  return out;
 }
 
 /** Luminance threshold to 1-bit. A thermal head has no greys. */

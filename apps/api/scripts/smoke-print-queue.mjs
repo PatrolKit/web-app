@@ -69,12 +69,24 @@ await prisma.printJob.create({
 claim = await fetch(`${BASE}/devices/me/print-jobs/claim`, { method: 'POST', headers: H }).then(unwrap);
 ok('claims the queued job', claim.jobs.length === 1, JSON.stringify(claim).slice(0, 200));
 const job = claim.jobs[0];
-ok('payload is base64 ESC/POS', typeof job.payload === 'string' && job.payload.length > 100,
-   `${job?.payload?.length ?? 0} chars`);
+ok('payload decodes to a whole number of rows', (() => {
+  const bytes = Buffer.from(job.payload, 'base64');
+  return bytes.length % 50 === 0 && bytes.length > 0;
+})(), `${Buffer.from(job.payload, 'base64').length} bytes`);
+
 if (job) {
   const bytes = Buffer.from(job.payload, 'base64');
-  ok('payload starts with ESC @', bytes[0] === 0x1b && bytes[1] === 0x40, bytes.subarray(0, 8).toString('hex'));
-  ok('payload contains GS v 0 raster', bytes.includes(Buffer.from([0x1d, 0x76, 0x30])));
+  // The bridge builds its own ESC/POS and adds its own feed rows, so a finished
+  // job here would be double-wrapped and print garbage rather than failing.
+  // This is the exact preamble its payload_is_escpos() looks for.
+  const looksLikeEscPos =
+    bytes.length >= 14 &&
+    bytes[0] === 0x1b && bytes[1] === 0x40 &&
+    bytes[2] === 0x1f && bytes[10] === 0x1d && bytes[11] === 0x76;
+  ok('payload is a bare raster, not a finished job', !looksLikeEscPos,
+     bytes.subarray(0, 8).toString('hex'));
+  ok('payload is one 50x30 label at 400 dots wide', bytes.length === 224 * 50,
+     `${bytes.length} bytes, expected ${224 * 50}`);
 }
 
 // A second claim must not re-issue the same job

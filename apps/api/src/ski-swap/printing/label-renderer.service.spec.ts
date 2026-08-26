@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { LabelRendererService } from './label-renderer.service';
+import { LabelRendererService, packRaster } from './label-renderer.service';
 import { DEFAULT_PRINTER_MARGINS, HEAD_WIDTH_DOTS, type PrintTarget } from './geometry';
 
 /**
@@ -17,22 +17,9 @@ import { DEFAULT_PRINTER_MARGINS, HEAD_WIDTH_DOTS, type PrintTarget } from './ge
  */
 const FIXTURES = path.join(__dirname, '__fixtures__');
 
-/** Packs a 1-bit raster the same way the ESC/POS command does: MSB first, row-major. */
-function pack(rows: boolean[][]): Buffer {
-  const W = rows[0].length;
-  const bytesPerRow = Math.ceil(W / 8);
-  const out = Buffer.alloc(rows.length * bytesPerRow);
-  rows.forEach((row, y) => {
-    for (let x = 0; x < W; x++) {
-      if (row[x]) out[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x % 8);
-    }
-  });
-  return out;
-}
-
 function expectGolden(name: string, rows: boolean[][]): void {
   const file = path.join(FIXTURES, `${name}.bin`);
-  const actual = pack(rows);
+  const actual = packRaster(rows);
 
   if (process.env.UPDATE_GOLDEN || !fs.existsSync(file)) {
     fs.writeFileSync(file, actual);

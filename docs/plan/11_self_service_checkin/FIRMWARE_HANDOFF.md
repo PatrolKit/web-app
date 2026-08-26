@@ -14,7 +14,7 @@ stays** — the server is moving to match it.
 | | Change | Why |
 |---|---|---|
 | **Firmware** | Endpoints: poll → claim, result → ack/nack. Unwrap the response envelope. | These were always placeholders; the server's model carries station binding and retry accounting the poll model has nowhere to put. |
-| **Server** | Payload: full ESC/POS → packed 1bpp raster, no feed rows. | `phomemo.c` is byte-verified against the reference ESC/POS builder by `test/host/run.sh`, and print energy and speed are per-printer hardware tuning. Both belong on the device. |
+| **Server** | Payload: full ESC/POS → packed 1bpp raster, no feed rows. **Done.** | `phomemo.c` is byte-verified against the reference ESC/POS builder by `test/host/run.sh`, and print energy and speed are per-printer hardware tuning. Both belong on the device. |
 
 Nothing else moves. `POST /api/v1/auth/device/token` is unchanged, and the
 raster geometry — 400 dots wide, 50 bytes per row, MSB leftmost, 1 = burn — is
@@ -105,17 +105,25 @@ to a flaky network can be re-sent safely.
   new paper size and margins. Nothing is cached; do not hold a job across a
   reconfiguration expecting it to still be right.
 
-## Payload, once the server change lands
+## Payload
 
-Base64 of a packed 1bpp bitmap, exactly as `PROTOCOL.md` describes today:
+Base64 of a packed 1bpp bitmap, exactly as `PROTOCOL.md` describes:
 
 - 400 dots per row, 50 bytes, MSB is the leftmost dot, `1` = burn
 - 224 rows for a 50 × 30 mm label → 11,200 bytes
-- **No feed rows and no ESC/POS.** The firmware adds both, as it does now.
+- **No feed rows and no ESC/POS.** The firmware adds both.
 
-Until that server change ships, `payload` is still full ESC/POS with feed rows
-included. Worth agreeing the cutover rather than discovering it — a double-wrap
-prints garbage rather than failing.
+This has shipped — `claim` returns a bare raster. The firmware's
+`payload_is_escpos()` detection makes the transition a non-event either way, so
+no cutover needed coordinating in the end.
+
+The browser still receives full ESC/POS from
+`POST /orgs/:orgId/ski-swap/printers/:printerId/labels`, because it writes those
+bytes straight to a Phomemo over Web Bluetooth. Same layout, same renderer, two
+wrappings — `toPrintJob` for the browser, `toRaster` for the bridge.
+
+The golden fixtures in `apps/api/src/ski-swap/printing/__fixtures__/` are stored
+in this exact packing, so a fixture *is* the payload a bridge is handed.
 
 ## Station binding
 

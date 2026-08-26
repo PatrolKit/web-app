@@ -84,7 +84,7 @@ adopt the web's geometry, and the two should be reconciled when iOS is next touc
 
 | # | Decision | Rationale |
 |---|---|---|
-| **D10** | **The server renders labels and hands the bridge finished bytes**, which it forwards to the Phomemo over BLE and acks. | Label design churns — `add_printer_margins` and `update_default_margins` landed days apart, and each would otherwise be a firmware rollout to hardware in a lodge. It also avoids a third renderer: the two that exist have **already** drifted on head width (§5), and drift shows up as tags that do not scan. Keeping firmware to "forward these bytes" is what makes that possible. |
+| **D10** | **The server renders labels and hands the bridge the finished bitmap**, which it wraps in ESC/POS and streams to the Phomemo over BLE, then acks. *(As implemented: the bridge receives a bare packed raster and adds the ESC/POS framing and feed rows itself — print energy and speed are per-printer tuning that belongs on the device. The browser, which writes straight to a Phomemo, still gets finished ESC/POS. One renderer, two wrappings. See FIRMWARE_HANDOFF.md.)* | Label design churns — `add_printer_margins` and `update_default_margins` landed days apart, and each would otherwise be a firmware rollout to hardware in a lodge. It also avoids a third renderer: the two that exist have **already** drifted on head width (§5), and drift shows up as tags that do not scan. Keeping firmware to "forward these bytes" is what makes that possible. |
 | **D11** | **Rendering happens when a job is claimed, not when it is queued.** A job stores a recipe — what to draw and for which item — and the raster is produced in the claim response. | Rendering is 2–5 ms, so doing it per claim costs nothing, and doing it late means a job adapts to whatever printer is actually attached when it prints. Swap a station's Phomemo mid-swap and queued jobs re-render for the new paper size and margins instead of carrying the old geometry. It also means an edit made in the second between saving and printing reaches the tag, rather than printing the typo and requiring a reprint. |
 | **D12** | **The queue routes by station**, not by printer. `PrintJob.stationId` is where a job goes; `printerId` records what it was rendered for. | A job is "print this at station 3", not "print this on Phomemo serial X". Bound to the station it survives a printer being replaced mid-swap, where a job pointing at a retired `SwapPrinter` row would be orphaned with a seller standing at the counter. |
 | **D13** | **At-least-once delivery**, claim → ack with a visibility timeout returning unacked jobs to the queue. | A duplicate tag costs a strip of paper. A lost tag costs a seller their item. |
@@ -175,7 +175,7 @@ CheckinStation        code "C", the QR's identity          ← stable
 ```
 
 The ESP-32 does not print. It bridges: it holds the device credentials, claims jobs over
-HTTPS, and forwards the ESC/POS bytes to a Phomemo over BLE. `SwapPrinter` therefore keeps
+HTTPS, and streams the label to a Phomemo over BLE. `SwapPrinter` therefore keeps
 its existing meaning exactly — `bluetoothName`, `paperSize` and the four margins describe
 the same physical printer a browser drives today, and the browser path continues to work
 untouched.
