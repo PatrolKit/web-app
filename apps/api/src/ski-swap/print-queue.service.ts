@@ -3,7 +3,8 @@ import { createId } from '@paralleldrive/cuid2';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LabelRendererService } from './printing/label-renderer.service';
-import { DEFAULT_PRINTER_MARGINS, isPaperSize, type PrintTarget } from './printing/geometry';
+import { PrintRecipeService, printTargetFor, type PrintRecipeKind } from './printing/print-recipe.service';
+import type { PrintTarget } from './printing/geometry';
 
 /** How long a claimed job is held before it returns to the queue. */
 const CLAIM_SECONDS = 90;
@@ -40,6 +41,7 @@ export class PrintQueueService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly renderer: LabelRendererService,
+    private readonly recipes: PrintRecipeService,
   ) {}
 
   // ─── Enqueue ────────────────────────────────────────────────────────────────
@@ -306,91 +308,28 @@ export class PrintQueueService {
     return job;
   }
 
+  /**
+   * Turns one job into one raster, through the same resolver the browser uses.
+   * A receipt's item list paginates, and each page is its own job, so the job's
+   * `page` param selects which of the resolved pages this one prints.
+   */
   private async render(
-    job: { kind: string; itemId: string | null; sellerId: string | null; swapId: string | null; params: Prisma.JsonValue },
+    job: { orgId: string; kind: string; itemId: string | null; sellerId: string | null; swapId: string | null; params: Prisma.JsonValue },
     target: PrintTarget,
   ): Promise<boolean[][]> {
-    switch (job.kind) {
-      case 'calibration':
-        return this.renderer.calibration(target);
-
-      case 'item': {
-        if (!job.itemId) throw new BadRequestException('Item job has no item');
-        const item = await this.prisma.swapItem.findUnique({ where: { id: job.itemId } });
-        if (!item) throw new NotFoundException('Item no longer exists');
-        return this.renderer.itemTag(
-          { name: item.name, priceCents: item.priceCents, sku: item.sku },
-          target,
-        );
-      }
-
-      case 'receipt_header': {
-        const { seller, org } = await this.receiptContext(job.sellerId);
-        return this.renderer.receiptHeader(
-          {
-            orgLogoUrl: org.logoUrl,
-            date: new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }),
-            sellerName: seller.name,
-            phone: seller.phone ?? '',
-            qrUrl: seller.statusUrl,
-          },
-          target,
-        );
-      }
-
-      case 'receipt_items': {
-        if (!job.swapId || !job.sellerId) throw new BadRequestException('Receipt job has no seller');
-        const items = await this.prisma.swapItem.findMany({
-          where: { swapId: job.swapId, sellerId: job.sellerId },
-          orderBy: { createdAt: 'asc' },
-          select: { name: true, sku: true, priceCents: true },
-        });
-        const pages = await this.renderer.receiptItems(items, target);
-        const page = Number((job.params as { page?: number } | null)?.page ?? 0);
-        if (!pages[page]) throw new BadRequestException(`Receipt page ${page} no longer exists`);
-        return pages[page];
-      }
-
-      default:
-        throw new BadRequestException(`Unsupported job kind: ${job.kind}`);
-    }
+    const pages = await this.recipes.resolve(
+      job.orgId,
+      {
+        kind: job.kind as PrintRecipeKind,
+        itemId: job.itemId,
+        sellerId: job.sellerId,
+        swapId: job.swapId,
+      },
+      target,
+    );
+    const page = Number((job.params as { page?: number } | null)?.page ?? 0);
+    if (!pages[page]) throw new BadRequestException(`Label page ${page} no longer exists`);
+    return pages[page];
   }
 
-  private async receiptContext(sellerId: string | null) {
-    if (!sellerId) throw new BadRequestException('Receipt job has no seller');
-    const seller = await this.prisma.sellerProfile.findUnique({
-      where: { id: sellerId },
-      include: { membership: { include: { user: true, org: true } } },
-    });
-    if (!seller) throw new NotFoundException('Seller no longer exists');
-
-    const user = seller.membership.user;
-    const name =
-      seller.businessName?.trim() ||
-      [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
-      user.email ||
-      user.phone ||
-      'Unnamed';
-
-    return {
-      org: seller.membership.org,
-      seller: { name, phone: user.phone, statusUrl: `/s/${seller.id}` },
-    };
-  }
-}
-
-/** A printer's own paper size and margins, falling back to the defaults. */
-function printTargetFor(
-  printer: { paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number } | null,
-): PrintTarget {
-  if (!printer) return { paperSize: '50x30', margins: DEFAULT_PRINTER_MARGINS };
-  return {
-    paperSize: isPaperSize(printer.paperSize) ? printer.paperSize : '50x30',
-    margins: {
-      marginTop: printer.marginTop,
-      marginBottom: printer.marginBottom,
-      marginLeft: printer.marginLeft,
-      marginRight: printer.marginRight,
-    },
-  };
 }

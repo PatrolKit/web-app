@@ -8,7 +8,7 @@ import { api } from '../../lib/api';
 import { connectFromDevice, DEFAULT_PRINTER_MARGINS, isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
 import type { PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
 import { usePrinter } from '../../contexts/PrinterContext';
-import type { DeviceItem, OrgResponse, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
+import type { DeviceItem, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 
 import type { DeviceRole } from '../../lib/api.types';
 
@@ -67,13 +67,6 @@ export default function DevicesPage() {
   const [activeTab, setActiveTab] = useState<Tab>('tablets');
   const [pendingTestPrint, setPendingTestPrint] = useState<SwapPrinterRecord | null>(null);
   const [isPrintingId, setIsPrintingId] = useState<string | null>(null);
-
-  const { data: org } = useQuery<OrgResponse>({
-    queryKey: ['org', orgId],
-    queryFn: () => api.orgs.get(orgId!),
-    enabled: !!orgId && perms.has('org:read'),
-    staleTime: 60_000,
-  });
 
   // ─── Tablets state ────────────────────────────────────────────────────────
   const [provisionName, setProvisionName] = useState('');
@@ -189,7 +182,7 @@ export default function DevicesPage() {
         scannedDeviceRef.current = null;
         registerConnection(printer, conn);
       }
-      await printPrinterIdLabel(printer, org?.name ?? orgId);
+      await printPrinterIdLabel(printer);
     } catch (err: unknown) {
       if ((err as { name?: string })?.name !== 'NotFoundError')
         alert(`Print failed: ${(err as Error)?.message ?? String(err)}`);

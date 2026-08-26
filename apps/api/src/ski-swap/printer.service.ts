@@ -86,7 +86,13 @@ export class PrinterService {
     await this.prisma.swapPrinter.delete({ where: { id: printerId } });
   }
 
-  async patchPaperSize(orgId: string, printerId: string, paperSize: string, userId: string): Promise<SwapPrinterResponse> {
+  /**
+   * Who may drive a given printer: admins any of them, staff the org pool, and a
+   * business seller only the one assigned to them. Anything that acts on a
+   * printer someone is physically standing at goes through here, so paper size
+   * and label rendering cannot disagree about who owns the hardware.
+   */
+  async assertPrinterAccess(orgId: string, printerId: string, userId: string) {
     const perms = await this.permissionsService.getPermissions(userId, orgId);
     const isAdmin = perms.includes('ski_swap:admin');
     const isManage = perms.includes('ski_swap:manage');
@@ -99,7 +105,6 @@ export class PrinterService {
     });
     if (!printer) throw new NotFoundException('Printer not found');
 
-    // Validate access: manage users own org-pool printers; sellers own their assigned printer
     if (!isAdmin) {
       if (isManage && printer.assignedSellerId !== null) throw new ForbiddenException('Not your printer');
       if (isSeller && !isManage) {
@@ -109,6 +114,11 @@ export class PrinterService {
         if (!sellerRecord || printer.assignedSellerId !== sellerRecord.id) throw new ForbiddenException('Not your printer');
       }
     }
+    return printer;
+  }
+
+  async patchPaperSize(orgId: string, printerId: string, paperSize: string, userId: string): Promise<SwapPrinterResponse> {
+    await this.assertPrinterAccess(orgId, printerId, userId);
 
     const updated = await this.prisma.swapPrinter.update({
       where: { id: printerId },

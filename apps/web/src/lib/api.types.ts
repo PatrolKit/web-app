@@ -209,6 +209,33 @@ export interface SwapPrinterRecord {
   assignedSellerName: string | null;
 }
 
+export interface RenderLabelResponse {
+  format: 'escpos' | 'png';
+  /** Base64. One entry per label — a receipt's item list paginates. */
+  pages: string[];
+}
+
+export interface CheckinStationRecord {
+  id: string;
+  name: string;
+  code: string;
+  deviceId: string | null;
+  deviceName: string | null;
+  deviceLastSeenAt: string | null;
+  printerId: string | null;
+  printerName: string | null;
+  createdAt: string;
+}
+
+export interface StationQueueStatus {
+  stationId: string;
+  queued: number;
+  claimed: number;
+  abandoned: number;
+  oldestQueuedAt: string | null;
+  deviceLastSeenAt: string | null;
+}
+
 export interface SkiSwapSettings {
   labelsPerItem: number;
 }

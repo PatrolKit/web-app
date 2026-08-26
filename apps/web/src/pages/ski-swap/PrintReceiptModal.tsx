@@ -28,13 +28,6 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
   });
   const items = itemsData?.items ?? [];
 
-  const { data: org } = useQuery({
-    queryKey: ['orgs', orgId],
-    queryFn: () => api.orgs.get(orgId),
-    enabled,
-    staleTime: 300_000,
-  });
-
   if (!seller) return null;
 
   const isLoading = itemsLoading;
@@ -44,8 +37,7 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
     setPrinting(true);
     setPrintError(null);
     try {
-      const logoUrl = org?.logoUrl ? `/api/v1/orgs/${orgId}/logo` : null;
-      await printReceipt(seller!, items, logoUrl);
+      await printReceipt(seller!.id, swapId!);
       onClose();
     } catch (err) {
       setPrintError(err instanceof Error ? err.message : 'Print failed');

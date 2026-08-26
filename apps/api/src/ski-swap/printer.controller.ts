@@ -12,14 +12,23 @@ import { RequireModule } from '../common/decorators/require-module.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { PrinterService } from './printer.service';
-import { CreatePrinterDto, PatchPrinterDto, PatchPrinterPaperSizeDto } from '../contracts/ski-swap.contracts';
+import { LabelRenderService } from './printing/label-render.service';
+import {
+  CreatePrinterDto,
+  PatchPrinterDto,
+  PatchPrinterPaperSizeDto,
+  RenderLabelDto,
+} from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/printers')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireDeviceRole('Ski Swap - Check-In', 'Ski Swap - Bulk Seller')
 @RequireModule('ski_swap')
 export class PrinterController {
-  constructor(private readonly printerService: PrinterService) {}
+  constructor(
+    private readonly printerService: PrinterService,
+    private readonly labels: LabelRenderService,
+  ) {}
 
   @Get()
   @RequirePermissions('ski_swap:manage')
@@ -63,5 +72,26 @@ export class PrinterController {
     @Body() body: PatchPrinterPaperSizeDto,
   ) {
     return this.printerService.patchPaperSize(orgId, printerId, body.paperSize, user.userId);
+  }
+
+  /**
+   * Renders a label for a browser to write over Web Bluetooth.
+   *
+   * The browser used to lay these out itself, which is how the two renderers
+   * drifted on head width and produced tags that would not scan. It now asks
+   * for finished bytes against this printer's own paper size and margins — the
+   * same call the ESP-32 bridge makes, so there is one layout to be wrong about.
+   */
+  @Post(':printerId/labels')
+  @HttpCode(200)
+  // Access is checked in the service: staff drive org-pool printers, a business
+  // seller drives only the printer assigned to them.
+  renderLabel(
+    @Param('orgId') orgId: string,
+    @Param('printerId') printerId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: RenderLabelDto,
+  ) {
+    return this.labels.render(orgId, printerId, user.userId, body);
   }
 }

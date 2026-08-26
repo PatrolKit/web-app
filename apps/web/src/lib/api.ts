@@ -432,6 +432,27 @@ export const api = {
     sellerListPrinters: (orgId: string) =>
       request<import('./api.types').SwapPrinterRecord[]>(`/orgs/${orgId}/ski-swap/seller/me/printers`),
 
+    /**
+     * Renders a label on the server against this printer's paper size and
+     * margins. `escpos` pages go straight over Bluetooth; `png` pages are for
+     * preview mode. The browser no longer lays labels out itself.
+     */
+    renderLabel: (
+      orgId: string,
+      printerId: string,
+      body: {
+        kind: 'item' | 'receipt_header' | 'receipt_items' | 'qr' | 'printer_label' | 'calibration';
+        format?: 'escpos' | 'png';
+        itemId?: string;
+        sellerId?: string;
+        swapId?: string;
+      },
+    ) =>
+      request<import('./api.types').RenderLabelResponse>(
+        `/orgs/${orgId}/ski-swap/printers/${printerId}/labels`,
+        { method: 'POST', body: JSON.stringify(body) },
+      ),
+
     // Settings
     getSettings: (orgId: string) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`),

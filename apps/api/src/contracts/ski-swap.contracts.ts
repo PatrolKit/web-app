@@ -431,3 +431,25 @@ export const ClaimResponseSchema = z.object({
 export class NackJobDto extends createZodDto(NackJobSchema) {}
 export type ClaimedJob = z.infer<typeof ClaimedJobSchema>;
 export type ClaimResponse = z.infer<typeof ClaimResponseSchema>;
+
+// ─── Browser-driven label rendering ──────────────────────────────────────────
+
+export const RenderLabelSchema = z
+  .object({
+    kind: z.enum(['item', 'receipt_header', 'receipt_items', 'qr', 'printer_label', 'calibration']),
+    /** `escpos` for a Bluetooth write, `png` for on-screen preview. */
+    format: z.enum(['escpos', 'png']).default('escpos'),
+    itemId: z.string().optional(),
+    sellerId: z.string().optional(),
+    swapId: z.string().optional(),
+  })
+  .strict();
+
+export const RenderLabelResponseSchema = z.object({
+  format: z.enum(['escpos', 'png']),
+  /** One entry per label; a receipt's item list paginates across several. */
+  pages: z.array(z.string()),
+});
+
+export class RenderLabelDto extends createZodDto(RenderLabelSchema) {}
+export type RenderLabelResponse = z.infer<typeof RenderLabelResponseSchema>;

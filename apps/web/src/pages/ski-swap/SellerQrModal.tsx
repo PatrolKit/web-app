@@ -30,7 +30,7 @@ export default function SellerQrModal({ seller, onClose }: Props) {
     setPrinting(true);
     setPrintError(null);
     try {
-      await printQrLabel(seller.displayName, sellerUrl);
+      await printQrLabel(seller.id);
     } catch (err) {
       setPrintError(err instanceof Error ? err.message : 'Print failed');
     } finally {

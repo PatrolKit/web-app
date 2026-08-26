@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
 import { SkuService } from '../ski-swap/sku.service';
 import { JwtService } from '../auth/jwt.service';
 import { AuditService } from '../common/audit/audit.service';
@@ -37,6 +38,7 @@ export class DevicesService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly auditService: AuditService,
+    private readonly config: ConfigService,
   ) {}
 
   // ─── Provision ──────────────────────────────────────────────────────────────
@@ -213,7 +215,7 @@ export class DevicesService {
       orgId: device.orgId,
       orgName: device.org.name,
       skiSwapDeviceCode,
-      sellerSiteUrl: process.env.SELLER_SITE_URL ?? 'https://skiswap.patrolkit.io',
+      sellerSiteUrl: this.config.get<string>('app.sellerSiteUrl')!,
       orgLogoUrl: device.org.logoUrl ?? null,
     };
   }

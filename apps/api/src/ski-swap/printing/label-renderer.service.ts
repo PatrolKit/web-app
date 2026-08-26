@@ -100,6 +100,31 @@ export class LabelRendererService {
     return buildPrintJob(rows);
   }
 
+  /**
+   * The same raster as a PNG, for on-screen preview.
+   *
+   * Encoded from the thresholded rows rather than from the source canvas, so
+   * what the preview shows is exactly what the head will burn — antialiasing
+   * included, or rather excluded.
+   */
+  toPng(rows: boolean[][]): Buffer {
+    const h = rows.length;
+    const w = h ? rows[0].length : 0;
+    const canvas = createCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const v = rows[y][x] ? 0 : 255;
+        const i = (y * w + x) * 4;
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas.toBuffer('image/png');
+  }
+
   // ─── Compositor ─────────────────────────────────────────────────────────────
 
   /**
