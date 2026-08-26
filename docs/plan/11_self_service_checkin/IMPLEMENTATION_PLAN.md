@@ -75,7 +75,7 @@ adopt the web's geometry, and the two should be reconciled when iOS is next touc
 | # | Decision | Rationale |
 |---|---|---|
 | **D7** | **Three layers: `CheckinStation` → `Device` → `SwapPrinter`.** The ESP-32 is a *bridge* — wifi to the server, BLE to a Phomemo — not a printer. | Each layer fails and gets replaced independently, and the station is the only one that survives both. That matters because the station's code is the SKU namespace printed on every tag (D17): held on the bridge, a dead ESP-32 would change it mid-swap; held on the printer, a dead M110 would. The chain rather than a star also makes "no bridge, no station" structural — a seller's phone cannot drive BLE, which is the entire reason the queue exists. |
-| **D8** | **The bridge is a registered device** with role `Ski Swap - Network Printer Adapter`, and **the role is what authorises it** — the queue endpoints require that role, not a permission. `DevicePermission` is removed. | Device auth already exists, is tested and scopes to an org. Authorising by role rather than permission is the honest model for a device: a person's authority is irreducibly per-person, which is what `MembershipPermission` is for, but there is no such thing as a check-in iPad that also does time clock. The device's job *is* its role. It also clears out state that only looks like security — every device today holds *zero* permissions (the provisioning UI hardcodes `permissions: []`), and they are never checked, so `DevicePermission` and the token's `permissions` claim protect nothing. |
+| **D8** | **The bridge is a registered device** with role `Ski Swap - Network Printer Adapter`, and **the role is what authorises it** — the queue endpoints require that role, not a permission. `DevicePermission` is removed. | Device auth already exists, is tested and scopes to an org. Role is the honest primitive for a device: a person's authority is irreducibly per-person, which is what `MembershipPermission` is for, but there is no such thing as a check-in iPad that also does time clock — the device's job *is* its role. It also clears out state that only looks like security, since every device holds zero permissions today and nothing checks them (§10). |
 | **D9** | **Association is dual, re-bindable, and mismatch is loud.** Server-side on `CheckinStation`; on the device, written over BLE at provisioning. The claim response carries the station id, and firmware refuses work that does not match what it was provisioned with. | The two sides can disagree — a mis-association would otherwise feed station A's jobs to a bridge physically sitting at station B, with no error anywhere. Re-binding has to be possible because hardware dies mid-swap; queued jobs survive it because they belong to the station, not the bridge (D11). |
 
 ### Printing
@@ -594,7 +594,7 @@ that is worth:
    inert.
 2. **They must sign in**, proving an email or phone. There is no anonymous path, and every
    job is attributable to a verified contact.
-3. **Queue depth is capped per station**, and staff can see and clear it (§10).
+3. **Queue depth is capped per station**, and staff can see and clear it (§11).
 
 The residual risk is that an identified person wastes some paper, visibly, while a swap is
 running — and deliberately *not* solved by locking the station to one seller, because a
@@ -607,7 +607,42 @@ being theoretical.
 
 ---
 
-## 10. API surface
+## 10. Authorising devices by role
+
+Devices are authorised by **what kind of device they are** (D8), which is a change to a
+guard every device endpoint already passes through. Three parts:
+
+**`PermissionsGuard` gains a device branch.** It currently reads:
+
+```ts
+if (req.device) return true;
+```
+
+so any authenticated device passes any `@RequirePermissions(...)` check. That bypass is
+load-bearing today — every device holds zero permissions, so enforcing them would break
+every device endpoint at once. It becomes a fork instead: users checked against
+permissions as now, devices against a `@RequireDeviceRole(...)` list.
+
+**The role moves into the token.** `signDeviceToken` carries `deviceId`, `orgId` and
+`permissions` — not `role`. The claim endpoint polls once per second per station, so a
+database round-trip per request to ask "what kind of device are you" is real load for a
+constant. `role` replaces `permissions` in the payload, and `DevicePermission` goes with it.
+
+The consequence to accept knowingly: a role change does not take effect until the token
+refreshes, so up to `DEVICE_TOKEN_TTL` — one hour by default. `DevicesService.updateRole`
+exists, so this is reachable, and an hour of staleness on a device's *category* is a fair
+price for not querying on every poll.
+
+**The cutover is provable before it ships.** Eleven of the twelve device controllers use
+`OrDeviceAuthGuard` — staff and devices hit the same routes, so
+`orgs/:orgId/ski-swap/sellers` serves both a check-in iPad and the staff Sellers tab. Every
+one of those routes needs a role rule before the bypass is removed, or it starts refusing
+devices that work today. Both roles and routes are enumerable, so coverage is a test rather
+than a hope: assert that every device-reachable route names at least one role.
+
+---
+
+## 11. API surface
 
 ### New — public
 
@@ -653,45 +688,12 @@ being theoretical.
 - `SwapPrinter` gains `bridgeDeviceId`; responses gain the bound station where there is one.
 - `DEVICE_ROLES` gains `Ski Swap - Network Printer Adapter`.
 - **`PermissionsGuard` stops waving devices through.** `if (req.device) return true` becomes
-  a fork: users checked against permissions as now, devices against role (§10 below).
+  a fork: users checked against permissions as now, devices against role (§10).
 - **The device token carries `role`** in place of `permissions`; `DevicePermission` and
   `assignDevicePermissions` are removed.
 - `assignSkiSwapDeviceCode` is scoped to ski-swap roles and shares its pool with station
   codes (§6).
 - Browser printing fetches rasters from the server instead of rendering locally.
-
-### Authorising devices by role
-
-Devices are authorised by **what kind of device they are** (D8), which is a change to a
-guard every device endpoint already passes through. Three parts:
-
-**`PermissionsGuard` gains a device branch.** It currently reads:
-
-```ts
-if (req.device) return true;
-```
-
-so any authenticated device passes any `@RequirePermissions(...)` check. That bypass is
-load-bearing today — every device holds zero permissions, so enforcing them would break
-every device endpoint at once. It becomes a fork instead: users checked against
-permissions as now, devices against a `@RequireDeviceRole(...)` list.
-
-**The role moves into the token.** `signDeviceToken` carries `deviceId`, `orgId` and
-`permissions` — not `role`. The claim endpoint polls once per second per station, so a
-database round-trip per request to ask "what kind of device are you" is real load for a
-constant. `role` replaces `permissions` in the payload, and `DevicePermission` goes with it.
-
-The consequence to accept knowingly: a role change does not take effect until the token
-refreshes, so up to `DEVICE_TOKEN_TTL` — one hour by default. `DevicesService.updateRole`
-exists, so this is reachable, and an hour of staleness on a device's *category* is a fair
-price for not querying on every poll.
-
-**The cutover is provable before it ships.** Eleven of the twelve device controllers use
-`OrDeviceAuthGuard` — staff and devices hit the same routes, so
-`orgs/:orgId/ski-swap/sellers` serves both a check-in iPad and the staff Sellers tab. Every
-one of those routes needs a role rule before the bypass is removed, or it starts refusing
-devices that work today. Both roles and routes are enumerable, so coverage is a test rather
-than a hope: assert that every device-reachable route names at least one role.
 
 ### Configuration
 
@@ -701,7 +703,7 @@ than a hope: assert that every device-reachable route names at least one role.
 
 ---
 
-## 11. Web work
+## 12. Web work
 
 ### Check-in is its own surface
 
@@ -786,7 +788,7 @@ happily lie about.
 
 ---
 
-## 12. Work breakdown
+## 13. Work breakdown
 
 **Phase 1 — Server-side rendering.** Port layout to `@napi-rs/canvas`; move the rasteriser
 and ESC/POS builders; golden-image fixtures including a full-width 13-character SKU. Carry
@@ -832,7 +834,7 @@ visibility, and a documented recovery path for "the bridge died mid-swap".
 
 ---
 
-## 13. Accepted costs
+## 14. Accepted costs
 
 - **A rendering dependency in the API.** `@napi-rs/canvas` ships prebuilt binaries, so no
   build toolchain, but it is a native module and pins us to supported platforms.
@@ -857,8 +859,8 @@ visibility, and a documented recovery path for "the bridge died mid-swap".
 - **The seller is blocked on the printer.** Save-time printing ties the pace of check-in to
   hardware: a jam or an empty roll stops that station, where batch printing would have let
   entry continue. The right trade for tag-to-item accuracy, but it makes station health a
-  live operational concern — which is why §10 exposes queue depth and last-seen.
-- **Check-in requires the network, by choice (§11).** A station with no connectivity cannot
+  live operational concern — which is why §11 exposes queue depth and last-seen.
+- **Check-in requires the network, by choice (§12).** A station with no connectivity cannot
   check anyone in. Venue wifi is a hard dependency, worth verifying before doors open
   rather than with a queue of people waiting.
 - **No approval gate (D6)** means a mistyped price goes live immediately. Staff can edit
@@ -895,7 +897,7 @@ visibility, and a documented recovery path for "the bridge died mid-swap".
 
 ---
 
-## 14. Open question: retiring the unauthenticated lookup
+## 15. Open question: retiring the unauthenticated lookup
 
 Everything else has been answered and folded into the decisions above. This one remains:
 **should the public `/s/:sellerId` page survive** once sellers can sign in?
