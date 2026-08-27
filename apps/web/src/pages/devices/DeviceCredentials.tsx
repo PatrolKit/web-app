@@ -467,10 +467,19 @@ export function DeviceCredentialList({
           {canProvision && (
             <div className="flex justify-end">
               <button
-                onClick={() => { setShowProvisionForm(true); setProvisionName(''); provisionMutation.reset(); }}
-                className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
+                onClick={() => {
+                  provisionMutation.reset();
+                  // Nothing to fill in for a bridge — it is not named, and its
+                  // printer is chosen on the screen this opens. A form asking
+                  // for nothing is a click in the way.
+                  if (namesItself) { provisionMutation.mutate(); return; }
+                  setShowProvisionForm(true);
+                  setProvisionName('');
+                }}
+                disabled={provisionMutation.isPending}
+                className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-40"
               >
-                + Provision Device
+                {provisionMutation.isPending ? 'Provisioning…' : `+ Provision ${roleInfo?.label ?? 'Device'}`}
               </button>
             </div>
           )}
@@ -481,18 +490,16 @@ export function DeviceCredentialList({
               className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3"
             >
               <h3 className="text-white font-medium">New {roleInfo?.label ?? 'Device'}</h3>
-              {!namesItself && (
-                <label className="block">
-                  <span className="block text-xs text-gray-400 mb-1">Name</span>
-                  <input
-                    value={provisionName}
-                    onChange={(e) => setProvisionName(e.target.value)}
-                    placeholder="Device name"
-                    required
-                    className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
-                  />
-                </label>
-              )}
+              <label className="block">
+                <span className="block text-xs text-gray-400 mb-1">Name</span>
+                <input
+                  value={provisionName}
+                  onChange={(e) => setProvisionName(e.target.value)}
+                  placeholder="Device name"
+                  required
+                  className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+                />
+              </label>
               {/* "Network Printer Adapter" says nothing about what the box does
                   or what to do with it next. */}
               <p className="text-xs text-gray-500">{roleInfo?.hint}</p>
@@ -501,7 +508,7 @@ export function DeviceCredentialList({
                 <button type="button" onClick={() => { setShowProvisionForm(false); provisionMutation.reset(); }} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
                 <button
                   type="submit"
-                  disabled={provisionMutation.isPending || (!namesItself && !provisionName.trim())}
+                  disabled={provisionMutation.isPending || !provisionName.trim()}
                   className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm disabled:opacity-40"
                 >
                   {provisionMutation.isPending ? 'Provisioning…' : 'Provision'}
@@ -523,7 +530,9 @@ export function DeviceCredentialList({
             />
           )}
 
-          <MutationError error={rotateMutation.error ?? revokeMutation.error} />
+          <MutationError
+            error={(showProvisionForm ? null : provisionMutation.error) ?? rotateMutation.error ?? revokeMutation.error}
+          />
 
           <div className="space-y-3">
             {devices.map((d: DeviceItem) => (
