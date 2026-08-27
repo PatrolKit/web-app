@@ -479,7 +479,7 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
     return {
       icon: faPlugCircleXmarkDuo,
       label: 'Never connected',
-      tone: 'warn',
+      tone: 'bad',
       title: 'This bridge has never reached the server. Set it up over Bluetooth, or check its firmware.',
     };
   }
@@ -494,7 +494,7 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
     return {
       icon: faPlugCircleXmarkDuo,
       label: 'Offline',
-      tone: 'warn',
+      tone: 'bad',
       title: lastSeenTitle(bridge.lastSeenAt),
     };
   }
@@ -503,7 +503,7 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
     return {
       icon: faLinkSlashDuo,
       label: 'Online — no printer',
-      tone: 'unknown',
+      tone: 'warn',
       title: 'The bridge is reaching the server but drives nothing. Set it up and pick its printer.',
     };
   }
@@ -512,7 +512,7 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
     return {
       icon: faPrintSlashDuo,
       label: 'Online, but cannot reach the printer',
-      tone: 'bad',
+      tone: 'warn',
       title: `Printer power, or something else paired to ${printer.bluetoothName}.`,
     };
   }

@@ -12,6 +12,14 @@ import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
  * seconds of silence".
  */
 
+/**
+ * How far up the chain the hardware is working, as a traffic light:
+ *
+ * - `bad` (red) — the box is not reachable. Offline, or never arrived.
+ * - `warn` (amber) — the box is reachable but its printer is not.
+ * - `ok` (green) — both halves are up.
+ * - `unknown` (grey) — nothing is wrong yet because nothing is set up.
+ */
 export type Tone = 'ok' | 'warn' | 'bad' | 'unknown';
 
 export const TEXT_TONE: Record<Tone, string> = {

@@ -370,7 +370,7 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): Hardw
     return {
       icon: faLinkSlashDuo,
       label: 'Bridge has no printer',
-      tone: 'unknown',
+      tone: 'warn',
       title: 'Bind a printer to this bridge on the Printers page.',
     };
   }
@@ -383,7 +383,7 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): Hardw
       return {
         icon: faPlugCircleXmarkDuo,
         label: 'Tablet offline',
-        tone: 'warn',
+        tone: 'bad',
         title: lastSeenTitle(queue.attendantLastSeenAt),
       };
     }
@@ -401,7 +401,9 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): Hardw
     return {
       icon: faPlugCircleXmarkDuo,
       label: 'Offline',
-      tone: queue.queued > 0 ? 'bad' : 'warn',
+      // Red whether or not work is queued. A counter that cannot print is the
+      // same failure before anyone is waiting as after.
+      tone: 'bad',
       title: lastSeenTitle(queue.bridgeLastSeenAt),
     };
   }
@@ -409,7 +411,7 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): Hardw
   if (queue.printerLink === 'down') {
     // "Online, but" because the bridge is answering — this is the printer half
     // failing, and the two send you to different pieces of hardware.
-    return { icon: faPrintSlashDuo, label: 'Online, but cannot reach the printer', tone: 'bad' };
+    return { icon: faPrintSlashDuo, label: 'Online, but cannot reach the printer', tone: 'warn' };
   }
 
   if (queue.printerLink === null) {
