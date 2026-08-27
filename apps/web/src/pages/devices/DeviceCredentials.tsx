@@ -1,16 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import QRCode from 'react-qr-code';
 import { api } from '../../lib/api';
-import {
-  currentBaseUrl,
-  isProvisionableOrigin,
-  isWebBluetoothSupported as isBridgeBluetoothSupported,
-  provisionBridge,
-  type BridgeStatus,
-} from '../../lib/printing/BridgeProvisioningService';
 import { DEVICE_ROLES, deviceLabel, deviceRoleLabel } from '../../lib/api.types';
-import type { DeviceItem, DeviceRole, ProvisionedDevice, SwapPrinterRecord } from '../../lib/api.types';
+import type { DeviceItem, DeviceRole, ProvisionedDevice } from '../../lib/api.types';
 
 /**
  * Whether the server has heard from a device since a secret was issued to it.
@@ -50,201 +43,6 @@ export function MutationError({ error }: { error: unknown }) {
       {message}
     </p>
   );
-}
-
-/**
- * Sets a bridge up over Bluetooth: Wi-Fi, which printer to drive, and its own
- * server credentials.
- *
- * Lives on the card that appears right after provisioning or a secret rotation,
- * because that is the only moment the client secret exists — the server never
- * returns it again. Dismiss the card without doing this and the bridge has to be
- * rotated before it can be set up.
- *
- * `confirmed` comes from the server having authenticated the bridge, and it is
- * the only thing here that reports success. The board's own `online` is a claim
- * about itself: a bridge that joins Wi-Fi and then cannot reach the server —
- * wrong clock, rejected TLS, a firmware bug in the token exchange — says
- * `online` and stays silent, and taking it at its word is what made a dead
- * bridge look provisioned.
- */
-export function BridgeProvisioningPanel({
-  clientId,
-  secret,
-  printer,
-  confirmed,
-  onCommitted,
-}: {
-  clientId: string;
-  secret: string;
-  /** The printer to write into the board. The caller picks it. */
-  printer: SwapPrinterRecord | null;
-  confirmed: boolean;
-  /** The board took the config. Whatever was written is now true of it. */
-  onCommitted?: () => void;
-}) {
-  const [ssid, setSsid] = useState('');
-  const [psk, setPsk] = useState('');
-  const [status, setStatus] = useState<BridgeStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  /** The board reported `online`. Says nothing about the server yet. */
-  const [boardOnline, setBoardOnline] = useState(false);
-  /** The board has claimed online for long enough that silence is a diagnosis. */
-  const [serverOverdue, setServerOverdue] = useState(false);
-
-  // A bridge that is going to reach the server does so within a couple of
-  // seconds of joining Wi-Fi. Waiting longer than this and still hearing
-  // nothing is the failure, not a slow start.
-  useEffect(() => {
-    if (!boardOnline || confirmed) return;
-    const t = setTimeout(() => setServerOverdue(true), 20_000);
-    return () => clearTimeout(t);
-  }, [boardOnline, confirmed]);
-
-  const baseUrl = currentBaseUrl();
-  const httpsOk = isProvisionableOrigin(baseUrl);
-  const supported = isBridgeBluetoothSupported();
-
-  async function run() {
-    setBusy(true);
-    setError(null);
-    setStatus(null);
-    try {
-      const final = await provisionBridge(
-        {
-          ssid: ssid.trim(),
-          psk,
-          printerBluetoothName: printer?.bluetoothName ?? '',
-          baseUrl,
-          clientId,
-          clientSecret: secret,
-        },
-        setStatus,
-        { onCommitted },
-      );
-      setStatus(final);
-      setBoardOnline(true);
-    } catch (err) {
-      // A cancelled picker is a decision, not a failure.
-      if ((err as { name?: string })?.name === 'NotFoundError') return;
-      setError(err instanceof Error ? err.message : 'Provisioning failed');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (confirmed) {
-    return (
-      <div className="mt-4 border-t border-green-800 pt-4">
-        <p className="text-green-400 text-sm">
-          Bridge online{status?.device ? ` — ${status.device}` : ''}, and the server has heard
-          from it. Bind it to a printer above, then to a check-in station.
-        </p>
-      </div>
-    );
-  }
-
-  // The board joined Wi-Fi and went quiet. This is the one failure the old
-  // panel reported as success, so it says exactly what is and is not known.
-  if (boardOnline && serverOverdue) {
-    return (
-      <div className="mt-4 border-t border-amber-800 pt-4 space-y-2">
-        <p className="text-amber-400 text-sm font-medium">
-          The board says it is online, but the server has never heard from it.
-        </p>
-        <p className="text-xs text-gray-400">
-          Wi-Fi worked — the failure is after that, when the bridge exchanges its client
-          secret for a token. Check the firmware build, and that the board&apos;s clock is
-          set, since TLS rejects a certificate that looks expired from the board&apos;s
-          point of view.
-        </p>
-        <p className="text-xs text-gray-400">
-          This device is kept, not discarded: if it does reach the server later, it starts
-          working on its own and the list stops saying &quot;never connected&quot;. To try
-          again now, hold BOOT while powering the board on and set it up once more.
-        </p>
-        <button
-          onClick={() => { setBoardOnline(false); setServerOverdue(false); setStatus(null); }}
-          className="text-xs text-brand-500 hover:underline"
-        >
-          Try setting it up again
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-4 border-t border-green-800 pt-4 space-y-3 text-left">
-      <p className="text-white text-sm font-medium">Set up this bridge over Bluetooth</p>
-      <p className="text-xs text-gray-400">
-        Hold the board&apos;s BOOT button while powering it on if it has been set up before —
-        a bridge that has already reached the server refuses further changes.
-      </p>
-
-      {!supported ? (
-        <p className="text-amber-400 text-xs">
-          Bluetooth setup needs Chrome or Edge. Copy the code above and use the iOS app instead.
-        </p>
-      ) : !httpsOk ? (
-        <p className="text-amber-400 text-xs">
-          The bridge only accepts an https server, and this page is on {baseUrl}. Provision from
-          the deployed site rather than a local dev server.
-        </p>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="block text-xs text-gray-400 mb-1">Wi-Fi network</span>
-              <input
-                value={ssid}
-                onChange={(e) => setSsid(e.target.value)}
-                placeholder="Network name"
-                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="block text-xs text-gray-400 mb-1">Wi-Fi password</span>
-              <input
-                type="password"
-                value={psk}
-                onChange={(e) => setPsk(e.target.value)}
-                placeholder="Blank if open"
-                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
-              />
-            </label>
-          </div>
-
-          {boardOnline ? (
-            <p className="text-xs text-gray-400">
-              Wi-Fi joined. Waiting for the server to hear from the bridge…
-            </p>
-          ) : status ? (
-            <p className="text-xs text-gray-400">{describeBridgeState(status)}</p>
-          ) : null}
-          {error && <p className="text-red-400 text-xs">{error}</p>}
-
-          <button
-            onClick={run}
-            disabled={busy || boardOnline || !ssid.trim() || !printer}
-            className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm rounded px-4 py-2"
-          >
-            {busy ? 'Setting up…' : boardOnline ? 'Waiting for the server…' : 'Set up over Bluetooth'}
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** The board reports which step it is on; a failure otherwise looks like a slow success. */
-function describeBridgeState(status: BridgeStatus): string {
-  switch (status.state) {
-    case 'wifi_connecting': return 'Joining Wi-Fi…';
-    case 'server_connecting': return 'Wi-Fi joined. Reaching the server…';
-    case 'online': return 'Online.';
-    default: return 'Waiting for the bridge…';
-  }
 }
 
 /**
@@ -375,11 +173,12 @@ export function DeviceCredentialList({
   onEdit?: (device: DeviceItem) => void;
   /**
    * Given one, the credential card is skipped and this is handed the brand-new
-   * device and its secret. A bridge has nothing to show on a card — no QR to
-   * scan, nothing to copy — so it goes straight to the screen where it is set
-   * up, carrying the one copy of the secret with it.
+   * device. A bridge has nothing to show on a card — no QR to scan, nothing to
+   * copy — so it goes straight to the screen where it is set up. The secret
+   * issued here is not passed on: that screen mints its own at the moment it
+   * writes the board.
    */
-  onProvisioned?: (device: ProvisionedDevice, secret: string) => void;
+  onProvisioned?: (device: ProvisionedDevice) => void;
 }) {
   const qc = useQueryClient();
   const [provisionName, setProvisionName] = useState('');
@@ -413,7 +212,7 @@ export function DeviceCredentialList({
       setProvisionName('');
       setShowProvisionForm(false);
       qc.invalidateQueries({ queryKey: ['devices', orgId] });
-      if (onProvisioned) { onProvisioned(d, d.clientSecret); return; }
+      if (onProvisioned) { onProvisioned(d); return; }
       setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, sinceLastSeenAt: null });
     },
   });
