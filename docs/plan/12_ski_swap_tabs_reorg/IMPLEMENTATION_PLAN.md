@@ -6,6 +6,9 @@
 > **Constraint:** Still pre-production. No devices are deployed, the database holds one org
 > with one station and one bridge, and destructive migrations are acceptable.
 > **Out of scope:** The bridge's BLE and HTTP contracts. Neither changes.
+> **The iOS app is being rewritten**, so nothing here is shaped to keep the existing one
+> working. Where the current app is described it is as evidence about the domain, never as a
+> constraint. §8 states what the new app has to implement.
 
 ---
 
@@ -52,9 +55,9 @@ a station.
 
 **`Ski Swap - Bulk Seller` does nothing.** It appears in five `@RequireDeviceRole` lists,
 always paired identically with `Ski Swap - Check-In` and never alone, so it grants exactly the
-same access. iOS routes on `hasPrefix("Ski Swap")`, so it lands in the same coordinator. It has
-had no distinct behaviour since it was introduced in `9ecf5f7` when a free-form role string
-became an enum.
+same access. The outgoing iOS app routed every ski-swap role into one coordinator, so it made
+no distinction there either. The role has had no distinct behaviour anywhere since it was
+introduced in `9ecf5f7`, when a free-form role string became an enum.
 
 ## 3. Decisions
 
@@ -63,15 +66,15 @@ became an enum.
 | **D1** | **`CheckinStation` covers both kinds.** A station is a code, a printer, and the hardware at that counter — a staff iPad, a print bridge, or both. | They already share the SKU namespace, which is the domain saying they are one thing. Modelling them separately is what leaves a staffed counter unobservable while a self-service one reports its printer link. |
 | **D2** | **Kind is derived from whether an attendant is bound, not stored.** An iPad at the counter means staffed; no iPad means self-service. | A stored `kind` can contradict the hardware attached to it. Deriving it means the two can never disagree. A station with neither is simply "not set up", which is already a state the UI renders. |
 | **D3** | **Only self-service stations get a QR code.** | The QR exists so a seller can point their own phone at a station. Staff already have the iPad in their hands; a QR there is a control nobody uses and a support question nobody needs. |
-| **D4** | **The station owns the SKU code. `Device.skiSwapDeviceCode` becomes a mirror of it.** | One pool, one owner. The field stays on the device *response* so iOS keeps reading the code where it already looks — it just gets served the station's value once bound. |
+| **D4** | **The station owns the SKU code.** `Device.skiSwapDeviceCode` is dropped; a device's own record reports the station it is bound to, code included. | One pool, one owner, and a code that follows the counter rather than the box sitting on it. Swapping a failed iPad keeps the namespace; today it would change. Whether a client needs the code at all depends on whether it mints SKUs offline — see §8. |
 | **D5** | **Bridges stop consuming codes.** Only stations do. | A bridge does not mint SKUs. Reclaiming this roughly doubles the usable pool at a venue running mixed hardware. |
 | **D6** | **Business sellers keep their own path.** A printer assigned to them, no station, no code, no QR, no bridge. | A business seller is not a counter. They enter stock from wherever they are, and their SKUs come from the server-minted sequence — that already works and has no station-shaped problem to solve. |
-| **D7** | **Roles are renamed inside the `Ski Swap - ` prefix.** `Ski Swap - Check-In` → `Ski Swap - Staff Check-In`; `Ski Swap - Network Printer Adapter` → `Ski Swap - Print Bridge`. | "Network Printer Adapter" is not what anyone calls it — the code, the UI, the runbook and the firmware docs all say *bridge*. Keeping the prefix is not cosmetic: iOS routes on `hasPrefix("Ski Swap")`, so staying inside it means the rename itself costs no iOS release. |
+| **D7** | **A role is an identifier with a separate display label.** `ski_swap.staff_check_in`, `ski_swap.print_bridge`, `time_clock.terminal`, rendered as "Staff Check-In Station", "Print Bridge" and "Time Clock". | Today a role is both at once — a prose string that the UI prints *and* that clients match on — which is precisely why renaming one was ever entangled with client routing. Split, a label can be reworded without touching anything, and a client derives the module from the segment before the dot rather than string-matching English. "Network Printer Adapter" also goes: the code, the UI, the runbook and the firmware docs all say *bridge*. |
 | **D8** | **`Ski Swap - Bulk Seller` is deleted outright.** | It grants nothing the check-in role does not. Leaving it costs a SKU code per device and offers a third option in a dropdown that misleads — the current UI hint describes a behaviour that was never built. |
 | **D9** | **The Devices nav item retires.** Ski Swap takes printers and stations; Time Tracking takes time-clock devices. | The permission model already assigns them that way. See §7 for what is lost with it, which is real. |
 | **D10** | **A staff station's bridge is optional, and when bound it owns printing.** The iPad saves an item, the server renders, the station's bridge prints — exactly as self-service does. | A bridge holds its printer's BLE link continuously, reconnecting forever because the unit is unattended, so an iPad cannot share that printer while a bridge owns it. One of them drives it. Optional means a counter can start as an iPad and a printer and gain a bridge later without being re-modelled. |
-| **D11** | **The Bluetooth override is always available — it is not a fallback the app switches into.** Staff can pick any known printer and print directly, whenever they want. | No mode detection, no "is the network down" heuristic, no automatic switching to get wrong. It also needs no spare hardware: a printer held by a live bridge refuses the connection, and unplugging that bridge is what frees it — which is both the remedy when the bridge has failed and the way to deliberately take a printer over. The printers offered come from the iPad's last sync, so the list survives the outage that prompted the override. |
-| **D12** | **An override print must not produce a second tag when the item syncs.** The item arrives already marked printed, and the server skips the enqueue rather than queueing a tag the bridge prints later. | The iPad holds items locally when offline and syncs them when the network returns — by which time the tag is already on the ski. Auto-enqueueing on arrival would put a duplicate through the bridge for every item checked in during the outage, discovered as a pile of orphan tags. |
+| **D11** | **The Bluetooth override is always available — it is not a fallback the app switches into.** Staff can pick any known printer and print directly, whenever they want. | No mode detection, no "is the network down" heuristic, no automatic switching to get wrong. It also needs no spare hardware: a printer held by a live bridge refuses the connection, and unplugging that bridge is what frees it — which is both the remedy when the bridge has failed and the way to deliberately take a printer over. One requirement falls out of this: the list of printers has to be readable without the network. Fetched on demand, the override is unavailable in exactly the case it exists for. |
+| **D12** | **An override print must not also enqueue.** An item whose tag was printed over Bluetooth arrives marked printed, and the server skips the enqueue. | The tag is already on the ski by the time the server hears about the item — immediately if the app was online, later if it was not. Enqueueing anyway puts a second tag through the bridge, and if it happened during an outage it happens for every item checked in during it, discovered as a pile of orphan tags nobody can place. |
 | **D13** | **The station's code applies however the tag was printed.** | The code records *where an item was checked in*, not how the paper came out. A tag printed over Bluetooth because the bridge was down still belongs to that counter, and a SKU whose namespace depended on the print path would be useless for tracing. |
 | **D14** | **Module admins provision their own hardware.** `ski_swap:admin` may create, rotate and revoke ski-swap devices; `time_tracking:manage` the same for time clocks. | Retiring Devices without this reproduces the bug it is meant to fix, one page over. A module admin who can already configure a station is not meaningfully restrained by being unable to create the box that serves it. |
 
@@ -110,8 +113,8 @@ model SwapPrinter {
 
 model Device {
   ...
-  /// Dropped. The station owns the code now (D4); `GET /devices/me` serves the
-  /// bound station's value under the same name so iOS needs no change.
+  /// Dropped. The station owns the code now (D4), and a device reports the
+  /// station it is bound to rather than carrying a code of its own.
   - skiSwapDeviceCode String? @db.VarChar(1)
 }
 ```
@@ -127,18 +130,21 @@ migration for rows that do not exist.
 
 ## 5. Roles
 
-| Before | After |
+| Identifier | Label |
 |---|---|
-| `Ski Swap - Check-In` | `Ski Swap - Staff Check-In` |
-| `Ski Swap - Bulk Seller` | *deleted* |
-| `Ski Swap - Network Printer Adapter` | `Ski Swap - Print Bridge` |
-| `Time Clock` | unchanged |
+| `ski_swap.staff_check_in` | Staff Check-In Station |
+| `ski_swap.print_bridge` | Print Bridge |
+| `time_clock.terminal` | Time Clock |
 
-Every `@RequireDeviceRole` list that names the two ski-swap roles keeps naming both under
-their new names. The parity test added in Plan 11 —
+`Ski Swap - Bulk Seller` has no successor (D8). The module a device belongs to is the segment
+before the dot, so nothing has to match on prose.
+
+Every `@RequireDeviceRole` list that names the two ski-swap roles keeps naming both, under the
+new identifiers. The parity test added in Plan 11 —
 [`devices.contracts.spec.ts`](../../../apps/api/src/contracts/devices.contracts.spec.ts) —
 already asserts the web's role list matches `DeviceRoleSchema`, so a rename that misses one
-side fails there rather than in a dropdown.
+side fails there rather than in a dropdown. It should grow a second assertion: every role has
+a label, since an identifier leaking into the UI is now a visible bug rather than merely ugly.
 
 ## 6. Navigation
 
@@ -187,35 +193,38 @@ This plan takes the second and notes the first as the follow-up. Retiring the na
 the same as retiring the capability, and the capability should come back before the product
 has more than a few orgs in it.
 
-## 8. iOS
+## 8. What the iOS rewrite has to implement
 
-**Phases 1–3 need no iOS release.** Three things could have forced one, and none do:
+The app is being rebuilt, so this is a contract rather than a migration. Nothing above is
+shaped to keep the outgoing app working.
 
-- **Role routing** matches `hasPrefix("Ski Swap")`. Both renamed roles keep the prefix (D7).
-- **The SKU code** arrives as `skiSwapDeviceCode` on `GET /devices/me`. The field stays; it is
-  served from the bound station instead of the device row (D4). The iPad mints SKUs offline
-  from that value and is indifferent to where it came from.
-- **Printer selection** keeps working exactly as it does now.
+**Identity.** A device authenticates with its client id and secret and reads its own record.
+That record names the station it is bound to — id, name, and the station's SKU code — or says
+it is bound to none. **An unbound iPad cannot check anything in**, and should say so rather
+than failing at the first item.
 
-**Phase 5 does need a release**, because the print path is the part iOS owns:
+**SKUs.** Whether the app needs the station's code at all is a decision for the rewrite:
 
-- **Enqueue when bound.** An item saved at a station whose bridge is bound goes to the queue
-  rather than to a printer the app holds. This is new — the app prints today and posts a
-  client-minted `sku`.
-- **Keep the Bluetooth override always reachable** (D11), not behind an error state. It is the
-  answer to a bridge that has failed, a network that is down, and "I want to use that other
-  printer", and the app should not try to work out which.
-- **Mark an override print as printed** so the server skips the enqueue when the item syncs
-  (D12). Without this, every item checked in during an outage prints a second tag once the
-  bridge is back.
-- **Say when there is no station.** An unbound iPad has no code and cannot mint SKUs offline.
-  Today every device gets a code at creation; after this a `Ski Swap - Staff Check-In` gets one
-  when it is bound. "This iPad is not assigned to a station yet" beats failing on the first
-  item.
+- **If it mints SKUs offline**, it needs the code, and it must use the station's — not one of
+  its own. That is what keeps a swapped iPad from changing the namespace mid-swap.
+- **If it does not**, the server mints on create and the code is informational. Simpler, and
+  it removes a whole class of offline collision, at the cost of not being able to produce a
+  tag with no network.
 
-The server side of Phase 5 is small — accept a `stationId` and an already-printed flag on the
-staff item-create path, and skip the enqueue when the flag is set — so the server can land
-first and wait.
+The server supports both; the plan does not assume either.
+
+**Printing.** Two paths, and the app chooses per print rather than per session:
+
+- **Bound station, reachable server** — save the item and let the station's bridge print it.
+  The app does not touch Bluetooth.
+- **The Bluetooth override, always available** (D11) — pick any known printer and print
+  directly. Not an error state, not a mode: the answer to a failed bridge, a dead network, and
+  "use that other printer", without the app having to work out which. A printer held by a live
+  bridge will refuse the connection; unplugging that bridge frees it.
+
+**An override print reports itself printed** (D12), so the server skips the enqueue when the
+item arrives. Without it, every item checked in during an outage prints a second tag once the
+bridge is back — discovered as a pile of orphan tags nobody can place.
 
 ## 9. Phases
 
@@ -235,11 +244,9 @@ Check-in tab. Fix the two `business_seller` gates while in here.
 something. Provision-and-bind in one step. A staffed station shows its printer whether or not
 a bridge drives it.
 
-**Phase 5 — The staff print path.** Server accepts `stationId` and an already-printed flag
-from the iPad; iOS enqueues when bound, keeps the Bluetooth override always available, and
-reports an override print as printed. The only phase needing an iOS release, and the only one
-that can be deferred without leaving something half-built — until it ships, a staff iPad
-prints over Bluetooth exactly as it does today.
+**Phase 5 — The staff print path, server side.** Accept `stationId` and an already-printed
+flag on the staff item-create path, and skip the enqueue when the flag is set. Small, and it
+lands before the app needs it — §8 is the contract the rewrite builds against.
 
 ## 10. Verification
 
