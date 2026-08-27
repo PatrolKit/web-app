@@ -10,7 +10,37 @@ import {
   type BridgeStatus,
 } from '../../lib/printing/BridgeProvisioningService';
 import { DEVICE_ROLES, deviceLabel, deviceRoleLabel } from '../../lib/api.types';
-import type { DeviceItem, DeviceRole, SwapPrinterRecord } from '../../lib/api.types';
+import type { DeviceItem, DeviceRole, ProvisionedDevice, SwapPrinterRecord } from '../../lib/api.types';
+
+/**
+ * Whether the server has heard from a device since a secret was issued to it.
+ *
+ * Last-seen is stamped when a device trades its client secret for a token, so
+ * this is the credentials arriving — not the board's own opinion of itself. A
+ * rotation leaves a timestamp from the device's previous life, hence `since`:
+ * confirmation waits for it to move rather than merely to exist.
+ */
+export function useServerConfirmation(orgId: string, deviceId: string, since: string | null) {
+  const { data: devices } = useQuery({
+    queryKey: ['devices', orgId],
+    queryFn: () => api.devices.list(orgId),
+    refetchInterval: 2000,
+    // Keep polling on a backgrounded tab. Setting a bridge up means watching a
+    // board boot and join Wi-Fi, which is exactly when someone switches window —
+    // and the default would leave them staring at a screen that stopped asking.
+    refetchIntervalInBackground: true,
+  });
+  const device = devices?.find((d) => d.id === deviceId);
+  const seenAt = device?.lastSeenAt ?? null;
+  return { device, confirmed: !!seenAt && seenAt !== since };
+}
+
+/** The warning before throwing away the only copy of a client secret. */
+export const SECRET_LOSS_WARNING =
+  'The server has not heard from this device yet.\n\n' +
+  'This is the only copy of its client secret — leave now and the secret is gone ' +
+  'for good. The device stays, but it cannot be set up again until you issue a ' +
+  'new secret from its edit screen.\n\nContinue anyway?';
 
 export function MutationError({ error }: { error: unknown }) {
   if (!error) return null;
@@ -253,31 +283,10 @@ function ProvisioningCodeCard({
 }) {
   const [copied, setCopied] = useState(false);
 
-  // The server stamps last-seen when a device trades its client secret for a
-  // token, so this is the credentials arriving — not the board's opinion of
-  // itself. Polling stops as soon as that happens.
-  const { data: devices } = useQuery({
-    queryKey: ['devices', orgId],
-    queryFn: () => api.devices.list(orgId),
-    refetchInterval: 2000,
-    // Keep polling on a backgrounded tab. Setting a bridge up means watching a
-    // board boot and join Wi-Fi, which is exactly when someone switches window —
-    // and the default would leave them staring at a card that stopped asking.
-    refetchIntervalInBackground: true,
-  });
-  const seenAt = devices?.find((d) => d.id === deviceId)?.lastSeenAt ?? null;
-  const confirmed = !!seenAt && seenAt !== sinceLastSeenAt;
+  const { confirmed } = useServerConfirmation(orgId, deviceId, sinceLastSeenAt);
 
   function dismiss() {
-    if (
-      !confirmed &&
-      !window.confirm(
-        'The server has not heard from this device yet.\n\n' +
-          'This card holds the only copy of its client secret — dismiss it and the ' +
-          'secret is gone for good. The device stays, but it cannot be set up again ' +
-          'until you Edit it for a new secret.\n\nDismiss anyway?',
-      )
-    ) return;
+    if (!confirmed && !window.confirm(SECRET_LOSS_WARNING)) return;
     onDismiss();
   }
   // A bridge takes its credentials over Bluetooth, so the code is dead weight
@@ -370,6 +379,7 @@ export function DeviceCredentialList({
   canProvision,
   renderExtra,
   onEdit,
+  onProvisioned,
 }: {
   orgId: string;
   role: DeviceRole;
@@ -384,6 +394,13 @@ export function DeviceCredentialList({
    * rather than the whole meaning of the button.
    */
   onEdit?: (device: DeviceItem) => void;
+  /**
+   * Given one, the credential card is skipped and this is handed the brand-new
+   * device and its secret. A bridge has nothing to show on a card — no QR to
+   * scan, nothing to copy — so it goes straight to the screen where it is set
+   * up, carrying the one copy of the secret with it.
+   */
+  onProvisioned?: (device: ProvisionedDevice, secret: string) => void;
 }) {
   const qc = useQueryClient();
   const [provisionName, setProvisionName] = useState('');
@@ -416,10 +433,11 @@ export function DeviceCredentialList({
     mutationFn: () =>
       api.devices.provision(orgId, namesItself ? { role } : { name: provisionName, role }),
     onSuccess: (d) => {
-      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, role, sinceLastSeenAt: null });
       setProvisionName('');
       setShowProvisionForm(false);
       qc.invalidateQueries({ queryKey: ['devices', orgId] });
+      if (onProvisioned) { onProvisioned(d, d.clientSecret); return; }
+      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, role, sinceLastSeenAt: null });
     },
   });
 

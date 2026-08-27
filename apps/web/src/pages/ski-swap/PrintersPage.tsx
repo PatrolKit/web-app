@@ -45,6 +45,13 @@ export default function PrintersPage() {
   const [pendingTestPrint, setPendingTestPrint] = useState<SwapPrinterRecord | null>(null);
   const [isPrintingId, setIsPrintingId] = useState<string | null>(null);
   const [editingBridge, setEditingBridge] = useState<DeviceItem | null>(null);
+  /** Set only when the edit screen opened straight off provisioning. */
+  const [freshSecret, setFreshSecret] = useState<string | null>(null);
+
+  function openBridge(bridge: DeviceItem, secret?: string) {
+    setFreshSecret(secret ?? null);
+    setEditingBridge(bridge);
+  }
 
 
   // ─── Printers state ───────────────────────────────────────────────────────
@@ -376,7 +383,15 @@ export default function PrintersPage() {
           printers={printers}
           canProvision={canManagePrinters}
           renderExtra={BridgeStatus}
-          onEdit={setEditingBridge}
+          onEdit={openBridge}
+          onProvisioned={(d, secret) =>
+            // The provision response carries only what the server just wrote;
+            // the rest arrives on the next poll of the devices list.
+            openBridge(
+              { ...d, lastSeenAt: null, printerLink: null, printerLinkAt: null, printerName: null },
+              secret,
+            )
+          }
         />
       </div>
 
@@ -386,7 +401,8 @@ export default function PrintersPage() {
           bridge={editingBridge}
           printers={printers}
           boundPrinter={printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === editingBridge.id)}
-          onClose={() => setEditingBridge(null)}
+          initialSecret={freshSecret ?? undefined}
+          onClose={() => { setEditingBridge(null); setFreshSecret(null); }}
         />
       )}
 

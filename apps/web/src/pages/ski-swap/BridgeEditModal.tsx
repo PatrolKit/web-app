@@ -3,7 +3,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../../lib/api';
-import { BridgeProvisioningPanel, MutationError } from '../devices/DeviceCredentials';
+import {
+  BridgeProvisioningPanel,
+  MutationError,
+  SECRET_LOSS_WARNING,
+  useServerConfirmation,
+} from '../devices/DeviceCredentials';
 import { deviceLabel } from '../../lib/api.types';
 import type { DeviceItem, SwapPrinterRecord } from '../../lib/api.types';
 
@@ -22,21 +27,35 @@ import type { DeviceItem, SwapPrinterRecord } from '../../lib/api.types';
  */
 export default function BridgeEditModal({
   orgId,
-  bridge,
+  bridge: initialBridge,
   printers,
   boundPrinter,
+  initialSecret,
   onClose,
 }: {
   orgId: string;
   bridge: DeviceItem;
   printers: SwapPrinterRecord[];
   boundPrinter: SwapPrinterRecord | undefined;
+  /**
+   * A secret minted moments ago, when this screen opened straight off
+   * provisioning. The board has to be written before it is any use, and this is
+   * the only copy — so the screen opens ready to write it and refuses to be
+   * closed quietly until the server has heard back.
+   */
+  initialSecret?: string;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
   const [printerId, setPrinterId] = useState(boundPrinter?.id ?? '');
-  const [reprovisioning, setReprovisioning] = useState(false);
-  const [secret, setSecret] = useState<string | null>(null);
+  const [secret, setSecret] = useState<string | null>(initialSecret ?? null);
+
+  // A brand-new bridge has never been seen, so any last-seen at all confirms it.
+  const [since] = useState(initialSecret ? null : initialBridge.lastSeenAt);
+  const { device, confirmed } = useServerConfirmation(orgId, initialBridge.id, since);
+  // Prefer the polled copy: binding a printer renames the bridge, and the
+  // heading should follow rather than hold the name it opened with.
+  const bridge = device ?? initialBridge;
 
   // Whether the board is still pointed at the printer the server thinks it
   // drives. The board connects by Bluetooth name, written once at setup and
@@ -64,14 +83,22 @@ export default function BridgeEditModal({
   // so a new one is minted at the moment it is about to be written to a board.
   const rotateMutation = useMutation({
     mutationFn: () => api.devices.rotateSecret(orgId, bridge.id),
-    onSuccess: (d) => { setSecret(d.clientSecret); setReprovisioning(true); },
+    onSuccess: (d) => setSecret(d.clientSecret),
   });
 
+  const freshlyProvisioned = !!initialSecret;
   const savingBusy = bindMutation.isPending;
+  /** An outstanding secret is one the server has not yet seen used. */
+  const unwrittenSecret = !!secret && !confirmed;
+
+  function close() {
+    if (unwrittenSecret && !window.confirm(SECRET_LOSS_WARNING)) return;
+    onClose();
+  }
 
   async function save() {
     if (printerChanged) await bindMutation.mutateAsync();
-    onClose();
+    close();
   }
 
   return (
@@ -128,23 +155,35 @@ export default function BridgeEditModal({
         {/* ── Stored on the board ─────────────────────────────────────────── */}
         <div className="border-t border-gray-700 pt-4 space-y-2">
           <h3 className="text-white text-sm font-medium">Wi-Fi and credentials</h3>
-          <p className="text-xs text-gray-400">
-            Both live in the board&apos;s flash, and the firmware latches shut for good once
-            the server accepts its credentials. Changing the Wi-Fi password, moving the
-            bridge to a different printer, or issuing a fresh client secret all mean the
-            same physical job:
-          </p>
-          <ol className="text-xs text-gray-400 list-decimal ml-4 space-y-0.5">
-            <li>Hold the board&apos;s BOOT button for 5 seconds. It erases everything and reboots into setup.</li>
-            <li>Set it up again below — new Wi-Fi, printer and secret are written together.</li>
-          </ol>
 
-          {reprovisioning && secret ? (
+          {freshlyProvisioned ? (
+            // A board straight out of the box is unlocked, so none of the
+            // factory-reset ceremony below applies yet.
+            <p className="text-xs text-gray-400">
+              This bridge has credentials but nothing else. Write its Wi-Fi, its printer and
+              those credentials to the board over Bluetooth to finish setting it up.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-gray-400">
+                Both live in the board&apos;s flash, and the firmware latches shut for good once
+                the server accepts its credentials. Changing the Wi-Fi password, moving the
+                bridge to a different printer, or issuing a fresh client secret all mean the
+                same physical job:
+              </p>
+              <ol className="text-xs text-gray-400 list-decimal ml-4 space-y-0.5">
+                <li>Hold the board&apos;s BOOT button for 5 seconds. It erases everything and reboots into setup.</li>
+                <li>Set it up again below — new Wi-Fi, printer and secret are written together.</li>
+              </ol>
+            </>
+          )}
+
+          {secret ? (
             <BridgeProvisioningPanel
               clientId={bridge.clientId}
               secret={secret}
               printers={printers}
-              confirmed={false}
+              confirmed={confirmed}
             />
           ) : (
             <>
@@ -184,7 +223,7 @@ export default function BridgeEditModal({
           >
             {savingBusy ? 'Saving…' : 'Save'}
           </button>
-          <button onClick={onClose} className="flex-1 bg-surface-100 text-gray-300 text-sm rounded py-1.5">
+          <button onClick={close} className="flex-1 bg-surface-100 text-gray-300 text-sm rounded py-1.5">
             {printerChanged ? 'Cancel' : 'Close'}
           </button>
         </div>
