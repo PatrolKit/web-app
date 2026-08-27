@@ -45,7 +45,7 @@ const swap = await prisma.skiSwap.create({
 const device = await prisma.device.create({
   data: {
     orgId: org.id, name: 'Smoke bridge', clientId: `${SEED}-bridge`,
-    secretHash: await argon2.hash('smoke-secret'), role: 'Ski Swap - Network Printer Adapter',
+    secretHash: await argon2.hash('smoke-secret'), role: 'ski_swap.print_bridge',
   },
 });
 const printer = await prisma.swapPrinter.create({

@@ -60,7 +60,7 @@ describe('JwtService', () => {
       sub: 'client-id',
       deviceId: 'dev-1',
       orgId: 'org-1',
-      role: 'Ski Swap - Check-In',
+      role: 'ski_swap.staff_check_in',
     };
 
     it('round-trips sign/verify', async () => {
@@ -69,7 +69,7 @@ describe('JwtService', () => {
       expect(payload.sub).toBe('client-id');
       expect(payload.deviceId).toBe('dev-1');
       expect(payload.orgId).toBe('org-1');
-      expect(payload.role).toBe('Ski Swap - Check-In');
+      expect(payload.role).toBe('ski_swap.staff_check_in');
     });
 
     it('rejects a token signed by a different key', async () => {

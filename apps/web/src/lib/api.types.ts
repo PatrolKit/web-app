@@ -8,16 +8,35 @@
  * Mirrors `DeviceRoleSchema` in apps/api/src/contracts/devices.contracts.ts.
  */
 export const DEVICE_ROLES = [
-  { value: 'Ski Swap - Check-In', hint: 'A tablet staff use to check sellers in.' },
-  { value: 'Ski Swap - Bulk Seller', hint: 'A tablet for a business seller entering their own stock.' },
   {
-    value: 'Ski Swap - Network Printer Adapter',
-    hint: 'An ESP-32 that bridges wifi to a Phomemo over Bluetooth. Assign it to a check-in station once provisioned.',
+    value: 'ski_swap.staff_check_in',
+    label: 'Staff Check-In Station',
+    hint: 'A tablet staff use to check sellers in. Assign it to a station once provisioned.',
   },
-  { value: 'Time Clock', hint: 'A tablet patrollers clock in and out on.' },
+  {
+    value: 'ski_swap.print_bridge',
+    label: 'Print Bridge',
+    hint: 'An ESP-32 that bridges wifi to a Phomemo over Bluetooth. Assign it to a station once provisioned.',
+  },
+  {
+    value: 'time_clock.terminal',
+    label: 'Time Clock',
+    hint: 'A tablet patrollers clock in and out on.',
+  },
 ] as const;
 
 export type DeviceRole = (typeof DEVICE_ROLES)[number]['value'];
+
+/**
+ * The label for a role identifier.
+ *
+ * Identifiers are never shown to anyone — falling back to the raw value would
+ * leak `ski_swap.print_bridge` into the UI, so an unknown role is better named
+ * as unknown than printed verbatim.
+ */
+export function deviceRoleLabel(role: string): string {
+  return DEVICE_ROLES.find((r) => r.value === role)?.label ?? 'Unknown device';
+}
 
 // Shared types used by the web API client
 // These mirror the API contract shapes (source of truth is apps/api/src/contracts/)

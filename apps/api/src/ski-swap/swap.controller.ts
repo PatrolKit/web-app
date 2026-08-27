@@ -24,7 +24,7 @@ import { CreateSwapDto, PatchSwapDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/swaps')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('Ski Swap - Check-In', 'Ski Swap - Bulk Seller')
+@RequireDeviceRole('ski_swap.staff_check_in')
 @RequireModule('ski_swap')
 export class SwapController {
   constructor(private readonly swapService: SwapService) {}

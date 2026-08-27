@@ -18,7 +18,7 @@ import { ClaimJobsDto, NackJobDto } from '../contracts/ski-swap.contracts';
  */
 @Controller('devices/me/print-jobs')
 @UseGuards(DeviceAuthGuard, PermissionsGuard)
-@RequireDeviceRole('Ski Swap - Network Printer Adapter')
+@RequireDeviceRole('ski_swap.print_bridge')
 @SkipThrottle()
 export class PrintJobController {
   constructor(private readonly queue: PrintQueueService) {}

@@ -11,7 +11,7 @@ import { UpdateSkiSwapSettingsDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/settings')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('Ski Swap - Check-In', 'Ski Swap - Bulk Seller')
+@RequireDeviceRole('ski_swap.staff_check_in')
 @RequireModule('ski_swap')
 export class SkiSwapSettingsController {
   constructor(private readonly settingsService: SkiSwapSettingsService) {}

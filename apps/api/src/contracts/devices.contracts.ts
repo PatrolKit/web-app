@@ -3,15 +3,29 @@ import { createZodDto } from 'nestjs-zod';
 
 // ─── Role enumeration ─────────────────────────────────────────────────────────
 
+/**
+ * What kind of device this is, as a stable identifier.
+ *
+ * `module.thing`, never prose: a role used to be both a machine key and the
+ * string the UI printed, which is why renaming one was entangled with client
+ * routing. The module is the segment before the dot, so nothing has to match on
+ * English. Display labels live with the UI that renders them.
+ */
 export const DeviceRoleSchema = z.enum([
-  'Ski Swap - Check-In',
-  'Ski Swap - Bulk Seller',
-  /// An ESP-32 bridging wifi to a Phomemo over BLE. It never prints anything
-  /// itself — it claims jobs, forwards the bytes, and acks.
-  'Ski Swap - Network Printer Adapter',
-  'Time Clock',
+  /// A tablet staff check sellers in on.
+  'ski_swap.staff_check_in',
+  /// An ESP-32 bridging wifi to a Phomemo over BLE. It never renders anything
+  /// itself — it claims jobs, forwards the bytes, and reports the result.
+  'ski_swap.print_bridge',
+  /// A tablet patrollers clock in and out on.
+  'time_clock.terminal',
 ]);
 export type DeviceRole = z.infer<typeof DeviceRoleSchema>;
+
+/** The module a device belongs to, without matching on prose. */
+export function moduleOfRole(role: DeviceRole): string {
+  return role.split('.')[0];
+}
 
 // ─── Provision request / response ────────────────────────────────────────────
 

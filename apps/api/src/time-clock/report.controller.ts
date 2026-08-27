@@ -11,7 +11,7 @@ import { TimeClockReportService } from './report.service';
 
 @Controller('orgs/:orgId/time-clock/reports')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('Time Clock')
+@RequireDeviceRole('time_clock.terminal')
 @RequireModule('time_tracking')
 export class TimeClockReportController {
   constructor(private readonly reportService: TimeClockReportService) {}

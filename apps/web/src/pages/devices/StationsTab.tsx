@@ -26,7 +26,7 @@ import type {
 } from '../../lib/api.types';
 
 /** A bridge is only useful once bound to a station, and only to one. */
-const ADAPTER_ROLE = 'Ski Swap - Network Printer Adapter';
+const ADAPTER_ROLE = 'ski_swap.print_bridge';
 
 /**
  * Where staff set up and watch check-in stations.

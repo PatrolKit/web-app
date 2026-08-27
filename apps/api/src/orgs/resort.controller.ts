@@ -14,7 +14,7 @@ import { CreateResortDto, PatchResortDto } from '../contracts/org.contracts';
  */
 @Controller('orgs/:orgId/resorts')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, PermissionsGuard)
-@RequireDeviceRole('Time Clock')
+@RequireDeviceRole('time_clock.terminal')
 export class ResortController {
   constructor(private readonly resortService: ResortService) {}
 

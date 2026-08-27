@@ -3,7 +3,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../prisma/prisma.service';
 import { SkuService } from './sku.service';
 
-const ADAPTER_ROLE = 'Ski Swap - Network Printer Adapter';
+const ADAPTER_ROLE = 'ski_swap.print_bridge';
 
 export interface StationResponse {
   id: string;

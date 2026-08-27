@@ -26,9 +26,8 @@ import type {
  * single character and the pool is 32 wide.
  */
 const SKI_SWAP_ROLES = new Set<string>([
-  'Ski Swap - Check-In',
-  'Ski Swap - Bulk Seller',
-  'Ski Swap - Network Printer Adapter',
+  'ski_swap.staff_check_in',
+  'ski_swap.print_bridge',
 ]);
 
 @Injectable()

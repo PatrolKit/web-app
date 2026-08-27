@@ -36,7 +36,7 @@ const device = await prisma.device.create({
     name: 'Smoke bridge',
     clientId: 'smoke-bridge-1',
     secretHash: await argon2.hash(secret),
-    role: 'Ski Swap - Network Printer Adapter',
+    role: 'ski_swap.print_bridge',
   },
 });
 const printer = await prisma.swapPrinter.create({
@@ -116,7 +116,7 @@ ok('ack marks printed', row.status === 'printed' && row.printedAt !== null, row.
 // Another device may not touch this station's jobs
 const other = await prisma.device.create({
   data: { orgId: org.id, name: 'Smoke bridge 2', clientId: 'smoke-bridge-2',
-          secretHash: await argon2.hash(secret), role: 'Ski Swap - Network Printer Adapter' },
+          secretHash: await argon2.hash(secret), role: 'ski_swap.print_bridge' },
 });
 const tok2 = await fetch(`${BASE}/auth/device/token`, {
   method: 'POST', headers: { 'content-type': 'application/json' },
@@ -200,7 +200,7 @@ await prisma.printJob.deleteMany({ where: { stationId: station.id } });
 // A device of the wrong role is refused outright
 const checkin = await prisma.device.create({
   data: { orgId: org.id, name: 'Smoke iPad', clientId: 'smoke-bridge-3',
-          secretHash: await argon2.hash(secret), role: 'Ski Swap - Check-in Station' },
+          secretHash: await argon2.hash(secret), role: 'ski_swap.staff_check_in' },
 });
 const tok3 = await fetch(`${BASE}/auth/device/token`, {
   method: 'POST', headers: { 'content-type': 'application/json' },

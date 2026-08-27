@@ -19,7 +19,7 @@ import StationsTab from './StationsTab';
 import type { AppShellContext } from '../../components/AppShell';
 import type { DeviceItem, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 
-import { DEVICE_ROLES } from '../../lib/api.types';
+import { DEVICE_ROLES, deviceRoleLabel } from '../../lib/api.types';
 import type { DeviceRole } from '../../lib/api.types';
 
 type Tab = 'devices' | 'printers' | 'stations';
@@ -192,7 +192,7 @@ function ProvisioningCodeCard({ clientId, secret, role, printers, onDismiss }: {
   // A bridge takes its credentials over Bluetooth, so the code is dead weight
   // there. Every other role is an iOS tablet, and the code is the only way it
   // gets provisioned.
-  const isBridge = role === 'Ski Swap - Network Printer Adapter';
+  const isBridge = role === 'ski_swap.print_bridge';
 
   const payload = JSON.stringify({
     v: 1, cid: clientId, sec: secret,
@@ -258,7 +258,7 @@ export default function DevicesPage() {
 
   // ─── Provisioned devices state ────────────────────────────────────────────
   const [provisionName, setProvisionName] = useState('');
-  const [provisionRole, setProvisionRole] = useState<DeviceRole>('Ski Swap - Check-In');
+  const [provisionRole, setProvisionRole] = useState<DeviceRole>('ski_swap.staff_check_in');
   const [showProvisionForm, setShowProvisionForm] = useState(false);
   const [editingRole, setEditingRole] = useState<{
     id: string;
@@ -284,7 +284,7 @@ export default function DevicesPage() {
     onSuccess: (d) => {
       setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, role: provisionRole });
       setProvisionName('');
-      setProvisionRole('Ski Swap - Check-In');
+      setProvisionRole('ski_swap.staff_check_in');
       setShowProvisionForm(false);
       qc.invalidateQueries({ queryKey: ['devices', orgId] });
     },
@@ -475,7 +475,7 @@ export default function DevicesPage() {
           {perms.has('devices:provision') && (
             <div className="flex justify-end">
               <button
-                onClick={() => { setShowProvisionForm(true); setProvisionName(''); setProvisionRole('Ski Swap - Check-In'); provisionMutation.reset(); }}
+                onClick={() => { setShowProvisionForm(true); setProvisionName(''); setProvisionRole('ski_swap.staff_check_in'); provisionMutation.reset(); }}
                 className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
               >
                 + Provision Device
@@ -502,7 +502,7 @@ export default function DevicesPage() {
                 className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
               >
                 {DEVICE_ROLES.map((r) => (
-                  <option key={r.value} value={r.value}>{r.value}</option>
+                  <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
               </select>
               {/* "Network Printer Adapter" says nothing about what the box does
@@ -552,7 +552,7 @@ export default function DevicesPage() {
                         className="text-xs bg-surface-100 border border-gray-600 rounded px-2 py-0.5 text-white"
                       >
                         {DEVICE_ROLES.map((r) => (
-                          <option key={r.value} value={r.value}>{r.value}</option>
+                          <option key={r.value} value={r.value}>{r.label}</option>
                         ))}
                       </select>
                       <button onClick={() => updateRoleMutation.mutate({ id: d.id, role: editingRole.value })} disabled={updateRoleMutation.isPending} className="text-xs text-green-400 hover:underline">Save</button>
@@ -560,7 +560,7 @@ export default function DevicesPage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-1 mt-1">
-                      <span className="text-xs text-gray-400">{d.role}</span>
+                      <span className="text-xs text-gray-400">{deviceRoleLabel(d.role)}</span>
                       {perms.has('devices:provision') && (
                         <button onClick={() => setEditingRole({ id: d.id, value: d.role })} className="text-xs text-gray-600 hover:text-gray-400" aria-label="Edit role">✎</button>
                       )}

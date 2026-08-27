@@ -11,7 +11,7 @@ import { UpdateTimeClockSettingsDto } from '../contracts/time-clock.contracts';
 
 @Controller('orgs/:orgId/time-clock/settings')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('Time Clock')
+@RequireDeviceRole('time_clock.terminal')
 @RequireModule('time_tracking')
 export class TimeClockSettingsController {
   constructor(private readonly settingsService: TimeClockSettingsService) {}

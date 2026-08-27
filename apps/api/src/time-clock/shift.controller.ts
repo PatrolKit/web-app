@@ -13,7 +13,7 @@ import { PatchShiftDto } from '../contracts/time-clock.contracts';
 
 @Controller('orgs/:orgId/time-clock/shifts')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('Time Clock')
+@RequireDeviceRole('time_clock.terminal')
 @RequireModule('time_tracking')
 export class ShiftController {
   constructor(private readonly shiftService: ShiftService) {}

@@ -31,7 +31,7 @@ import { CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDt
 
 @Controller('orgs/:orgId/ski-swap/sellers')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('Ski Swap - Check-In', 'Ski Swap - Bulk Seller')
+@RequireDeviceRole('ski_swap.staff_check_in')
 @RequireModule('ski_swap')
 export class SellerController {
   constructor(

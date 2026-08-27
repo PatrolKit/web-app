@@ -32,7 +32,7 @@ import {
 
 @Controller('orgs/:orgId/time-clock/patrollers')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('Time Clock')
+@RequireDeviceRole('time_clock.terminal')
 @RequireModule('time_tracking')
 export class PatrollerController {
   constructor(private readonly patrollerService: PatrollerService) {}
