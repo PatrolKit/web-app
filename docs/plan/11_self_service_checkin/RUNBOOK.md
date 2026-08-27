@@ -23,41 +23,29 @@ it prints.
 
 ## Reading the stations tab
 
-Each station shows `N queued · N printing · bridge <state>`.
-
-Each station leads with **one line saying whether it can print right now** — that
-is the thing to scan down the list for. Under it, two dots say which half is at
-fault: the first is the bridge, the second is its link to the printer.
+Each station shows **one line saying whether it can print right now**. That is
+the whole status — scan down the list for anything that is not green.
 
 | Station line | What to do |
 |---|---|
 | **Ready** | Nothing. |
 | **Printing — N in the queue** | Nothing. It is draining. |
-| **Cannot reach the printer** | Printer power, or something else paired to it. |
-| **Offline — bridge quiet Nm** | Bridge power and wifi. |
-| **Online — printer unconfirmed** | Older firmware that does not report its link. Send a **Test** print. |
 | **N labels gave up** | Fix the printer, then **Clear** and have sellers reprint. |
+| **Online — printer unconfirmed** | The bridge is not reporting its printer link. Send a **Test** print; if it works, the bridge needs a firmware update. |
+| **Cannot reach the printer** | Printer power, or something else paired to it. |
+| **Offline** | Bridge power and wifi. Hover for how long it has been silent. |
 | **Needs a bridge / a printer** | Bind one from the dropdowns on the row. |
 
-The dots underneath:
-
-| What you see | What it means |
-|---|---|
-| **Bridge online** · **Printer connected** | Healthy. Work will drain. |
-| **Bridge online** · **Printer unreachable** | The bridge is fine; the printer is off, asleep, or paired to something else. |
-| **Bridge quiet 4m** · **Printer unknown** | The bridge is not talking to us, so its last word on the printer means nothing. Power and wifi. |
-| **No bridge assigned** | Nothing will print here until one is bound. |
-| `N failed` | A recipe stopped resolving — usually the item was deleted mid-print. |
-| `N gave up` | Retried to the cap and abandoned. Something is wrong with the printer. |
-
-Depth alone says nothing: work behind a working bridge is just a busy counter.
-It is depth *plus* a dot that is not green that means someone has to move.
+Underneath are the queue counts — queued, printing, and anything failed or given
+up on. Depth alone says nothing: work behind a **Ready** station is just a busy
+counter. It is depth plus a status that is not green that means someone has to
+move.
 
 **There is no out-of-paper indicator, and that is not an oversight.** A Phomemo
 out of labels — or jammed, or with its cover open — still accepts every byte and
 still reports success. Nothing in the bridge, the web client, or the iOS app can
-tell the difference. **Check the roll by eye.** A green "Printer connected" means
-the bridge can talk to it, and nothing more.
+tell the difference. **Check the roll by eye.** **Ready** means the bridge can
+reach the printer, and nothing more.
 
 ## Symptoms
 

@@ -258,39 +258,22 @@ function StationRow({
       </div>
 
       {queue && (
-        <div className="space-y-2 border-t border-gray-800 pt-3">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <Indicator
-              label={bridgeLabel(station, queue)}
-              tone={bridgeTone(station, queue)}
-            />
-            <Indicator
-              label={printerLabel(station, queue)}
-              tone={printerTone(station, queue)}
-              // Worth saying plainly: a printer out of labels still accepts
-              // every byte and reports success, so a green light here is not a
-              // promise that anything came out.
-              title="Whether the bridge can reach the printer. It cannot tell whether labels are loaded — a printer out of paper still reports success."
-            />
-          </div>
-
-          <div className="flex items-center gap-4 text-xs text-gray-400">
-            <span>{queue.queued} queued</span>
-            <span>{queue.claimed} printing</span>
-            {queue.failed > 0 && <span className="text-amber-400">{queue.failed} failed</span>}
-            {queue.abandoned > 0 && (
-              <span className="text-amber-400">{queue.abandoned} gave up</span>
-            )}
-            {queue.queued > 0 && canAdmin && (
-              <button
-                className="ml-auto text-gray-500 hover:text-red-300"
-                onClick={() => clear.mutate()}
-                title="Discard queued work nobody wants any more"
-              >
-                Clear
-              </button>
-            )}
-          </div>
+        <div className="flex items-center gap-4 text-xs text-gray-400 border-t border-gray-800 pt-3">
+          <span>{queue.queued} queued</span>
+          <span>{queue.claimed} printing</span>
+          {queue.failed > 0 && <span className="text-amber-400">{queue.failed} failed</span>}
+          {queue.abandoned > 0 && (
+            <span className="text-amber-400">{queue.abandoned} gave up</span>
+          )}
+          {queue.queued > 0 && canAdmin && (
+            <button
+              className="ml-auto text-gray-500 hover:text-red-300"
+              onClick={() => clear.mutate()}
+              title="Discard queued work nobody wants any more"
+            >
+              Clear
+            </button>
+          )}
         </div>
       )}
 
@@ -326,9 +309,12 @@ function StationStatus({
   station: CheckinStationRecord;
   queue: StationQueueStatus;
 }) {
-  const { icon, label, tone, spin } = rollUp(station, queue);
+  const { icon, label, tone, spin, title } = rollUp(station, queue);
   return (
-    <span className={`flex items-center gap-1.5 text-sm mt-0.5 ${TEXT_TONE[tone]}`}>
+    <span
+      className={`flex items-center gap-1.5 text-sm mt-0.5 ${TEXT_TONE[tone]}`}
+      title={title}
+    >
       <FontAwesomeIcon icon={icon} spin={spin} />
       {label}
     </span>
@@ -340,6 +326,7 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): {
   label: string;
   tone: Tone;
   spin?: boolean;
+  title?: string;
 } {
   if (!station.deviceId || !station.printerId) {
     const missing = !station.deviceId && !station.printerId
@@ -353,8 +340,9 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): {
     // source of every other signal here.
     return {
       icon: faPlugCircleXmarkDuo,
-      label: `Offline — bridge ${lastSeenLabel(queue.deviceLastSeenAt)}`,
+      label: 'Offline',
       tone: queue.queued > 0 ? 'bad' : 'warn',
+      title: lastSeenTitle(queue.deviceLastSeenAt),
     };
   }
 
@@ -385,7 +373,15 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): {
     };
   }
 
-  return { icon: faCircleCheckDuo, label: 'Ready', tone: 'ok' };
+  return {
+    icon: faCircleCheckDuo,
+    label: 'Ready',
+    tone: 'ok',
+    // Worth saying plainly wherever we claim health: a printer out of labels,
+    // jammed, or open still accepts every byte and reports success, so this is
+    // never a promise that anything came out.
+    title: 'The bridge is online and can reach its printer. It cannot tell whether labels are loaded — check the roll by eye.',
+  };
 }
 
 type Tone = 'ok' | 'warn' | 'bad' | 'unknown';
@@ -397,67 +393,20 @@ const TEXT_TONE: Record<Tone, string> = {
   unknown: 'text-gray-500',
 };
 
-const TONE_CLASS: Record<Tone, string> = {
-  ok: 'bg-green-500',
-  warn: 'bg-amber-400',
-  bad: 'bg-red-500',
-  unknown: 'bg-gray-600',
-};
-
-function Indicator({ label, tone, title }: { label: string; tone: Tone; title?: string }) {
-  return (
-    <span className="flex items-center gap-1.5 text-xs text-gray-300" title={title}>
-      <span className={`w-2 h-2 rounded-full ${TONE_CLASS[tone]}`} />
-      {label}
-    </span>
-  );
-}
-
-function bridgeTone(station: CheckinStationRecord, queue: StationQueueStatus): Tone {
-  if (!station.deviceId) return 'unknown';
-  if (recentlySeen(queue.deviceLastSeenAt)) return 'ok';
-  // Silence only matters once there is work it should be collecting.
-  return queue.queued > 0 ? 'bad' : 'warn';
-}
-
-function bridgeLabel(station: CheckinStationRecord, queue: StationQueueStatus): string {
-  if (!station.deviceId) return 'No bridge assigned';
-  return `Bridge ${lastSeenLabel(queue.deviceLastSeenAt)}`;
-}
-
-/**
- * The printer light describes the *bridge's* link to it, which is the only
- * thing anyone can observe. A bridge that has gone quiet tells us nothing
- * current, so its last answer is greyed rather than shown as fact.
- */
-function printerTone(station: CheckinStationRecord, queue: StationQueueStatus): Tone {
-  if (!station.printerId) return 'unknown';
-  if (!recentlySeen(queue.deviceLastSeenAt)) return 'unknown';
-  if (queue.printerLink === 'ready') return 'ok';
-  if (queue.printerLink === 'down') return 'bad';
-  return 'unknown';
-}
-
-function printerLabel(station: CheckinStationRecord, queue: StationQueueStatus): string {
-  if (!station.printerId) return 'No printer assigned';
-  if (!recentlySeen(queue.deviceLastSeenAt)) return 'Printer unknown';
-  if (queue.printerLink === 'ready') return 'Printer connected';
-  if (queue.printerLink === 'down') return 'Printer unreachable';
-  return 'Printer not reported';
-}
-
 /** A bridge polls about once a second, so a minute of silence is a real signal. */
 function recentlySeen(iso: string | null): boolean {
   if (!iso) return false;
   return Date.now() - new Date(iso).getTime() < 60_000;
 }
 
-function lastSeenLabel(iso: string | null): string {
-  if (!iso) return 'never seen';
+/** How long it has been silent, for the tooltip — the label just says Offline. */
+function lastSeenTitle(iso: string | null): string {
+  if (!iso) return 'This bridge has never checked in.';
   const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return 'online';
-  if (seconds < 3600) return `quiet ${Math.round(seconds / 60)}m`;
-  return `quiet ${Math.round(seconds / 3600)}h`;
+  const ago = seconds < 3600
+    ? `${Math.max(1, Math.round(seconds / 60))} minutes`
+    : `${Math.round(seconds / 3600)} hours`;
+  return `Last checked in ${ago} ago.`;
 }
 
 /**
