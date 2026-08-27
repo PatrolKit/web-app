@@ -25,8 +25,21 @@ it prints.
 
 Each station shows `N queued · N printing · bridge <state>`.
 
-Two dots say what is working. The first is the bridge, the second is its link to
-the printer.
+Each station leads with **one line saying whether it can print right now** — that
+is the thing to scan down the list for. Under it, two dots say which half is at
+fault: the first is the bridge, the second is its link to the printer.
+
+| Station line | What to do |
+|---|---|
+| **Ready** | Nothing. |
+| **Printing — N in the queue** | Nothing. It is draining. |
+| **Cannot reach the printer** | Printer power, or something else paired to it. |
+| **Offline — bridge quiet Nm** | Bridge power and wifi. |
+| **Online — printer unconfirmed** | Older firmware that does not report its link. Send a **Test** print. |
+| **N labels gave up** | Fix the printer, then **Clear** and have sellers reprint. |
+| **Needs a bridge / a printer** | Bind one from the dropdowns on the row. |
+
+The dots underneath:
 
 | What you see | What it means |
 |---|---|

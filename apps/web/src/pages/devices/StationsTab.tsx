@@ -2,11 +2,19 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  faCircleCheck as faCircleCheckDuo,
+  faCircleExclamation as faCircleExclamationDuo,
+  faCircleQuestion as faCircleQuestionDuo,
+  faLinkSlash as faLinkSlashDuo,
+  faPlugCircleXmark as faPlugCircleXmarkDuo,
   faPrint as faPrintDuo,
+  faPrintSlash as faPrintSlashDuo,
   faQrcode as faQrcodeDuo,
+  faSpinner as faSpinnerDuo,
   faTrash as faTrashDuo,
   faTriangleExclamation as faTriangleExclamationDuo,
 } from '@fortawesome/pro-duotone-svg-icons';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import QRCode from 'react-qr-code';
 import { api } from '../../lib/api';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
@@ -175,11 +183,15 @@ function StationRow({
     <li className="bg-surface-50 border border-gray-800 rounded-lg p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-white font-medium">
+          <h3 className="text-white font-medium flex items-center gap-2">
             {station.name}
-            <span className="ml-2 text-xs font-mono text-gray-500">code {station.code}</span>
+            <span className="text-xs font-mono text-gray-500">code {station.code}</span>
           </h3>
-          <p className="text-xs text-gray-500">
+          {/* One line for "can this station print right now", so a row can be
+              read at a glance across a venue. The two indicators below say
+              which half is at fault. */}
+          {queue && <StationStatus station={station} queue={queue} />}
+          <p className="text-xs text-gray-500 mt-1">
             Every SKU printed here reads <span className="font-mono">…-{station.code}-nnnn</span>
           </p>
         </div>
@@ -300,7 +312,90 @@ function StationRow({
   );
 }
 
+/**
+ * The whole station in one line.
+ *
+ * Ordered by what stops a tag reaching a seller's hand, worst first, so the
+ * label always names the thing someone has to go and fix. The dots underneath
+ * stay — this says whether to walk over, they say what to bring.
+ */
+function StationStatus({
+  station,
+  queue,
+}: {
+  station: CheckinStationRecord;
+  queue: StationQueueStatus;
+}) {
+  const { icon, label, tone, spin } = rollUp(station, queue);
+  return (
+    <span className={`flex items-center gap-1.5 text-sm mt-0.5 ${TEXT_TONE[tone]}`}>
+      <FontAwesomeIcon icon={icon} spin={spin} />
+      {label}
+    </span>
+  );
+}
+
+function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): {
+  icon: IconDefinition;
+  label: string;
+  tone: Tone;
+  spin?: boolean;
+} {
+  if (!station.deviceId || !station.printerId) {
+    const missing = !station.deviceId && !station.printerId
+      ? 'a bridge and a printer'
+      : !station.deviceId ? 'a bridge' : 'a printer';
+    return { icon: faLinkSlashDuo, label: `Needs ${missing}`, tone: 'unknown' };
+  }
+
+  if (!recentlySeen(queue.deviceLastSeenAt)) {
+    // Nothing can print, and nothing below is current — the bridge is the
+    // source of every other signal here.
+    return {
+      icon: faPlugCircleXmarkDuo,
+      label: `Offline — bridge ${lastSeenLabel(queue.deviceLastSeenAt)}`,
+      tone: queue.queued > 0 ? 'bad' : 'warn',
+    };
+  }
+
+  if (queue.printerLink === 'down') {
+    return { icon: faPrintSlashDuo, label: 'Cannot reach the printer', tone: 'bad' };
+  }
+
+  if (queue.printerLink === null) {
+    // An older bridge that does not report its link yet. Saying "ready" would
+    // be a guess about the half we cannot see.
+    return { icon: faCircleQuestionDuo, label: 'Online — printer unconfirmed', tone: 'warn' };
+  }
+
+  if (queue.abandoned > 0) {
+    return {
+      icon: faCircleExclamationDuo,
+      label: `${queue.abandoned} label${queue.abandoned === 1 ? '' : 's'} gave up`,
+      tone: 'warn',
+    };
+  }
+
+  if (queue.queued > 0 || queue.claimed > 0) {
+    return {
+      icon: faSpinnerDuo,
+      label: `Printing — ${queue.queued + queue.claimed} in the queue`,
+      tone: 'ok',
+      spin: true,
+    };
+  }
+
+  return { icon: faCircleCheckDuo, label: 'Ready', tone: 'ok' };
+}
+
 type Tone = 'ok' | 'warn' | 'bad' | 'unknown';
+
+const TEXT_TONE: Record<Tone, string> = {
+  ok: 'text-green-400',
+  warn: 'text-amber-400',
+  bad: 'text-red-400',
+  unknown: 'text-gray-500',
+};
 
 const TONE_CLASS: Record<Tone, string> = {
   ok: 'bg-green-500',
