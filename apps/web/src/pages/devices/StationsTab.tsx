@@ -393,20 +393,37 @@ const TEXT_TONE: Record<Tone, string> = {
   unknown: 'text-gray-500',
 };
 
-/** A bridge polls about once a second, so a minute of silence is a real signal. */
+/**
+ * A bridge heartbeats every 1–5 seconds, so 20 is four missed beats.
+ *
+ * Chosen against the moment that matters: a seller standing at the counter
+ * watching "Printing…" while nothing comes out. A minute of grace was kinder to
+ * flaky venue wifi, but it meant staff learned nothing for over a minute after
+ * a bridge died. Four missed beats still rides out a dropped packet or two.
+ */
+const OFFLINE_AFTER_MS = 20_000;
+
 function recentlySeen(iso: string | null): boolean {
   if (!iso) return false;
-  return Date.now() - new Date(iso).getTime() < 60_000;
+  return Date.now() - new Date(iso).getTime() < OFFLINE_AFTER_MS;
 }
 
-/** How long it has been silent, for the tooltip — the label just says Offline. */
+/**
+ * How long it has been silent, for the tooltip — the label just says Offline.
+ *
+ * Seconds matter here: a station is called offline after twenty of them, so
+ * most of what this describes is under a minute.
+ */
 function lastSeenTitle(iso: string | null): string {
   if (!iso) return 'This bridge has never checked in.';
-  const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-  const ago = seconds < 3600
-    ? `${Math.max(1, Math.round(seconds / 60))} minutes`
-    : `${Math.round(seconds / 3600)} hours`;
-  return `Last checked in ${ago} ago.`;
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (seconds < 60) return `Last checked in ${plural(seconds, 'second')} ago.`;
+  if (seconds < 3600) return `Last checked in ${plural(Math.round(seconds / 60), 'minute')} ago.`;
+  return `Last checked in ${plural(Math.round(seconds / 3600), 'hour')} ago.`;
+}
+
+function plural(n: number, unit: string): string {
+  return `${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
 /**
