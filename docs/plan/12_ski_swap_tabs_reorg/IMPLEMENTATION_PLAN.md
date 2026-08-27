@@ -73,11 +73,11 @@ introduced in `9ecf5f7`, when a free-form role string became an enum.
 | **D8** | **`Ski Swap - Bulk Seller` is deleted outright.** | It grants nothing the check-in role does not. Leaving it costs a SKU code per device and offers a third option in a dropdown that misleads — the current UI hint describes a behaviour that was never built. |
 | **D9** | **The Devices nav item retires.** Ski Swap takes printers and stations; Time Tracking takes time-clock devices. | The permission model already assigns them that way. See §7 for what is lost with it, which is real. |
 | **D10** | **A staff station's bridge is optional, and when bound it owns printing.** The iPad saves an item, the server renders, the station's bridge prints — exactly as self-service does. | A bridge holds its printer's BLE link continuously, reconnecting forever because the unit is unattended, so an iPad cannot share that printer while a bridge owns it. One of them drives it. Optional means a counter can start as an iPad and a printer and gain a bridge later without being re-modelled. |
-| **D11** | **The Bluetooth override is always available — it is not a fallback the app switches into.** Staff can pick any known printer and print directly, whenever they want. | No mode detection, no "is the network down" heuristic, no automatic switching to get wrong. It also needs no spare hardware: a printer held by a live bridge refuses the connection, and unplugging that bridge is what frees it — which is both the remedy when the bridge has failed and the way to deliberately take a printer over. One requirement falls out of this: the list of printers has to be readable without the network. Fetched on demand, the override is unavailable in exactly the case it exists for. |
-| **D12** | **An override print must not also enqueue.** An item whose tag was printed over Bluetooth arrives marked printed, and the server skips the enqueue. | The tag is already on the ski by the time the server hears about the item — immediately if the app was online, later if it was not. Enqueueing anyway puts a second tag through the bridge, and if it happened during an outage it happens for every item checked in during it, discovered as a pile of orphan tags nobody can place. |
+| **D11** | **The Bluetooth override is always available — it is not a fallback the app switches into.** Staff can pick any known printer and print directly, whenever they want. | No mode detection, no "is the network down" heuristic, nothing automatic to get wrong. It also needs no spare hardware: a printer held by a live bridge refuses the connection, and unplugging that bridge is what frees it — both the remedy when a bridge has failed and the way to take a printer over deliberately. One requirement falls out: the printer list has to be readable without the network, or the override is unavailable in exactly the case it exists for. |
+| **D12** | **An override print must not also enqueue.** An item whose tag was printed over Bluetooth arrives marked printed, and the server skips the enqueue. | The tag is already on the ski by the time the server hears about the item — immediately if the app was online, later if it was not. Enqueueing anyway puts a second tag through the bridge, and during an outage it does so for every item checked in, discovered later as a pile of orphan tags nobody can place. |
 | **D13** | **The station's code applies however the tag was printed.** | The code records *where an item was checked in*, not how the paper came out. A tag printed over Bluetooth because the bridge was down still belongs to that counter, and a SKU whose namespace depended on the print path would be useless for tracing. |
 | **D14** | **Module admins provision their own hardware.** `ski_swap:admin` may create, rotate and revoke ski-swap devices; `time_tracking:manage` the same for time clocks. **`devices:read`, `devices:provision` and `devices:revoke` retire with the page.** | Retiring Devices without this reproduces the bug it is meant to fix, one page over. A module admin who can already configure a station is not meaningfully restrained by being unable to create the box that serves it. Keeping `devices:*` as a second axis would mean a ski-swap admin could provision a time clock, or — as today — configure a station they cannot supply hardware for. |
-| **D15** | **A printer serves exactly one thing.** One station at most, or one business seller at most, never both and never two of either. | A printer is a single BLE peripheral: whoever holds the link owns it. Two stations sharing one means two bridges fighting for it — the contention D10 exists to avoid, arrived at from a different direction. A station and a business seller sharing one is the same failure with a worse symptom: the bridge wins, and the seller's printing stops with nothing on screen to explain why. `CheckinStation.printerId` becomes unique, which covers station-to-station; the seller case is a cross-table rule and has to be enforced on both write paths. |
+| **D15** | **A printer serves exactly one thing.** One station at most, or one business seller at most, never both and never two of either. | A printer is a single BLE peripheral: whoever holds the link owns it. Two stations sharing one means two bridges fighting for it — the contention D10 exists to avoid, arrived at from a different direction. A station and a business seller sharing one is the same failure with a worse symptom: the bridge wins, and the seller's printing stops with nothing on screen to explain why. |
 
 ## 4. The model
 
@@ -94,9 +94,10 @@ model CheckinStation {
   /// The staff iPad stationed at this counter. Its presence is what makes the
   /// station staffed rather than self-service (D2).
   attendantDeviceId String? @unique
-  /// The bridge that prints for this station. Required for self-service — a
-  /// seller has no other way to get a tag — and optional for staffed, where the
-  /// iPad can print over Bluetooth instead (D10, D11).
+  /// The bridge that prints for this station — formerly `deviceId`, renamed now
+  /// that a station holds two devices. Required for self-service, since a seller
+  /// has no other way to get a tag; optional for staffed, where the iPad can
+  /// print over Bluetooth instead (D10, D11).
   bridgeDeviceId    String? @unique
   /// The printer at this counter, whoever ends up driving it. Unique: a printer
   /// serves one station at most (D15). MySQL permits many NULLs in a unique
@@ -123,12 +124,9 @@ model Device {
 }
 ```
 
-`CheckinStation.deviceId` becomes `bridgeDeviceId` — same column, a name that says
-which of the two devices it holds.
-
 `SwapPrinter.assignedSellerId` is unchanged in shape: it still pins a printer to a business
-seller (D6). What changes is that it and `CheckinStation.printerId` are now mutually exclusive
-(D15). No schema can express that across two tables, so it is enforced on both write paths and
+seller (D6). What changes is that it and `CheckinStation.printerId` are now mutually exclusive.
+No schema expresses that across two tables, so it is enforced on both write paths and
 reflected in both pickers:
 
 - Binding a printer to a station refuses one that is assigned to a seller.
@@ -162,7 +160,7 @@ already asserts the web's role list matches `DeviceRoleSchema`, so a rename that
 side fails there rather than in a dropdown. It should grow a second assertion: every role has
 a label, since an identifier leaking into the UI is now a visible bug rather than merely ugly.
 
-## 6. Navigation
+## 6. Navigation and permissions
 
 ```
 Ski Swap
@@ -174,7 +172,7 @@ Time Tracking
 
 **Check-in** lists every station, staffed and self-service, with the rolled-up status from
 Plan 11. Both kinds show a driver, a printer, a queue and a status; only self-service ones
-offer a QR. Provisioning a driver happens here — "add a station" then "provision its iPad" or
+offer a QR. Provisioning a driver happens here — "add a station", then "provision its iPad" or
 "provision its bridge", creating the credential and binding it in one step, rather than
 sending someone to another page to make a device and come back.
 
@@ -186,8 +184,9 @@ revoke, last seen.
 
 ### Permissions and the seed
 
-`devices:read`, `devices:provision` and `devices:revoke` retire with the page (D14). Module
-hardware is authorised by the module's own admin permission:
+`devices:read`, `devices:provision` and `devices:revoke` retire with the page (D14). They come
+out of the permission table, the seeded grants, and every role that references them. Module
+hardware is authorised by the module's own admin permission instead:
 
 | Operation | Authorised by |
 |---|---|
@@ -197,22 +196,16 @@ hardware is authorised by the module's own admin permission:
 | View station status, queue depth, send a test print | `ski_swap:report` |
 
 **The seed has to move with this**, or the plan fixes the bug on paper and leaves it in place.
-`swap-admin@example.com` holds the three ski-swap permissions and nothing else — which is the
-right grant once `ski_swap:admin` authorises ski-swap hardware, and the wrong one today. The
-three retired permissions come out of the permission table, the seeded grants, and every role
-that references them.
+`swap-admin@example.com` holds the three ski-swap permissions and nothing else — the right
+grant once `ski_swap:admin` authorises ski-swap hardware, and the wrong one today.
 
-Worth checking against a real org before this lands: the seed is a fixture, and if anyone out
-there holds `devices:*` without a module admin permission, they lose access rather than gain
-it. At one org with one super admin that is theoretical, but it is the kind of thing that is
-theoretical right up until it is not.
+One migration risk worth checking against a real org first: anyone holding `devices:*` without
+a module admin permission loses access rather than gains it. At one org with one super admin
+that is theoretical, but it is cheap to check and expensive to discover.
 
-Two pieces of cleanup fall out of touching this nav. `SkiSwapLayout` still gates on
-`business_seller` ([line 110](../../../apps/web/src/pages/ski-swap/SkiSwapLayout.tsx)), a
-permission retired in Plan 10 — the same bug already fixed in `App.tsx` and `AppShell` still
-carries it too. And the `devices:read` / `devices:provision` / `devices:revoke` permissions
-survive as the authority for credential operations; they simply no longer gate a page of
-their own.
+While in this nav, fix `SkiSwapLayout`, which still gates on `business_seller`
+([line 110](../../../apps/web/src/pages/ski-swap/SkiSwapLayout.tsx)) — a permission retired in
+Plan 10. `AppShell` carries the same stale check; `App.tsx` was already fixed.
 
 ## 7. What retiring Devices costs
 
@@ -234,8 +227,7 @@ has more than a few orgs in it.
 
 ## 8. What the iOS rewrite has to implement
 
-The app is being rebuilt, so this is a contract rather than a migration. Nothing above is
-shaped to keep the outgoing app working.
+The app is being rebuilt, so this is a contract rather than a migration.
 
 **Identity.** A device authenticates with its client id and secret and reads its own record.
 That record names the station it is bound to — id, name, and the station's SKU code — or says
@@ -252,7 +244,7 @@ than failing at the first item.
 
 The server supports both; the plan does not assume either.
 
-**Printing.** Two paths, and the app chooses per print rather than per session:
+**Printing.** Two paths, chosen per print rather than per session:
 
 - **Bound station, reachable server** — save the item and let the station's bridge print it.
   The app does not touch Bluetooth.
@@ -262,8 +254,7 @@ The server supports both; the plan does not assume either.
   bridge will refuse the connection; unplugging that bridge frees it.
 
 **An override print reports itself printed** (D12), so the server skips the enqueue when the
-item arrives. Without it, every item checked in during an outage prints a second tag once the
-bridge is back — discovered as a pile of orphan tags nobody can place.
+item arrives.
 
 ## 9. Phases
 
@@ -280,12 +271,11 @@ the station it is bound to. Wipe and reseed.
 **Phase 3 — Navigation and permissions.** Move Printers and Check-in under Ski Swap, move
 time-clock devices under Time Tracking, retire the Devices nav item and route, retire the
 three `devices:*` permissions, and reseed the roles so a module admin can supply their own
-hardware. Inline driver provisioning on the
-Check-in tab. Fix the two `business_seller` gates while in here.
+hardware. Fix the two `business_seller` gates while in here.
 
 **Phase 4 — Check-in tab.** One list, both kinds, rolled-up status, QR only where it means
-something. Provision-and-bind in one step. A staffed station shows its printer whether or not
-a bridge drives it.
+something, and provision-and-bind in one step. A staffed station shows its printer whether or
+not a bridge drives it.
 
 **Phase 5 — The staff print path, server side.** Accept `stationId` and an already-printed
 flag on the staff item-create path, and skip the enqueue when the flag is set. Small, and it
@@ -301,9 +291,12 @@ them touch this work:
 - `smoke-checkin.mjs` — the whole self-service walk, including SKUs carrying the station code.
 - `smoke-sku-concurrency.mjs` — the 32-code pool and the 13-character barcode ceiling.
 
-Add to that: a printer cannot be bound to two stations, nor to a station and a seller at once,
-from either direction (D15); a retired station releases its printer; a staffed station mints
-SKUs under its own station code; an unbound iPad is told
-it has no station rather than minting under a null one; and an item arriving already marked
-printed does not queue a tag (D12) — the duplicate that check exists to prevent is invisible
-until a bridge comes back and prints a pile of orphans.
+Add to those:
+
+- A printer cannot be bound to two stations, nor to a station and a seller, from either
+  direction (D15).
+- A retired station releases its printer.
+- A staffed station mints SKUs under its own station code.
+- An unbound iPad is told it has no station rather than minting under a null one.
+- An item arriving already marked printed does not queue a tag (D12) — the duplicate this
+  prevents is invisible until a bridge comes back.
