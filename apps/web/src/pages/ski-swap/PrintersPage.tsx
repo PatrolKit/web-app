@@ -188,7 +188,15 @@ export default function PrintersPage() {
 
   return (
     <div className="space-y-6">
-        <div className="space-y-4">
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-white font-medium">Printers</h2>
+            <p className="text-xs text-gray-500">
+              The Phomemos this org owns: what paper each one carries and the margins it
+              needs. A printer is reached either through a bridge below, or over Bluetooth
+              from whoever is holding it.
+            </p>
+          </div>
           <div className="flex justify-end">
             <button
               onClick={() => { setShowPrinterForm(true); setPrinterName(''); setPrinterBtName(''); setPrinterPaperSize(''); setPrinterFormError(null); }}
