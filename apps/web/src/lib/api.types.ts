@@ -134,6 +134,8 @@ export interface DeviceItem {
   printerLinkAt: string | null;
   /** The printer a bridge drives — and what the bridge is called. Null otherwise. */
   printerName: string | null;
+  /** The station a bridge serves. Null when nothing routes work to it. */
+  stationName: string | null;
   createdAt: string;
 }
 
@@ -337,6 +339,8 @@ export interface StationQueueStatus {
   printerLinkAt: string | null;
   /** The printer a bridge drives — and what the bridge is called. Null otherwise. */
   printerName: string | null;
+  /** The station a bridge serves. Null when nothing routes work to it. */
+  stationName: string | null;
   oldestQueuedAt: string | null;
   bridgeLastSeenAt: string | null;
   attendantLastSeenAt: string | null;

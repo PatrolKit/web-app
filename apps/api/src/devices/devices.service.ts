@@ -158,7 +158,7 @@ export class DevicesService {
     const devices = await this.prisma.device.findMany({
       where: { orgId, OR: modules.map((m) => ({ role: { startsWith: `${m}.` } })) },
       orderBy: { createdAt: 'desc' },
-      include: { bridgedPrinter: true },
+      include: { bridgedPrinter: true, bridgedStation: true },
     });
 
     return devices.map((d) => ({
@@ -171,6 +171,7 @@ export class DevicesService {
       printerLink: (d.printerLink as 'ready' | 'down' | null) ?? null,
       printerLinkAt: d.printerLinkAt,
       printerName: d.bridgedPrinter?.name ?? null,
+      stationName: d.bridgedStation && !d.bridgedStation.deletedAt ? d.bridgedStation.name : null,
       createdAt: d.createdAt,
     }));
   }

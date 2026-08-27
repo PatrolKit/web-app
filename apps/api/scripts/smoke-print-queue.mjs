@@ -130,6 +130,24 @@ const foreign = await fetch(`${BASE}/devices/me/print-jobs/claim`, {
 });
 ok('unbound bridge is told so, not fed jobs', foreign.status === 404, String(foreign.status));
 
+// ...but it is still heard. A bridge with no station is a bridge someone is
+// mid-way through setting up, and it is the one that most needs to say whether
+// it found its printer. Recording that after the 404 meant it never could, and
+// a bridge sitting there connected read "printer unconfirmed" indefinitely.
+await prisma.device.update({ where: { id: other.id }, data: { lastSeenAt: null } });
+await fetch(`${BASE}/devices/me/print-jobs/claim?limit=0`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${tok2.accessToken}`, 'content-type': 'application/json' },
+  body: JSON.stringify({ printerLink: 'ready' }),
+});
+const unbound = await prisma.device.findUnique({ where: { id: other.id } });
+ok('an unbound bridge still reports its printer link', unbound.printerLink === 'ready',
+   JSON.stringify({ printerLink: unbound.printerLink }));
+// Cleared just above, so only the heartbeat can have set this — otherwise the
+// token exchange would carry the assertion and it would prove nothing.
+ok('and still counts as seen', unbound.lastSeenAt !== null,
+   String(unbound.lastSeenAt));
+
 // ─── Self-reporting ──────────────────────────────────────────────────────────
 // A bridge whose printer is down stops taking work, so without a heartbeat it
 // would be indistinguishable from a bridge that lost power — and those need

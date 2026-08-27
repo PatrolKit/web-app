@@ -168,6 +168,21 @@ export class PrintQueueService {
     backoffMs: number;
     jobs: ClaimedJob[];
   }> {
+    // Before the station lookup, because a bridge that is calling in is alive
+    // and telling us about its printer whether or not anything routes work to
+    // it. Recording this after the 404 meant an unbound bridge could never
+    // report its printer link at all, and one sitting there connected to a
+    // printer read "printer unconfirmed" indefinitely.
+    await this.prisma.device.update({
+      where: { id: deviceId },
+      data: {
+        lastSeenAt: new Date(),
+        // Only when reported. A bridge that says nothing leaves the previous
+        // answer standing, and its age is what makes it readable.
+        ...(printerLink ? { printerLink, printerLinkAt: new Date() } : {}),
+      },
+    });
+
     const station = await this.prisma.checkinStation.findFirst({
       where: { bridgeDeviceId: deviceId, deletedAt: null },
       include: { bridge: { include: { bridgedPrinter: true } } },
@@ -244,16 +259,6 @@ export class PrintQueueService {
         });
       }
     }
-
-    await this.prisma.device.update({
-      where: { id: deviceId },
-      data: {
-        lastSeenAt: new Date(),
-        // Only when reported. A bridge that says nothing leaves the previous
-        // answer standing, and its age is what makes it readable.
-        ...(printerLink ? { printerLink, printerLinkAt: new Date() } : {}),
-      },
-    });
 
     return {
       stationId: station.id,

@@ -76,6 +76,12 @@ export const DeviceListItemSchema = z.object({
    * Null for a bridge not yet bound, and for every other kind of device.
    */
   printerName: z.string().nullable(),
+  /**
+   * The station this bridge serves. Null when nothing routes work to it — which
+   * also changes how often it calls in, since the firmware backs off to a slow
+   * retry while unbound rather than heartbeating.
+   */
+  stationName: z.string().nullable(),
   createdAt: z.date(),
 });
 

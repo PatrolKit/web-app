@@ -461,6 +461,29 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
     };
   }
 
+  if (!printer) {
+    return {
+      icon: faLinkSlashDuo,
+      label: 'No printer',
+      tone: 'unknown',
+      title: 'This bridge drives nothing. Set it up and pick its printer.',
+    };
+  }
+
+  // Both config gaps come before the liveness check, because the twenty-second
+  // rule does not apply to an unbound bridge: the firmware treats "no station"
+  // as a configuration problem and backs off to a slow retry, so judging it on
+  // a heartbeat it is not sending would flap between online and offline while
+  // nothing was actually wrong with it.
+  if (!bridge.stationName) {
+    return {
+      icon: faLinkSlashDuo,
+      label: 'Not serving a station',
+      tone: 'unknown',
+      title: 'Nothing routes work to this bridge yet. Bind it to a station on the Check-in page.',
+    };
+  }
+
   if (!recentlySeen(bridge.lastSeenAt)) {
     // Every signal below comes from the bridge itself, so once it goes quiet
     // none of them are current and reporting them would be reporting history.
@@ -469,15 +492,6 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
       label: 'Offline',
       tone: 'warn',
       title: lastSeenTitle(bridge.lastSeenAt),
-    };
-  }
-
-  if (!printer) {
-    return {
-      icon: faLinkSlashDuo,
-      label: 'Online — no printer',
-      tone: 'unknown',
-      title: 'The bridge is reaching the server but drives nothing. Pick its printer below.',
     };
   }
 
@@ -500,7 +514,7 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
       icon: faCircleQuestionDuo,
       label: 'Online — printer unconfirmed',
       tone: 'warn',
-      title: 'The bridge has not reported its printer link. It reports one on each print, so this clears itself on the next job — or the firmware is too old to send it.',
+      title: 'The bridge has not reported its printer link. It reports one on each claim, so this clears itself within a few seconds — unless the firmware is too old to send it.',
     };
   }
 
