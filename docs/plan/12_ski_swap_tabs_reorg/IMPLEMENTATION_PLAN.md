@@ -1,6 +1,6 @@
 # Plan 12 — One Station Concept, and Modules That Own Their Hardware
 
-> **Status:** Draft — for review.
+> **Status:** Implemented on `feat/station-unification`. Kept as the design record.
 > **Depends on:** [Plan 11](../11_self_service_checkin/IMPLEMENTATION_PLAN.md), which built
 > `CheckinStation`, the print queue, and the ESP-32 bridge contract.
 > **Constraint:** Still pre-production. No devices are deployed, the database holds one org
