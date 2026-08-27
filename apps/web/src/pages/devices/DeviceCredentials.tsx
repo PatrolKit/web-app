@@ -71,17 +71,20 @@ export function MutationError({ error }: { error: unknown }) {
 export function BridgeProvisioningPanel({
   clientId,
   secret,
-  printers,
+  printer,
   confirmed,
+  onCommitted,
 }: {
   clientId: string;
   secret: string;
-  printers: SwapPrinterRecord[];
+  /** The printer to write into the board. The caller picks it. */
+  printer: SwapPrinterRecord | null;
   confirmed: boolean;
+  /** The board took the config. Whatever was written is now true of it. */
+  onCommitted?: () => void;
 }) {
   const [ssid, setSsid] = useState('');
   const [psk, setPsk] = useState('');
-  const [printerName, setPrinterName] = useState(printers[0]?.bluetoothName ?? '');
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,8 +112,16 @@ export function BridgeProvisioningPanel({
     setStatus(null);
     try {
       const final = await provisionBridge(
-        { ssid: ssid.trim(), psk, printerBluetoothName: printerName, baseUrl, clientId, clientSecret: secret },
+        {
+          ssid: ssid.trim(),
+          psk,
+          printerBluetoothName: printer?.bluetoothName ?? '',
+          baseUrl,
+          clientId,
+          clientSecret: secret,
+        },
         setStatus,
+        { onCommitted },
       );
       setStatus(final);
       setBoardOnline(true);
@@ -204,20 +215,6 @@ export function BridgeProvisioningPanel({
             </label>
           </div>
 
-          <label className="block">
-            <span className="block text-xs text-gray-400 mb-1">Printer this bridge drives</span>
-            <select
-              value={printerName}
-              onChange={(e) => setPrinterName(e.target.value)}
-              className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
-            >
-              {printers.length === 0 && <option value="">No printers registered yet</option>}
-              {printers.map((p) => (
-                <option key={p.id} value={p.bluetoothName}>{p.name} ({p.bluetoothName})</option>
-              ))}
-            </select>
-          </label>
-
           {boardOnline ? (
             <p className="text-xs text-gray-400">
               Wi-Fi joined. Waiting for the server to hear from the bridge…
@@ -229,7 +226,7 @@ export function BridgeProvisioningPanel({
 
           <button
             onClick={run}
-            disabled={busy || boardOnline || !ssid.trim() || !printerName}
+            disabled={busy || boardOnline || !ssid.trim() || !printer}
             className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm rounded px-4 py-2"
           >
             {busy ? 'Setting up…' : boardOnline ? 'Waiting for the server…' : 'Set up over Bluetooth'}
@@ -261,8 +258,6 @@ function ProvisioningCodeCard({
   deviceId,
   clientId,
   secret,
-  role,
-  printers,
   sinceLastSeenAt,
   onDismiss,
 }: {
@@ -270,8 +265,6 @@ function ProvisioningCodeCard({
   deviceId: string;
   clientId: string;
   secret: string;
-  role: DeviceRole | null;
-  printers: SwapPrinterRecord[];
   /**
    * What the device's last-seen was when this card opened. A rotation leaves a
    * timestamp from the device's previous life, so confirmation waits for it to
@@ -289,11 +282,6 @@ function ProvisioningCodeCard({
     if (!confirmed && !window.confirm(SECRET_LOSS_WARNING)) return;
     onDismiss();
   }
-  // A bridge takes its credentials over Bluetooth, so the code is dead weight
-  // there. Every other role is an iOS tablet, and the code is the only way it
-  // gets provisioned.
-  const isBridge = role === 'ski_swap.print_bridge';
-
   const payload = JSON.stringify({
     v: 1, cid: clientId, sec: secret,
     api: `${window.location.protocol}//${window.location.host}/api/v1`,
@@ -323,15 +311,10 @@ function ProvisioningCodeCard({
       <p className={`font-medium mb-4 ${confirmed ? 'text-green-400' : 'text-white'}`}>
         {confirmed
           ? 'Device set up — the server has heard from it'
-          : isBridge
-            ? 'Credentials issued — set the bridge up now'
-            : 'Credentials issued — scan or copy the code now'}
+          : 'Credentials issued — scan or copy the code now'}
       </p>
 
-      {isBridge ? (
-        <BridgeProvisioningPanel clientId={clientId} secret={secret} printers={printers} confirmed={confirmed} />
-      ) : (
-        <div className="flex flex-col items-center gap-3">
+      <div className="flex flex-col items-center gap-3">
           <div className="bg-white p-3 rounded">
             <QRCode value={payload} size={200} />
           </div>
@@ -346,8 +329,7 @@ function ProvisioningCodeCard({
           >
             {copied ? 'Copied!' : 'Copy provisioning code'}
           </button>
-        </div>
-      )}
+      </div>
 
       <button onClick={dismiss} className="mt-4 text-xs text-gray-500 hover:underline block">Dismiss</button>
     </div>
@@ -375,7 +357,6 @@ function ProvisioningCodeCard({
 export function DeviceCredentialList({
   orgId,
   role,
-  printers = [],
   canProvision,
   renderExtra,
   onEdit,
@@ -383,8 +364,6 @@ export function DeviceCredentialList({
 }: {
   orgId: string;
   role: DeviceRole;
-  /** Only needed where a bridge might be provisioned: it picks a printer. */
-  printers?: SwapPrinterRecord[];
   canProvision: boolean;
   /** Extra controls under a device row — the Printers page shows status here. */
   renderExtra?: (device: DeviceItem) => ReactNode;
@@ -409,8 +388,6 @@ export function DeviceCredentialList({
     id: string;
     clientId: string;
     secret: string;
-    /** Decides whether the card offers Bluetooth setup — only a bridge takes it. */
-    role: DeviceRole | null;
     /** Last-seen before this secret existed, so a rotation cannot confirm itself. */
     sinceLastSeenAt: string | null;
   } | null>(null);
@@ -437,7 +414,7 @@ export function DeviceCredentialList({
       setShowProvisionForm(false);
       qc.invalidateQueries({ queryKey: ['devices', orgId] });
       if (onProvisioned) { onProvisioned(d, d.clientSecret); return; }
-      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, role, sinceLastSeenAt: null });
+      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, sinceLastSeenAt: null });
     },
   });
 
@@ -449,7 +426,6 @@ export function DeviceCredentialList({
         id,
         clientId: device?.clientId ?? '',
         secret: d.clientSecret,
-        role: device?.role ?? null,
         sinceLastSeenAt: device?.lastSeenAt ?? null,
       });
     },
@@ -523,8 +499,6 @@ export function DeviceCredentialList({
               deviceId={revealedSecret.id}
               clientId={revealedSecret.clientId}
               secret={revealedSecret.secret}
-              role={revealedSecret.role}
-              printers={printers}
               sinceLastSeenAt={revealedSecret.sinceLastSeenAt}
               onDismiss={() => setRevealedSecret(null)}
             />

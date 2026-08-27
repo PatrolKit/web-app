@@ -380,7 +380,6 @@ export default function PrintersPage() {
         <DeviceCredentialList
           orgId={orgId}
           role={BRIDGE_ROLE}
-          printers={printers}
           canProvision={canManagePrinters}
           renderExtra={BridgeStatus}
           onEdit={openBridge}

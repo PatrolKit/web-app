@@ -92,7 +92,18 @@ export function currentBaseUrl(): string {
 export async function provisionBridge(
   input: BridgeProvisioningInput,
   onStatus?: (status: BridgeStatus) => void,
-  { timeoutMs = 90_000 }: { timeoutMs?: number } = {},
+  {
+    timeoutMs = 90_000,
+    onCommitted,
+  }: {
+    timeoutMs?: number;
+    /**
+     * Fired the instant the board accepts the commit — before Wi-Fi, before the
+     * server. Everything written is on the board from here, whether or not it
+     * gets any further, so this is when a caller may treat the config as true.
+     */
+    onCommitted?: () => void;
+  } = {},
 ): Promise<BridgeStatus> {
   if (!isWebBluetoothSupported()) {
     throw new Error('Provisioning a bridge requires Chrome or Edge.');
@@ -139,6 +150,7 @@ export async function provisionBridge(
         clientSecret: input.clientSecret,
       })));
       await write(COMMIT, Uint8Array.of(COMMIT_APPLY));
+      onCommitted?.();
     } catch (err) {
       // A refused write on a board that looks fine is almost always the lock.
       const now = await readStatus(status).catch(() => null);
