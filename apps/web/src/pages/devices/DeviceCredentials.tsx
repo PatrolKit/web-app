@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import QRCode from 'react-qr-code';
 import { api } from '../../lib/api';
@@ -30,15 +30,24 @@ export function MutationError({ error }: { error: unknown }) {
  * because that is the only moment the client secret exists — the server never
  * returns it again. Dismiss the card without doing this and the bridge has to be
  * rotated before it can be set up.
+ *
+ * `confirmed` comes from the server having authenticated the bridge, and it is
+ * the only thing here that reports success. The board's own `online` is a claim
+ * about itself: a bridge that joins Wi-Fi and then cannot reach the server —
+ * wrong clock, rejected TLS, a firmware bug in the token exchange — says
+ * `online` and stays silent, and taking it at its word is what made a dead
+ * bridge look provisioned.
  */
 function BridgeProvisioningPanel({
   clientId,
   secret,
   printers,
+  confirmed,
 }: {
   clientId: string;
   secret: string;
   printers: SwapPrinterRecord[];
+  confirmed: boolean;
 }) {
   const [ssid, setSsid] = useState('');
   const [psk, setPsk] = useState('');
@@ -46,7 +55,19 @@ function BridgeProvisioningPanel({
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  /** The board reported `online`. Says nothing about the server yet. */
+  const [boardOnline, setBoardOnline] = useState(false);
+  /** The board has claimed online for long enough that silence is a diagnosis. */
+  const [serverOverdue, setServerOverdue] = useState(false);
+
+  // A bridge that is going to reach the server does so within a couple of
+  // seconds of joining Wi-Fi. Waiting longer than this and still hearing
+  // nothing is the failure, not a slow start.
+  useEffect(() => {
+    if (!boardOnline || confirmed) return;
+    const t = setTimeout(() => setServerOverdue(true), 20_000);
+    return () => clearTimeout(t);
+  }, [boardOnline, confirmed]);
 
   const baseUrl = currentBaseUrl();
   const httpsOk = isProvisionableOrigin(baseUrl);
@@ -62,7 +83,7 @@ function BridgeProvisioningPanel({
         setStatus,
       );
       setStatus(final);
-      setDone(true);
+      setBoardOnline(true);
     } catch (err) {
       // A cancelled picker is a decision, not a failure.
       if ((err as { name?: string })?.name === 'NotFoundError') return;
@@ -72,13 +93,42 @@ function BridgeProvisioningPanel({
     }
   }
 
-  if (done) {
+  if (confirmed) {
     return (
       <div className="mt-4 border-t border-green-800 pt-4">
         <p className="text-green-400 text-sm">
-          Bridge online{status?.device ? ` — ${status.device}` : ''}. Assign it to a check-in
-          station to start printing.
+          Bridge online{status?.device ? ` — ${status.device}` : ''}, and the server has heard
+          from it. Bind it to a printer above, then to a check-in station.
         </p>
+      </div>
+    );
+  }
+
+  // The board joined Wi-Fi and went quiet. This is the one failure the old
+  // panel reported as success, so it says exactly what is and is not known.
+  if (boardOnline && serverOverdue) {
+    return (
+      <div className="mt-4 border-t border-amber-800 pt-4 space-y-2">
+        <p className="text-amber-400 text-sm font-medium">
+          The board says it is online, but the server has never heard from it.
+        </p>
+        <p className="text-xs text-gray-400">
+          Wi-Fi worked — the failure is after that, when the bridge exchanges its client
+          secret for a token. Check the firmware build, and that the board&apos;s clock is
+          set, since TLS rejects a certificate that looks expired from the board&apos;s
+          point of view.
+        </p>
+        <p className="text-xs text-gray-400">
+          This device is kept, not discarded: if it does reach the server later, it starts
+          working on its own and the list stops saying &quot;never connected&quot;. To try
+          again now, hold BOOT while powering the board on and set it up once more.
+        </p>
+        <button
+          onClick={() => { setBoardOnline(false); setServerOverdue(false); setStatus(null); }}
+          className="text-xs text-brand-500 hover:underline"
+        >
+          Try setting it up again
+        </button>
       </div>
     );
   }
@@ -138,17 +188,21 @@ function BridgeProvisioningPanel({
             </select>
           </label>
 
-          {status && !done && (
+          {boardOnline ? (
+            <p className="text-xs text-gray-400">
+              Wi-Fi joined. Waiting for the server to hear from the bridge…
+            </p>
+          ) : status ? (
             <p className="text-xs text-gray-400">{describeBridgeState(status)}</p>
-          )}
+          ) : null}
           {error && <p className="text-red-400 text-xs">{error}</p>}
 
           <button
             onClick={run}
-            disabled={busy || !ssid.trim() || !printerName}
+            disabled={busy || boardOnline || !ssid.trim() || !printerName}
             className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm rounded px-4 py-2"
           >
-            {busy ? 'Setting up…' : 'Set up over Bluetooth'}
+            {busy ? 'Setting up…' : boardOnline ? 'Waiting for the server…' : 'Set up over Bluetooth'}
           </button>
         </>
       )}
@@ -166,8 +220,66 @@ function describeBridgeState(status: BridgeStatus): string {
   }
 }
 
-function ProvisioningCodeCard({ clientId, secret, role, printers, onDismiss }: { clientId: string; secret: string; role: DeviceRole | null; printers: SwapPrinterRecord[]; onDismiss: () => void }) {
+/**
+ * The one moment a device's secret exists, and the only place it can be handed
+ * over. Everything here follows from that: the card cannot report success it
+ * has not seen, and it cannot be dismissed quietly while the secret still
+ * matters.
+ */
+function ProvisioningCodeCard({
+  orgId,
+  deviceId,
+  clientId,
+  secret,
+  role,
+  printers,
+  sinceLastSeenAt,
+  onDismiss,
+}: {
+  orgId: string;
+  deviceId: string;
+  clientId: string;
+  secret: string;
+  role: DeviceRole | null;
+  printers: SwapPrinterRecord[];
+  /**
+   * What the device's last-seen was when this card opened. A rotation leaves a
+   * timestamp from the device's previous life, so confirmation waits for it to
+   * move rather than merely to exist — otherwise every rotation would confirm
+   * itself instantly against history.
+   */
+  sinceLastSeenAt: string | null;
+  onDismiss: () => void;
+}) {
   const [copied, setCopied] = useState(false);
+
+  // The server stamps last-seen when a device trades its client secret for a
+  // token, so this is the credentials arriving — not the board's opinion of
+  // itself. Polling stops as soon as that happens.
+  const { data: devices } = useQuery({
+    queryKey: ['devices', orgId],
+    queryFn: () => api.devices.list(orgId),
+    refetchInterval: 2000,
+    // Keep polling on a backgrounded tab. Setting a bridge up means watching a
+    // board boot and join Wi-Fi, which is exactly when someone switches window —
+    // and the default would leave them staring at a card that stopped asking.
+    refetchIntervalInBackground: true,
+  });
+  const seenAt = devices?.find((d) => d.id === deviceId)?.lastSeenAt ?? null;
+  const confirmed = !!seenAt && seenAt !== sinceLastSeenAt;
+
+  function dismiss() {
+    if (
+      !confirmed &&
+      !window.confirm(
+        'The server has not heard from this device yet.\n\n' +
+          'This card holds the only copy of its client secret — dismiss it and the ' +
+          'secret is gone for good. The device stays, but it cannot be set up again ' +
+          'until you Edit it for a new secret.\n\nDismiss anyway?',
+      )
+    ) return;
+    onDismiss();
+  }
   // A bridge takes its credentials over Bluetooth, so the code is dead weight
   // there. Every other role is an iOS tablet, and the code is the only way it
   // gets provisioned.
@@ -194,19 +306,31 @@ function ProvisioningCodeCard({ clientId, secret, role, printers, onDismiss }: {
   };
 
   return (
-    <div className="bg-green-900/30 border border-green-700 rounded-lg p-4">
-      <p className="text-green-400 font-medium mb-4">
-        {isBridge ? 'Device provisioned — set it up now' : 'Device provisioned — scan or copy the code now'}
+    <div className={`rounded-lg p-4 border ${
+      confirmed ? 'bg-green-900/30 border-green-700' : 'bg-surface-50 border-gray-700'
+    }`}>
+      {/* Green is a claim about the outcome, so it waits for one. Until the
+          server has heard from the device, this card describes unfinished work. */}
+      <p className={`font-medium mb-4 ${confirmed ? 'text-green-400' : 'text-white'}`}>
+        {confirmed
+          ? 'Device set up — the server has heard from it'
+          : isBridge
+            ? 'Credentials issued — set the bridge up now'
+            : 'Credentials issued — scan or copy the code now'}
       </p>
 
       {isBridge ? (
-        <BridgeProvisioningPanel clientId={clientId} secret={secret} printers={printers} />
+        <BridgeProvisioningPanel clientId={clientId} secret={secret} printers={printers} confirmed={confirmed} />
       ) : (
         <div className="flex flex-col items-center gap-3">
           <div className="bg-white p-3 rounded">
             <QRCode value={payload} size={200} />
           </div>
-          <p className="text-xs text-gray-400">Scan with PatrolKit iOS, or copy below</p>
+          <p className="text-xs text-gray-400">
+            {confirmed
+              ? 'This device has checked in. Nothing further is needed.'
+              : 'Scan with PatrolKit iOS, or copy below. This code is shown once.'}
+          </p>
           <button
             onClick={copy}
             className="text-sm bg-brand-500 hover:bg-brand-600 text-white px-6 py-2 rounded w-full max-w-xs transition-colors"
@@ -216,7 +340,7 @@ function ProvisioningCodeCard({ clientId, secret, role, printers, onDismiss }: {
         </div>
       )}
 
-      <button onClick={onDismiss} className="mt-4 text-xs text-gray-500 hover:underline block">Dismiss</button>
+      <button onClick={dismiss} className="mt-4 text-xs text-gray-500 hover:underline block">Dismiss</button>
     </div>
   );
 }
@@ -263,6 +387,8 @@ export function DeviceCredentialList({
     secret: string;
     /** Decides whether the card offers Bluetooth setup — only a bridge takes it. */
     role: DeviceRole | null;
+    /** Last-seen before this secret existed, so a rotation cannot confirm itself. */
+    sinceLastSeenAt: string | null;
   } | null>(null);
 
   const { data: allDevices = [], isLoading } = useQuery({
@@ -276,7 +402,7 @@ export function DeviceCredentialList({
   const provisionMutation = useMutation({
     mutationFn: () => api.devices.provision(orgId, { name: provisionName, role }),
     onSuccess: (d) => {
-      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, role });
+      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, role, sinceLastSeenAt: null });
       setProvisionName('');
       setShowProvisionForm(false);
       qc.invalidateQueries({ queryKey: ['devices', orgId] });
@@ -287,7 +413,13 @@ export function DeviceCredentialList({
     mutationFn: (id: string) => api.devices.rotateSecret(orgId, id),
     onSuccess: (d, id) => {
       const device = devices.find((dev) => dev.id === id);
-      setRevealedSecret({ id, clientId: device?.clientId ?? '', secret: d.clientSecret, role: device?.role ?? null });
+      setRevealedSecret({
+        id,
+        clientId: device?.clientId ?? '',
+        secret: d.clientSecret,
+        role: device?.role ?? null,
+        sinceLastSeenAt: device?.lastSeenAt ?? null,
+      });
     },
   });
 
@@ -346,10 +478,13 @@ export function DeviceCredentialList({
 
           {revealedSecret && (
             <ProvisioningCodeCard
+              orgId={orgId}
+              deviceId={revealedSecret.id}
               clientId={revealedSecret.clientId}
               secret={revealedSecret.secret}
               role={revealedSecret.role}
               printers={printers}
+              sinceLastSeenAt={revealedSecret.sinceLastSeenAt}
               onDismiss={() => setRevealedSecret(null)}
             />
           )}
@@ -362,19 +497,25 @@ export function DeviceCredentialList({
                 <div>
                   <span className="font-medium text-white">{d.name}</span>
                   <p className="text-xs text-gray-500 mt-0.5">Client ID: {d.clientId}</p>
-                  {d.lastSeenAt && <p className="text-xs text-gray-500">Last seen: {new Date(d.lastSeenAt).toLocaleString()}</p>}
+                  {d.lastSeenAt ? (
+                    <p className="text-xs text-gray-500">Last seen: {new Date(d.lastSeenAt).toLocaleString()}</p>
+                  ) : (
+                    /* Absence of a timestamp is the whole story for a bridge that
+                       was set up over Bluetooth but never reached the server. */
+                    <p className="text-xs text-amber-500">Never connected — it has not reached the server</p>
+                  )}
                   <p className="text-xs text-gray-400 mt-1">{deviceRoleLabel(d.role)}</p>
                   {renderExtra?.(d)}
                 </div>
                 <div className="flex gap-2">
                   {canProvision && (
-                    <button onClick={() => rotateMutation.mutate(d.id)} className="text-xs text-yellow-500 hover:underline">Rotate</button>
+                    <button onClick={() => rotateMutation.mutate(d.id)} className="text-xs text-yellow-500 hover:underline">Edit</button>
                   )}
                   {canProvision && (
                     <button
-                      onClick={() => { if (window.confirm(`Revoke "${d.name}"? This will permanently remove the device and it will need to be re-provisioned.`)) revokeMutation.mutate(d.id); }}
+                      onClick={() => { if (window.confirm(`Remove "${d.name}"? This permanently deletes the device, and the hardware has to be provisioned again from scratch.`)) revokeMutation.mutate(d.id); }}
                       className="text-xs text-red-500 hover:underline"
-                    >Revoke</button>
+                    >Remove</button>
                   )}
                 </div>
               </div>
