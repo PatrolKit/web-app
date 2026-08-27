@@ -5,14 +5,14 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PrismaService } from '../../prisma/prisma.service';
+import { ModuleAccessService } from '../services/module-access.service';
 import { MODULE_KEY_METADATA } from '../decorators/require-module.decorator';
 
 @Injectable()
 export class ModuleEnabledGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    private readonly moduleAccess: ModuleAccessService,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -26,15 +26,9 @@ export class ModuleEnabledGuard implements CanActivate {
     const orgId = req.params['orgId'];
     if (!orgId) throw new ForbiddenException('orgId required for module check');
 
-    const orgModule = await this.prisma.orgModule.findUnique({
-      where: { orgId_moduleKey: { orgId, moduleKey } },
-      include: { module: true },
-    });
-
-    if (!orgModule) throw new ForbiddenException(`Module '${moduleKey}' is not available`);
-    // Core modules always pass
-    if (orgModule.module.isCore) return true;
-    if (!orgModule.enabled) throw new ForbiddenException(`Module '${moduleKey}' is not enabled`);
+    if (!(await this.moduleAccess.isEnabled(orgId, moduleKey))) {
+      throw new ForbiddenException(`Module '${moduleKey}' is not enabled`);
+    }
 
     return true;
   }

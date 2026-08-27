@@ -21,18 +21,23 @@ import type {
 } from '../contracts/devices.contracts';
 import { moduleOfRole } from '../contracts/devices.contracts';
 import { PermissionsService } from '../permissions/permissions.service';
+import { ModuleAccessService } from '../common/services/module-access.service';
 
 /**
- * Which permission lets someone manage a device of a given role.
+ * What a device's role belongs to: the module that uses it, and the permission
+ * that administers it.
  *
  * Hardware belongs to the module that uses it, so the module's own admin
  * authorises it. A single `devices:*` axis would mean a ski-swap admin could
  * provision a time clock, and — as it did — that a ski-swap admin could
  * configure a station while being unable to supply hardware for it.
+ *
+ * The module key is not the role prefix: a `time_clock.*` device belongs to the
+ * `time_tracking` module.
  */
-const MANAGE_PERMISSION: Record<string, string> = {
-  ski_swap: 'ski_swap:admin',
-  time_clock: 'time_tracking:manage',
+const ROLE_OWNER: Record<string, { moduleKey: string; permission: string }> = {
+  ski_swap: { moduleKey: 'ski_swap', permission: 'ski_swap:admin' },
+  time_clock: { moduleKey: 'time_tracking', permission: 'time_tracking:manage' },
 };
 
 @Injectable()
@@ -42,15 +47,30 @@ export class DevicesService {
     private readonly jwtService: JwtService,
     private readonly auditService: AuditService,
     private readonly permissions: PermissionsService,
+    private readonly moduleAccess: ModuleAccessService,
     private readonly config: ConfigService,
   ) {}
 
-  /** Refuses unless the caller administers the module this role belongs to. */
+  /**
+   * Refuses unless the caller administers the module this role belongs to *and*
+   * the org has that module turned on.
+   *
+   * Both halves matter. The permission says who; the module says whether this
+   * org does that at all. Without the second, an org that switched ski swap off
+   * could still be handed bridges through the API — hardware for a module whose
+   * every other endpoint refuses the call.
+   */
   async assertMayManage(orgId: string, userId: string, role: string): Promise<void> {
-    const required = MANAGE_PERMISSION[moduleOfRole(role as DeviceRole)];
+    const owner = ROLE_OWNER[moduleOfRole(role as DeviceRole)];
+    if (!owner) throw new ForbiddenException('Unknown device role');
+
+    if (!(await this.moduleAccess.isEnabled(orgId, owner.moduleKey))) {
+      throw new ForbiddenException(`Module '${owner.moduleKey}' is not enabled`);
+    }
+
     const granted = await this.permissions.getPermissions(userId, orgId);
-    if (!required || !granted.includes(required)) {
-      throw new ForbiddenException(`Managing this device requires ${required ?? 'an unknown permission'}`);
+    if (!granted.includes(owner.permission)) {
+      throw new ForbiddenException(`Managing this device requires ${owner.permission}`);
     }
   }
 
@@ -61,12 +81,18 @@ export class DevicesService {
     await this.assertMayManage(orgId, userId, device.role);
   }
 
-  /** The device roles a caller may see, derived from the modules they administer. */
+  /**
+   * The role prefixes a caller may see: modules they administer, that this org
+   * actually has on.
+   */
   async manageableRoles(orgId: string, userId: string): Promise<string[]> {
     const granted = await this.permissions.getPermissions(userId, orgId);
-    return Object.entries(MANAGE_PERMISSION)
-      .filter(([, permission]) => granted.includes(permission))
-      .map(([moduleKey]) => moduleKey);
+    const owned = Object.entries(ROLE_OWNER).filter(([, o]) => granted.includes(o.permission));
+
+    const enabled = await Promise.all(
+      owned.map(([, o]) => this.moduleAccess.isEnabled(orgId, o.moduleKey)),
+    );
+    return owned.filter((_, i) => enabled[i]).map(([prefix]) => prefix);
   }
 
   // ─── Provision ──────────────────────────────────────────────────────────────

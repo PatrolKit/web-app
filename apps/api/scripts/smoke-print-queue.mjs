@@ -211,6 +211,40 @@ res = await fetch(`${BASE}/devices/me/print-jobs/claim`, {
 });
 ok('wrong device role is refused', res.status === 403, String(res.status));
 
+// ─── Hardware follows the module ────────────────────────────────────────────
+// The nav hides ski-swap devices when the module is off; the API has to refuse
+// them too, or an org that switched ski swap off could still be handed bridges
+// through hardware whose every other endpoint rejects the call.
+
+await prisma.orgModule.updateMany({
+  where: { orgId: org.id, moduleKey: 'ski_swap' },
+  data: { enabled: false },
+});
+
+let gated = await fetch(`${BASE}/orgs/${org.id}/devices`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${staffTokenEarly}`, 'content-type': 'application/json' },
+  body: JSON.stringify({ name: 'Should not exist', role: 'ski_swap.print_bridge' }),
+});
+ok('a disabled module cannot be handed hardware', gated.status === 403, String(gated.status));
+
+const listed = await fetch(`${BASE}/orgs/${org.id}/devices`, {
+  headers: { authorization: `Bearer ${staffTokenEarly}` },
+}).then(unwrap);
+ok('and its existing hardware is not listed', Array.isArray(listed) && listed.length === 0,
+   `${Array.isArray(listed) ? listed.length : '?'} devices`);
+
+await prisma.orgModule.updateMany({
+  where: { orgId: org.id, moduleKey: 'ski_swap' },
+  data: { enabled: true },
+});
+
+gated = await fetch(`${BASE}/orgs/${org.id}/devices`, {
+  headers: { authorization: `Bearer ${staffTokenEarly}` },
+}).then(unwrap);
+ok('turning it back on restores the hardware', Array.isArray(gated) && gated.length > 0,
+   `${Array.isArray(gated) ? gated.length : '?'} devices`);
+
 // ─── A printer serves exactly one thing ─────────────────────────────────────
 // A printer is one BLE peripheral and whoever holds the link owns it, so two
 // stations sharing one means two bridges fighting over it, and a station sharing
