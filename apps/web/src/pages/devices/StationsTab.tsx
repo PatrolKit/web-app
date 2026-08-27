@@ -23,7 +23,6 @@ import type {
   DeviceItem,
   DeviceRole,
   StationQueueStatus,
-  SwapPrinterRecord,
 } from '../../lib/api.types';
 
 /** Hardware is only useful once bound to a station, and only to one. */
@@ -41,13 +40,11 @@ const ATTENDANT_ROLE = 'ski_swap.staff_check_in';
 export default function StationsTab({
   orgId,
   devices,
-  printers,
   swapId,
   canAdmin,
 }: {
   orgId: string;
   devices: DeviceItem[];
-  printers: SwapPrinterRecord[];
   swapId: string | null;
   canAdmin: boolean;
 }) {
@@ -134,8 +131,8 @@ export default function StationsTab({
 
       {stations.length === 0 ? (
         <p className="text-sm text-gray-500">
-          No check-in stations yet. A station is a QR code, a bridge, and a printer —
-          sellers scan the code and their tags come out here.
+          No check-in stations yet. A station is a QR code and a bridge — sellers scan the
+          code and their tags come out of whichever printer that bridge drives.
         </p>
       ) : (
         <ul className="space-y-3">
@@ -146,7 +143,6 @@ export default function StationsTab({
               station={station}
               bridges={bridges}
               attendants={attendants}
-              printers={printers}
               swapId={swapId}
               canAdmin={canAdmin}
               onPatch={(data) => patchStation.mutate({ id: station.id, data })}
@@ -170,7 +166,6 @@ function StationRow({
   station,
   bridges,
   attendants,
-  printers,
   swapId,
   canAdmin,
   onPatch,
@@ -182,7 +177,6 @@ function StationRow({
   station: CheckinStationRecord;
   bridges: DeviceItem[];
   attendants: DeviceItem[];
-  printers: SwapPrinterRecord[];
   swapId: string | null;
   canAdmin: boolean;
   onPatch: (data: {
@@ -261,7 +255,7 @@ function StationRow({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <SlotPicker
           label="Staff tablet"
           emptyLabel="— none (self-service) —"
@@ -284,21 +278,17 @@ function StationRow({
           provisionLabel="New bridge"
         />
 
-        <label className="block">
-          <span className="block text-xs text-gray-400 mb-1">Printer</span>
-          <select
-            className="w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white disabled:opacity-50"
-            disabled={!canAdmin}
-            value={station.printerId ?? ''}
-            onChange={(e) => onPatch({ printerId: e.target.value || null })}
-          >
-            <option value="">— none —</option>
-            {printers.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </label>
       </div>
+
+      <p className="text-xs text-gray-500">
+        {station.printerName
+          ? <>Prints to <span className="text-gray-300">{station.printerName}</span>, through its bridge.</>
+          : station.bridgeDeviceId
+            ? 'That bridge has no printer yet — give it one on the Printers page.'
+            : station.kind === 'staffed'
+              ? 'No bridge, so no printer through the queue — the tablet prints over Bluetooth.'
+              : 'A seller has no way to get a tag until this station has a bridge.'}
+      </p>
 
       {queue && (
         <div className="flex items-center gap-4 text-xs text-gray-400 border-t border-gray-800 pt-3">
@@ -342,8 +332,7 @@ function StationRow({
  * The whole station in one line.
  *
  * Ordered by what stops a tag reaching a seller's hand, worst first, so the
- * label always names the thing someone has to go and fix. The dots underneath
- * stay — this says whether to walk over, they say what to bring.
+ * label always names the thing someone has to go and fix.
  */
 function StationStatus({
   station,
@@ -376,15 +365,24 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): {
   // What a station is missing depends on what kind it is: a self-service one
   // cannot work without a bridge, because a seller has no other way to get a
   // tag. A staffed one can — its tablet prints over Bluetooth.
-  const missing: string[] = [];
-  if (!station.printerId) missing.push('a printer');
-  if (!staffed && !station.bridgeDeviceId) missing.push('a bridge');
-  if (missing.length) {
+  if (!staffed && !station.bridgeDeviceId) {
     return {
       icon: faLinkSlashDuo,
-      label: `Needs ${missing.join(' and ')}`,
+      label: 'Needs a bridge',
       tone: 'unknown',
-      title: staffed ? undefined : 'A self-service station needs a bridge — a seller has no other way to get a tag.',
+      title: 'A self-service station needs a bridge — a seller has no other way to get a tag.',
+    };
+  }
+
+  // A station reaches its printer through its bridge, so a bridge with nothing
+  // plugged in is a station that cannot print — and the fix is on the Printers
+  // page, not here.
+  if (station.bridgeDeviceId && !station.printerId) {
+    return {
+      icon: faLinkSlashDuo,
+      label: 'Bridge has no printer',
+      tone: 'unknown',
+      title: 'Bind a printer to this bridge on the Printers page.',
     };
   }
 

@@ -140,10 +140,11 @@ to a flaky network can be re-sent safely.
   as given up on. So a job that hangs a printer will not block its station
   forever, and the firmware needs no attempt cap of its own beyond the internal
   retries it already does.
-- **Rendering happens at claim time**, against whichever printer the station is
-  currently pointed at. Swap a Phomemo mid-swap and queued jobs re-render for the
-  new paper size and margins. Nothing is cached; do not hold a job across a
-  reconfiguration expecting it to still be right.
+- **Rendering happens at claim time**, against whichever printer this bridge is
+  currently bound to — the server reaches it as station → bridge → printer. Swap
+  a Phomemo mid-swap and queued jobs re-render for the new paper size and
+  margins. Nothing is cached; do not hold a job across a reconfiguration
+  expecting it to still be right.
 
 ## Payload
 

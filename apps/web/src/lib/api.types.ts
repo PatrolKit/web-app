@@ -245,6 +245,10 @@ export interface SwapPrinterRecord {
   marginRight:  number;
   assignedSellerId: string | null;
   assignedSellerName: string | null;
+  /** The bridge that drives this printer, and the station that bridge serves. */
+  bridgeDeviceId: string | null;
+  bridgeName: string | null;
+  stationName: string | null;
 }
 
 /**

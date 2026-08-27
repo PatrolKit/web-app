@@ -142,7 +142,7 @@ export class CheckinService {
   async finish(orgId: string, userId: string, swapId: string, stationId: string) {
     const station = await this.prisma.checkinStation.findFirst({
       where: { id: stationId, orgId, deletedAt: null },
-      include: { printer: true },
+      include: { bridge: { include: { bridgedPrinter: true } } },
     });
     if (!station) throw new NotFoundException('Station not found');
 
@@ -160,7 +160,7 @@ export class CheckinService {
     // Header plus one job per page of the item list. Page count comes from the
     // renderer rather than a guess about how many fit.
     const pageCount = await this.recipes.receiptPageCount(
-      orgId, swapId, seller.id, printTargetFor(station.printer),
+      orgId, swapId, seller.id, printTargetFor(station.bridge?.bridgedPrinter ?? null),
     );
     await this.queue.enqueueReceipt({ orgId, stationId: station.id, swapId, sellerId: seller.id, pageCount });
 

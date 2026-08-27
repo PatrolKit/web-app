@@ -77,7 +77,8 @@ introduced in `9ecf5f7`, when a free-form role string became an enum.
 | **D12** | **An override print must not also enqueue.** An item whose tag was printed over Bluetooth arrives marked printed, and the server skips the enqueue. | The tag is already on the ski by the time the server hears about the item — immediately if the app was online, later if it was not. Enqueueing anyway puts a second tag through the bridge, and during an outage it does so for every item checked in, discovered later as a pile of orphan tags nobody can place. |
 | **D13** | **The station's code applies however the tag was printed.** | The code records *where an item was checked in*, not how the paper came out. A tag printed over Bluetooth because the bridge was down still belongs to that counter, and a SKU whose namespace depended on the print path would be useless for tracing. |
 | **D14** | **Module admins provision their own hardware.** `ski_swap:admin` may create, rotate and revoke ski-swap devices; `time_tracking:manage` the same for time clocks. **`devices:read`, `devices:provision` and `devices:revoke` retire with the page.** | Retiring Devices without this reproduces the bug it is meant to fix, one page over. A module admin who can already configure a station is not meaningfully restrained by being unable to create the box that serves it. Keeping `devices:*` as a second axis would mean a ski-swap admin could provision a time clock, or — as today — configure a station they cannot supply hardware for. |
-| **D15** | **A printer serves exactly one thing.** One station at most, or one business seller at most, never both and never two of either. | A printer is a single BLE peripheral: whoever holds the link owns it. Two stations sharing one means two bridges fighting for it — the contention D10 exists to avoid, arrived at from a different direction. A station and a business seller sharing one is the same failure with a worse symptom: the bridge wins, and the seller's printing stops with nothing on screen to explain why. |
+| **D15** | **A printer serves exactly one thing.** One bridge at most, or one business seller at most, never both and never two of either. | A printer is a single BLE peripheral: whoever holds the link owns it. Two bridges sharing one means two masters fighting for it — the contention D10 exists to avoid, arrived at from a different direction. A bridge and a business seller sharing one is the same failure with a worse symptom: the bridge wins, and the seller's printing stops with nothing on screen to explain why. |
+| **D16** | **Stations own bridges; bridges own printers.** A station's printer is reached through its bridge and is not stored on the station. Bridges are managed on the Printers page, in a section below the printers. | The bridge is what holds the printer's BLE link, so the bridge is the thing that decides which printer prints. Recording the printer on the station too would be a second place to say it and a second place for it to go stale — a station bound to printer A through a bridge driving printer B is a state the old shape allowed and nothing could resolve. It also puts the binding where the hardware is: a bridge is physically a printer's network adapter, so it is configured next to the printer, not next to the counter. |
 
 ## 4. The model
 
@@ -99,11 +100,9 @@ model CheckinStation {
   /// has no other way to get a tag; optional for staffed, where the iPad can
   /// print over Bluetooth instead (D10, D11).
   bridgeDeviceId    String? @unique
-  /// The printer at this counter, whoever ends up driving it. Unique: a printer
-  /// serves one station at most (D15). MySQL permits many NULLs in a unique
-  /// index, so any number of stations may have no printer yet — the same trick
-  /// `SkiSwap.activeSkuPrefix` uses.
-  printerId         String? @unique
+  /// Dropped. A station reaches its printer through its bridge (D16), so the
+  /// station's printer is derived, never stored.
+  - printerId String? @unique
 
   deletedAt DateTime?
   ...
@@ -111,9 +110,11 @@ model CheckinStation {
 
 model SwapPrinter {
   ...
-  /// Dropped. The station already records which bridge and which printer belong
-  /// together; two places saying it is one place too many to disagree.
-  - bridgeDeviceId String? @unique
+  /// The bridge that drives this printer. Unique: a bridge holds one printer's
+  /// BLE link, and a printer answers to one master (D15, D16). MySQL permits
+  /// many NULLs in a unique index, so any number of printers may have no bridge
+  /// — the same trick `SkiSwap.activeSkuPrefix` uses.
+  bridgeDeviceId String? @unique
 }
 
 model Device {
@@ -125,18 +126,19 @@ model Device {
 ```
 
 `SwapPrinter.assignedSellerId` is unchanged in shape: it still pins a printer to a business
-seller (D6). What changes is that it and `CheckinStation.printerId` are now mutually exclusive.
-No schema expresses that across two tables, so it is enforced on both write paths and
-reflected in both pickers:
+seller (D6). What changes is that it and `SwapPrinter.bridgeDeviceId` are now mutually
+exclusive. Both live on `SwapPrinter`, but no schema expresses "at most one of these two is
+set", so it is enforced on both write paths and reflected in both pickers:
 
-- Binding a printer to a station refuses one that is assigned to a seller.
-- Assigning a printer to a seller refuses one that is bound to a station.
-- The station's printer dropdown offers only unassigned printers; the seller's offers only
-  unbound ones. The guard is the server's, but a control that cannot express the mistake is
-  worth more than an error message after it.
+- Binding a printer to a bridge refuses one that is assigned to a seller.
+- Assigning a printer to a seller refuses one that is driven by a bridge.
+- A bridge's printer dropdown offers only printers that are unbound and unassigned; the
+  seller's offers only unbridged ones. The guard is the server's, but a control that cannot
+  express the mistake is worth more than an error message after it.
 
-**Soft delete has to release the printer**, as it already releases the bridge — a retired
-station holding a unique `printerId` would keep that printer out of circulation for good.
+**Soft delete releases the bridge**, and that is now the only hardware a station holds — a
+retired station holding a unique `bridgeDeviceId` would keep that bridge, and the printer
+behind it, out of circulation for good.
 
 **Migration is destructive and that is fine.** The deployed database holds one org, one
 station, one bridge and no check-in iPads. Wipe and reseed rather than writing a data
@@ -171,13 +173,16 @@ Time Tracking
 ```
 
 **Check-in** lists every station, staffed and self-service, with the rolled-up status from
-Plan 11. Both kinds show a driver, a printer, a queue and a status; only self-service ones
-offer a QR. Provisioning a driver happens here — "add a station", then "provision its iPad" or
-"provision its bridge", creating the credential and binding it in one step, rather than
-sending someone to another page to make a device and come back.
+Plan 11. Both kinds show a driver, a queue and a status, and report the printer they reach
+through their bridge; only self-service ones offer a QR. Provisioning a driver happens here —
+"add a station", then "provision its iPad" or "provision its bridge", creating the credential
+and binding it in one step, rather than sending someone to another page to make a device and
+come back. Its device list holds staff tablets only; bridges are on Printers (D16).
 
-**Printers** is unchanged in content: Phomemo configuration, paper size, margins, seller
-assignment.
+**Printers** keeps Phomemo configuration — paper size, margins, seller assignment — and gains
+a **Print bridges** section below it, where each bridge is provisioned, set up over Bluetooth,
+and bound to the one printer it drives (D16). A printer says which bridge drives it and which
+station that bridge serves, so the whole chain is legible from either end.
 
 **Time Tracking → Devices** takes the time-clock half of the old page: provision, rotate,
 revoke, last seen.
@@ -192,7 +197,7 @@ hardware is authorised by the module's own admin permission instead:
 |---|---|
 | Provision, rotate, revoke a `ski_swap.*` device | `ski_swap:admin` |
 | Provision, rotate, revoke a `time_clock.*` device | `time_tracking:manage` |
-| Bind a station's bridge, iPad or printer | `ski_swap:admin` |
+| Bind a station's bridge or iPad, or a bridge's printer | `ski_swap:admin` |
 | View station status, queue depth, send a test print | `ski_swap:report` |
 
 **The seed has to move with this**, or the plan fixes the bug on paper and leaves it in place.
@@ -264,9 +269,9 @@ Independent of everything else and safe to land alone.
 
 **Phase 2 — The station model.** Add the attendant slot, rename `deviceId` to
 `bridgeDeviceId`, derive kind from the attendant, move the SKU code onto the station, stop
-allocating codes to bridges, make `printerId` unique and release it on soft delete, and
-enforce the printer/seller exclusion on both write paths (D15). A device's own record reports
-the station it is bound to. Wipe and reseed.
+allocating codes to bridges, hang the printer off the bridge rather than the station (D16),
+release the bridge on soft delete, and enforce the printer/seller exclusion on both write
+paths (D15). A device's own record reports the station it is bound to. Wipe and reseed.
 
 **Phase 3 — Navigation and permissions.** Move Printers and Check-in under Ski Swap, move
 time-clock devices under Time Tracking, retire the Devices nav item and route, retire the

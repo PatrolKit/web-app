@@ -6,8 +6,11 @@ import { DeviceCredentialList } from '../devices/DeviceCredentials';
 import type { DeviceRole } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
-/** The hardware a check-in station is built from. */
-const STATION_ROLES: readonly DeviceRole[] = ['ski_swap.staff_check_in', 'ski_swap.print_bridge'];
+/**
+ * Only tablets are managed here. A bridge lives with the printer it drives, on
+ * the Printers page — a station reaches its printer through its bridge.
+ */
+const STATION_ROLES: readonly DeviceRole[] = ['ski_swap.staff_check_in'];
 
 /**
  * Check-in stations and the hardware that serves them.
@@ -27,12 +30,6 @@ export default function CheckinStationsPage() {
     enabled: !!orgId,
   });
 
-  const { data: printers = [] } = useQuery({
-    queryKey: ['ski-swap/printers', orgId],
-    queryFn: () => api.skiSwap.listPrinters(orgId),
-    enabled: !!orgId,
-  });
-
   // Stations outlive any one swap; the QR needs whichever is running.
   const { data: activeSwaps = [] } = useQuery({
     queryKey: ['ski-swap/swaps', orgId, 'active'],
@@ -46,23 +43,22 @@ export default function CheckinStationsPage() {
       <StationsTab
         orgId={orgId}
         devices={devices}
-        printers={printers}
         swapId={activeSwaps[0]?.id ?? null}
         canAdmin={canAdmin}
       />
 
       <section className="space-y-3">
         <div>
-          <h2 className="text-white font-medium">Check-in hardware</h2>
+          <h2 className="text-white font-medium">Staff tablets</h2>
           <p className="text-xs text-gray-500">
-            Tablets and bridges provisioned for this org. Bind one to a station above to put
-            it to work — until then it holds credentials and nothing else.
+            Tablets provisioned for this org. Bind one to a station above to put it to work —
+            until then it holds credentials and nothing else. Bridges live on the Printers
+            page, with the printer each one drives.
           </p>
         </div>
         <DeviceCredentialList
           orgId={orgId}
           roles={STATION_ROLES}
-          printers={printers}
           canProvision={canAdmin}
         />
       </section>

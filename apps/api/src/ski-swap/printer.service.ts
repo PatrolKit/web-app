@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { createId } from '@paralleldrive/cuid2';
@@ -21,7 +21,7 @@ export class PrinterService {
 
     const printers = await this.prisma.swapPrinter.findMany({
       where: isAdmin ? { orgId } : { orgId, assignedSellerId: null },
-      include: { seller: { include: SELLER_NAME_INCLUDE } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
       orderBy: { createdAt: 'asc' },
     });
     return printers.map((p) => this.toResponse(p));
@@ -35,7 +35,7 @@ export class PrinterService {
 
     const printers = await this.prisma.swapPrinter.findMany({
       where: { orgId, assignedSellerId: seller.id },
-      include: { seller: { include: SELLER_NAME_INCLUDE } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
       orderBy: { createdAt: 'asc' },
     });
     return printers.map((p) => this.toResponse(p));
@@ -47,15 +47,39 @@ export class PrinterService {
 
     const printer = await this.prisma.swapPrinter.create({
       data: { id: createId(), orgId, name: data.name, bluetoothName: data.bluetoothName, paperSize: data.paperSize, createdBy: userId },
-      include: { seller: { include: SELLER_NAME_INCLUDE } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
     });
     return this.toResponse(printer);
   }
 
-  async patch(orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }): Promise<SwapPrinterResponse> {
+  /**
+   * A printer serves exactly one thing: one bridge, or one business seller.
+   *
+   * It is a single BLE peripheral and whoever holds the link owns it. A bridge
+   * holds that link continuously, so a printer shared with a seller means the
+   * bridge wins and the seller's printing stops with nothing on screen to say
+   * why. The unique index covers bridge-to-bridge; this covers the rest.
+   */
+  private async assertBridgeAssignable(orgId: string, bridgeDeviceId: string, printerId: string): Promise<void> {
+    const bridge = await this.prisma.device.findFirst({
+      where: { id: bridgeDeviceId, orgId },
+      include: { bridgedPrinter: true },
+    });
+    if (!bridge) throw new NotFoundException('Bridge not found');
+    if (bridge.role !== 'ski_swap.print_bridge') {
+      throw new BadRequestException('Only a print bridge can drive a printer');
+    }
+    if (bridge.bridgedPrinter && bridge.bridgedPrinter.id !== printerId) {
+      throw new ConflictException(
+        `That bridge already drives "${bridge.bridgedPrinter.name}". Release it there first.`,
+      );
+    }
+  }
+
+  async patch(orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; bridgeDeviceId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }): Promise<SwapPrinterResponse> {
     const existing = await this.prisma.swapPrinter.findFirst({
       where: { id: printerId, orgId },
-      include: { station: true },
+      include: { bridge: { include: { bridgedStation: true } } },
     });
     if (!existing) throw new NotFoundException('Printer not found');
 
@@ -65,15 +89,24 @@ export class PrinterService {
       });
       if (!seller) throw new NotFoundException('Seller not found');
 
-      // The other half of "a printer serves exactly one thing". A printer bound
-      // to a station is held by that station's bridge; handing it to a seller as
-      // well means the bridge wins and the seller's printing stops with nothing
-      // on screen to say why.
-      if (existing.station && !existing.station.deletedAt) {
+      // The other half of "a printer serves exactly one thing". A printer driven
+      // by a bridge is held by that bridge continuously; handing it to a seller
+      // as well means the bridge wins and the seller's printing stops with
+      // nothing on screen to say why.
+      if (existing.bridgeDeviceId) {
         throw new ConflictException(
-          `That printer serves station "${existing.station.name}". Release it there before assigning it to a seller.`,
+          `That printer is driven by "${existing.bridge?.name ?? 'a bridge'}". Release it there before assigning it to a seller.`,
         );
       }
+    }
+
+    if (data.bridgeDeviceId) {
+      if (existing.assignedSellerId || data.assignedSellerId) {
+        throw new ConflictException(
+          'That printer is assigned to a business seller. Unassign it before giving it to a bridge.',
+        );
+      }
+      await this.assertBridgeAssignable(orgId, data.bridgeDeviceId, printerId);
     }
 
     const updated = await this.prisma.swapPrinter.update({
@@ -82,13 +115,14 @@ export class PrinterService {
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.bluetoothName !== undefined ? { bluetoothName: data.bluetoothName } : {}),
         ...(data.assignedSellerId !== undefined ? { assignedSellerId: data.assignedSellerId } : {}),
+        ...(data.bridgeDeviceId !== undefined ? { bridgeDeviceId: data.bridgeDeviceId } : {}),
         ...(data.paperSize !== undefined ? { paperSize: data.paperSize } : {}),
         ...(data.marginTop !== undefined ? { marginTop: data.marginTop } : {}),
         ...(data.marginBottom !== undefined ? { marginBottom: data.marginBottom } : {}),
         ...(data.marginLeft !== undefined ? { marginLeft: data.marginLeft } : {}),
         ...(data.marginRight !== undefined ? { marginRight: data.marginRight } : {}),
       },
-      include: { seller: { include: SELLER_NAME_INCLUDE } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
     });
     return this.toResponse(updated);
   }
@@ -114,7 +148,7 @@ export class PrinterService {
 
     const printer = await this.prisma.swapPrinter.findFirst({
       where: { id: printerId, orgId },
-      include: { seller: { include: SELLER_NAME_INCLUDE } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
     });
     if (!printer) throw new NotFoundException('Printer not found');
 
@@ -136,12 +170,12 @@ export class PrinterService {
     const updated = await this.prisma.swapPrinter.update({
       where: { id: printerId },
       data: { paperSize },
-      include: { seller: { include: SELLER_NAME_INCLUDE } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
     });
     return this.toResponse(updated);
   }
 
-  private toResponse(p: { id: string; name: string; bluetoothName: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number; assignedSellerId: string | null; seller: SellerNameRow | null }): SwapPrinterResponse {
+  private toResponse(p: { id: string; name: string; bluetoothName: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number; assignedSellerId: string | null; seller: SellerNameRow | null; bridgeDeviceId?: string | null; bridge?: { name: string; bridgedStation?: { name: string; deletedAt: Date | null } | null } | null }): SwapPrinterResponse {
     return {
       id: p.id,
       name: p.name,
@@ -153,6 +187,13 @@ export class PrinterService {
       marginRight: p.marginRight,
       assignedSellerId: p.assignedSellerId,
       assignedSellerName: sellerDisplayName(p.seller),
+      bridgeDeviceId: p.bridgeDeviceId ?? null,
+      bridgeName: p.bridge?.name ?? null,
+      // Which counter this printer ends up serving, reached the way the queue
+      // reaches it: station → bridge → printer.
+      stationName: p.bridge?.bridgedStation && !p.bridge.bridgedStation.deletedAt
+        ? p.bridge.bridgedStation.name
+        : null,
     };
   }
 }

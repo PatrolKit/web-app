@@ -71,7 +71,7 @@ export class PrintQueueService {
         id: createId(),
         orgId: params.orgId,
         stationId: station.id,
-        printerId: station.printerId,
+        printerId: station.bridge?.bridgedPrinter?.id ?? null,
         swapId: params.swapId,
         sellerId: params.sellerId,
         itemId: params.itemId,
@@ -93,7 +93,7 @@ export class PrintQueueService {
         id: createId(),
         orgId,
         stationId: station.id,
-        printerId: station.printerId,
+        printerId: station.bridge?.bridgedPrinter?.id ?? null,
         swapId: item.swapId,
         sellerId: item.sellerId,
         itemId: item.id,
@@ -115,7 +115,7 @@ export class PrintQueueService {
     const base = {
       orgId: params.orgId,
       stationId: station.id,
-      printerId: station.printerId,
+      printerId: station.bridge?.bridgedPrinter?.id ?? null,
       swapId: params.swapId,
       sellerId: params.sellerId,
     };
@@ -141,7 +141,7 @@ export class PrintQueueService {
         id: createId(),
         orgId,
         stationId: station.id,
-        printerId: station.printerId,
+        printerId: station.bridge?.bridgedPrinter?.id ?? null,
         kind: 'calibration',
         seq: 0,
       },
@@ -170,7 +170,7 @@ export class PrintQueueService {
   }> {
     const station = await this.prisma.checkinStation.findFirst({
       where: { bridgeDeviceId: deviceId, deletedAt: null },
-      include: { printer: true },
+      include: { bridge: { include: { bridgedPrinter: true } } },
     });
     if (!station) throw new NotFoundException('This device is not bound to a station');
 
@@ -219,7 +219,7 @@ export class PrintQueueService {
     // Rendering happens after the claim has committed, never inside it: holding
     // write locks across a canvas render would serialise stations against each
     // other for no reason.
-    const target = printTargetFor(station.printer);
+    const target = printTargetFor(station.bridge?.bridgedPrinter ?? null);
     const jobs: ClaimedJob[] = [];
     for (const job of claimed) {
       try {
@@ -366,6 +366,9 @@ export class PrintQueueService {
   private async station(orgId: string, stationId: string) {
     const station = await this.prisma.checkinStation.findFirst({
       where: { id: stationId, orgId, deletedAt: null },
+      // The printer hangs off the bridge: a station reaches it through the box
+      // that drives it, so there is one place recording which printer is where.
+      include: { bridge: { include: { bridgedPrinter: true } } },
     });
     if (!station) throw new NotFoundException('Station not found');
     return station;

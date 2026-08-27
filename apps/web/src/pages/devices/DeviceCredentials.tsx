@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import QRCode from 'react-qr-code';
 import { api } from '../../lib/api';
@@ -239,12 +239,15 @@ export function DeviceCredentialList({
   roles,
   printers = [],
   canProvision,
+  renderExtra,
 }: {
   orgId: string;
   roles: readonly DeviceRole[];
   /** Only needed where a bridge might be provisioned: it picks a printer. */
   printers?: SwapPrinterRecord[];
   canProvision: boolean;
+  /** Extra controls under a device row — the Printers page binds a printer here. */
+  renderExtra?: (device: DeviceItem) => ReactNode;
 }) {
   const qc = useQueryClient();
   const [provisionName, setProvisionName] = useState('');
@@ -400,6 +403,7 @@ export function DeviceCredentialList({
                       )}
                     </div>
                   )}
+                  {renderExtra?.(d)}
                 </div>
                 <div className="flex gap-2">
                   {canProvision && (

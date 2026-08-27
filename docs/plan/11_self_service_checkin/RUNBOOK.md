@@ -10,11 +10,12 @@ Devices — and most have a fix that takes under a minute.
 seller's phone ──HTTPS──> server ──queue──> bridge (ESP-32) ──BLE──> Phomemo
 ```
 
-A **station** is a QR code, a bridge, and a printer. It owns a one-character
-code that appears in every SKU printed there (`SS26-T-0042`), which is how a tag
-can be traced back to where it came out. The station is the durable part:
-replace the bridge or the printer under it and queued work carries on, because
-jobs belong to the station rather than to either box.
+A **station** is a QR code and a bridge; the printer comes with the bridge,
+which is its network adapter. The station owns a one-character code that appears
+in every SKU printed there (`SS26-T-0042`), which is how a tag can be traced back
+to where it came out. The station is the durable part: replace the bridge or the
+printer under it and queued work carries on, because jobs belong to the station
+rather than to either box.
 
 Labels are rendered **on the server**, when a job is claimed. The bridge only
 forwards bytes. That means a margin or layout change is a deploy, never a
@@ -34,7 +35,8 @@ the whole status — scan down the list for anything that is not green.
 | **Online — printer unconfirmed** | The bridge is not reporting its printer link. Send a **Test** print; if it works, the bridge needs a firmware update. |
 | **Cannot reach the printer** | Printer power, or something else paired to it. |
 | **Offline** | Bridge power and wifi. Declared after 20 seconds of silence — the bridge calls in every 1–5 seconds, so that is four missed beats. Hover for how long. |
-| **Needs a bridge / a printer** | Bind one from the dropdowns on the row. |
+| **Needs a bridge** | Bind one from the Bridge dropdown on the row. |
+| **Bridge has no printer** | Bind the bridge to its printer on the **Printers** page — a station reaches its printer through its bridge. |
 
 Underneath are the queue counts — queued, printing, and anything failed or given
 up on. Depth alone says nothing: work behind a **Ready** station is just a busy
@@ -116,7 +118,8 @@ in the meantime, so the delay costs nothing.
 
 ## Before the doors open
 
-- Every station has a bridge and a printer bound, and reads `online`.
+- Every station has a bridge bound, that bridge has a printer, and the station
+  reads `Ready`.
 - **Test** print from each station produces a clean, square calibration pattern.
 - Scan each station's QR with a phone and confirm it lands on the right station
   name.

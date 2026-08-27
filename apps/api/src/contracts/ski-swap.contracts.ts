@@ -344,6 +344,8 @@ export const PatchPrinterSchema = z
     name: z.string().min(1).max(100).optional(),
     bluetoothName: z.string().min(1).max(100).optional(),
     assignedSellerId: z.string().nullable().optional(),
+    /** The bridge that drives this printer. Mutually exclusive with a seller. */
+    bridgeDeviceId: z.string().nullable().optional(),
     paperSize: z.enum(PAPER_SIZES).optional(),
     ...Object.fromEntries(Object.entries(MarginFields).map(([k, v]) => [k, v.optional()])),
   })
@@ -367,6 +369,10 @@ export const SwapPrinterResponseSchema = z.object({
   marginRight:  z.number().int(),
   assignedSellerId: z.string().nullable(),
   assignedSellerName: z.string().nullable(),
+  /** The bridge that drives this printer, and the station that bridge serves. */
+  bridgeDeviceId: z.string().nullable(),
+  bridgeName: z.string().nullable(),
+  stationName: z.string().nullable(),
 });
 
 export class CreatePrinterDto extends createZodDto(CreatePrinterSchema) {}
@@ -432,7 +438,6 @@ export const UpdateStationSchema = z
     name: z.string().min(1).max(60).optional(),
     attendantDeviceId: z.string().nullable().optional(),
     bridgeDeviceId: z.string().nullable().optional(),
-    printerId: z.string().nullable().optional(),
   })
   .strict();
 
@@ -451,6 +456,11 @@ export const StationResponseSchema = z.object({
   bridgeDeviceId: z.string().nullable(),
   bridgeName: z.string().nullable(),
   bridgeLastSeenAt: z.string().nullable(),
+  /**
+   * Reached through the bridge, never bound here: a bridge holds its printer's
+   * Bluetooth link continuously, so the bridge is what decides which printer a
+   * station prints to.
+   */
   printerId: z.string().nullable(),
   printerName: z.string().nullable(),
   createdAt: z.string(),

@@ -486,7 +486,7 @@ export const api = {
       request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers`, {
         method: 'POST', body: JSON.stringify(data),
       }),
-    patchPrinter: (orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }) =>
+    patchPrinter: (orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; bridgeDeviceId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }) =>
       request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers/${printerId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
@@ -534,7 +534,6 @@ export const api = {
         name?: string;
         attendantDeviceId?: string | null;
         bridgeDeviceId?: string | null;
-        printerId?: string | null;
       },
     ) =>
       request<import('./api.types').CheckinStationRecord>(`/orgs/${orgId}/ski-swap/stations/${stationId}`, {
@@ -573,7 +572,6 @@ export const api = {
         name?: string;
         attendantDeviceId?: string | null;
         bridgeDeviceId?: string | null;
-        printerId?: string | null;
       },
     ) =>
       request<import('./api.types').CheckinStationRecord>(`/orgs/${orgId}/ski-swap/stations/${stationId}`, {

@@ -9,7 +9,12 @@ import type { StationResponse } from '../contracts/ski-swap.contracts';
 const ATTENDANT_ROLE: DeviceRole = 'ski_swap.staff_check_in';
 const BRIDGE_ROLE: DeviceRole = 'ski_swap.print_bridge';
 
-const INCLUDE = { attendant: true, bridge: true, printer: true } as const;
+// The printer hangs off the bridge: a station reaches it through the box that
+// drives it, so there is one place recording which printer is where.
+const INCLUDE = {
+  attendant: true,
+  bridge: { include: { bridgedPrinter: true } },
+} as const;
 
 type StationRow = {
   id: string;
@@ -18,10 +23,12 @@ type StationRow = {
   createdAt: Date;
   attendantDeviceId: string | null;
   bridgeDeviceId: string | null;
-  printerId: string | null;
   attendant: { name: string; lastSeenAt: Date | null } | null;
-  bridge: { name: string; lastSeenAt: Date | null } | null;
-  printer: { name: string } | null;
+  bridge: {
+    name: string;
+    lastSeenAt: Date | null;
+    bridgedPrinter: { id: string; name: string } | null;
+  } | null;
 };
 
 /**
@@ -74,7 +81,6 @@ export class StationService {
       name?: string;
       attendantDeviceId?: string | null;
       bridgeDeviceId?: string | null;
-      printerId?: string | null;
     },
   ): Promise<StationResponse> {
     const station = await this.find(orgId, stationId);
@@ -85,9 +91,6 @@ export class StationService {
     if (data.bridgeDeviceId) {
       await this.assertDeviceFree(orgId, data.bridgeDeviceId, BRIDGE_ROLE, station.id);
     }
-    if (data.printerId) {
-      await this.assertPrinterFree(orgId, data.printerId, station.id);
-    }
 
     const updated = await this.prisma.checkinStation.update({
       where: { id: station.id },
@@ -95,7 +98,6 @@ export class StationService {
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.attendantDeviceId !== undefined ? { attendantDeviceId: data.attendantDeviceId } : {}),
         ...(data.bridgeDeviceId !== undefined ? { bridgeDeviceId: data.bridgeDeviceId } : {}),
-        ...(data.printerId !== undefined ? { printerId: data.printerId } : {}),
       },
       include: INCLUDE,
     });
@@ -105,9 +107,8 @@ export class StationService {
   /**
    * Soft delete — the code stays claimed until then, so SKUs never collide.
    *
-   * Everything else is released. A retired station holding a printer would keep
-   * it out of circulation permanently, since a printer serves one station at
-   * most and the index enforcing that does not care whether the station is live.
+   * The hardware is released. A retired station holding a bridge would keep that
+   * bridge, and the printer behind it, out of circulation permanently.
    */
   async remove(orgId: string, stationId: string): Promise<void> {
     const station = await this.find(orgId, stationId);
@@ -117,7 +118,6 @@ export class StationService {
         deletedAt: new Date(),
         attendantDeviceId: null,
         bridgeDeviceId: null,
-        printerId: null,
       },
     });
   }
@@ -172,35 +172,6 @@ export class StationService {
     }
   }
 
-  /**
-   * A printer serves exactly one thing.
-   *
-   * It is a single BLE peripheral and whoever holds the link owns it, so a
-   * printer shared between two stations means two bridges fighting over it, and
-   * one shared with a business seller means the bridge wins and the seller's
-   * printing stops with nothing on screen to explain why. The unique index
-   * covers station-to-station; the seller case spans two tables and has to be
-   * checked here.
-   */
-  private async assertPrinterFree(orgId: string, printerId: string, stationId: string): Promise<void> {
-    const printer = await this.prisma.swapPrinter.findFirst({
-      where: { id: printerId, orgId },
-      include: { station: true, seller: { include: { membership: { include: { user: true } } } } },
-    });
-    if (!printer) throw new NotFoundException('Printer not found');
-
-    if (printer.assignedSellerId) {
-      throw new ConflictException(
-        'That printer is assigned to a business seller. Unassign it before binding it to a station.',
-      );
-    }
-    if (printer.station && printer.station.id !== stationId && !printer.station.deletedAt) {
-      throw new ConflictException(
-        `That printer already serves station "${printer.station.name}". Release it there first.`,
-      );
-    }
-  }
-
   private async find(orgId: string, stationId: string) {
     const station = await this.prisma.checkinStation.findFirst({
       where: { id: stationId, orgId, deletedAt: null },
@@ -224,8 +195,8 @@ function toResponse(s: StationRow): StationResponse {
     bridgeDeviceId: s.bridgeDeviceId,
     bridgeName: s.bridge?.name ?? null,
     bridgeLastSeenAt: s.bridge?.lastSeenAt?.toISOString() ?? null,
-    printerId: s.printerId,
-    printerName: s.printer?.name ?? null,
+    printerId: s.bridge?.bridgedPrinter?.id ?? null,
+    printerName: s.bridge?.bridgedPrinter?.name ?? null,
     createdAt: s.createdAt.toISOString(),
   };
 }

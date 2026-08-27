@@ -11,9 +11,12 @@ import {
 } from '../../lib/printing/PhomemoPrinterService';
 import type { PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
 import { usePrinter } from '../../contexts/PrinterContext';
-import { MutationError } from '../devices/DeviceCredentials';
-import type { SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
+import { DeviceCredentialList, MutationError } from '../devices/DeviceCredentials';
+import type { DeviceItem, DeviceRole, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
+
+/** A bridge is the printer's network adapter, so it is managed alongside them. */
+const BRIDGE_ROLES: readonly DeviceRole[] = ['ski_swap.print_bridge'];
 
 /**
  * The Phomemos an org owns: what they are called, what paper they carry, and
@@ -117,6 +120,48 @@ export default function PrintersPage() {
       api.skiSwap.patchPrinter(orgId, editingPrinter!.id, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] }); setEditingPrinter(null); },
   });
+
+  /**
+   * Binds a printer to a bridge. The foreign key lives on the printer, so moving
+   * a bridge is a release followed by a bind — done here rather than server-side
+   * because the server's job is to refuse a bridge that is already spoken for,
+   * not to guess that the caller meant to move it.
+   */
+  const bindBridgeMutation = useMutation({
+    mutationFn: async ({ bridgeId, printerId }: { bridgeId: string; printerId: string | null }) => {
+      const current = printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === bridgeId);
+      if (current && current.id !== printerId) {
+        await api.skiSwap.patchPrinter(orgId, current.id, { bridgeDeviceId: null });
+      }
+      if (printerId) await api.skiSwap.patchPrinter(orgId, printerId, { bridgeDeviceId: bridgeId });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] }),
+  });
+
+  function BridgePrinterPicker(bridge: DeviceItem) {
+    const bound = printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === bridge.id);
+    return (
+      <div className="mt-1.5">
+        <label className="block text-xs text-gray-500 mb-1">Drives printer</label>
+        <select
+          value={bound?.id ?? ''}
+          disabled={bindBridgeMutation.isPending}
+          onChange={(e) => bindBridgeMutation.mutate({ bridgeId: bridge.id, printerId: e.target.value || null })}
+          className="bg-surface-100 border border-gray-700 rounded px-2 py-1 text-xs text-white disabled:opacity-40"
+        >
+          <option value="">Not connected</option>
+          {printers
+            // A printer already driven by another bridge, or held by a seller,
+            // is not one this bridge can take.
+            .filter((p: SwapPrinterRecord) =>
+              p.id === bound?.id || (!p.bridgeDeviceId && !p.assignedSellerId))
+            .map((p: SwapPrinterRecord) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+        </select>
+      </div>
+    );
+  }
 
   const deletePrinterMutation = useMutation({
     mutationFn: (id: string) => api.skiSwap.deletePrinter(orgId, id),
@@ -287,6 +332,11 @@ export default function PrintersPage() {
                   <p className="text-xs text-gray-600 font-mono mt-0.5">
                     T:{p.marginTop} B:{p.marginBottom} L:{p.marginLeft} R:{p.marginRight}
                   </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {p.bridgeName
+                      ? <>Driven by <span className="text-gray-300">{p.bridgeName}</span>{p.stationName ? ` for ${p.stationName}` : ' — no station yet'}</>
+                      : 'No bridge — prints over Bluetooth'}
+                  </p>
                 </div>
                 <div className="flex gap-2 items-center">
                   <button
@@ -323,6 +373,25 @@ export default function PrintersPage() {
             {printers.length === 0 && <p className="text-gray-500 text-sm">No printers provisioned yet.</p>}
           </div>
         </div>
+
+      <div className="space-y-3 border-t border-gray-800 pt-6">
+        <div>
+          <h2 className="text-white font-medium">Print bridges</h2>
+          <p className="text-xs text-gray-500">
+            A bridge puts one printer on the network so a check-in station can print to it.
+            Bind the bridge to its printer here, then bind the bridge to a station on the
+            Check-in stations page.
+          </p>
+        </div>
+        <MutationError error={bindBridgeMutation.error} />
+        <DeviceCredentialList
+          orgId={orgId}
+          roles={BRIDGE_ROLES}
+          printers={printers}
+          canProvision={canManagePrinters}
+          renderExtra={BridgePrinterPicker}
+        />
+      </div>
 
       {/* Post-registration test print popup */}
       {pendingTestPrint && (

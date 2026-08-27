@@ -40,13 +40,15 @@ const device = await prisma.device.create({
   },
 });
 const printer = await prisma.swapPrinter.create({
-  data: { orgId: org.id, name: 'Smoke printer', bluetoothName: 'M110-SMOKE' },
+  // A station reaches its printer through its bridge, so the bridge is what
+  // the printer is bound to.
+  data: { orgId: org.id, name: 'Smoke printer', bluetoothName: 'M110-SMOKE', bridgeDeviceId: device.id },
 });
 
 // Station code allocation goes through the real service path via HTTP later;
 // here we place one directly so the queue has a target.
 const station = await prisma.checkinStation.create({
-  data: { orgId: org.id, name: 'Smoke station', code: 'S', bridgeDeviceId: device.id, printerId: printer.id },
+  data: { orgId: org.id, name: 'Smoke station', code: 'S', bridgeDeviceId: device.id },
 });
 
 const { user: staffEarly } = await smokeStaff(prisma, org, ['ski_swap:report', 'ski_swap:manage', 'ski_swap:admin']);
@@ -246,9 +248,9 @@ ok('turning it back on restores the hardware', Array.isArray(gated) && gated.len
    `${Array.isArray(gated) ? gated.length : '?'} devices`);
 
 // ─── A printer serves exactly one thing ─────────────────────────────────────
-// A printer is one BLE peripheral and whoever holds the link owns it, so two
-// stations sharing one means two bridges fighting over it, and a station sharing
-// one with a business seller means the bridge wins silently.
+// A printer is one BLE peripheral and whoever holds the link owns it. Two
+// bridges on one printer means two masters fighting over it, and a bridged
+// printer handed to a business seller means the bridge wins silently.
 
 const H2 = { authorization: `Bearer ${staffTokenEarly}`, 'content-type': 'application/json' };
 
@@ -258,36 +260,50 @@ const second = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations`, {
 ok('a second station is created', !!second.id, JSON.stringify(second).slice(0, 80));
 
 let res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${second.id}`, {
-  method: 'PATCH', headers: H2, body: JSON.stringify({ printerId: printer.id }),
-});
-ok('a printer cannot serve two stations', res2.status === 409, String(res2.status));
-
-res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${second.id}`, {
   method: 'PATCH', headers: H2, body: JSON.stringify({ bridgeDeviceId: device.id }),
 });
 ok('a bridge cannot serve two stations', res2.status === 409, String(res2.status));
 
-// A retired station has to let go, or its printer is out of circulation for good.
+const spare = await prisma.swapPrinter.create({
+  data: { orgId: org.id, name: 'Smoke spare printer', bluetoothName: 'M110-SPARE' },
+});
+res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/printers/${spare.id}`, {
+  method: 'PATCH', headers: H2, body: JSON.stringify({ bridgeDeviceId: device.id }),
+});
+ok('a bridge cannot drive two printers', res2.status === 409, String(res2.status));
+
+// A retired station has to let go, or its bridge is out of circulation for good.
 await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}`, { method: 'DELETE', headers: H2 });
 const freed = await prisma.checkinStation.findUnique({ where: { id: station.id } });
-ok('retiring a station releases its hardware',
-   freed.printerId === null && freed.bridgeDeviceId === null && freed.deletedAt !== null,
-   JSON.stringify({ printerId: freed.printerId, bridgeDeviceId: freed.bridgeDeviceId }));
+ok('retiring a station releases its bridge',
+   freed.bridgeDeviceId === null && freed.deletedAt !== null,
+   JSON.stringify({ bridgeDeviceId: freed.bridgeDeviceId, deletedAt: freed.deletedAt }));
 
 res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${second.id}`, {
-  method: 'PATCH', headers: H2, body: JSON.stringify({ printerId: printer.id }),
+  method: 'PATCH', headers: H2, body: JSON.stringify({ bridgeDeviceId: device.id }),
 });
-ok('and the printer can then be bound elsewhere', res2.status === 200, String(res2.status));
+ok('and the bridge can then be bound elsewhere', res2.status === 200, String(res2.status));
 
-// The other direction: a printer serving a station cannot be handed to a seller.
+// Releasing a bridge from its printer is what frees the printer for anything
+// else — including a Bluetooth override from a tablet.
+res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/printers/${printer.id}`, {
+  method: 'PATCH', headers: H2, body: JSON.stringify({ bridgeDeviceId: null }),
+});
+ok('a printer can be released from its bridge', res2.status === 200, String(res2.status));
+res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/printers/${spare.id}`, {
+  method: 'PATCH', headers: H2, body: JSON.stringify({ bridgeDeviceId: device.id }),
+});
+ok('and the bridge can then take another printer', res2.status === 200, String(res2.status));
+
+// The other direction: a printer a bridge drives cannot be handed to a seller.
 const anySeller = await prisma.sellerProfile.findFirst({ where: { membership: { orgId: org.id } } });
 if (anySeller) {
-  res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/printers/${printer.id}`, {
+  res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/printers/${spare.id}`, {
     method: 'PATCH', headers: H2, body: JSON.stringify({ assignedSellerId: anySeller.id }),
   });
-  ok('a station printer cannot be assigned to a seller', res2.status === 409, String(res2.status));
+  ok('a bridged printer cannot be assigned to a seller', res2.status === 409, String(res2.status));
 } else {
-  console.log('SKIP  station printer vs seller — no seller profile on this database');
+  console.log('SKIP  bridged printer vs seller — no seller profile on this database');
 }
 
 await prisma.checkinStation.deleteMany({ where: { id: second.id } });
@@ -295,5 +311,5 @@ await prisma.checkinStation.deleteMany({ where: { id: second.id } });
 await prisma.printJob.deleteMany({ where: { orgId: org.id } });
 await prisma.checkinStation.deleteMany({ where: { id: station.id } });
 await prisma.device.deleteMany({ where: { id: { in: [device.id, other.id, checkin.id] } } });
-await prisma.swapPrinter.deleteMany({ where: { id: printer.id } });
+await prisma.swapPrinter.deleteMany({ where: { id: { in: [printer.id, spare.id] } } });
 await prisma.$disconnect();
