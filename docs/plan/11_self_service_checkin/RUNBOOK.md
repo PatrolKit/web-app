@@ -33,7 +33,7 @@ the whole status — scan down the list for anything that is not green.
 | **Printing — N in the queue** | Nothing. It is draining. |
 | **N labels gave up** | Fix the printer, then **Clear** and have sellers reprint. |
 | **Online — printer unconfirmed** | The bridge is not reporting its printer link. Send a **Test** print; if it works, the bridge needs a firmware update. |
-| **Cannot reach the printer** | Printer power, or something else paired to it. |
+| **Online, but cannot reach the printer** | Printer power, or something else paired to it. The bridge is fine. |
 | **Offline** | Bridge power and wifi. Declared after 20 seconds of silence — the bridge calls in every 1–5 seconds, so that is four missed beats. Hover for how long. |
 | **Needs a bridge** | Bind one from the Bridge dropdown on the row. |
 | **Bridge has no printer** | Bind the bridge to its printer on the **Printers** page — a station reaches its printer through its bridge. |

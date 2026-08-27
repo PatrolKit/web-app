@@ -405,7 +405,9 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): Hardw
   }
 
   if (queue.printerLink === 'down') {
-    return { icon: faPrintSlashDuo, label: 'Cannot reach the printer', tone: 'bad' };
+    // "Online, but" because the bridge is answering — this is the printer half
+    // failing, and the two send you to different pieces of hardware.
+    return { icon: faPrintSlashDuo, label: 'Online, but cannot reach the printer', tone: 'bad' };
   }
 
   if (queue.printerLink === null) {

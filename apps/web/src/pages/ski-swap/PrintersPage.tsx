@@ -505,7 +505,7 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
   if (bridge.printerLink === 'down') {
     return {
       icon: faPrintSlashDuo,
-      label: 'Cannot reach the printer',
+      label: 'Online, but cannot reach the printer',
       tone: 'bad',
       title: `Printer power, or something else paired to ${printer.bluetoothName}.`,
     };
