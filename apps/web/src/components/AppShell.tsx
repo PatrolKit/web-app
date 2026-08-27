@@ -6,6 +6,7 @@ import { faPrint as faPrintDuo, faPrintSlash as faPrintSlashDuo } from '@fortawe
 import { useAuth } from '../contexts/AuthContext';
 import { PrinterProvider, usePrinter } from '../contexts/PrinterContext';
 import { api } from '../lib/api';
+import type { OrgRole } from '../lib/api.types';
 
 /**
  * What every page under the shell receives.
@@ -16,6 +17,14 @@ import { api } from '../lib/api';
 export interface AppShellContext {
   orgId: string;
   perms: Set<string>;
+  /**
+   * Roles held at this org, derived from live profile rows.
+   *
+   * Distinct from permissions: being a seller is something you *are* because a
+   * SellerProfile exists, not something you were granted. The retired
+   * `business_seller` permission conflated the two.
+   */
+  roles: OrgRole[];
   /** True when the org has this module turned on. Gates nav items and page sections alike. */
   isModuleEnabled: (key: string) => boolean;
 }
@@ -37,6 +46,7 @@ export default function AppShell() {
 
   const activeMembership = user?.memberships.find((m) => m.orgId === activeOrgId);
   const perms = new Set(activeMembership?.permissions ?? []);
+  const roles = activeMembership?.roles ?? [];
 
   // All hooks must be called before any conditional return (Rules of Hooks).
   const { data: org } = useQuery({
@@ -57,7 +67,13 @@ export default function AppShell() {
 
   function isModuleEnabled(key: string) {
     // If org data isn't loaded (user lacks org:read), assume enabled so the nav shows.
-    if (!org) return perms.has(`${key}:report` as never) || perms.has(`${key}:manage` as never) || perms.has(`${key}:admin` as never) || (key === 'ski_swap' && perms.has('business_seller'));
+    // Without org data (the caller lacks org:read) assume enabled so the nav shows.
+    if (!org) {
+      return perms.has(`${key}:report` as never)
+        || perms.has(`${key}:manage` as never)
+        || perms.has(`${key}:admin` as never)
+        || (key === 'ski_swap' && roles.includes('seller'));
+    }
     return org.modules.find((m) => m.key === key)?.enabled === true;
   }
 
@@ -70,8 +86,8 @@ export default function AppShell() {
     <PrinterProvider
       orgId={activeOrgId ?? ''}
       userId={user?.id ?? ''}
-      isSeller={perms.has('business_seller') && !perms.has('ski_swap:report')}
-      canPrint={perms.has('ski_swap:manage') || perms.has('business_seller')}
+      isSeller={roles.includes('seller') && !perms.has('ski_swap:report')}
+      canPrint={perms.has('ski_swap:manage') || roles.includes('seller')}
     >
     <div className="min-h-screen bg-surface flex">
       {serverDown && (
@@ -110,9 +126,6 @@ export default function AppShell() {
 
         {/* Nav — use NavLink so navigation stays in-app (no full reload) */}
         <nav className="flex-1 p-4 space-y-1">
-          {perms.has('devices:read') && (
-            <NavLink to="devices" className={navClass}>Devices</NavLink>
-          )}
           {perms.has('users:read') && (
             <NavLink to="members" className={navClass}>Members</NavLink>
           )}
@@ -125,7 +138,7 @@ export default function AppShell() {
           {perms.has('signage:report') && isModuleEnabled('signage') && (
             <NavLink to="signage" className={navClass}>Signage</NavLink>
           )}
-          {(perms.has('ski_swap:report') || perms.has('business_seller')) && isModuleEnabled('ski_swap') && (
+          {(perms.has('ski_swap:report') || roles.includes('seller')) && isModuleEnabled('ski_swap') && (
             <NavLink
               to={perms.has('ski_swap:report') ? 'ski-swap' : 'ski-swap/my-items'}
               className={navClass}
@@ -149,7 +162,7 @@ export default function AppShell() {
         {/* `isModuleEnabled` travels with the context so a page gates its own
             sections the same way the nav does — one definition of "enabled",
             including the fallback for a user who cannot read the org. */}
-        <Outlet context={{ orgId: activeOrgId, perms, isModuleEnabled }} />
+        <Outlet context={{ orgId: activeOrgId, perms, roles: activeMembership?.roles ?? [], isModuleEnabled }} />
       </main>
       <PrintPreviewModal />
     </div>

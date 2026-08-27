@@ -14,7 +14,7 @@ describe('Org contracts', () => {
     const EXPECTED_KEYS = [
       'org:read', 'org:manage', 'modules:manage',
       'users:read', 'users:invite', 'users:import', 'users:manage',
-      'permissions:assign', 'devices:read', 'devices:provision', 'devices:revoke',
+      'permissions:assign',
       'ski_swap:report', 'ski_swap:manage', 'ski_swap:admin',
       'time_tracking:report', 'time_tracking:manage', 'time_tracking:admin',
       'signage:report', 'signage:manage', 'signage:admin',

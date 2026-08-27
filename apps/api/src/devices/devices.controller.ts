@@ -4,7 +4,6 @@ import {
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
-import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { DevicesService } from './devices.service';
@@ -16,15 +15,19 @@ import type { DeviceListItem, ProvisionDeviceResponse } from '../contracts/devic
 export class DevicesController {
   constructor(private readonly devicesService: DevicesService) {}
 
+  // No @RequirePermissions here or below: which permission applies depends on
+  // the device's role, which the decorator cannot see. The service resolves it
+  // per device and refuses what the caller does not administer.
   @Get()
-  @RequirePermissions('devices:read')
-  listDevices(@Param('orgId') orgId: string): Promise<DeviceListItem[]> {
-    return this.devicesService.listDevices(orgId);
+  listDevices(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<DeviceListItem[]> {
+    return this.devicesService.listDevices(orgId, user.userId);
   }
 
   @Post()
   @HttpCode(201)
-  @RequirePermissions('devices:provision')
   provision(
     @Param('orgId') orgId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -35,7 +38,6 @@ export class DevicesController {
 
   @Post(':id/rotate-secret')
   @HttpCode(200)
-  @RequirePermissions('devices:provision')
   rotateSecret(
     @Param('orgId') orgId: string,
     @Param('id') id: string,
@@ -46,7 +48,6 @@ export class DevicesController {
 
   @Delete(':id')
   @HttpCode(200)
-  @RequirePermissions('devices:revoke')
   revokeDevice(
     @Param('orgId') orgId: string,
     @Param('id') id: string,
@@ -57,12 +58,12 @@ export class DevicesController {
 
   @Patch(':id')
   @HttpCode(200)
-  @RequirePermissions('devices:provision')
   updateDevice(
     @Param('orgId') orgId: string,
     @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() body: UpdateDeviceDto,
   ): Promise<DeviceListItem> {
-    return this.devicesService.updateDeviceRole(orgId, id, body.role);
+    return this.devicesService.updateDeviceRole(orgId, id, user.userId, body.role);
   }
 }

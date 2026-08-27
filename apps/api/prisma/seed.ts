@@ -47,9 +47,6 @@ const PERMISSIONS = [
   { key: 'users:import', description: 'Bulk import users (the "user_admin" capability).' },
   { key: 'users:manage', description: 'Edit/disable members.' },
   { key: 'permissions:assign', description: 'Grant/revoke permissions on a membership.' },
-  { key: 'devices:read', description: 'View provisioned devices.' },
-  { key: 'devices:provision', description: 'Create/provision devices + rotate secrets.' },
-  { key: 'devices:revoke', description: 'Revoke devices.' },
   // Ski Swap module permissions
   { key: 'ski_swap:report', description: 'View ski swap items, stats, and seller records.' },
   { key: 'ski_swap:manage', description: 'Read/write ski swap items and sellers.' },

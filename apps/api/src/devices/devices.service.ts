@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -18,6 +19,21 @@ import type {
   ProvisionDeviceResponse,
   DeviceTokenResponse,
 } from '../contracts/devices.contracts';
+import { moduleOfRole } from '../contracts/devices.contracts';
+import { PermissionsService } from '../permissions/permissions.service';
+
+/**
+ * Which permission lets someone manage a device of a given role.
+ *
+ * Hardware belongs to the module that uses it, so the module's own admin
+ * authorises it. A single `devices:*` axis would mean a ski-swap admin could
+ * provision a time clock, and — as it did — that a ski-swap admin could
+ * configure a station while being unable to supply hardware for it.
+ */
+const MANAGE_PERMISSION: Record<string, string> = {
+  ski_swap: 'ski_swap:admin',
+  time_clock: 'time_tracking:manage',
+};
 
 @Injectable()
 export class DevicesService {
@@ -25,8 +41,33 @@ export class DevicesService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly auditService: AuditService,
+    private readonly permissions: PermissionsService,
     private readonly config: ConfigService,
   ) {}
+
+  /** Refuses unless the caller administers the module this role belongs to. */
+  async assertMayManage(orgId: string, userId: string, role: string): Promise<void> {
+    const required = MANAGE_PERMISSION[moduleOfRole(role as DeviceRole)];
+    const granted = await this.permissions.getPermissions(userId, orgId);
+    if (!required || !granted.includes(required)) {
+      throw new ForbiddenException(`Managing this device requires ${required ?? 'an unknown permission'}`);
+    }
+  }
+
+  /** Looks the device up first, then checks the caller against its role. */
+  private async assertMayManageDevice(orgId: string, deviceId: string, userId: string): Promise<void> {
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
+    await this.assertMayManage(orgId, userId, device.role);
+  }
+
+  /** The device roles a caller may see, derived from the modules they administer. */
+  async manageableRoles(orgId: string, userId: string): Promise<string[]> {
+    const granted = await this.permissions.getPermissions(userId, orgId);
+    return Object.entries(MANAGE_PERMISSION)
+      .filter(([, permission]) => granted.includes(permission))
+      .map(([moduleKey]) => moduleKey);
+  }
 
   // ─── Provision ──────────────────────────────────────────────────────────────
 
@@ -35,6 +76,8 @@ export class DevicesService {
     actorUserId: string,
     data: ProvisionDeviceRequest,
   ): Promise<ProvisionDeviceResponse> {
+    await this.assertMayManage(orgId, actorUserId, data.role);
+
     const clientId = createId();
     const clientSecret = randomBytes(32).toString('hex');
     const secretHash = await argon2.hash(clientSecret, { type: argon2.argon2id });
@@ -76,9 +119,16 @@ export class DevicesService {
 
   // ─── List ────────────────────────────────────────────────────────────────────
 
-  async listDevices(orgId: string): Promise<DeviceListItem[]> {
+  /**
+   * Devices the caller administers, which is to say the hardware of the modules
+   * they administer. A ski-swap admin has no business seeing time clocks.
+   */
+  async listDevices(orgId: string, userId: string): Promise<DeviceListItem[]> {
+    const modules = await this.manageableRoles(orgId, userId);
+    if (modules.length === 0) return [];
+
     const devices = await this.prisma.device.findMany({
-      where: { orgId },
+      where: { orgId, OR: modules.map((m) => ({ role: { startsWith: `${m}.` } })) },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -132,6 +182,7 @@ export class DevicesService {
   ): Promise<{ clientSecret: string }> {
     const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
     if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
+    await this.assertMayManage(orgId, actorUserId, device.role);
 
     const newSecret = randomBytes(32).toString('hex');
     const newHash = await argon2.hash(newSecret, { type: argon2.argon2id });
@@ -149,6 +200,7 @@ export class DevicesService {
   // ─── Revoke ──────────────────────────────────────────────────────────────────
 
   async revokeDevice(orgId: string, deviceId: string, actorUserId: string): Promise<void> {
+    await this.assertMayManageDevice(orgId, deviceId, actorUserId);
     const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
     if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
 
@@ -212,6 +264,7 @@ export class DevicesService {
   async updateDeviceRole(
     orgId: string,
     deviceId: string,
+    actorUserId: string,
     role: DeviceRole,
   ): Promise<DeviceListItem> {
     const device = await this.prisma.device.findUnique({
@@ -219,6 +272,10 @@ export class DevicesService {
     });
 
     if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
+    // Both sides: otherwise a ski-swap admin could relabel a time clock into
+    // something they administer, and inherit it.
+    await this.assertMayManage(orgId, actorUserId, device.role);
+    await this.assertMayManage(orgId, actorUserId, role);
 
     const updated = await this.prisma.device.update({
       where: { id: deviceId },

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { NavLink, Navigate, Outlet, useOutletContext, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import type { AppShellContext } from '../../components/AppShell';
 import { useAuth } from '../../contexts/AuthContext';
 import type { SwapResponse } from '../../lib/api.types';
 
@@ -21,7 +22,7 @@ export interface SkiSwapContext {
 }
 
 export default function SkiSwapLayout() {
-  const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
+  const { orgId, perms, roles } = useOutletContext<AppShellContext>();
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -29,7 +30,9 @@ export default function SkiSwapLayout() {
   const storageKey = user ? `patrolkit:${user.id}:${orgId}:selectedSwap` : null;
   const sellerStorageKey = user ? `patrolkit:${user.id}:${orgId}:sellerSelectedSwap` : null;
   const isAdmin = perms.has('ski_swap:admin');
-  const isSellerOnly = perms.has('business_seller') && !perms.has('ski_swap:report');
+  // Being a seller is a role derived from a live profile row, not a permission —
+  // `business_seller` was retired with the identity consolidation in Plan 10.
+  const isSellerOnly = roles.includes('seller') && !perms.has('ski_swap:report');
 
   const { data: swaps = [] } = useQuery({
     queryKey: ['ski-swap/swaps', orgId],
@@ -107,7 +110,7 @@ export default function SkiSwapLayout() {
     if (!sellerSelectedSwapId && sellerSwaps.length > 0) setSellerSelectedSwapId(sellerSwaps[0].id);
   }, [sellerSwaps, sellerSelectedSwapId]);
 
-  if (!perms.has('ski_swap:report') && !perms.has('business_seller')) return <Navigate to="/dashboard" replace />;
+  if (!perms.has('ski_swap:report') && !roles.includes('seller')) return <Navigate to="/dashboard" replace />;
 
   const selectedSwap = swaps.find((s) => s.id === selectedSwapId) ?? null;
 
@@ -171,6 +174,12 @@ export default function SkiSwapLayout() {
                 <NavLink to="swaps" className={navClass}>Swaps</NavLink>
               )}
             </>
+          )}
+          {perms.has('ski_swap:report') && (
+            <NavLink to="check-in" className={navClass}>Check-in</NavLink>
+          )}
+          {perms.has('ski_swap:admin') && (
+            <NavLink to="printers" className={navClass}>Printers</NavLink>
           )}
           {perms.has('ski_swap:admin') && (
             <NavLink to="config" className={navClass}>

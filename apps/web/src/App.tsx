@@ -5,7 +5,6 @@ import AppShell from './components/AppShell';
 import LoginPage from './pages/auth/LoginPage';
 import VerifyPage from './pages/auth/VerifyPage';
 import MembersPage from './pages/members/MembersPage';
-import DevicesPage from './pages/devices/DevicesPage';
 import AdminPage from './pages/admin/AdminPage';
 import SkiSwapLayout from './pages/ski-swap/SkiSwapLayout';
 import TimeTrackingLayout from './pages/time-tracking/TimeTrackingLayout';
@@ -16,6 +15,9 @@ import RosterPage from './pages/time-tracking/RosterPage';
 import TimeTrackingSettingsPage from './pages/time-tracking/SettingsPage';
 import SignageLayout, { SignagePlaceholder } from './pages/signage/SignageLayout';
 import SkiSwapDashboard from './pages/ski-swap/SkiSwapDashboard';
+import CheckinStationsPage from './pages/ski-swap/CheckinStationsPage';
+import PrintersPage from './pages/ski-swap/PrintersPage';
+import TimeClockDevicesPage from './pages/time-tracking/DevicesPage';
 import SwapsPage from './pages/ski-swap/SwapsPage';
 import ItemsPage from './pages/ski-swap/ItemsPage';
 import SellersPage from './pages/ski-swap/SellersPage';
@@ -87,7 +89,6 @@ export default function App() {
         <Route path="dashboard" element={<AppShell />}>
           <Route index element={<DefaultDashboardRedirect />} />
           <Route path="members" element={<MembersPage />} />
-          <Route path="devices" element={<DevicesPage />} />
           <Route path="admin" element={<AdminPage />} />
           {/* Modules used to be its own nav item; keep old links working. */}
           <Route path="modules" element={<Navigate to="/dashboard/org-admin/modules" replace />} />
@@ -101,6 +102,8 @@ export default function App() {
             <Route path="swaps" element={<SwapsPage />} />
             <Route path="items" element={<ItemsPage />} />
             <Route path="sellers" element={<SellersPage />} />
+            <Route path="check-in" element={<CheckinStationsPage />} />
+            <Route path="printers" element={<PrintersPage />} />
             <Route path="config" element={<AdministrationPage />} />
             <Route path="my-items" element={<BusinessSellerPage />} />
             <Route path="seller-profile" element={<SellerProfilePage />} />
@@ -110,6 +113,7 @@ export default function App() {
             <Route path="shifts" element={<ShiftsPage />} />
             <Route path="hours" element={<HoursReportPage />} />
             <Route path="roster" element={<RosterPage />} />
+            <Route path="devices" element={<TimeClockDevicesPage />} />
             <Route path="settings" element={<TimeTrackingSettingsPage />} />
           </Route>
           <Route path="signage" element={<SignageLayout />}>
