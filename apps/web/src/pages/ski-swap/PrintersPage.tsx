@@ -23,6 +23,7 @@ import { DeviceCredentialList, MutationError } from '../devices/DeviceCredential
 import { lastSeenTitle, recentlySeen, StatusLine } from '../devices/hardwareStatus';
 import type { HardwareStatus } from '../devices/hardwareStatus';
 import type { DeviceItem, DeviceRole, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
+import BridgeEditModal from './BridgeEditModal';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
 /** A bridge is the printer's network adapter, so it is managed alongside them. */
@@ -43,6 +44,7 @@ export default function PrintersPage() {
   const canManagePrinters = perms.has('ski_swap:admin');
   const [pendingTestPrint, setPendingTestPrint] = useState<SwapPrinterRecord | null>(null);
   const [isPrintingId, setIsPrintingId] = useState<string | null>(null);
+  const [editingBridge, setEditingBridge] = useState<DeviceItem | null>(null);
 
 
   // ─── Printers state ───────────────────────────────────────────────────────
@@ -131,49 +133,9 @@ export default function PrintersPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] }); setEditingPrinter(null); },
   });
 
-  /**
-   * Binds a printer to a bridge. The foreign key lives on the printer, so moving
-   * a bridge is a release followed by a bind — done here rather than server-side
-   * because the server's job is to refuse a bridge that is already spoken for,
-   * not to guess that the caller meant to move it.
-   */
-  const bindBridgeMutation = useMutation({
-    mutationFn: async ({ bridgeId, printerId }: { bridgeId: string; printerId: string | null }) => {
-      const current = printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === bridgeId);
-      if (current && current.id !== printerId) {
-        await api.skiSwap.patchPrinter(orgId, current.id, { bridgeDeviceId: null });
-      }
-      if (printerId) await api.skiSwap.patchPrinter(orgId, printerId, { bridgeDeviceId: bridgeId });
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] }),
-  });
-
-  function BridgePrinterPicker(bridge: DeviceItem) {
+  function BridgeStatus(bridge: DeviceItem) {
     const bound = printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === bridge.id);
-    return (
-      <>
-      <StatusLine status={rollUpBridge(bridge, bound)} className="text-sm mt-1" />
-      <div className="mt-1.5">
-        <label className="block text-xs text-gray-500 mb-1">Drives printer</label>
-        <select
-          value={bound?.id ?? ''}
-          disabled={bindBridgeMutation.isPending}
-          onChange={(e) => bindBridgeMutation.mutate({ bridgeId: bridge.id, printerId: e.target.value || null })}
-          className="bg-surface-100 border border-gray-700 rounded px-2 py-1 text-xs text-white disabled:opacity-40"
-        >
-          <option value="">Not connected</option>
-          {printers
-            // A printer already driven by another bridge, or held by a seller,
-            // is not one this bridge can take.
-            .filter((p: SwapPrinterRecord) =>
-              p.id === bound?.id || (!p.bridgeDeviceId && !p.assignedSellerId))
-            .map((p: SwapPrinterRecord) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-        </select>
-      </div>
-      </>
-    );
+    return <StatusLine status={rollUpBridge(bridge, bound)} className="text-sm mt-1" />;
   }
 
   const deletePrinterMutation = useMutation({
@@ -404,15 +366,25 @@ export default function PrintersPage() {
             Check-in stations page.
           </p>
         </div>
-        <MutationError error={bindBridgeMutation.error} />
         <DeviceCredentialList
           orgId={orgId}
           role={BRIDGE_ROLE}
           printers={printers}
           canProvision={canManagePrinters}
-          renderExtra={BridgePrinterPicker}
+          renderExtra={BridgeStatus}
+          onEdit={setEditingBridge}
         />
       </div>
+
+      {editingBridge && (
+        <BridgeEditModal
+          orgId={orgId}
+          bridge={editingBridge}
+          printers={printers}
+          boundPrinter={printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === editingBridge.id)}
+          onClose={() => setEditingBridge(null)}
+        />
+      )}
 
       {/* Post-registration test print popup */}
       {pendingTestPrint && (

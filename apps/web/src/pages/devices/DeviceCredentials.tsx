@@ -38,7 +38,7 @@ export function MutationError({ error }: { error: unknown }) {
  * `online` and stays silent, and taking it at its word is what made a dead
  * bridge look provisioned.
  */
-function BridgeProvisioningPanel({
+export function BridgeProvisioningPanel({
   clientId,
   secret,
   printers,
@@ -369,14 +369,21 @@ export function DeviceCredentialList({
   printers = [],
   canProvision,
   renderExtra,
+  onEdit,
 }: {
   orgId: string;
   role: DeviceRole;
   /** Only needed where a bridge might be provisioned: it picks a printer. */
   printers?: SwapPrinterRecord[];
   canProvision: boolean;
-  /** Extra controls under a device row — the Printers page binds a printer here. */
+  /** Extra controls under a device row — the Printers page shows status here. */
   renderExtra?: (device: DeviceItem) => ReactNode;
+  /**
+   * Replaces the row's Edit. Given one, the caller owns editing entirely — a
+   * bridge opens a screen where a secret rotation is one option among several,
+   * rather than the whole meaning of the button.
+   */
+  onEdit?: (device: DeviceItem) => void;
 }) {
   const qc = useQueryClient();
   const [provisionName, setProvisionName] = useState('');
@@ -513,7 +520,10 @@ export function DeviceCredentialList({
                 </div>
                 <div className="flex gap-2">
                   {canProvision && (
-                    <button onClick={() => rotateMutation.mutate(d.id)} className="text-xs text-yellow-500 hover:underline">Edit</button>
+                    <button
+                      onClick={() => (onEdit ? onEdit(d) : rotateMutation.mutate(d.id))}
+                      className="text-xs text-yellow-500 hover:underline"
+                    >Edit</button>
                   )}
                   {canProvision && (
                     <button

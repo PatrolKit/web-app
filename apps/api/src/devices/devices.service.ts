@@ -286,4 +286,39 @@ export class DevicesService {
       orgLogoUrl: device.org.logoUrl ?? null,
     };
   }
+
+  // ─── Rename ──────────────────────────────────────────────────────────────────
+
+  /**
+   * The label on the box, and nothing else. Names are how staff find hardware
+   * at a venue — "the one by the door" beats a client id — so they have to be
+   * fixable without re-provisioning, which for a bridge means a physical trip.
+   */
+  async renameDevice(
+    orgId: string,
+    deviceId: string,
+    actorUserId: string,
+    name: string,
+  ): Promise<DeviceListItem> {
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
+    await this.assertMayManage(orgId, actorUserId, device.role);
+
+    const updated = await this.prisma.device.update({
+      where: { id: deviceId },
+      data: { name },
+    });
+
+    return {
+      id: updated.id,
+      clientId: updated.clientId,
+      name: updated.name,
+      role: updated.role as DeviceRole,
+      orgId: updated.orgId,
+      lastSeenAt: updated.lastSeenAt,
+      printerLink: (updated.printerLink as 'ready' | 'down' | null) ?? null,
+      printerLinkAt: updated.printerLinkAt,
+      createdAt: updated.createdAt,
+    };
+  }
 }

@@ -99,6 +99,14 @@ export const DeviceMeResponseSchema = z.object({
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
 export class ProvisionDeviceDto extends createZodDto(ProvisionDeviceSchema) {}
+/**
+ * Renaming only. A device's role is fixed at provisioning — the page it lives
+ * on decides what it is, and changing that afterwards was a control offering to
+ * turn a thing into itself.
+ */
+export class RenameDeviceDto extends createZodDto(
+  z.object({ name: z.string().min(1).max(60) }).strict(),
+) {}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

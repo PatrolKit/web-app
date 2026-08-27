@@ -264,6 +264,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    rename: (orgId: string, id: string, name: string) =>
+      request<import('./api.types').DeviceItem>(`/orgs/${orgId}/devices/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+      }),
     rotateSecret: (orgId: string, id: string) =>
       request<{ clientSecret: string }>(`/orgs/${orgId}/devices/${id}/rotate-secret`, { method: 'POST' }),
     revoke: (orgId: string, id: string) =>
