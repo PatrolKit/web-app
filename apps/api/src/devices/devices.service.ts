@@ -284,38 +284,4 @@ export class DevicesService {
       orgLogoUrl: device.org.logoUrl ?? null,
     };
   }
-
-  // ─── Update role ─────────────────────────────────────────────────────────────
-
-  async updateDeviceRole(
-    orgId: string,
-    deviceId: string,
-    actorUserId: string,
-    role: DeviceRole,
-  ): Promise<DeviceListItem> {
-    const device = await this.prisma.device.findUnique({
-      where: { id: deviceId },
-    });
-
-    if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
-    // Both sides: otherwise a ski-swap admin could relabel a time clock into
-    // something they administer, and inherit it.
-    await this.assertMayManage(orgId, actorUserId, device.role);
-    await this.assertMayManage(orgId, actorUserId, role);
-
-    const updated = await this.prisma.device.update({
-      where: { id: deviceId },
-      data: { role },
-    });
-
-    return {
-      id: updated.id,
-      clientId: updated.clientId,
-      name: updated.name,
-      role: updated.role as DeviceRole,
-      orgId: updated.orgId,
-      lastSeenAt: updated.lastSeenAt,
-      createdAt: updated.createdAt,
-    };
-  }
 }

@@ -264,11 +264,6 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    updateRole: (orgId: string, id: string, role: import('./api.types').DeviceRole) =>
-      request<import('./api.types').DeviceItem>(`/orgs/${orgId}/devices/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ role }),
-      }),
     rotateSecret: (orgId: string, id: string) =>
       request<{ clientSecret: string }>(`/orgs/${orgId}/devices/${id}/rotate-secret`, { method: 'POST' }),
     revoke: (orgId: string, id: string) =>

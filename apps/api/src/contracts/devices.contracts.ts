@@ -90,9 +90,6 @@ export const DeviceMeResponseSchema = z.object({
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
 export class ProvisionDeviceDto extends createZodDto(ProvisionDeviceSchema) {}
-export class UpdateDeviceDto extends createZodDto(
-  z.object({ role: DeviceRoleSchema }).strict(),
-) {}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -101,4 +98,3 @@ export type ProvisionDeviceResponse = z.infer<typeof ProvisionDeviceResponseSche
 export type DeviceListItem = z.infer<typeof DeviceListItemSchema>;
 export type DeviceTokenResponse = z.infer<typeof DeviceTokenResponseSchema>;
 export type DeviceMeResponse = z.infer<typeof DeviceMeResponseSchema>;
-export type UpdateDeviceRequest = { role: DeviceRole };
