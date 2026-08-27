@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 
@@ -48,6 +49,25 @@ export const OFFLINE_AFTER_MS = 20_000;
  * offline half the time. Two missed retries, plus slack.
  */
 export const OFFLINE_AFTER_UNBOUND_MS = 70_000;
+
+/**
+ * Re-renders on a timer, so a status computed from the clock keeps up with it.
+ *
+ * Every "offline" verdict here is `now - lastSeen`, evaluated during render —
+ * and a component only renders when something changes. Polling the device list
+ * is not enough: react-query hands back the identical object when a refetch is
+ * deep-equal, so nothing re-renders, and a bridge that has gone silent is
+ * precisely the case where the data stops changing. The status would freeze on
+ * the last value the hardware managed to report, which is the one moment it
+ * matters most that it does not.
+ */
+export function useClockTick(everyMs = 5_000): void {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => force((n) => n + 1), everyMs);
+    return () => clearInterval(id);
+  }, [everyMs]);
+}
 
 export function recentlySeen(iso: string | null, withinMs = OFFLINE_AFTER_MS): boolean {
   if (!iso) return false;

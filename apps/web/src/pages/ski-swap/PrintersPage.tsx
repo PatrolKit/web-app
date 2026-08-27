@@ -25,6 +25,7 @@ import {
   OFFLINE_AFTER_UNBOUND_MS,
   recentlySeen,
   StatusLine,
+  useClockTick,
 } from '../devices/hardwareStatus';
 import type { HardwareStatus } from '../devices/hardwareStatus';
 import type { DeviceItem, DeviceRole, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
@@ -50,6 +51,11 @@ export default function PrintersPage() {
   const [pendingTestPrint, setPendingTestPrint] = useState<SwapPrinterRecord | null>(null);
   const [isPrintingId, setIsPrintingId] = useState<string | null>(null);
   const [editingBridge, setEditingBridge] = useState<DeviceItem | null>(null);
+  // Bridge status is judged against the clock, and a dead bridge sends nothing —
+  // so without this the page never re-renders to notice one has gone quiet.
+  // Called here rather than in BridgeStatus, which is invoked as a plain
+  // function per row and would run a hook a variable number of times.
+  useClockTick();
   /** True when the edit screen opened straight off provisioning. */
   const [bridgeIsNew, setBridgeIsNew] = useState(false);
 

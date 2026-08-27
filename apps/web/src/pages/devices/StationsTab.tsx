@@ -17,7 +17,7 @@ import {
 import QRCode from 'react-qr-code';
 import { api } from '../../lib/api';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
-import { lastSeenTitle, recentlySeen, StatusLine } from './hardwareStatus';
+import { lastSeenTitle, recentlySeen, StatusLine, useClockTick } from './hardwareStatus';
 import type { HardwareStatus } from './hardwareStatus';
 import { deviceLabel } from '../../lib/api.types';
 import type {
@@ -343,6 +343,8 @@ function StationStatus({
   station: CheckinStationRecord;
   queue: StationQueueStatus;
 }) {
+  // A dead bridge sends nothing, so nothing re-renders this on its own.
+  useClockTick();
   return <StatusLine status={rollUp(station, queue)} className="text-sm mt-0.5" />;
 }
 
