@@ -49,10 +49,10 @@ const device = await prisma.device.create({
   },
 });
 const printer = await prisma.swapPrinter.create({
-  data: { orgId: org.id, name: 'Smoke printer', bluetoothName: 'M110-CI', bridgeDeviceId: device.id },
+  data: { orgId: org.id, name: 'Smoke printer', bluetoothName: 'M110-CI' },
 });
 const station = await prisma.checkinStation.create({
-  data: { orgId: org.id, name: 'Smoke station', code: 'Q', deviceId: device.id, printerId: printer.id },
+  data: { orgId: org.id, name: 'Smoke station', code: 'Q', bridgeDeviceId: device.id, printerId: printer.id },
 });
 
 // ─── The seller's walk ───────────────────────────────────────────────────────

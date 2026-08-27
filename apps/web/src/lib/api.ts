@@ -530,7 +530,12 @@ export const api = {
     patchStation: (
       orgId: string,
       stationId: string,
-      data: { name?: string; deviceId?: string | null; printerId?: string | null },
+      data: {
+        name?: string;
+        attendantDeviceId?: string | null;
+        bridgeDeviceId?: string | null;
+        printerId?: string | null;
+      },
     ) =>
       request<import('./api.types').CheckinStationRecord>(`/orgs/${orgId}/ski-swap/stations/${stationId}`, {
         method: 'PATCH', body: JSON.stringify(data),
@@ -564,7 +569,12 @@ export const api = {
     patchStation: (
       orgId: string,
       stationId: string,
-      data: { name?: string; deviceId?: string | null; printerId?: string | null },
+      data: {
+        name?: string;
+        attendantDeviceId?: string | null;
+        bridgeDeviceId?: string | null;
+        printerId?: string | null;
+      },
     ) =>
       request<import('./api.types').CheckinStationRecord>(`/orgs/${orgId}/ski-swap/stations/${stationId}`, {
         method: 'PATCH', body: JSON.stringify(data),

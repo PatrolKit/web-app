@@ -2,29 +2,39 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../prisma/prisma.service';
 import { SkuService } from './sku.service';
+import type { DeviceRole } from '../contracts/devices.contracts';
+import type { StationResponse } from '../contracts/ski-swap.contracts';
 
-const ADAPTER_ROLE = 'ski_swap.print_bridge';
+/** Which slot a device occupies is decided by what kind of device it is. */
+const ATTENDANT_ROLE: DeviceRole = 'ski_swap.staff_check_in';
+const BRIDGE_ROLE: DeviceRole = 'ski_swap.print_bridge';
 
-export interface StationResponse {
+const INCLUDE = { attendant: true, bridge: true, printer: true } as const;
+
+type StationRow = {
   id: string;
   name: string;
   code: string;
-  deviceId: string | null;
-  deviceName: string | null;
-  deviceLastSeenAt: string | null;
+  createdAt: Date;
+  attendantDeviceId: string | null;
+  bridgeDeviceId: string | null;
   printerId: string | null;
-  printerName: string | null;
-  createdAt: string;
-}
-
-const INCLUDE = { device: true, printer: true } as const;
+  attendant: { name: string; lastSeenAt: Date | null } | null;
+  bridge: { name: string; lastSeenAt: Date | null } | null;
+  printer: { name: string } | null;
+};
 
 /**
- * Check-in stations: a QR code, a bridge, and a printer.
+ * Check-in stations: a counter, its hardware, and the SKU namespace it mints in.
  *
- * The station is the layer that survives replacing either piece of hardware
- * beneath it, which is why it owns the code that namespaces every SKU printed
- * here — held on the bridge, a dead ESP-32 would change it mid-swap.
+ * One concept covers both kinds. A station with a staff tablet is *staffed*; one
+ * without is *self-service* and needs a bridge, because a seller has no other way
+ * to get a tag. The kind is derived rather than stored, so it cannot contradict
+ * the hardware actually bound to it.
+ *
+ * The station is also the layer that survives replacing either piece of hardware
+ * beneath it, which is why it owns the code that namespaces every SKU checked in
+ * here — held on a device, a failed tablet would take the namespace with it.
  */
 @Injectable()
 export class StationService {
@@ -52,7 +62,7 @@ export class StationService {
   }
 
   /**
-   * Renames a station, or points it at a different bridge or printer.
+   * Renames a station, or re-points it at different hardware.
    *
    * Re-binding has to be possible because hardware dies mid-swap. Queued jobs
    * survive it: they belong to the station, not to the box underneath.
@@ -60,38 +70,31 @@ export class StationService {
   async update(
     orgId: string,
     stationId: string,
-    data: { name?: string; deviceId?: string | null; printerId?: string | null },
+    data: {
+      name?: string;
+      attendantDeviceId?: string | null;
+      bridgeDeviceId?: string | null;
+      printerId?: string | null;
+    },
   ): Promise<StationResponse> {
     const station = await this.find(orgId, stationId);
 
-    if (data.deviceId) {
-      const device = await this.prisma.device.findFirst({
-        where: { id: data.deviceId, orgId },
-        include: { checkinStation: true },
-      });
-      if (!device) throw new NotFoundException('Device not found');
-      if (device.role !== ADAPTER_ROLE) {
-        throw new BadRequestException(`A station's bridge must be a "${ADAPTER_ROLE}" device`);
-      }
-      if (device.checkinStation && device.checkinStation.id !== station.id) {
-        throw new ConflictException(
-          `That bridge already serves station "${device.checkinStation.name}". Release it there first.`,
-        );
-      }
+    if (data.attendantDeviceId) {
+      await this.assertDeviceFree(orgId, data.attendantDeviceId, ATTENDANT_ROLE, station.id);
     }
-
+    if (data.bridgeDeviceId) {
+      await this.assertDeviceFree(orgId, data.bridgeDeviceId, BRIDGE_ROLE, station.id);
+    }
     if (data.printerId) {
-      const printer = await this.prisma.swapPrinter.findFirst({
-        where: { id: data.printerId, orgId },
-      });
-      if (!printer) throw new NotFoundException('Printer not found');
+      await this.assertPrinterFree(orgId, data.printerId, station.id);
     }
 
     const updated = await this.prisma.checkinStation.update({
       where: { id: station.id },
       data: {
         ...(data.name !== undefined ? { name: data.name } : {}),
-        ...(data.deviceId !== undefined ? { deviceId: data.deviceId } : {}),
+        ...(data.attendantDeviceId !== undefined ? { attendantDeviceId: data.attendantDeviceId } : {}),
+        ...(data.bridgeDeviceId !== undefined ? { bridgeDeviceId: data.bridgeDeviceId } : {}),
         ...(data.printerId !== undefined ? { printerId: data.printerId } : {}),
       },
       include: INCLUDE,
@@ -99,12 +102,23 @@ export class StationService {
     return toResponse(updated);
   }
 
-  /** Soft delete — the code stays claimed until it is, so SKUs never collide. */
+  /**
+   * Soft delete — the code stays claimed until then, so SKUs never collide.
+   *
+   * Everything else is released. A retired station holding a printer would keep
+   * it out of circulation permanently, since a printer serves one station at
+   * most and the index enforcing that does not care whether the station is live.
+   */
   async remove(orgId: string, stationId: string): Promise<void> {
     const station = await this.find(orgId, stationId);
     await this.prisma.checkinStation.update({
       where: { id: station.id },
-      data: { deletedAt: new Date(), deviceId: null },
+      data: {
+        deletedAt: new Date(),
+        attendantDeviceId: null,
+        bridgeDeviceId: null,
+        printerId: null,
+      },
     });
   }
 
@@ -132,6 +146,61 @@ export class StationService {
     };
   }
 
+  // ─── Guards ────────────────────────────────────────────────────────────────
+
+  /** A device serves one station, in the slot its role decides. */
+  private async assertDeviceFree(
+    orgId: string,
+    deviceId: string,
+    expectedRole: DeviceRole,
+    stationId: string,
+  ): Promise<void> {
+    const device = await this.prisma.device.findFirst({
+      where: { id: deviceId, orgId },
+      include: { attendedStation: true, bridgedStation: true },
+    });
+    if (!device) throw new NotFoundException('Device not found');
+    if (device.role !== expectedRole) {
+      throw new BadRequestException(`That slot takes a "${expectedRole}" device`);
+    }
+
+    const held = device.attendedStation ?? device.bridgedStation;
+    if (held && held.id !== stationId && !held.deletedAt) {
+      throw new ConflictException(
+        `That device already serves station "${held.name}". Release it there first.`,
+      );
+    }
+  }
+
+  /**
+   * A printer serves exactly one thing.
+   *
+   * It is a single BLE peripheral and whoever holds the link owns it, so a
+   * printer shared between two stations means two bridges fighting over it, and
+   * one shared with a business seller means the bridge wins and the seller's
+   * printing stops with nothing on screen to explain why. The unique index
+   * covers station-to-station; the seller case spans two tables and has to be
+   * checked here.
+   */
+  private async assertPrinterFree(orgId: string, printerId: string, stationId: string): Promise<void> {
+    const printer = await this.prisma.swapPrinter.findFirst({
+      where: { id: printerId, orgId },
+      include: { station: true, seller: { include: { membership: { include: { user: true } } } } },
+    });
+    if (!printer) throw new NotFoundException('Printer not found');
+
+    if (printer.assignedSellerId) {
+      throw new ConflictException(
+        'That printer is assigned to a business seller. Unassign it before binding it to a station.',
+      );
+    }
+    if (printer.station && printer.station.id !== stationId && !printer.station.deletedAt) {
+      throw new ConflictException(
+        `That printer already serves station "${printer.station.name}". Release it there first.`,
+      );
+    }
+  }
+
   private async find(orgId: string, stationId: string) {
     const station = await this.prisma.checkinStation.findFirst({
       where: { id: stationId, orgId, deletedAt: null },
@@ -141,19 +210,20 @@ export class StationService {
   }
 }
 
-function toResponse(s: {
-  id: string; name: string; code: string; createdAt: Date;
-  deviceId: string | null; printerId: string | null;
-  device: { name: string; lastSeenAt: Date | null } | null;
-  printer: { name: string } | null;
-}): StationResponse {
+function toResponse(s: StationRow): StationResponse {
   return {
     id: s.id,
     name: s.name,
     code: s.code,
-    deviceId: s.deviceId,
-    deviceName: s.device?.name ?? null,
-    deviceLastSeenAt: s.device?.lastSeenAt?.toISOString() ?? null,
+    // Derived, never stored: a tablet at the counter is what makes it staffed,
+    // and a stored flag could disagree with the hardware bound to it.
+    kind: s.attendantDeviceId ? 'staffed' : 'self_service',
+    attendantDeviceId: s.attendantDeviceId,
+    attendantName: s.attendant?.name ?? null,
+    attendantLastSeenAt: s.attendant?.lastSeenAt?.toISOString() ?? null,
+    bridgeDeviceId: s.bridgeDeviceId,
+    bridgeName: s.bridge?.name ?? null,
+    bridgeLastSeenAt: s.bridge?.lastSeenAt?.toISOString() ?? null,
     printerId: s.printerId,
     printerName: s.printer?.name ?? null,
     createdAt: s.createdAt.toISOString(),

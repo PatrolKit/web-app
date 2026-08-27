@@ -67,17 +67,18 @@ describe('SkuService', () => {
     expect(SKU_CODE_ALPHABET).not.toContain(code);
   });
 
-  it('allocates the first free code across stations and devices alike', async () => {
+  // Stations are the only consumers now. Devices used to take one each, which
+  // meant a bridge burned a character it never minted a SKU with.
+  it('allocates the first code no live station holds', async () => {
     const prisma = makePrisma();
-    prisma.device.findMany.mockResolvedValue([{ skiSwapDeviceCode: 'A' }]);
-    prisma.checkinStation.findMany.mockResolvedValue([{ code: 'B' }]);
+    prisma.checkinStation.findMany.mockResolvedValue([{ code: 'A' }, { code: 'B' }]);
     expect(await new SkuService(asPrisma(prisma)).allocateCode('org1')).toBe('C');
   });
 
   it('fails loudly when the pool is exhausted rather than widening the code', async () => {
     const prisma = makePrisma();
-    prisma.device.findMany.mockResolvedValue(
-      [...SKU_CODE_ALPHABET].map((c) => ({ skiSwapDeviceCode: c })),
+    prisma.checkinStation.findMany.mockResolvedValue(
+      [...SKU_CODE_ALPHABET].map((c) => ({ code: c })),
     );
     await expect(new SkuService(asPrisma(prisma)).allocateCode('org1')).rejects.toThrow(/in use/);
   });

@@ -225,9 +225,6 @@ model Device {
   lastSeenAt        DateTime?
   createdBy         String?
   createdAt         DateTime  @default(now())
-  /// One character, unique per org. Shares a pool with CheckinStation.code so a
-  /// SKU's namespace character always identifies exactly one minting endpoint.
-  skiSwapDeviceCode String?   @db.VarChar(1)
 
   /// Last reported state of a bridge's BLE link to its printer: ready | down.
   /// Null for every other kind of device, and for a bridge that has not yet
@@ -237,11 +234,14 @@ model Device {
   /// have lost power holding it — so the age is as load-bearing as the value.
   printerLinkAt     DateTime?
 
-  org             Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  checkinStation  CheckinStation?
-  bridgedPrinter  SwapPrinter?    @relation("BridgedPrinter")
+  org               Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  attendedStation   CheckinStation? @relation("StationAttendant")
+  bridgedStation    CheckinStation? @relation("StationBridge")
 
-  @@unique([orgId, skiSwapDeviceCode])
+  /// The composite unique on (orgId, skiSwapDeviceCode) used to double as the
+  /// index MySQL requires behind the orgId foreign key. With the code gone,
+  /// orgId needs one of its own — dropping the composite without this fails.
+  @@index([orgId])
 }
 
 model AuditLog {
@@ -383,18 +383,16 @@ model SwapPrinter {
   marginBottom     Int      @default(4)
   marginLeft       Int      @default(8)
   marginRight      Int      @default(16)
+  /// Set ⇒ this printer belongs to one business seller, and cannot also be bound
+  /// to a station. A printer serves exactly one thing.
   assignedSellerId String?
-  /// The bridge that drives this printer over BLE. Null for printers driven
-  /// straight from a browser, which is every printer today.
-  bridgeDeviceId   String?  @unique
   createdBy        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   org          Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   seller       SellerProfile?  @relation(fields: [assignedSellerId], references: [id], onDelete: SetNull)
-  bridgeDevice Device?         @relation("BridgedPrinter", fields: [bridgeDeviceId], references: [id], onDelete: SetNull)
-  stations     CheckinStation[]
+  station      CheckinStation?
 
   @@index([orgId])
   @@index([assignedSellerId])
@@ -408,21 +406,33 @@ model CheckinStation {
   orgId String
   /// Human label — "Station 3".
   name  String
-  /// One character. The SKU namespace printed on every tag from here, drawn from
-  /// the same per-org pool as Device.skiSwapDeviceCode.
+  /// One character, unique per org. The SKU namespace for everything checked in
+  /// here, staffed or self-service, and however the tag was printed. The only
+  /// consumer of the pool.
   code  String @db.VarChar(1)
 
-  /// The bridge serving this station. Re-bindable: hardware dies mid-swap, and
-  /// queued jobs survive because they belong to the station, not the bridge.
-  deviceId  String?   @unique
+  /// The staff tablet stationed at this counter. Its presence is what makes the
+  /// station staffed rather than self-service — a stored `kind` could contradict
+  /// the hardware attached to it, so the kind is derived instead.
+  attendantDeviceId String? @unique
+  /// The bridge that prints for this station. Re-bindable: hardware dies
+  /// mid-swap, and queued jobs survive because they belong to the station, not
+  /// the bridge. Required for self-service, where a seller has no other way to
+  /// get a tag; optional for staffed, where the tablet can print over Bluetooth.
+  bridgeDeviceId    String? @unique
   deletedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  device    Device?      @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  attendant Device?      @relation("StationAttendant", fields: [attendantDeviceId], references: [id], onDelete: SetNull)
+  bridge    Device?      @relation("StationBridge", fields: [bridgeDeviceId], references: [id], onDelete: SetNull)
   printer   SwapPrinter? @relation(fields: [printerId], references: [id], onDelete: SetNull)
-  printerId String?
+  /// Unique: a printer is one BLE peripheral and whoever holds the link owns it,
+  /// so two stations sharing one would be two bridges fighting over it. MySQL
+  /// permits many NULLs in a unique index, so any number of stations may have no
+  /// printer yet.
+  printerId String?      @unique
   printJobs PrintJob[]
 
   @@unique([orgId, code])

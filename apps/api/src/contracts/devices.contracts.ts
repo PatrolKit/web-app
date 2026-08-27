@@ -73,7 +73,16 @@ export const DeviceMeResponseSchema = z.object({
   role: DeviceRoleSchema,
   orgId: z.string(),
   orgName: z.string(),
-  skiSwapDeviceCode: z.string().nullable(),
+  /**
+   * The station this device is bound to, or null.
+   *
+   * The code is the station's, not the device's: it names the counter, so a
+   * failed tablet can be swapped without the SKU namespace moving with it. Null
+   * means unbound — a client that mints SKUs itself cannot, and should say so.
+   */
+  station: z
+    .object({ id: z.string(), name: z.string(), code: z.string() })
+    .nullable(),
   sellerSiteUrl: z.string(),
   orgLogoUrl: z.string().nullable().optional(),
 });

@@ -53,7 +53,10 @@ export class PrinterService {
   }
 
   async patch(orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }): Promise<SwapPrinterResponse> {
-    const existing = await this.prisma.swapPrinter.findFirst({ where: { id: printerId, orgId } });
+    const existing = await this.prisma.swapPrinter.findFirst({
+      where: { id: printerId, orgId },
+      include: { station: true },
+    });
     if (!existing) throw new NotFoundException('Printer not found');
 
     if (data.assignedSellerId) {
@@ -61,6 +64,16 @@ export class PrinterService {
         where: { id: data.assignedSellerId, deletedAt: null, membership: { orgId } },
       });
       if (!seller) throw new NotFoundException('Seller not found');
+
+      // The other half of "a printer serves exactly one thing". A printer bound
+      // to a station is held by that station's bridge; handing it to a seller as
+      // well means the bridge wins and the seller's printing stops with nothing
+      // on screen to say why.
+      if (existing.station && !existing.station.deletedAt) {
+        throw new ConflictException(
+          `That printer serves station "${existing.station.name}". Release it there before assigning it to a seller.`,
+        );
+      }
     }
 
     const updated = await this.prisma.swapPrinter.update({

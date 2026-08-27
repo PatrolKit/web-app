@@ -169,7 +169,7 @@ export class PrintQueueService {
     jobs: ClaimedJob[];
   }> {
     const station = await this.prisma.checkinStation.findFirst({
-      where: { deviceId, deletedAt: null },
+      where: { bridgeDeviceId: deviceId, deletedAt: null },
       include: { printer: true },
     });
     if (!station) throw new NotFoundException('This device is not bound to a station');
@@ -315,7 +315,7 @@ export class PrintQueueService {
    */
   async stationQueue(orgId: string, stationId: string): Promise<StationQueueResponse> {
     const station = await this.station(orgId, stationId);
-    const [queued, claimed, failed, abandoned, oldest, device] = await Promise.all([
+    const [queued, claimed, failed, abandoned, oldest, bridge, attendant] = await Promise.all([
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'queued' } }),
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'claimed' } }),
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'failed' } }),
@@ -325,10 +325,16 @@ export class PrintQueueService {
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
       }),
-      station.deviceId
+      station.bridgeDeviceId
         ? this.prisma.device.findUnique({
-            where: { id: station.deviceId },
+            where: { id: station.bridgeDeviceId },
             select: { lastSeenAt: true, printerLink: true, printerLinkAt: true },
+          })
+        : null,
+      station.attendantDeviceId
+        ? this.prisma.device.findUnique({
+            where: { id: station.attendantDeviceId },
+            select: { lastSeenAt: true },
           })
         : null,
     ]);
@@ -340,9 +346,10 @@ export class PrintQueueService {
       failed,
       abandoned,
       oldestQueuedAt: oldest?.createdAt.toISOString() ?? null,
-      deviceLastSeenAt: device?.lastSeenAt?.toISOString() ?? null,
-      printerLink: (device?.printerLink as 'ready' | 'down' | null) ?? null,
-      printerLinkAt: device?.printerLinkAt?.toISOString() ?? null,
+      bridgeLastSeenAt: bridge?.lastSeenAt?.toISOString() ?? null,
+      attendantLastSeenAt: attendant?.lastSeenAt?.toISOString() ?? null,
+      printerLink: (bridge?.printerLink as 'ready' | 'down' | null) ?? null,
+      printerLinkAt: bridge?.printerLinkAt?.toISOString() ?? null,
     };
   }
 
@@ -366,7 +373,7 @@ export class PrintQueueService {
 
   private async ownedJob(deviceId: string, jobId: string) {
     const job = await this.prisma.printJob.findFirst({
-      where: { id: jobId, station: { deviceId } },
+      where: { id: jobId, station: { bridgeDeviceId: deviceId } },
     });
     // Scoped through the binding, so a bridge can only ever touch its own work.
     if (!job) throw new NotFoundException('Job not found for this device');

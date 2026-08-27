@@ -40,13 +40,13 @@ const device = await prisma.device.create({
   },
 });
 const printer = await prisma.swapPrinter.create({
-  data: { orgId: org.id, name: 'Smoke printer', bluetoothName: 'M110-SMOKE', bridgeDeviceId: device.id },
+  data: { orgId: org.id, name: 'Smoke printer', bluetoothName: 'M110-SMOKE' },
 });
 
 // Station code allocation goes through the real service path via HTTP later;
 // here we place one directly so the queue has a target.
 const station = await prisma.checkinStation.create({
-  data: { orgId: org.id, name: 'Smoke station', code: 'S', deviceId: device.id, printerId: printer.id },
+  data: { orgId: org.id, name: 'Smoke station', code: 'S', bridgeDeviceId: device.id, printerId: printer.id },
 });
 
 const { user: staffEarly } = await smokeStaff(prisma, org, ['ski_swap:report', 'ski_swap:manage']);
@@ -210,6 +210,53 @@ res = await fetch(`${BASE}/devices/me/print-jobs/claim`, {
   method: 'POST', headers: { authorization: `Bearer ${tok3.accessToken}` },
 });
 ok('wrong device role is refused', res.status === 403, String(res.status));
+
+// ─── A printer serves exactly one thing ─────────────────────────────────────
+// A printer is one BLE peripheral and whoever holds the link owns it, so two
+// stations sharing one means two bridges fighting over it, and a station sharing
+// one with a business seller means the bridge wins silently.
+
+const H2 = { authorization: `Bearer ${staffTokenEarly}`, 'content-type': 'application/json' };
+
+const second = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations`, {
+  method: 'POST', headers: H2, body: JSON.stringify({ name: 'Smoke station 2' }),
+}).then(unwrap);
+ok('a second station is created', !!second.id, JSON.stringify(second).slice(0, 80));
+
+let res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${second.id}`, {
+  method: 'PATCH', headers: H2, body: JSON.stringify({ printerId: printer.id }),
+});
+ok('a printer cannot serve two stations', res2.status === 409, String(res2.status));
+
+res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${second.id}`, {
+  method: 'PATCH', headers: H2, body: JSON.stringify({ bridgeDeviceId: device.id }),
+});
+ok('a bridge cannot serve two stations', res2.status === 409, String(res2.status));
+
+// A retired station has to let go, or its printer is out of circulation for good.
+await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}`, { method: 'DELETE', headers: H2 });
+const freed = await prisma.checkinStation.findUnique({ where: { id: station.id } });
+ok('retiring a station releases its hardware',
+   freed.printerId === null && freed.bridgeDeviceId === null && freed.deletedAt !== null,
+   JSON.stringify({ printerId: freed.printerId, bridgeDeviceId: freed.bridgeDeviceId }));
+
+res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${second.id}`, {
+  method: 'PATCH', headers: H2, body: JSON.stringify({ printerId: printer.id }),
+});
+ok('and the printer can then be bound elsewhere', res2.status === 200, String(res2.status));
+
+// The other direction: a printer serving a station cannot be handed to a seller.
+const anySeller = await prisma.sellerProfile.findFirst({ where: { membership: { orgId: org.id } } });
+if (anySeller) {
+  res2 = await fetch(`${BASE}/orgs/${org.id}/ski-swap/printers/${printer.id}`, {
+    method: 'PATCH', headers: H2, body: JSON.stringify({ assignedSellerId: anySeller.id }),
+  });
+  ok('a station printer cannot be assigned to a seller', res2.status === 409, String(res2.status));
+} else {
+  console.log('SKIP  station printer vs seller — no seller profile on this database');
+}
+
+await prisma.checkinStation.deleteMany({ where: { id: second.id } });
 
 await prisma.printJob.deleteMany({ where: { orgId: org.id } });
 await prisma.checkinStation.deleteMany({ where: { id: station.id } });

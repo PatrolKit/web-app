@@ -415,7 +415,8 @@ export const CreateStationSchema = z.object({ name: z.string().min(1).max(60) })
 export const UpdateStationSchema = z
   .object({
     name: z.string().min(1).max(60).optional(),
-    deviceId: z.string().nullable().optional(),
+    attendantDeviceId: z.string().nullable().optional(),
+    bridgeDeviceId: z.string().nullable().optional(),
     printerId: z.string().nullable().optional(),
   })
   .strict();
@@ -424,9 +425,17 @@ export const StationResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string(),
-  deviceId: z.string().nullable(),
-  deviceName: z.string().nullable(),
-  deviceLastSeenAt: z.string().nullable(),
+  /**
+   * Derived from whether a staff tablet is bound, never stored — a flag could
+   * disagree with the hardware actually attached.
+   */
+  kind: z.enum(['staffed', 'self_service']),
+  attendantDeviceId: z.string().nullable(),
+  attendantName: z.string().nullable(),
+  attendantLastSeenAt: z.string().nullable(),
+  bridgeDeviceId: z.string().nullable(),
+  bridgeName: z.string().nullable(),
+  bridgeLastSeenAt: z.string().nullable(),
   printerId: z.string().nullable(),
   printerName: z.string().nullable(),
   createdAt: z.string(),
@@ -448,7 +457,10 @@ export const StationQueueResponseSchema = z.object({
   printerLink: z.enum(['ready', 'down']).nullable(),
   printerLinkAt: z.string().nullable(),
   oldestQueuedAt: z.string().nullable(),
-  deviceLastSeenAt: z.string().nullable(),
+  /** The bridge, when one is bound. Null for a staffed station without one. */
+  bridgeLastSeenAt: z.string().nullable(),
+  /** The staff tablet, when one is bound. What to watch when there is no bridge. */
+  attendantLastSeenAt: z.string().nullable(),
 });
 
 export type StationQueueResponse = z.infer<typeof StationQueueResponseSchema>;

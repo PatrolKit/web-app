@@ -57,37 +57,31 @@ export class SkuService {
   }
 
   /**
-   * Claims the next free code for an org. Stations and devices share the pool,
-   * so this checks both.
+   * Claims the next free code for an org.
    *
-   * Running out is a hard error at provisioning rather than a silent widening at
-   * print time: a two-character code would push the SKU past what the barcode
+   * Stations are the only consumers now. Devices used to take one each — every
+   * bridge burning a character it never minted a SKU with — which quietly halved
+   * the pool at a venue running mixed hardware.
+   *
+   * Running out is a hard error at station creation rather than a silent widening
+   * at print time: a two-character code would push the SKU past what the barcode
    * can carry, producing an unscannable tag nobody notices until the register.
    */
   async allocateCode(orgId: string): Promise<string> {
-    const [devices, stations] = await Promise.all([
-      this.prisma.device.findMany({
-        where: { orgId, skiSwapDeviceCode: { not: null } },
-        select: { skiSwapDeviceCode: true },
-      }),
-      this.prisma.checkinStation.findMany({
-        where: { orgId, deletedAt: null },
-        select: { code: true },
-      }),
-    ]);
+    const stations = await this.prisma.checkinStation.findMany({
+      where: { orgId, deletedAt: null },
+      select: { code: true },
+    });
 
-    const taken = new Set<string>([
-      ...devices.map((d) => d.skiSwapDeviceCode!),
-      ...stations.map((s) => s.code),
-    ]);
+    const taken = new Set<string>(stations.map((s) => s.code));
 
     for (const c of SKU_CODE_ALPHABET) {
       if (!taken.has(c)) return c;
     }
 
     throw new ConflictException(
-      `All ${SKU_CODE_ALPHABET.length} ski-swap codes are in use in this organisation. ` +
-        'Remove a station or device before provisioning another.',
+      `All ${SKU_CODE_ALPHABET.length} station codes are in use in this organisation. ` +
+        'Retire a station before creating another.',
     );
   }
 }

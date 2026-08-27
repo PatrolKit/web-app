@@ -25,8 +25,9 @@ import type {
   SwapPrinterRecord,
 } from '../../lib/api.types';
 
-/** A bridge is only useful once bound to a station, and only to one. */
-const ADAPTER_ROLE = 'ski_swap.print_bridge';
+/** Hardware is only useful once bound to a station, and only to one. */
+const BRIDGE_ROLE = 'ski_swap.print_bridge';
+const ATTENDANT_ROLE = 'ski_swap.staff_check_in';
 
 /**
  * Where staff set up and watch check-in stations.
@@ -77,7 +78,8 @@ export default function StationsTab({
     onSuccess: invalidate,
   });
 
-  const bridges = devices.filter((d) => d.role === ADAPTER_ROLE);
+  const bridges = devices.filter((d) => d.role === BRIDGE_ROLE);
+  const attendants = devices.filter((d) => d.role === ATTENDANT_ROLE);
 
   if (isLoading) return <p className="text-gray-400">Loading…</p>;
 
@@ -120,6 +122,7 @@ export default function StationsTab({
               orgId={orgId}
               station={station}
               bridges={bridges}
+              attendants={attendants}
               printers={printers}
               swapId={swapId}
               canAdmin={canAdmin}
@@ -142,6 +145,7 @@ function StationRow({
   orgId,
   station,
   bridges,
+  attendants,
   printers,
   swapId,
   canAdmin,
@@ -152,10 +156,16 @@ function StationRow({
   orgId: string;
   station: CheckinStationRecord;
   bridges: DeviceItem[];
+  attendants: DeviceItem[];
   printers: SwapPrinterRecord[];
   swapId: string | null;
   canAdmin: boolean;
-  onPatch: (data: { name?: string; deviceId?: string | null; printerId?: string | null }) => void;
+  onPatch: (data: {
+    name?: string;
+    attendantDeviceId?: string | null;
+    bridgeDeviceId?: string | null;
+    printerId?: string | null;
+  }) => void;
   onDelete: () => void;
   onShowQr: () => void;
 }) {
@@ -175,9 +185,9 @@ function StationRow({
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/stations', orgId, station.id, 'queue'] }),
   });
 
-  const bridgeSilent = !!queue && queue.queued > 0 && !recentlySeen(queue.deviceLastSeenAt);
+  const bridgeSilent = !!queue && queue.queued > 0 && !recentlySeen(queue.bridgeLastSeenAt);
   const printerDown =
-    !!queue && queue.queued > 0 && recentlySeen(queue.deviceLastSeenAt) && queue.printerLink === 'down';
+    !!queue && queue.queued > 0 && recentlySeen(queue.bridgeLastSeenAt) && queue.printerLink === 'down';
 
   return (
     <li className="bg-surface-50 border border-gray-800 rounded-lg p-4 space-y-3">
@@ -207,7 +217,7 @@ function StationRow({
           )}
           <button
             className="text-xs px-2 py-1 bg-surface-100 hover:bg-surface-200 text-gray-300 rounded disabled:opacity-40"
-            disabled={test.isPending || !station.deviceId}
+            disabled={test.isPending || !station.bridgeDeviceId}
             onClick={() => test.mutate()}
             title="Queues a calibration label — exercises server, bridge, BLE, and printer"
           >
@@ -225,14 +235,31 @@ function StationRow({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <label className="block">
-          <span className="block text-xs text-gray-400 mb-1">Bridge</span>
+          <span className="block text-xs text-gray-400 mb-1">Staff tablet</span>
           <select
             className="w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white disabled:opacity-50"
             disabled={!canAdmin}
-            value={station.deviceId ?? ''}
-            onChange={(e) => onPatch({ deviceId: e.target.value || null })}
+            value={station.attendantDeviceId ?? ''}
+            onChange={(e) => onPatch({ attendantDeviceId: e.target.value || null })}
+          >
+            <option value="">— none (self-service) —</option>
+            {attendants.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="block text-xs text-gray-400 mb-1">
+            Bridge {station.kind === 'staffed' && <span className="text-gray-600">(optional)</span>}
+          </span>
+          <select
+            className="w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white disabled:opacity-50"
+            disabled={!canAdmin}
+            value={station.bridgeDeviceId ?? ''}
+            onChange={(e) => onPatch({ bridgeDeviceId: e.target.value || null })}
           >
             <option value="">— none —</option>
             {bridges.map((d) => (
@@ -328,21 +355,51 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): {
   spin?: boolean;
   title?: string;
 } {
-  if (!station.deviceId || !station.printerId) {
-    const missing = !station.deviceId && !station.printerId
-      ? 'a bridge and a printer'
-      : !station.deviceId ? 'a bridge' : 'a printer';
-    return { icon: faLinkSlashDuo, label: `Needs ${missing}`, tone: 'unknown' };
+  const staffed = station.kind === 'staffed';
+
+  // What a station is missing depends on what kind it is: a self-service one
+  // cannot work without a bridge, because a seller has no other way to get a
+  // tag. A staffed one can — its tablet prints over Bluetooth.
+  const missing: string[] = [];
+  if (!station.printerId) missing.push('a printer');
+  if (!staffed && !station.bridgeDeviceId) missing.push('a bridge');
+  if (missing.length) {
+    return {
+      icon: faLinkSlashDuo,
+      label: `Needs ${missing.join(' and ')}`,
+      tone: 'unknown',
+      title: staffed ? undefined : 'A self-service station needs a bridge — a seller has no other way to get a tag.',
+    };
   }
 
-  if (!recentlySeen(queue.deviceLastSeenAt)) {
-    // Nothing can print, and nothing below is current — the bridge is the
-    // source of every other signal here.
+  // No bridge on a staffed station: printing goes over the tablet's own
+  // Bluetooth, which the server never sees. The tablet checking in is the only
+  // thing we can honestly report.
+  if (!station.bridgeDeviceId) {
+    if (!recentlySeen(queue.attendantLastSeenAt)) {
+      return {
+        icon: faPlugCircleXmarkDuo,
+        label: 'Tablet offline',
+        tone: 'warn',
+        title: lastSeenTitle(queue.attendantLastSeenAt),
+      };
+    }
+    return {
+      icon: faCircleCheckDuo,
+      label: 'Ready — prints over Bluetooth',
+      tone: 'ok',
+      title: 'No bridge is bound, so the tablet drives the printer directly. Whether a tag came out is not visible from here.',
+    };
+  }
+
+  if (!recentlySeen(queue.bridgeLastSeenAt)) {
+    // Nothing can print through the queue, and nothing below is current — the
+    // bridge is the source of every other signal here.
     return {
       icon: faPlugCircleXmarkDuo,
       label: 'Offline',
       tone: queue.queued > 0 ? 'bad' : 'warn',
-      title: lastSeenTitle(queue.deviceLastSeenAt),
+      title: lastSeenTitle(queue.bridgeLastSeenAt),
     };
   }
 
@@ -351,8 +408,8 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): {
   }
 
   if (queue.printerLink === null) {
-    // An older bridge that does not report its link yet. Saying "ready" would
-    // be a guess about the half we cannot see.
+    // A bridge that does not report its link. Saying "ready" would be a guess
+    // about the half we cannot see.
     return { icon: faCircleQuestionDuo, label: 'Online — printer unconfirmed', tone: 'warn' };
   }
 

@@ -290,9 +290,14 @@ export interface CheckinStationRecord {
   id: string;
   name: string;
   code: string;
-  deviceId: string | null;
-  deviceName: string | null;
-  deviceLastSeenAt: string | null;
+  /** Derived from whether a staff tablet is bound, never stored. */
+  kind: 'staffed' | 'self_service';
+  attendantDeviceId: string | null;
+  attendantName: string | null;
+  attendantLastSeenAt: string | null;
+  bridgeDeviceId: string | null;
+  bridgeName: string | null;
+  bridgeLastSeenAt: string | null;
   printerId: string | null;
   printerName: string | null;
   createdAt: string;
@@ -310,7 +315,8 @@ export interface StationQueueStatus {
   printerLink: 'ready' | 'down' | null;
   printerLinkAt: string | null;
   oldestQueuedAt: string | null;
-  deviceLastSeenAt: string | null;
+  bridgeLastSeenAt: string | null;
+  attendantLastSeenAt: string | null;
 }
 
 export interface SkiSwapSettings {

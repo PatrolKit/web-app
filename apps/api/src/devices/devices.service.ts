@@ -6,7 +6,6 @@ import {
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { SkuService } from '../ski-swap/sku.service';
 import { JwtService } from '../auth/jwt.service';
 import { AuditService } from '../common/audit/audit.service';
 import { createId } from '@paralleldrive/cuid2';
@@ -20,20 +19,9 @@ import type {
   DeviceTokenResponse,
 } from '../contracts/devices.contracts';
 
-/**
- * Only ski-swap devices take a SKU code. Time-clock and signage devices were
- * consuming a namespace they never print into, which matters now the code is a
- * single character and the pool is 32 wide.
- */
-const SKI_SWAP_ROLES = new Set<string>([
-  'ski_swap.staff_check_in',
-  'ski_swap.print_bridge',
-]);
-
 @Injectable()
 export class DevicesService {
   constructor(
-    private readonly skuService: SkuService,
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly auditService: AuditService,
@@ -51,23 +39,18 @@ export class DevicesService {
     const clientSecret = randomBytes(32).toString('hex');
     const secretHash = await argon2.hash(clientSecret, { type: argon2.argon2id });
 
-    const { device } = await this.prisma.$transaction(async (tx) => {
-      const skiSwapDeviceCode = SKI_SWAP_ROLES.has(data.role)
-        ? await this.skuService.allocateCode(orgId)
-        : null;
-      const device = await tx.device.create({
-        data: {
-          id: createId(),
-          orgId,
-          name: data.name,
-          role: data.role,
-          clientId,
-          secretHash,
-          createdBy: actorUserId,
-          skiSwapDeviceCode,
-        },
-      });
-      return { device };
+    // No code here. A device gets its SKU namespace from the station it is bound
+    // to, so an unbound one has none — and a bridge never needs one at all.
+    const device = await this.prisma.device.create({
+      data: {
+        id: createId(),
+        orgId,
+        name: data.name,
+        role: data.role,
+        clientId,
+        secretHash,
+        createdBy: actorUserId,
+      },
     });
 
     await this.auditService.log({
@@ -189,6 +172,8 @@ export class DevicesService {
       where: { id: deviceId },
       include: {
         org: true,
+        attendedStation: { select: { id: true, name: true, code: true, deletedAt: true } },
+        bridgedStation: { select: { id: true, name: true, code: true, deletedAt: true } },
       },
     });
 
@@ -196,16 +181,17 @@ export class DevicesService {
       throw new UnauthorizedException('Device not found');
     }
 
-    let { skiSwapDeviceCode } = device;
-
-    await this.prisma.$transaction(async (tx) => {
-      if (!skiSwapDeviceCode) {
-        skiSwapDeviceCode = await this.skuService.allocateCode(device.orgId);
-        await tx.device.update({ where: { id: deviceId }, data: { lastSeenAt: new Date(), skiSwapDeviceCode } });
-      } else {
-        await tx.device.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } });
-      }
+    await this.prisma.device.update({
+      where: { id: deviceId },
+      data: { lastSeenAt: new Date() },
     });
+
+    // A device is bound through one slot or the other, never both. Which one it
+    // is depends on what kind of device it is, and neither caller needs to care.
+    const bound = device.attendedStation ?? device.bridgedStation;
+    const station = bound && !bound.deletedAt
+      ? { id: bound.id, name: bound.name, code: bound.code }
+      : null;
 
     return {
       id: device.id,
@@ -213,7 +199,9 @@ export class DevicesService {
       role: device.role as DeviceRole,
       orgId: device.orgId,
       orgName: device.org.name,
-      skiSwapDeviceCode,
+      /// Null until bound. A client that mints SKUs itself cannot do so without
+      /// a station, and should say so rather than failing at the first item.
+      station,
       sellerSiteUrl: this.config.get<string>('app.sellerSiteUrl')!,
       orgLogoUrl: device.org.logoUrl ?? null,
     };
