@@ -175,7 +175,7 @@ export class PrinterService {
     return this.toResponse(updated);
   }
 
-  private toResponse(p: { id: string; name: string; bluetoothName: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number; assignedSellerId: string | null; seller: SellerNameRow | null; bridgeDeviceId?: string | null; bridge?: { name: string; bridgedStation?: { name: string; deletedAt: Date | null } | null } | null }): SwapPrinterResponse {
+  private toResponse(p: { id: string; name: string; bluetoothName: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number; assignedSellerId: string | null; seller: SellerNameRow | null; bridgeDeviceId?: string | null; bridge?: { bridgedStation?: { name: string; deletedAt: Date | null } | null } | null }): SwapPrinterResponse {
     return {
       id: p.id,
       name: p.name,
@@ -188,7 +188,6 @@ export class PrinterService {
       assignedSellerId: p.assignedSellerId,
       assignedSellerName: sellerDisplayName(p.seller),
       bridgeDeviceId: p.bridgeDeviceId ?? null,
-      bridgeName: p.bridge?.name ?? null,
       // Which counter this printer ends up serving, reached the way the queue
       // reaches it: station → bridge → printer.
       stationName: p.bridge?.bridgedStation && !p.bridge.bridgedStation.deletedAt

@@ -4,14 +4,15 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../../lib/api';
 import { BridgeProvisioningPanel, MutationError } from '../devices/DeviceCredentials';
+import { deviceLabel } from '../../lib/api.types';
 import type { DeviceItem, SwapPrinterRecord } from '../../lib/api.types';
 
 /**
  * Everything about one bridge, split by where the setting actually lives.
  *
- * The split is not cosmetic. A name and a printer binding are rows in our
- * database and change instantly. Wi-Fi credentials and the client secret live
- * in the board's own flash, and the firmware latches provisioning shut the
+ * The split is not cosmetic. The printer binding is a row in our database and
+ * changes instantly. Wi-Fi credentials and the client secret live in the
+ * board's own flash, and the firmware latches provisioning shut the
  * moment the server accepts its credentials — permanently, refusing every
  * further write. So on any bridge that has ever worked, changing either one
  * means holding BOOT for five seconds, which erases all of it: Wi-Fi, printer,
@@ -33,7 +34,6 @@ export default function BridgeEditModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [name, setName] = useState(bridge.name);
   const [printerId, setPrinterId] = useState(boundPrinter?.id ?? '');
   const [reprovisioning, setReprovisioning] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
@@ -45,11 +45,6 @@ export default function BridgeEditModal({
   // comes out of the old one.
   const printerChanged = (boundPrinter?.id ?? '') !== printerId;
 
-  const renameMutation = useMutation({
-    mutationFn: () => api.devices.rename(orgId, bridge.id, name.trim()),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['devices', orgId] }),
-  });
-
   const bindMutation = useMutation({
     mutationFn: async () => {
       // The foreign key is on the printer, so a move is a release then a bind.
@@ -58,7 +53,11 @@ export default function BridgeEditModal({
       }
       if (printerId) await api.skiSwap.patchPrinter(orgId, printerId, { bridgeDeviceId: bridge.id });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] });
+      // The bridge is named after its printer, so rebinding renames it too.
+      qc.invalidateQueries({ queryKey: ['devices', orgId] });
+    },
   });
 
   // Re-provisioning needs a secret, and the old one is unrecoverable by design —
@@ -68,11 +67,9 @@ export default function BridgeEditModal({
     onSuccess: (d) => { setSecret(d.clientSecret); setReprovisioning(true); },
   });
 
-  const savingBusy = renameMutation.isPending || bindMutation.isPending;
-  const dirty = name.trim() !== bridge.name || printerChanged;
+  const savingBusy = bindMutation.isPending;
 
   async function save() {
-    if (name.trim() !== bridge.name) await renameMutation.mutateAsync();
     if (printerChanged) await bindMutation.mutateAsync();
     onClose();
   }
@@ -81,21 +78,12 @@ export default function BridgeEditModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-surface-200 rounded-lg p-6 w-full max-w-lg space-y-5 my-8">
         <div>
-          <h2 className="text-white font-semibold">Edit bridge</h2>
+          <h2 className="text-white font-semibold">{deviceLabel(bridge)}</h2>
           <p className="text-xs text-gray-500 font-mono mt-0.5">{bridge.clientId}</p>
         </div>
 
         {/* ── Stored here ─────────────────────────────────────────────────── */}
         <div className="space-y-3">
-          <label className="block">
-            <span className="block text-xs text-gray-400 mb-1">Name</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-            />
-          </label>
-
           <label className="block">
             <span className="block text-xs text-gray-400 mb-1">Drives printer</span>
             <select
@@ -129,7 +117,12 @@ export default function BridgeEditModal({
             </p>
           )}
 
-          <MutationError error={renameMutation.error ?? bindMutation.error} />
+          <p className="text-xs text-gray-500">
+            A bridge is called after the printer it drives, so this is also what it is
+            named. It has no name of its own.
+          </p>
+
+          <MutationError error={bindMutation.error} />
         </div>
 
         {/* ── Stored on the board ─────────────────────────────────────────── */}
@@ -167,7 +160,7 @@ export default function BridgeEditModal({
               <button
                 onClick={() => {
                   if (window.confirm(
-                    `Set up "${bridge.name}" again?\n\n` +
+                    `Set up "${deviceLabel(bridge)}" again?\n\n` +
                       'This issues a new client secret and retires the current one straight ' +
                       'away. If this bridge is working, it stops printing until the new ' +
                       'secret is written to the board over Bluetooth — which needs the board ' +
@@ -186,13 +179,13 @@ export default function BridgeEditModal({
         <div className="flex gap-2 pt-1">
           <button
             onClick={save}
-            disabled={savingBusy || !name.trim() || !dirty}
+            disabled={savingBusy || !printerChanged}
             className="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm rounded py-1.5 disabled:opacity-40"
           >
             {savingBusy ? 'Saving…' : 'Save'}
           </button>
           <button onClick={onClose} className="flex-1 bg-surface-100 text-gray-300 text-sm rounded py-1.5">
-            {dirty ? 'Cancel' : 'Close'}
+            {printerChanged ? 'Cancel' : 'Close'}
           </button>
         </div>
       </div>

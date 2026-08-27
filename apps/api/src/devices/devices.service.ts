@@ -114,7 +114,9 @@ export class DevicesService {
       data: {
         id: createId(),
         orgId,
-        name: data.name,
+        // A bridge is named after its printer, chosen later, so it stores a
+        // constant that nothing renders rather than an empty string.
+        name: data.name ?? 'Print bridge',
         role: data.role,
         clientId,
         secretHash,
@@ -129,7 +131,7 @@ export class DevicesService {
       action: 'device.provisioned',
       targetType: 'device',
       targetId: device.id,
-      metadata: { name: data.name, role: data.role },
+      metadata: { name: data.name ?? null, role: data.role },
     });
 
     return {
@@ -156,6 +158,7 @@ export class DevicesService {
     const devices = await this.prisma.device.findMany({
       where: { orgId, OR: modules.map((m) => ({ role: { startsWith: `${m}.` } })) },
       orderBy: { createdAt: 'desc' },
+      include: { bridgedPrinter: true },
     });
 
     return devices.map((d) => ({
@@ -167,6 +170,7 @@ export class DevicesService {
       lastSeenAt: d.lastSeenAt,
       printerLink: (d.printerLink as 'ready' | 'down' | null) ?? null,
       printerLinkAt: d.printerLinkAt,
+      printerName: d.bridgedPrinter?.name ?? null,
       createdAt: d.createdAt,
     }));
   }
@@ -284,41 +288,6 @@ export class DevicesService {
       station,
       sellerSiteUrl: this.config.get<string>('app.sellerSiteUrl')!,
       orgLogoUrl: device.org.logoUrl ?? null,
-    };
-  }
-
-  // ─── Rename ──────────────────────────────────────────────────────────────────
-
-  /**
-   * The label on the box, and nothing else. Names are how staff find hardware
-   * at a venue — "the one by the door" beats a client id — so they have to be
-   * fixable without re-provisioning, which for a bridge means a physical trip.
-   */
-  async renameDevice(
-    orgId: string,
-    deviceId: string,
-    actorUserId: string,
-    name: string,
-  ): Promise<DeviceListItem> {
-    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
-    if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
-    await this.assertMayManage(orgId, actorUserId, device.role);
-
-    const updated = await this.prisma.device.update({
-      where: { id: deviceId },
-      data: { name },
-    });
-
-    return {
-      id: updated.id,
-      clientId: updated.clientId,
-      name: updated.name,
-      role: updated.role as DeviceRole,
-      orgId: updated.orgId,
-      lastSeenAt: updated.lastSeenAt,
-      printerLink: (updated.printerLink as 'ready' | 'down' | null) ?? null,
-      printerLinkAt: updated.printerLinkAt,
-      createdAt: updated.createdAt,
     };
   }
 }

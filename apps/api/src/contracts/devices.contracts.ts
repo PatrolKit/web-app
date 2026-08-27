@@ -31,7 +31,13 @@ export function moduleOfRole(role: DeviceRole): string {
 
 export const ProvisionDeviceSchema = z
   .object({
-    name: z.string().min(1).max(100),
+    /**
+     * Optional because a print bridge does not have one: it is a printer's
+     * network adapter and is called after the printer it drives, which is not
+     * chosen yet at this point. The column stays required, so a bridge gets a
+     * constant nothing displays.
+     */
+    name: z.string().min(1).max(100).optional(),
     role: DeviceRoleSchema,
   })
   .strict();
@@ -64,6 +70,12 @@ export const DeviceListItemSchema = z.object({
    */
   printerLink: z.enum(['ready', 'down']).nullable(),
   printerLinkAt: z.date().nullable(),
+  /**
+   * The printer this bridge drives, which is also what a bridge is called: a
+   * bridge is one printer's network adapter and has no identity apart from it.
+   * Null for a bridge not yet bound, and for every other kind of device.
+   */
+  printerName: z.string().nullable(),
   createdAt: z.date(),
 });
 
@@ -99,14 +111,6 @@ export const DeviceMeResponseSchema = z.object({
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
 export class ProvisionDeviceDto extends createZodDto(ProvisionDeviceSchema) {}
-/**
- * Renaming only. A device's role is fixed at provisioning — the page it lives
- * on decides what it is, and changing that afterwards was a control offering to
- * turn a thing into itself.
- */
-export class RenameDeviceDto extends createZodDto(
-  z.object({ name: z.string().min(1).max(60) }).strict(),
-) {}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

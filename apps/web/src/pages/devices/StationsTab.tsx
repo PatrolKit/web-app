@@ -19,6 +19,7 @@ import { api } from '../../lib/api';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
 import { lastSeenTitle, recentlySeen, StatusLine } from './hardwareStatus';
 import type { HardwareStatus } from './hardwareStatus';
+import { deviceLabel } from '../../lib/api.types';
 import type {
   CheckinStationRecord,
   DeviceItem,
@@ -512,7 +513,7 @@ function SlotPicker({
         >
           <option value="">{emptyLabel}</option>
           {options.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
+            <option key={d.id} value={d.id}>{deviceLabel(d)}</option>
           ))}
         </select>
         {canAdmin && !value && (

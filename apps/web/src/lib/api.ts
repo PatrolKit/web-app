@@ -259,15 +259,10 @@ export const api = {
     // No permissions: a device is authorised by its role alone since the
     // identity consolidation, and the schema is strict — sending the retired
     // field failed every provision request.
-    provision: (orgId: string, data: { name: string; role: import('./api.types').DeviceRole }) =>
+    provision: (orgId: string, data: { name?: string; role: import('./api.types').DeviceRole }) =>
       request<import('./api.types').ProvisionedDevice>(`/orgs/${orgId}/devices`, {
         method: 'POST',
         body: JSON.stringify(data),
-      }),
-    rename: (orgId: string, id: string, name: string) =>
-      request<import('./api.types').DeviceItem>(`/orgs/${orgId}/devices/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ name }),
       }),
     rotateSecret: (orgId: string, id: string) =>
       request<{ clientSecret: string }>(`/orgs/${orgId}/devices/${id}/rotate-secret`, { method: 'POST' }),

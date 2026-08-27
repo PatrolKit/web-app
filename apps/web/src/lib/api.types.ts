@@ -34,6 +34,19 @@ export type DeviceRole = (typeof DEVICE_ROLES)[number]['value'];
  * leak `ski_swap.print_bridge` into the UI, so an unknown role is better named
  * as unknown than printed verbatim.
  */
+/**
+ * What to call a device on screen.
+ *
+ * A print bridge has no name of its own. It is one printer's network adapter,
+ * bought and mounted for that printer, and naming it separately only created
+ * two labels for one physical pairing that could disagree — "Bridge 2" driving
+ * "Printer A" tells you nothing and misleads a little.
+ */
+export function deviceLabel(device: { role: DeviceRole; name: string; printerName?: string | null }): string {
+  if (device.role !== 'ski_swap.print_bridge') return device.name;
+  return device.printerName ? `${device.printerName} bridge` : 'Unbound bridge';
+}
+
 export function deviceRoleLabel(role: string): string {
   return DEVICE_ROLES.find((r) => r.value === role)?.label ?? 'Unknown device';
 }
@@ -119,6 +132,8 @@ export interface DeviceItem {
   /** A bridge's last word on its BLE link to its printer, and when. Null otherwise. */
   printerLink: 'ready' | 'down' | null;
   printerLinkAt: string | null;
+  /** The printer a bridge drives — and what the bridge is called. Null otherwise. */
+  printerName: string | null;
   createdAt: string;
 }
 
@@ -250,7 +265,6 @@ export interface SwapPrinterRecord {
   assignedSellerName: string | null;
   /** The bridge that drives this printer, and the station that bridge serves. */
   bridgeDeviceId: string | null;
-  bridgeName: string | null;
   stationName: string | null;
 }
 
@@ -321,6 +335,8 @@ export interface StationQueueStatus {
   /** The bridge's last word on its link to the printer. */
   printerLink: 'ready' | 'down' | null;
   printerLinkAt: string | null;
+  /** The printer a bridge drives — and what the bridge is called. Null otherwise. */
+  printerName: string | null;
   oldestQueuedAt: string | null;
   bridgeLastSeenAt: string | null;
   attendantLastSeenAt: string | null;

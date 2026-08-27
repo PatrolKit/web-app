@@ -193,7 +193,7 @@ function toResponse(s: StationRow): StationResponse {
     attendantName: s.attendant?.name ?? null,
     attendantLastSeenAt: s.attendant?.lastSeenAt?.toISOString() ?? null,
     bridgeDeviceId: s.bridgeDeviceId,
-    bridgeName: s.bridge?.name ?? null,
+    bridgeName: s.bridge?.bridgedPrinter?.name ?? null,
     bridgeLastSeenAt: s.bridge?.lastSeenAt?.toISOString() ?? null,
     printerId: s.bridge?.bridgedPrinter?.id ?? null,
     printerName: s.bridge?.bridgedPrinter?.name ?? null,

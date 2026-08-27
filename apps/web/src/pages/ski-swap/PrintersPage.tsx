@@ -316,8 +316,12 @@ export default function PrintersPage() {
                     T:{p.marginTop} B:{p.marginBottom} L:{p.marginLeft} R:{p.marginRight}
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {p.bridgeName
-                      ? <>Driven by <span className="text-gray-300">{p.bridgeName}</span>{p.stationName ? ` for ${p.stationName}` : ' — no station yet'}</>
+                    {/* Naming the bridge here would echo this row: a bridge is
+                        called after the printer it drives. */}
+                    {p.bridgeDeviceId
+                      ? p.stationName
+                        ? <>On the network, serving <span className="text-gray-300">{p.stationName}</span></>
+                        : 'On the network via its bridge — no station yet'
                       : 'No bridge — prints over Bluetooth'}
                   </p>
                 </div>

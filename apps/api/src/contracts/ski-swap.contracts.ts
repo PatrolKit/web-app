@@ -371,7 +371,11 @@ export const SwapPrinterResponseSchema = z.object({
   assignedSellerName: z.string().nullable(),
   /** The bridge that drives this printer, and the station that bridge serves. */
   bridgeDeviceId: z.string().nullable(),
-  bridgeName: z.string().nullable(),
+  /**
+   * No bridge name here: a bridge is called after the printer it drives, so on
+   * a printer's own record that would only ever echo the row it sits on.
+   * Whether one is attached is `bridgeDeviceId`; where it serves is below.
+   */
   stationName: z.string().nullable(),
 });
 
@@ -454,6 +458,10 @@ export const StationResponseSchema = z.object({
   attendantName: z.string().nullable(),
   attendantLastSeenAt: z.string().nullable(),
   bridgeDeviceId: z.string().nullable(),
+  /**
+   * A bridge has no name of its own — it is one printer's network adapter and
+   * is called after that printer. Null while it drives nothing.
+   */
   bridgeName: z.string().nullable(),
   bridgeLastSeenAt: z.string().nullable(),
   /**

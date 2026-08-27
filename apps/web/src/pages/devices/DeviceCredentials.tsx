@@ -9,7 +9,7 @@ import {
   provisionBridge,
   type BridgeStatus,
 } from '../../lib/printing/BridgeProvisioningService';
-import { DEVICE_ROLES, deviceRoleLabel } from '../../lib/api.types';
+import { DEVICE_ROLES, deviceLabel, deviceRoleLabel } from '../../lib/api.types';
 import type { DeviceItem, DeviceRole, SwapPrinterRecord } from '../../lib/api.types';
 
 export function MutationError({ error }: { error: unknown }) {
@@ -410,8 +410,11 @@ export function DeviceCredentialList({
   const devices = allDevices.filter((d) => d.role === role);
   const roleInfo = DEVICE_ROLES.find((r) => r.value === role);
 
+  const namesItself = role === 'ski_swap.print_bridge';
+
   const provisionMutation = useMutation({
-    mutationFn: () => api.devices.provision(orgId, { name: provisionName, role }),
+    mutationFn: () =>
+      api.devices.provision(orgId, namesItself ? { role } : { name: provisionName, role }),
     onSuccess: (d) => {
       setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, role, sinceLastSeenAt: null });
       setProvisionName('');
@@ -460,16 +463,18 @@ export function DeviceCredentialList({
               className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3"
             >
               <h3 className="text-white font-medium">New {roleInfo?.label ?? 'Device'}</h3>
-              <label className="block">
-                <span className="block text-xs text-gray-400 mb-1">Name</span>
-                <input
-                  value={provisionName}
-                  onChange={(e) => setProvisionName(e.target.value)}
-                  placeholder="Device name"
-                  required
-                  className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
-                />
-              </label>
+              {!namesItself && (
+                <label className="block">
+                  <span className="block text-xs text-gray-400 mb-1">Name</span>
+                  <input
+                    value={provisionName}
+                    onChange={(e) => setProvisionName(e.target.value)}
+                    placeholder="Device name"
+                    required
+                    className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+                  />
+                </label>
+              )}
               {/* "Network Printer Adapter" says nothing about what the box does
                   or what to do with it next. */}
               <p className="text-xs text-gray-500">{roleInfo?.hint}</p>
@@ -478,8 +483,8 @@ export function DeviceCredentialList({
                 <button type="button" onClick={() => { setShowProvisionForm(false); provisionMutation.reset(); }} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
                 <button
                   type="submit"
-                  disabled={provisionMutation.isPending}
-                  className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm"
+                  disabled={provisionMutation.isPending || (!namesItself && !provisionName.trim())}
+                  className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm disabled:opacity-40"
                 >
                   {provisionMutation.isPending ? 'Provisioning…' : 'Provision'}
                 </button>
@@ -506,7 +511,7 @@ export function DeviceCredentialList({
             {devices.map((d: DeviceItem) => (
               <div key={d.id} className="bg-surface-50 rounded-lg p-4 flex items-center justify-between">
                 <div>
-                  <span className="font-medium text-white">{d.name}</span>
+                  <span className="font-medium text-white">{deviceLabel(d)}</span>
                   <p className="text-xs text-gray-500 mt-0.5">Client ID: {d.clientId}</p>
                   {d.lastSeenAt ? (
                     <p className="text-xs text-gray-500">Last seen: {new Date(d.lastSeenAt).toLocaleString()}</p>
@@ -527,7 +532,7 @@ export function DeviceCredentialList({
                   )}
                   {canProvision && (
                     <button
-                      onClick={() => { if (window.confirm(`Remove "${d.name}"? This permanently deletes the device, and the hardware has to be provisioned again from scratch.`)) revokeMutation.mutate(d.id); }}
+                      onClick={() => { if (window.confirm(`Remove "${deviceLabel(d)}"? This permanently deletes the device, and the hardware has to be provisioned again from scratch.`)) revokeMutation.mutate(d.id); }}
                       className="text-xs text-red-500 hover:underline"
                     >Remove</button>
                   )}
