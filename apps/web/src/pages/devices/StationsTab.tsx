@@ -21,6 +21,7 @@ import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
 import type {
   CheckinStationRecord,
   DeviceItem,
+  DeviceRole,
   StationQueueStatus,
   SwapPrinterRecord,
 } from '../../lib/api.types';
@@ -73,6 +74,28 @@ export default function StationsTab({
     onSuccess: invalidate,
   });
 
+  /**
+   * Provision hardware straight into a station.
+   *
+   * Two writes, deliberately not one: the device has to exist before it can be
+   * bound, and a create that succeeded followed by a bind that failed leaves a
+   * usable device in the hardware list rather than nothing at all.
+   */
+  const provisionInto = useMutation({
+    mutationFn: async (v: { stationId: string; role: DeviceRole; name: string }) => {
+      const device = await api.devices.provision(orgId, { name: v.name, role: v.role });
+      const slot = v.role === 'ski_swap.staff_check_in'
+        ? { attendantDeviceId: device.id }
+        : { bridgeDeviceId: device.id };
+      await api.skiSwap.patchStation(orgId, v.stationId, slot);
+      return device;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['devices', orgId] });
+      void invalidate();
+    },
+  });
+
   const deleteStation = useMutation({
     mutationFn: (id: string) => api.skiSwap.deleteStation(orgId, id),
     onSuccess: invalidate,
@@ -103,9 +126,9 @@ export default function StationsTab({
         </div>
       )}
 
-      {createStation.error && (
-        <p className="text-sm text-red-400">
-          {(createStation.error as Error).message}
+      {(createStation.error || provisionInto.error || patchStation.error) && (
+        <p className="text-sm text-red-400 bg-red-950/40 border border-red-900 rounded px-3 py-2">
+          {((createStation.error ?? provisionInto.error ?? patchStation.error) as Error).message}
         </p>
       )}
 
@@ -127,6 +150,7 @@ export default function StationsTab({
               swapId={swapId}
               canAdmin={canAdmin}
               onPatch={(data) => patchStation.mutate({ id: station.id, data })}
+              onProvision={(role, name) => provisionInto.mutate({ stationId: station.id, role, name })}
               onDelete={() => deleteStation.mutate(station.id)}
               onShowQr={() => setShowQr(station)}
             />
@@ -150,6 +174,7 @@ function StationRow({
   swapId,
   canAdmin,
   onPatch,
+  onProvision,
   onDelete,
   onShowQr,
 }: {
@@ -166,6 +191,7 @@ function StationRow({
     bridgeDeviceId?: string | null;
     printerId?: string | null;
   }) => void;
+  onProvision: (role: DeviceRole, name: string) => void;
   onDelete: () => void;
   onShowQr: () => void;
 }) {
@@ -206,7 +232,7 @@ function StationRow({
           </p>
         </div>
         <div className="flex gap-2">
-          {swapId && (
+          {swapId && station.kind === 'self_service' && (
             <button
               className="text-xs px-2 py-1 bg-surface-100 hover:bg-surface-200 text-gray-300 rounded"
               onClick={onShowQr}
@@ -236,37 +262,27 @@ function StationRow({
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <label className="block">
-          <span className="block text-xs text-gray-400 mb-1">Staff tablet</span>
-          <select
-            className="w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white disabled:opacity-50"
-            disabled={!canAdmin}
-            value={station.attendantDeviceId ?? ''}
-            onChange={(e) => onPatch({ attendantDeviceId: e.target.value || null })}
-          >
-            <option value="">— none (self-service) —</option>
-            {attendants.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
-        </label>
+        <SlotPicker
+          label="Staff tablet"
+          emptyLabel="— none (self-service) —"
+          value={station.attendantDeviceId}
+          options={attendants}
+          canAdmin={canAdmin}
+          onChange={(id) => onPatch({ attendantDeviceId: id })}
+          onProvision={(name) => onProvision('ski_swap.staff_check_in', name)}
+          provisionLabel="New tablet"
+        />
 
-        <label className="block">
-          <span className="block text-xs text-gray-400 mb-1">
-            Bridge {station.kind === 'staffed' && <span className="text-gray-600">(optional)</span>}
-          </span>
-          <select
-            className="w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white disabled:opacity-50"
-            disabled={!canAdmin}
-            value={station.bridgeDeviceId ?? ''}
-            onChange={(e) => onPatch({ bridgeDeviceId: e.target.value || null })}
-          >
-            <option value="">— none —</option>
-            {bridges.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
-        </label>
+        <SlotPicker
+          label={station.kind === 'staffed' ? 'Bridge (optional)' : 'Bridge'}
+          emptyLabel="— none —"
+          value={station.bridgeDeviceId}
+          options={bridges}
+          canAdmin={canAdmin}
+          onChange={(id) => onPatch({ bridgeDeviceId: id })}
+          onProvision={(name) => onProvision('ski_swap.print_bridge', name)}
+          provisionLabel="New bridge"
+        />
 
         <label className="block">
           <span className="block text-xs text-gray-400 mb-1">Printer</span>
@@ -439,6 +455,94 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): {
     // never a promise that anything came out.
     title: 'The bridge is online and can reach its printer. It cannot tell whether labels are loaded — check the roll by eye.',
   };
+}
+
+/**
+ * One hardware slot: pick something already provisioned, or make one here.
+ *
+ * Provisioning used to mean leaving the station, creating a device, and coming
+ * back to bind it — three steps to answer "this counter needs a bridge". The
+ * credential still appears in the hardware list; this just saves the round trip.
+ */
+function SlotPicker({
+  label,
+  emptyLabel,
+  value,
+  options,
+  canAdmin,
+  onChange,
+  onProvision,
+  provisionLabel,
+}: {
+  label: string;
+  emptyLabel: string;
+  value: string | null;
+  options: DeviceItem[];
+  canAdmin: boolean;
+  onChange: (id: string | null) => void;
+  onProvision: (name: string) => void;
+  provisionLabel: string;
+}) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState('');
+
+  if (naming) {
+    return (
+      <div className="block">
+        <span className="block text-xs text-gray-400 mb-1">{label}</span>
+        <div className="flex gap-1">
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name it"
+            className="flex-1 min-w-0 bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
+          />
+          <button
+            className="text-xs px-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white rounded"
+            disabled={!name.trim()}
+            onClick={() => { onProvision(name.trim()); setName(''); setNaming(false); }}
+          >
+            Add
+          </button>
+          <button
+            className="text-xs px-2 text-gray-400 hover:text-white"
+            onClick={() => { setName(''); setNaming(false); }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <label className="block">
+      <span className="block text-xs text-gray-400 mb-1">{label}</span>
+      <div className="flex gap-1">
+        <select
+          className="flex-1 min-w-0 bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white disabled:opacity-50"
+          disabled={!canAdmin}
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value || null)}
+        >
+          <option value="">{emptyLabel}</option>
+          {options.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+        {canAdmin && !value && (
+          <button
+            className="text-xs px-2 bg-surface-100 hover:bg-surface-200 text-gray-300 rounded whitespace-nowrap"
+            onClick={() => setNaming(true)}
+            title={`Provision a ${provisionLabel.toLowerCase()} and bind it here`}
+          >
+            + {provisionLabel}
+          </button>
+        )}
+      </div>
+    </label>
+  );
 }
 
 type Tone = 'ok' | 'warn' | 'bad' | 'unknown';
