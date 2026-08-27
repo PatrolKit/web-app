@@ -89,13 +89,11 @@ export class SellerSelfService {
   }
 
   /**
-   * Saves an item and, at a station, queues its tag.
+   * Saves an item for the signed-in seller.
    *
-   * Order matters: create, commit, then enqueue. A job queued before the row is
-   * visible can be claimed and rendered against an item that is not there yet.
-   * The render itself is deferred to the claim (D11), and `hasPrintedTag` is set
-   * by the ack — the flag means paper came out, so only the printer can report
-   * it.
+   * The station half — which counter's code namespaces the SKU, whether a tag is
+   * queued — lives in `ItemService.createAtStation`, because the staff path needs
+   * exactly the same rules and two copies would drift.
    */
   async createItem(
     orgId: string,
@@ -115,43 +113,12 @@ export class SellerSelfService {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: data.swapId, orgId, active: true } });
     if (!swap) throw new NotFoundException('Active swap not found');
 
-    const station = data.stationId
-      ? await this.prisma.checkinStation.findFirst({
-          where: { id: data.stationId, orgId, deletedAt: null },
-          select: { id: true, code: true },
-        })
-      : null;
-    if (data.stationId && !station) throw new NotFoundException('Station not found');
-
-    const item = await this.itemService.create(
+    return this.itemService.createAtStation(
       orgId,
       data.swapId,
-      {
-        ...data,
-        sellerId: seller.id,
-        // The station's code namespaces the SKU, so two stations minting at the
-        // same instant never touch the same counter row.
-        stationCode: station?.code ?? null,
-        // At a station the seller is watching this save happen; Square waits
-        // for the batch at finish (D17).
-        deferPos: !!station,
-      },
+      { ...data, sellerId: seller.id },
       idempotencyKey,
     );
-
-    if (station) {
-      const { labelsPerItem } = await this.settings.get(orgId);
-      await this.printQueue.enqueueItemTags({
-        orgId,
-        stationId: station.id,
-        swapId: data.swapId,
-        sellerId: seller.id,
-        itemId: item.id,
-        count: labelsPerItem,
-      });
-    }
-
-    return item;
   }
 
   /**

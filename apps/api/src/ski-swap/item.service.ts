@@ -9,6 +9,8 @@ import { SellerService, SELLER_NAME_INCLUDE, sellerDisplayName, type SellerNameR
 import { S3Service } from './s3.service';
 import { IdempotencyService } from '../common/services/idempotency.service';
 import { SkuService } from './sku.service';
+import { PrintQueueService } from './print-queue.service';
+import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
 
@@ -43,6 +45,8 @@ export class ItemService {
     private readonly s3: S3Service,
     private readonly idempotency: IdempotencyService,
     private readonly skuService: SkuService,
+    private readonly printQueue: PrintQueueService,
+    private readonly settings: SkiSwapSettingsService,
   ) {}
 
   async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string }): Promise<{ items: ItemResponse[]; total: number }> {
@@ -75,6 +79,67 @@ export class ItemService {
     if (!item) throw new NotFoundException('Item not found');
     const inventoryMap = await this.fetchInventoryMap(orgId, swap, [item]);
     return this.toResponse(item, inventoryMap);
+  }
+
+  /**
+   * Creates an item that may have been checked in at a station.
+   *
+   * The staff path, which is the one that can print for itself: a client that
+   * printed a tag over Bluetooth says so, and no job is queued. Enqueueing
+   * anyway would put a second tag through the station's bridge — and for an
+   * item held offline and synced later, the first one is already on the ski.
+   */
+  async createAtStation(
+    orgId: string,
+    swapId: string,
+    data: {
+      name: string; description?: string; priceCents: number; quantity: number;
+      sellerId?: string; donateProceeds?: boolean; sku?: string;
+      stationId?: string; alreadyPrinted?: boolean;
+    },
+    idempotencyKey?: string,
+  ): Promise<ItemResponse> {
+    const station = data.stationId
+      ? await this.prisma.checkinStation.findFirst({
+          where: { id: data.stationId, orgId, deletedAt: null },
+          select: { id: true, code: true, bridgeDeviceId: true },
+        })
+      : null;
+    if (data.stationId && !station) throw new NotFoundException('Station not found');
+
+    const item = await this.create(
+      orgId,
+      swapId,
+      {
+        ...data,
+        stationCode: station?.code ?? null,
+        // At a station the person is standing there watching; Square waits for
+        // the batch at finish.
+        deferPos: !!station,
+      },
+      idempotencyKey,
+    );
+
+    // Nothing to queue when the tag is already on the item, and nothing to queue
+    // through a station that has no bridge — the client printed it itself.
+    if (station?.bridgeDeviceId && !data.alreadyPrinted) {
+      const { labelsPerItem } = await this.settings.get(orgId);
+      await this.printQueue.enqueueItemTags({
+        orgId,
+        stationId: station.id,
+        swapId,
+        sellerId: data.sellerId ?? null,
+        itemId: item.id,
+        count: labelsPerItem,
+      });
+    } else if (data.alreadyPrinted) {
+      await this.prisma.swapItem.update({
+        where: { id: item.id },
+        data: { hasPrintedTag: true },
+      });
+    }
+
+    return item;
   }
 
   /**

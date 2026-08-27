@@ -8,6 +8,9 @@
 //   PORT=4001 node apps/api/dist/src/main.js &
 //   node apps/api/scripts/smoke-label-render.mjs
 
+//
+// Sign-in endpoints are throttled to five attempts a minute, so back-to-back
+// runs return 429 and look like a regression. Leave a minute between them.
 import { PrismaClient } from '@prisma/client';
 
 import { smokeOrg, smokeStaff, smokeSession } from './_fixture.mjs';

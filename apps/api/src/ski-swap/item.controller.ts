@@ -48,7 +48,7 @@ export class ItemController {
     @Body() body: CreateItemDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.itemService.create(orgId, swapId, body, idempotencyKey);
+    return this.itemService.createAtStation(orgId, swapId, body, idempotencyKey);
   }
 
   @Get(':itemId')

@@ -163,6 +163,21 @@ export const CreateItemSchema = z
     sellerId: z.string().optional(),
     donateProceeds: z.boolean().default(false),
     sku: z.string().max(20).optional(),
+    /**
+     * The counter this was checked in at. Decides which station's queue prints
+     * the tag and which code namespaces the SKU.
+     */
+    stationId: z.string().optional(),
+    /**
+     * The tag is already on the item — printed over Bluetooth by the client
+     * rather than through the station's bridge.
+     *
+     * Skips the enqueue. Without it, an item checked in while the network was
+     * down would print a second tag when it finally syncs, and during an outage
+     * that happens for every item, discovered as a pile of orphan tags nobody
+     * can place.
+     */
+    alreadyPrinted: z.boolean().optional(),
   })
   .strict();
 

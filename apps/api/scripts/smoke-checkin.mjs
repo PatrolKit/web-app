@@ -5,6 +5,9 @@
 //   PORT=4001 node apps/api/dist/src/main.js &
 //   node apps/api/scripts/smoke-checkin.mjs
 //
+//
+// Sign-in endpoints are throttled to five attempts a minute, so back-to-back
+// runs return 429 and look like a regression. Leave a minute between them.
 // On a host with delivery switched on, the register step really does hand a
 // message to SNS. The number below is inside +1 555-01xx, reserved for
 // fictional use and not routable to a person, so the send fails at the carrier
@@ -15,7 +18,7 @@ import argon2 from 'argon2';
 // Node 18 has no global `crypto`; the deployed host runs 18.
 import { randomUUID } from 'crypto';
 
-import { smokeOrg, forceChallengeCode } from './_fixture.mjs';
+import { smokeOrg, smokeStaff, smokeSession, forceChallengeCode } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
@@ -155,6 +158,33 @@ await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/${item1.id}`, {
 jobs = await prisma.printJob.count({ where: { stationId: station.id, kind: 'item' } });
 ok('editing does not queue another tag', jobs === perItem * 2, `${jobs} jobs`);
 
+// ─── A tag printed over Bluetooth must not queue a second one ───────────────
+// The client prints it itself and says so. Enqueueing anyway puts a duplicate
+// through the bridge — and for an item held offline and synced later, the first
+// tag is already on the ski.
+
+// The staff endpoint, not the seller one: a seller's phone never drives a
+// printer, so only the staff path can report having printed for itself.
+const { user: staffUser } = await smokeStaff(prisma, org, ['ski_swap:report', 'ski_swap:manage', 'ski_swap:admin']);
+const staffToken = await smokeSession(prisma, BASE, staffUser, unwrap);
+const SH = { authorization: `Bearer ${staffToken}`, 'content-type': 'application/json' };
+
+const alreadyPrinted = await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}/items`, {
+  method: 'POST',
+  headers: SH,
+  body: JSON.stringify({
+    name: 'Printed over Bluetooth', priceCents: 1500, quantity: 1,
+    sellerId: joined.sellerId, stationId: station.id, alreadyPrinted: true,
+  }),
+}).then(unwrap);
+ok('the staff path accepts a station and an already-printed flag', !!alreadyPrinted.id,
+   JSON.stringify(alreadyPrinted).slice(0, 110));
+
+ok('an already-printed item queues no tag',
+   (await prisma.printJob.count({ where: { itemId: alreadyPrinted.id } })) === 0);
+ok('and is recorded as printed without a bridge ack',
+   (await prisma.swapItem.findUnique({ where: { id: alreadyPrinted.id } })).hasPrintedTag === true);
+
 // ─── The bridge drains the queue ─────────────────────────────────────────────
 
 const tok = await fetch(`${BASE}/auth/device/token`, {
@@ -196,7 +226,9 @@ ok('reprint queued exactly one more tag', (await drain()) === 1);
 // ─── Finish ──────────────────────────────────────────────────────────────────
 
 const summary = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/summary?swapId=${swap.id}`, { headers: H }).then(unwrap);
-ok('the summary totals the items', summary.items.length === 2 && summary.totalCents === 22900 + 6500,
+// Three: two entered through the seller path, plus the one the staff path
+// reported as already printed over Bluetooth.
+ok('the summary totals the items', summary.items.length === 3 && summary.totalCents === 22900 + 6500 + 1500,
    `${summary.items.length} items, ${summary.totalCents}c`);
 ok('the summary names the seller', summary.sellerName === 'Dana Reyes', summary.sellerName);
 
