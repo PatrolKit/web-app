@@ -76,7 +76,8 @@ introduced in `9ecf5f7`, when a free-form role string became an enum.
 | **D11** | **The Bluetooth override is always available — it is not a fallback the app switches into.** Staff can pick any known printer and print directly, whenever they want. | No mode detection, no "is the network down" heuristic, no automatic switching to get wrong. It also needs no spare hardware: a printer held by a live bridge refuses the connection, and unplugging that bridge is what frees it — which is both the remedy when the bridge has failed and the way to deliberately take a printer over. One requirement falls out of this: the list of printers has to be readable without the network. Fetched on demand, the override is unavailable in exactly the case it exists for. |
 | **D12** | **An override print must not also enqueue.** An item whose tag was printed over Bluetooth arrives marked printed, and the server skips the enqueue. | The tag is already on the ski by the time the server hears about the item — immediately if the app was online, later if it was not. Enqueueing anyway puts a second tag through the bridge, and if it happened during an outage it happens for every item checked in during it, discovered as a pile of orphan tags nobody can place. |
 | **D13** | **The station's code applies however the tag was printed.** | The code records *where an item was checked in*, not how the paper came out. A tag printed over Bluetooth because the bridge was down still belongs to that counter, and a SKU whose namespace depended on the print path would be useless for tracing. |
-| **D14** | **Module admins provision their own hardware.** `ski_swap:admin` may create, rotate and revoke ski-swap devices; `time_tracking:manage` the same for time clocks. | Retiring Devices without this reproduces the bug it is meant to fix, one page over. A module admin who can already configure a station is not meaningfully restrained by being unable to create the box that serves it. |
+| **D14** | **Module admins provision their own hardware.** `ski_swap:admin` may create, rotate and revoke ski-swap devices; `time_tracking:manage` the same for time clocks. **`devices:read`, `devices:provision` and `devices:revoke` retire with the page.** | Retiring Devices without this reproduces the bug it is meant to fix, one page over. A module admin who can already configure a station is not meaningfully restrained by being unable to create the box that serves it. Keeping `devices:*` as a second axis would mean a ski-swap admin could provision a time clock, or — as today — configure a station they cannot supply hardware for. |
+| **D15** | **A printer serves exactly one thing.** One station at most, or one business seller at most, never both and never two of either. | A printer is a single BLE peripheral: whoever holds the link owns it. Two stations sharing one means two bridges fighting for it — the contention D10 exists to avoid, arrived at from a different direction. A station and a business seller sharing one is the same failure with a worse symptom: the bridge wins, and the seller's printing stops with nothing on screen to explain why. `CheckinStation.printerId` becomes unique, which covers station-to-station; the seller case is a cross-table rule and has to be enforced on both write paths. |
 
 ## 4. The model
 
@@ -97,8 +98,11 @@ model CheckinStation {
   /// seller has no other way to get a tag — and optional for staffed, where the
   /// iPad can print over Bluetooth instead (D10, D11).
   bridgeDeviceId    String? @unique
-  /// The printer at this counter, whoever ends up driving it.
-  printerId         String?
+  /// The printer at this counter, whoever ends up driving it. Unique: a printer
+  /// serves one station at most (D15). MySQL permits many NULLs in a unique
+  /// index, so any number of stations may have no printer yet — the same trick
+  /// `SkiSwap.activeSkuPrefix` uses.
+  printerId         String? @unique
 
   deletedAt DateTime?
   ...
@@ -122,7 +126,19 @@ model Device {
 `CheckinStation.deviceId` becomes `bridgeDeviceId` — same column, a name that says
 which of the two devices it holds.
 
-`SwapPrinter.assignedSellerId` is unchanged: it still pins a printer to a business seller (D6).
+`SwapPrinter.assignedSellerId` is unchanged in shape: it still pins a printer to a business
+seller (D6). What changes is that it and `CheckinStation.printerId` are now mutually exclusive
+(D15). No schema can express that across two tables, so it is enforced on both write paths and
+reflected in both pickers:
+
+- Binding a printer to a station refuses one that is assigned to a seller.
+- Assigning a printer to a seller refuses one that is bound to a station.
+- The station's printer dropdown offers only unassigned printers; the seller's offers only
+  unbound ones. The guard is the server's, but a control that cannot express the mistake is
+  worth more than an error message after it.
+
+**Soft delete has to release the printer**, as it already releases the bridge — a retired
+station holding a unique `printerId` would keep that printer out of circulation for good.
 
 **Migration is destructive and that is fine.** The deployed database holds one org, one
 station, one bridge and no check-in iPads. Wipe and reseed rather than writing a data
@@ -167,6 +183,29 @@ assignment.
 
 **Time Tracking → Devices** takes the time-clock half of the old page: provision, rotate,
 revoke, last seen.
+
+### Permissions and the seed
+
+`devices:read`, `devices:provision` and `devices:revoke` retire with the page (D14). Module
+hardware is authorised by the module's own admin permission:
+
+| Operation | Authorised by |
+|---|---|
+| Provision, rotate, revoke a `ski_swap.*` device | `ski_swap:admin` |
+| Provision, rotate, revoke a `time_clock.*` device | `time_tracking:manage` |
+| Bind a station's bridge, iPad or printer | `ski_swap:admin` |
+| View station status, queue depth, send a test print | `ski_swap:report` |
+
+**The seed has to move with this**, or the plan fixes the bug on paper and leaves it in place.
+`swap-admin@example.com` holds the three ski-swap permissions and nothing else — which is the
+right grant once `ski_swap:admin` authorises ski-swap hardware, and the wrong one today. The
+three retired permissions come out of the permission table, the seeded grants, and every role
+that references them.
+
+Worth checking against a real org before this lands: the seed is a fixture, and if anyone out
+there holds `devices:*` without a module admin permission, they lose access rather than gain
+it. At one org with one super admin that is theoretical, but it is the kind of thing that is
+theoretical right up until it is not.
 
 Two pieces of cleanup fall out of touching this nav. `SkiSwapLayout` still gates on
 `business_seller` ([line 110](../../../apps/web/src/pages/ski-swap/SkiSwapLayout.tsx)), a
@@ -232,12 +271,16 @@ bridge is back — discovered as a pile of orphan tags nobody can place.
 `@RequireDeviceRole` list and the web role list. The parity test proves both halves agree.
 Independent of everything else and safe to land alone.
 
-**Phase 2 — The station model.** Allow a staff check-in device as a station driver, derive
-kind from the driver's role, move the SKU code onto the station, stop allocating codes to
-bridges, and serve the station's code through `GET /devices/me`. Wipe and reseed.
+**Phase 2 — The station model.** Add the attendant slot, rename `deviceId` to
+`bridgeDeviceId`, derive kind from the attendant, move the SKU code onto the station, stop
+allocating codes to bridges, make `printerId` unique and release it on soft delete, and
+enforce the printer/seller exclusion on both write paths (D15). A device's own record reports
+the station it is bound to. Wipe and reseed.
 
-**Phase 3 — Navigation.** Move Printers and Check-in under Ski Swap, move time-clock devices
-under Time Tracking, retire the Devices nav item and route. Inline driver provisioning on the
+**Phase 3 — Navigation and permissions.** Move Printers and Check-in under Ski Swap, move
+time-clock devices under Time Tracking, retire the Devices nav item and route, retire the
+three `devices:*` permissions, and reseed the roles so a module admin can supply their own
+hardware. Inline driver provisioning on the
 Check-in tab. Fix the two `business_seller` gates while in here.
 
 **Phase 4 — Check-in tab.** One list, both kinds, rolled-up status, QR only where it means
@@ -258,7 +301,9 @@ them touch this work:
 - `smoke-checkin.mjs` — the whole self-service walk, including SKUs carrying the station code.
 - `smoke-sku-concurrency.mjs` — the 32-code pool and the 13-character barcode ceiling.
 
-Add to that: a staffed station mints SKUs under its own station code; an unbound iPad is told
+Add to that: a printer cannot be bound to two stations, nor to a station and a seller at once,
+from either direction (D15); a retired station releases its printer; a staffed station mints
+SKUs under its own station code; an unbound iPad is told
 it has no station rather than minting under a null one; and an item arriving already marked
 printed does not queue a tag (D12) — the duplicate that check exists to prevent is invisible
 until a bridge comes back and prints a pile of orphans.
