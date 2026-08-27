@@ -1,5 +1,11 @@
 // Shared setup for the smoke scripts.
 //
+// These create and delete rows in whatever database SMOKE_BASE points at. Run
+// against production they are one scoping mistake away from taking real data
+// with them, so every fixture lives in an org of its own and cleanup deletes by
+// id. Prefer a local database; reach for production only to prove a deploy, and
+// check what survived afterwards.
+//
 // They run against whatever database is in front of them, including a freshly
 // seeded production one that has nothing in it but permissions, modules, and a
 // super admin. So they bring their own org rather than assuming a demo org
