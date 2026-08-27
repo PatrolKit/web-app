@@ -287,6 +287,9 @@ export interface StationQueueStatus {
   failed: number;
   /** Retried to the cap and given up on. */
   abandoned: number;
+  /** The bridge's last word on its link to the printer. */
+  printerLink: 'ready' | 'down' | null;
+  printerLinkAt: string | null;
   oldestQueuedAt: string | null;
   deviceLastSeenAt: string | null;
 }

@@ -25,16 +25,26 @@ it prints.
 
 Each station shows `N queued · N printing · bridge <state>`.
 
+Two dots say what is working. The first is the bridge, the second is its link to
+the printer.
+
 | What you see | What it means |
 |---|---|
-| `0 queued`, bridge `online` | Healthy and idle. |
-| `3 queued`, bridge `online` | Busy. It will drain; a bridge polls about once a second. |
-| `3 queued`, bridge `quiet 4m` | **The bridge is not talking to us.** Amber warning appears. |
+| **Bridge online** · **Printer connected** | Healthy. Work will drain. |
+| **Bridge online** · **Printer unreachable** | The bridge is fine; the printer is off, asleep, or paired to something else. |
+| **Bridge quiet 4m** · **Printer unknown** | The bridge is not talking to us, so its last word on the printer means nothing. Power and wifi. |
+| **No bridge assigned** | Nothing will print here until one is bound. |
 | `N failed` | A recipe stopped resolving — usually the item was deleted mid-print. |
 | `N gave up` | Retried to the cap and abandoned. Something is wrong with the printer. |
 
-`quiet` is the number that matters. Depth alone says nothing: work behind a
-working bridge is just a busy counter.
+Depth alone says nothing: work behind a working bridge is just a busy counter.
+It is depth *plus* a dot that is not green that means someone has to move.
+
+**There is no out-of-paper indicator, and that is not an oversight.** A Phomemo
+out of labels — or jammed, or with its cover open — still accepts every byte and
+still reports success. Nothing in the bridge, the web client, or the iOS app can
+tell the difference. **Check the roll by eye.** A green "Printer connected" means
+the bridge can talk to it, and nothing more.
 
 ## Symptoms
 

@@ -155,6 +155,17 @@ export default function LoginPage() {
           >
             {loading ? 'Sending…' : channel === 'email' ? 'Send sign-in link' : 'Send code'}
           </button>
+
+          {channel === 'phone' && (
+            // Carriers require this disclosure to sit with the field that collects the
+            // number: the screenshot of it is the evidence attached to the toll-free
+            // registration, so the wording here and the wording filed with AWS must match.
+            <p className="text-xs text-gray-500 leading-relaxed">
+              By tapping Send code you agree to receive a sign-in code and notifications
+              about your consigned items from PatrolKit. Message frequency varies. Message
+              and data rates may apply. Reply STOP to unsubscribe, HELP for help.
+            </p>
+          )}
         </form>
       </div>
     </div>

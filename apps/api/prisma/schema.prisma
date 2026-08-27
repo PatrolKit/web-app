@@ -229,6 +229,14 @@ model Device {
   /// SKU's namespace character always identifies exactly one minting endpoint.
   skiSwapDeviceCode String?   @db.VarChar(1)
 
+  /// Last reported state of a bridge's BLE link to its printer: ready | down.
+  /// Null for every other kind of device, and for a bridge that has not yet
+  /// reported one. Reported on the claim, so it costs no extra request.
+  printerLink       String?   @db.VarChar(16)
+  /// When that report arrived. A stale `ready` means nothing — the bridge could
+  /// have lost power holding it — so the age is as load-bearing as the value.
+  printerLinkAt     DateTime?
+
   org             Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   checkinStation  CheckinStation?
   bridgedPrinter  SwapPrinter?    @relation("BridgedPrinter")

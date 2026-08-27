@@ -175,6 +175,18 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
         <button className={primaryButtonClass} disabled={busy || contact.length < 5} onClick={sendCode}>
           {busy ? 'Sending…' : useEmail ? 'Email me a link' : 'Text me a code'}
         </button>
+
+        {!useEmail && (
+          // Carriers require this disclosure to sit with the field that collects the
+          // number: a screenshot of it is the evidence attached to the toll-free
+          // registration, so this wording and the wording filed with AWS must match.
+          <p className="text-xs text-gray-500 leading-relaxed">
+            By tapping Text me a code you agree to receive a sign-in code and
+            notifications about your consigned items from PatrolKit. Message frequency
+            varies. Message and data rates may apply. Reply STOP to unsubscribe, HELP
+            for help.
+          </p>
+        )}
       </div>
 
       <p className="text-xs text-gray-500 text-center">

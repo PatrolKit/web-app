@@ -10,7 +10,12 @@ import {
 import QRCode from 'react-qr-code';
 import { api } from '../../lib/api';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
-import type { CheckinStationRecord, DeviceItem, SwapPrinterRecord } from '../../lib/api.types';
+import type {
+  CheckinStationRecord,
+  DeviceItem,
+  StationQueueStatus,
+  SwapPrinterRecord,
+} from '../../lib/api.types';
 
 /** A bridge is only useful once bound to a station, and only to one. */
 const ADAPTER_ROLE = 'Ski Swap - Network Printer Adapter';
@@ -162,7 +167,9 @@ function StationRow({
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/stations', orgId, station.id, 'queue'] }),
   });
 
-  const stalled = !!queue && queue.queued > 0 && !recentlySeen(queue.deviceLastSeenAt);
+  const bridgeSilent = !!queue && queue.queued > 0 && !recentlySeen(queue.deviceLastSeenAt);
+  const printerDown =
+    !!queue && queue.queued > 0 && recentlySeen(queue.deviceLastSeenAt) && queue.printerLink === 'down';
 
   return (
     <li className="bg-surface-50 border border-gray-800 rounded-lg p-4 space-y-3">
@@ -239,36 +246,109 @@ function StationRow({
       </div>
 
       {queue && (
-        <div className="flex items-center gap-4 text-xs text-gray-400 border-t border-gray-800 pt-3">
-          <span>{queue.queued} queued</span>
-          <span>{queue.claimed} printing</span>
-          {queue.failed > 0 && <span className="text-amber-400">{queue.failed} failed</span>}
-          {queue.abandoned > 0 && (
-            <span className="text-amber-400">{queue.abandoned} gave up</span>
-          )}
-          <span className="ml-auto">
-            Bridge {station.deviceId ? lastSeenLabel(queue.deviceLastSeenAt) : 'not assigned'}
-          </span>
-          {queue.queued > 0 && canAdmin && (
-            <button
-              className="text-gray-500 hover:text-red-300"
-              onClick={() => clear.mutate()}
-              title="Discard queued work nobody wants any more"
-            >
-              Clear
-            </button>
-          )}
+        <div className="space-y-2 border-t border-gray-800 pt-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <Indicator
+              label={bridgeLabel(station, queue)}
+              tone={bridgeTone(station, queue)}
+            />
+            <Indicator
+              label={printerLabel(station, queue)}
+              tone={printerTone(station, queue)}
+              // Worth saying plainly: a printer out of labels still accepts
+              // every byte and reports success, so a green light here is not a
+              // promise that anything came out.
+              title="Whether the bridge can reach the printer. It cannot tell whether labels are loaded — a printer out of paper still reports success."
+            />
+          </div>
+
+          <div className="flex items-center gap-4 text-xs text-gray-400">
+            <span>{queue.queued} queued</span>
+            <span>{queue.claimed} printing</span>
+            {queue.failed > 0 && <span className="text-amber-400">{queue.failed} failed</span>}
+            {queue.abandoned > 0 && (
+              <span className="text-amber-400">{queue.abandoned} gave up</span>
+            )}
+            {queue.queued > 0 && canAdmin && (
+              <button
+                className="ml-auto text-gray-500 hover:text-red-300"
+                onClick={() => clear.mutate()}
+                title="Discard queued work nobody wants any more"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
       )}
 
-      {stalled && (
+      {bridgeSilent && (
         <p className="text-xs text-amber-400 flex items-center gap-2">
           <FontAwesomeIcon icon={faTriangleExclamationDuo} />
           Work is queued but the bridge has not checked in. Check its power and wifi.
         </p>
       )}
+
+      {printerDown && (
+        <p className="text-xs text-amber-400 flex items-center gap-2">
+          <FontAwesomeIcon icon={faTriangleExclamationDuo} />
+          The bridge is online but cannot reach its printer. Check the printer&apos;s power
+          and that nothing else is paired to it.
+        </p>
+      )}
     </li>
   );
+}
+
+type Tone = 'ok' | 'warn' | 'bad' | 'unknown';
+
+const TONE_CLASS: Record<Tone, string> = {
+  ok: 'bg-green-500',
+  warn: 'bg-amber-400',
+  bad: 'bg-red-500',
+  unknown: 'bg-gray-600',
+};
+
+function Indicator({ label, tone, title }: { label: string; tone: Tone; title?: string }) {
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-gray-300" title={title}>
+      <span className={`w-2 h-2 rounded-full ${TONE_CLASS[tone]}`} />
+      {label}
+    </span>
+  );
+}
+
+function bridgeTone(station: CheckinStationRecord, queue: StationQueueStatus): Tone {
+  if (!station.deviceId) return 'unknown';
+  if (recentlySeen(queue.deviceLastSeenAt)) return 'ok';
+  // Silence only matters once there is work it should be collecting.
+  return queue.queued > 0 ? 'bad' : 'warn';
+}
+
+function bridgeLabel(station: CheckinStationRecord, queue: StationQueueStatus): string {
+  if (!station.deviceId) return 'No bridge assigned';
+  return `Bridge ${lastSeenLabel(queue.deviceLastSeenAt)}`;
+}
+
+/**
+ * The printer light describes the *bridge's* link to it, which is the only
+ * thing anyone can observe. A bridge that has gone quiet tells us nothing
+ * current, so its last answer is greyed rather than shown as fact.
+ */
+function printerTone(station: CheckinStationRecord, queue: StationQueueStatus): Tone {
+  if (!station.printerId) return 'unknown';
+  if (!recentlySeen(queue.deviceLastSeenAt)) return 'unknown';
+  if (queue.printerLink === 'ready') return 'ok';
+  if (queue.printerLink === 'down') return 'bad';
+  return 'unknown';
+}
+
+function printerLabel(station: CheckinStationRecord, queue: StationQueueStatus): string {
+  if (!station.printerId) return 'No printer assigned';
+  if (!recentlySeen(queue.deviceLastSeenAt)) return 'Printer unknown';
+  if (queue.printerLink === 'ready') return 'Printer connected';
+  if (queue.printerLink === 'down') return 'Printer unreachable';
+  return 'Printer not reported';
 }
 
 /** A bridge polls about once a second, so a minute of silence is a real signal. */

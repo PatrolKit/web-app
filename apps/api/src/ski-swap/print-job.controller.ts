@@ -6,7 +6,7 @@ import { RequireDeviceRole } from '../common/decorators/require-device-role.deco
 import { CurrentDevice } from '../common/decorators/current-device.decorator';
 import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import { PrintQueueService } from './print-queue.service';
-import { NackJobDto } from '../contracts/ski-swap.contracts';
+import { ClaimJobsDto, NackJobDto } from '../contracts/ski-swap.contracts';
 
 /**
  * The contract an ESP-32 bridge implements.
@@ -25,9 +25,17 @@ export class PrintJobController {
 
   @Post('claim')
   @HttpCode(200)
-  claim(@CurrentDevice() device: AuthenticatedDevice, @Query('limit') limit?: string) {
-    const n = Math.min(Math.max(Number(limit) || 4, 1), 16);
-    return this.queue.claim(device.deviceId, n);
+  claim(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Body() body: ClaimJobsDto,
+    @Query('limit') limit?: string,
+  ) {
+    // `limit=0` is a heartbeat: a bridge with a downed printer has nowhere to
+    // put a job but still needs to say it is alive, or staff cannot tell a dead
+    // printer from a dead bridge.
+    const requested = limit === undefined ? 4 : Number(limit);
+    const n = Number.isFinite(requested) ? Math.min(Math.max(requested, 0), 16) : 4;
+    return this.queue.claim(device.deviceId, n, body?.printerLink);
   }
 
   @Post(':jobId/ack')

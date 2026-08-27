@@ -72,6 +72,46 @@ POST /devices/me/print-jobs/claim?limit=4
 - `kind` is `item`, `receipt_header`, `receipt_items`, `qr`, or `calibration`.
   Informational; every kind prints the same way.
 
+### Say how the printer is doing
+
+The claim takes an optional body:
+
+```json
+{ "printerLink": "ready" | "down" }
+```
+
+Staff have no other way to see this. A station screen can show that a bridge is
+online, because the claim itself proves it — but whether that bridge can reach
+its Phomemo is only visible to the firmware.
+
+**This needs a heartbeat, because of something the firmware already does right.**
+A bridge makes no claims while its printer link is down, which is correct — a
+claim burns one of a job's five attempts against a 90-second expiry, so claiming
+into a dead printer would quietly exhaust a seller's label. But it means a bridge
+with a dead printer stops calling altogether, and from the server that is
+indistinguishable from one that lost power. Those need different people to fix
+them: one is the printer, the other is the wifi.
+
+So: **claim with `?limit=0` while the printer is down.** It takes no jobs, and
+carries `{"printerLink": "down"}` so the station screen can say which failure it
+is. Keep to the `backoffMs` in the reply as usual.
+
+Sending no body leaves the last report standing rather than clearing it — the
+server records when each report arrived, and the UI discounts a stale one on its
+own, so there is no need to re-send `ready` on every claim.
+
+### Out of paper is not covered, deliberately
+
+There is no indicator for it, because nothing in the stack can tell. `PROTOCOL.md`
+already says it plainly: a printer out of labels, jammed, or open still ACKs every
+chunk and still reports `printed`. A green light claiming otherwise would be worse
+than none — staff would trust it while labels piled up unprinted.
+
+The station screen says as much on hover, and the runbook tells staff to check the
+roll by eye. If it ever needs to be real, the M110's `FF01` notify characteristic
+is where to look; nothing in the firmware, the iOS app, or the web client decodes
+it today.
+
 ### Report a result
 
 ```

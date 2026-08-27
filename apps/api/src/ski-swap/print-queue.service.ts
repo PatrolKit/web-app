@@ -159,7 +159,11 @@ export class PrintQueueService {
    * swept by the same statement, so an idle system does no work and a busy one
    * self-heals.
    */
-  async claim(deviceId: string, limit = 4): Promise<{
+  async claim(
+    deviceId: string,
+    limit = 4,
+    printerLink?: 'ready' | 'down',
+  ): Promise<{
     stationId: string;
     backoffMs: number;
     jobs: ClaimedJob[];
@@ -194,7 +198,7 @@ export class PrintQueueService {
     }
 
     const token = createId();
-    await this.prisma.$executeRaw`
+    if (limit > 0) await this.prisma.$executeRaw`
       UPDATE PrintJob
          SET status = 'claimed',
              claimToken = ${token},
@@ -207,7 +211,7 @@ export class PrintQueueService {
        ORDER BY seq, createdAt
        LIMIT ${limit}`;
 
-    const claimed = await this.prisma.printJob.findMany({
+    const claimed = limit === 0 ? [] : await this.prisma.printJob.findMany({
       where: { claimToken: token },
       orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }],
     });
@@ -243,7 +247,12 @@ export class PrintQueueService {
 
     await this.prisma.device.update({
       where: { id: deviceId },
-      data: { lastSeenAt: new Date() },
+      data: {
+        lastSeenAt: new Date(),
+        // Only when reported. A bridge that says nothing leaves the previous
+        // answer standing, and its age is what makes it readable.
+        ...(printerLink ? { printerLink, printerLinkAt: new Date() } : {}),
+      },
     });
 
     return {
@@ -319,7 +328,7 @@ export class PrintQueueService {
       station.deviceId
         ? this.prisma.device.findUnique({
             where: { id: station.deviceId },
-            select: { lastSeenAt: true },
+            select: { lastSeenAt: true, printerLink: true, printerLinkAt: true },
           })
         : null,
     ]);
@@ -332,6 +341,8 @@ export class PrintQueueService {
       abandoned,
       oldestQueuedAt: oldest?.createdAt.toISOString() ?? null,
       deviceLastSeenAt: device?.lastSeenAt?.toISOString() ?? null,
+      printerLink: (device?.printerLink as 'ready' | 'down' | null) ?? null,
+      printerLinkAt: device?.printerLinkAt?.toISOString() ?? null,
     };
   }
 

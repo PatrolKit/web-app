@@ -444,6 +444,9 @@ export const StationQueueResponseSchema = z.object({
   failed: z.number().int(),
   /** Retried to the cap and given up on. */
   abandoned: z.number().int(),
+  /** The bridge's last word on its printer link: ready | down, or null. */
+  printerLink: z.enum(['ready', 'down']).nullable(),
+  printerLinkAt: z.string().nullable(),
   oldestQueuedAt: z.string().nullable(),
   deviceLastSeenAt: z.string().nullable(),
 });
@@ -453,6 +456,20 @@ export type StationQueueResponse = z.infer<typeof StationQueueResponseSchema>;
 // ─── Print queue (device-facing) ─────────────────────────────────────────────
 
 export const NackJobSchema = z.object({ error: z.string().max(500).optional() }).strict();
+
+/**
+ * What a bridge tells us about itself when it asks for work.
+ *
+ * On the claim rather than a separate heartbeat, so it costs no extra request
+ * on venue wifi. A bridge whose printer is down still claims — with `limit=0`
+ * if it has nowhere to put a job — because otherwise a dead printer and a dead
+ * bridge look identical from here, and those need different people to fix them.
+ */
+export const ClaimJobsSchema = z
+  .object({ printerLink: z.enum(['ready', 'down']).optional() })
+  .strict();
+
+export class ClaimJobsDto extends createZodDto(ClaimJobsSchema) {}
 
 export const ClaimedJobSchema = z.object({
   id: z.string(),

@@ -49,6 +49,9 @@ const station = await prisma.checkinStation.create({
   data: { orgId: org.id, name: 'Smoke station', code: 'S', deviceId: device.id, printerId: printer.id },
 });
 
+const { user: staffEarly } = await smokeStaff(prisma, org, ['ski_swap:report', 'ski_swap:manage']);
+const staffTokenEarly = await smokeSession(prisma, BASE, staffEarly, unwrap);
+
 const tok = await fetch(`${BASE}/auth/device/token`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -125,6 +128,37 @@ const foreign = await fetch(`${BASE}/devices/me/print-jobs/claim`, {
 });
 ok('unbound bridge is told so, not fed jobs', foreign.status === 404, String(foreign.status));
 
+// ─── Self-reporting ──────────────────────────────────────────────────────────
+// A bridge whose printer is down stops taking work, so without a heartbeat it
+// would be indistinguishable from a bridge that lost power — and those need
+// different people to fix them.
+
+const beat = await fetch(`${BASE}/devices/me/print-jobs/claim?limit=0`, {
+  method: 'POST', headers: H, body: JSON.stringify({ printerLink: 'down' }),
+}).then(unwrap);
+ok('a heartbeat claims nothing', beat.jobs.length === 0, JSON.stringify(beat));
+
+let health = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/queue`, {
+  headers: { authorization: `Bearer ${staffTokenEarly}` },
+}).then(unwrap);
+ok('a downed printer is reported to staff', health.printerLink === 'down', JSON.stringify(health.printerLink));
+ok('and is timestamped, so a stale answer can be discounted', !!health.printerLinkAt, String(health.printerLinkAt));
+
+await fetch(`${BASE}/devices/me/print-jobs/claim?limit=0`, {
+  method: 'POST', headers: H, body: JSON.stringify({ printerLink: 'ready' }),
+}).then(unwrap);
+health = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/queue`, {
+  headers: { authorization: `Bearer ${staffTokenEarly}` },
+}).then(unwrap);
+ok('a recovered printer is reported too', health.printerLink === 'ready', String(health.printerLink));
+
+// Saying nothing leaves the last answer standing rather than blanking it.
+await fetch(`${BASE}/devices/me/print-jobs/claim?limit=0`, { method: 'POST', headers: H }).then(unwrap);
+health = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/queue`, {
+  headers: { authorization: `Bearer ${staffTokenEarly}` },
+}).then(unwrap);
+ok('silence does not erase the last report', health.printerLink === 'ready', String(health.printerLink));
+
 // ─── The reaper ──────────────────────────────────────────────────────────────
 // A bridge that dies mid-print never acks and never nacks. The claim has to
 // both recover those jobs and, eventually, stop trying — otherwise one job that
@@ -155,10 +189,8 @@ ok('and is abandoned rather than left claimed',
 
 // Staff can see it, which is the whole point of abandoning rather than looping
 // forever. This needs a *person's* session — H above is the bridge's.
-const { user: staff } = await smokeStaff(prisma, org, ['ski_swap:report', 'ski_swap:manage']);
-const staffToken = await smokeSession(prisma, BASE, staff, unwrap);
 const depth = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/queue`, {
-  headers: { authorization: `Bearer ${staffToken}` },
+  headers: { authorization: `Bearer ${staffTokenEarly}` },
 }).then(unwrap);
 ok('the station reports it as abandoned, not queued',
    depth.abandoned === 1 && depth.queued === 0, JSON.stringify(depth));
