@@ -40,12 +40,23 @@ export default function CheckinStationsPage() {
 
   return (
     <div className="space-y-8">
-      <StationsTab
-        orgId={orgId}
-        devices={devices}
-        swapId={activeSwaps[0]?.id ?? null}
-        canAdmin={canAdmin}
-      />
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-white font-medium">Check-in stations</h2>
+          <p className="text-xs text-gray-500">
+            Where sellers check in. A station owns the one-character code that appears in
+            every SKU printed there, and reaches its printer through the bridge bound to
+            it. Bind a staff tablet and it becomes a staffed counter; leave it without one
+            and sellers scan its QR code themselves.
+          </p>
+        </div>
+        <StationsTab
+          orgId={orgId}
+          devices={devices}
+          swapId={activeSwaps[0]?.id ?? null}
+          canAdmin={canAdmin}
+        />
+      </section>
 
       <section className="space-y-3">
         <div>

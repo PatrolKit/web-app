@@ -52,6 +52,7 @@ export default function StationsTab({
 }) {
   const qc = useQueryClient();
   const [newName, setNewName] = useState('');
+  const [showAddForm, setShowAddForm] = useState(false);
   const [showQr, setShowQr] = useState<CheckinStationRecord | null>(null);
 
   const { data: stations = [], isLoading } = useQuery({
@@ -64,7 +65,7 @@ export default function StationsTab({
 
   const createStation = useMutation({
     mutationFn: () => api.skiSwap.createStation(orgId, newName.trim()),
-    onSuccess: () => { setNewName(''); void invalidate(); },
+    onSuccess: () => { setNewName(''); setShowAddForm(false); void invalidate(); },
   });
 
   const patchStation = useMutation({
@@ -108,21 +109,55 @@ export default function StationsTab({
   return (
     <div className="space-y-4">
       {canAdmin && (
-        <div className="flex gap-2">
-          <input
-            className="flex-1 bg-surface-100 border border-gray-700 rounded px-3 py-1.5 text-sm text-white"
-            placeholder="Station name, e.g. Station 3"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-          />
+        <div className="flex justify-end">
           <button
-            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm rounded"
-            disabled={!newName.trim() || createStation.isPending}
-            onClick={() => createStation.mutate()}
+            onClick={() => { setShowAddForm(true); setNewName(''); createStation.reset(); }}
+            className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
           >
-            Add station
+            + Add station
           </button>
         </div>
+      )}
+
+      {showAddForm && canAdmin && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); createStation.mutate(); }}
+          className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3"
+        >
+          <h3 className="text-white font-medium">New station</h3>
+          <label className="block">
+            <span className="block text-xs text-gray-400 mb-1">Name</span>
+            <input
+              autoFocus
+              className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+              placeholder="e.g. Station 3"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+          </label>
+          {/* The hardware comes after, on the row: a station is the durable
+              thing and outlives whichever boxes are serving it today. */}
+          <p className="text-xs text-gray-500">
+            Bind its tablet or bridge once it exists. A station with no tablet is
+            self-service — sellers scan its QR code.
+          </p>
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => { setShowAddForm(false); createStation.reset(); }}
+              className="text-sm text-gray-400 hover:text-white px-3 py-2"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!newName.trim() || createStation.isPending}
+              className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm disabled:opacity-40"
+            >
+              {createStation.isPending ? 'Adding…' : 'Add station'}
+            </button>
+          </div>
+        </form>
       )}
 
       {(createStation.error || provisionInto.error || patchStation.error) && (
