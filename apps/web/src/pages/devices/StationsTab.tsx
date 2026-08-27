@@ -14,10 +14,11 @@ import {
   faTrash as faTrashDuo,
   faTriangleExclamation as faTriangleExclamationDuo,
 } from '@fortawesome/pro-duotone-svg-icons';
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import QRCode from 'react-qr-code';
 import { api } from '../../lib/api';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
+import { lastSeenTitle, recentlySeen, StatusLine } from './hardwareStatus';
+import type { HardwareStatus } from './hardwareStatus';
 import type {
   CheckinStationRecord,
   DeviceItem,
@@ -341,25 +342,10 @@ function StationStatus({
   station: CheckinStationRecord;
   queue: StationQueueStatus;
 }) {
-  const { icon, label, tone, spin, title } = rollUp(station, queue);
-  return (
-    <span
-      className={`flex items-center gap-1.5 text-sm mt-0.5 ${TEXT_TONE[tone]}`}
-      title={title}
-    >
-      <FontAwesomeIcon icon={icon} spin={spin} />
-      {label}
-    </span>
-  );
+  return <StatusLine status={rollUp(station, queue)} className="text-sm mt-0.5" />;
 }
 
-function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): {
-  icon: IconDefinition;
-  label: string;
-  tone: Tone;
-  spin?: boolean;
-  title?: string;
-} {
+function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): HardwareStatus {
   const staffed = station.kind === 'staffed';
 
   // What a station is missing depends on what kind it is: a self-service one
@@ -541,48 +527,6 @@ function SlotPicker({
       </div>
     </label>
   );
-}
-
-type Tone = 'ok' | 'warn' | 'bad' | 'unknown';
-
-const TEXT_TONE: Record<Tone, string> = {
-  ok: 'text-green-400',
-  warn: 'text-amber-400',
-  bad: 'text-red-400',
-  unknown: 'text-gray-500',
-};
-
-/**
- * A bridge heartbeats every 1–5 seconds, so 20 is four missed beats.
- *
- * Chosen against the moment that matters: a seller standing at the counter
- * watching "Printing…" while nothing comes out. A minute of grace was kinder to
- * flaky venue wifi, but it meant staff learned nothing for over a minute after
- * a bridge died. Four missed beats still rides out a dropped packet or two.
- */
-const OFFLINE_AFTER_MS = 20_000;
-
-function recentlySeen(iso: string | null): boolean {
-  if (!iso) return false;
-  return Date.now() - new Date(iso).getTime() < OFFLINE_AFTER_MS;
-}
-
-/**
- * How long it has been silent, for the tooltip — the label just says Offline.
- *
- * Seconds matter here: a station is called offline after twenty of them, so
- * most of what this describes is under a minute.
- */
-function lastSeenTitle(iso: string | null): string {
-  if (!iso) return 'This bridge has never checked in.';
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
-  if (seconds < 60) return `Last checked in ${plural(seconds, 'second')} ago.`;
-  if (seconds < 3600) return `Last checked in ${plural(Math.round(seconds / 60), 'minute')} ago.`;
-  return `Last checked in ${plural(Math.round(seconds / 3600), 'hour')} ago.`;
-}
-
-function plural(n: number, unit: string): string {
-  return `${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
 /**

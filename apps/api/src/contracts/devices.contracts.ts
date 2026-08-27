@@ -55,6 +55,15 @@ export const DeviceListItemSchema = z.object({
   role: DeviceRoleSchema,
   orgId: z.string(),
   lastSeenAt: z.date().nullable(),
+  /**
+   * A bridge's last word on its own BLE link to its printer, and when it said
+   * so. Null for every other kind of device. Surfaced here so a bridge can be
+   * judged on the page it lives on, without going through a station it may not
+   * be bound to yet — a stale `ready` means nothing, so the age travels with
+   * the value.
+   */
+  printerLink: z.enum(['ready', 'down']).nullable(),
+  printerLinkAt: z.date().nullable(),
   createdAt: z.date(),
 });
 

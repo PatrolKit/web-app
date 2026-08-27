@@ -2,7 +2,15 @@ import { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBluetooth, faPrint as faPrintDuo } from '@fortawesome/pro-duotone-svg-icons';
+import {
+  faBluetooth,
+  faCircleCheck as faCircleCheckDuo,
+  faCircleQuestion as faCircleQuestionDuo,
+  faLinkSlash as faLinkSlashDuo,
+  faPlugCircleXmark as faPlugCircleXmarkDuo,
+  faPrint as faPrintDuo,
+  faPrintSlash as faPrintSlashDuo,
+} from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../../lib/api';
 import {
   connectFromDevice,
@@ -12,6 +20,8 @@ import {
 import type { PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
 import { usePrinter } from '../../contexts/PrinterContext';
 import { DeviceCredentialList, MutationError } from '../devices/DeviceCredentials';
+import { lastSeenTitle, recentlySeen, StatusLine } from '../devices/hardwareStatus';
+import type { HardwareStatus } from '../devices/hardwareStatus';
 import type { DeviceItem, DeviceRole, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
@@ -141,6 +151,8 @@ export default function PrintersPage() {
   function BridgePrinterPicker(bridge: DeviceItem) {
     const bound = printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === bridge.id);
     return (
+      <>
+      <StatusLine status={rollUpBridge(bridge, bound)} className="text-sm mt-1" />
       <div className="mt-1.5">
         <label className="block text-xs text-gray-500 mb-1">Drives printer</label>
         <select
@@ -160,6 +172,7 @@ export default function PrintersPage() {
             ))}
         </select>
       </div>
+      </>
     );
   }
 
@@ -431,4 +444,81 @@ export default function PrintersPage() {
       )}
     </div>
   );
+}
+
+/**
+ * A bridge in one line, worst first — the same verdicts the station card gives,
+ * asked of the box rather than the counter.
+ *
+ * The station orders config gaps ahead of liveness because a station with no
+ * bridge has no liveness to report. Here the box is in front of us either way,
+ * so liveness leads: a bridge that never reached the server is the failure to
+ * name, and "no printer" is a dropdown away once it is alive.
+ *
+ * Nothing here is inferred. A bridge reports its printer link on every claim,
+ * and a link it has not spoken about is reported as unknown rather than
+ * guessed at — saying "ready" about a half we cannot see is how a dead bridge
+ * came to look provisioned in the first place.
+ */
+function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined): HardwareStatus {
+  if (!bridge.lastSeenAt) {
+    return {
+      icon: faPlugCircleXmarkDuo,
+      label: 'Never connected',
+      tone: 'warn',
+      title: 'This bridge has never reached the server. Set it up over Bluetooth, or check its firmware.',
+    };
+  }
+
+  if (!recentlySeen(bridge.lastSeenAt)) {
+    // Every signal below comes from the bridge itself, so once it goes quiet
+    // none of them are current and reporting them would be reporting history.
+    return {
+      icon: faPlugCircleXmarkDuo,
+      label: 'Offline',
+      tone: 'warn',
+      title: lastSeenTitle(bridge.lastSeenAt),
+    };
+  }
+
+  if (!printer) {
+    return {
+      icon: faLinkSlashDuo,
+      label: 'Online — no printer',
+      tone: 'unknown',
+      title: 'The bridge is reaching the server but drives nothing. Pick its printer below.',
+    };
+  }
+
+  if (bridge.printerLink === 'down') {
+    return {
+      icon: faPrintSlashDuo,
+      label: 'Cannot reach the printer',
+      tone: 'bad',
+      title: `Printer power, or something else paired to ${printer.bluetoothName}.`,
+    };
+  }
+
+  // Anything that is not an explicit `ready` is unconfirmed — null from a bridge
+  // that has not reported yet, and undefined from a server too old to send the
+  // field at all. Testing for the absences instead would let an unrecognised
+  // value fall through to green, which is the exact way a bridge with no working
+  // printer came to look fine.
+  if (bridge.printerLink !== 'ready') {
+    return {
+      icon: faCircleQuestionDuo,
+      label: 'Online — printer unconfirmed',
+      tone: 'warn',
+      title: 'The bridge has not reported its printer link. It reports one on each print, so this clears itself on the next job — or the firmware is too old to send it.',
+    };
+  }
+
+  // A `ready` from a bridge that has since gone quiet is caught above, so
+  // reaching here means both halves are current.
+  return {
+    icon: faCircleCheckDuo,
+    label: 'Ready',
+    tone: 'ok',
+    title: `Reaching the server, and holding the link to ${printer.name}.`,
+  };
 }

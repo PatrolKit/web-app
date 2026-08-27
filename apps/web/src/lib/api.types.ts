@@ -116,6 +116,9 @@ export interface DeviceItem {
   orgId: string;
   permissions: string[];
   lastSeenAt: string | null;
+  /** A bridge's last word on its BLE link to its printer, and when. Null otherwise. */
+  printerLink: 'ready' | 'down' | null;
+  printerLinkAt: string | null;
   createdAt: string;
 }
 

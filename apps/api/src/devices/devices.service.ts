@@ -165,6 +165,8 @@ export class DevicesService {
       role: d.role as DeviceRole,
       orgId: d.orgId,
       lastSeenAt: d.lastSeenAt,
+      printerLink: (d.printerLink as 'ready' | 'down' | null) ?? null,
+      printerLinkAt: d.printerLinkAt,
       createdAt: d.createdAt,
     }));
   }

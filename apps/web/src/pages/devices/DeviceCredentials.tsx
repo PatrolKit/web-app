@@ -395,6 +395,10 @@ export function DeviceCredentialList({
     queryKey: ['devices', orgId],
     queryFn: () => api.devices.list(orgId),
     enabled: !!orgId,
+    // Last-seen is judged against the clock at render, so without a refetch the
+    // status freezes at whatever it was when the page loaded. Ten seconds
+    // against a twenty-second offline threshold, matching the station card.
+    refetchInterval: 10_000,
   });
   const devices = allDevices.filter((d) => d.role === role);
   const roleInfo = DEVICE_ROLES.find((r) => r.value === role);
