@@ -61,7 +61,15 @@ export async function smokeStaff(prisma, org, permissions) {
     create: { id: createId(), userId: user.id, orgId: org.id, updatedAt: new Date() },
   });
 
+  // Set, not add. Every script shares this user, so a purely additive grant
+  // means whichever ran last leaves its permissions behind — and a script then
+  // passes on authority it never asked for. That is a green that means nothing,
+  // and it hid two real failures until production ran the scripts in a
+  // different order.
   const rows = await prisma.permission.findMany({ where: { key: { in: permissions } } });
+  await prisma.membershipPermission.deleteMany({
+    where: { membershipId: membership.id, permissionId: { notIn: rows.map((r) => r.id) } },
+  });
   for (const permission of rows) {
     await prisma.membershipPermission.upsert({
       where: { membershipId_permissionId: { membershipId: membership.id, permissionId: permission.id } },

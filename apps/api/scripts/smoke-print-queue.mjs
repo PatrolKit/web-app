@@ -49,7 +49,7 @@ const station = await prisma.checkinStation.create({
   data: { orgId: org.id, name: 'Smoke station', code: 'S', bridgeDeviceId: device.id, printerId: printer.id },
 });
 
-const { user: staffEarly } = await smokeStaff(prisma, org, ['ski_swap:report', 'ski_swap:manage']);
+const { user: staffEarly } = await smokeStaff(prisma, org, ['ski_swap:report', 'ski_swap:manage', 'ski_swap:admin']);
 const staffTokenEarly = await smokeSession(prisma, BASE, staffEarly, unwrap);
 
 const tok = await fetch(`${BASE}/auth/device/token`, {
