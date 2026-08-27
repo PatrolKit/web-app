@@ -10,7 +10,7 @@ import type { SkiSwapContext } from './SkiSwapLayout';
  * Only tablets are managed here. A bridge lives with the printer it drives, on
  * the Printers page — a station reaches its printer through its bridge.
  */
-const STATION_ROLES: readonly DeviceRole[] = ['ski_swap.staff_check_in'];
+const STATION_ROLE: DeviceRole = 'ski_swap.staff_check_in';
 
 /**
  * Check-in stations and the hardware that serves them.
@@ -58,7 +58,7 @@ export default function CheckinStationsPage() {
         </div>
         <DeviceCredentialList
           orgId={orgId}
-          roles={STATION_ROLES}
+          role={STATION_ROLE}
           canProvision={canAdmin}
         />
       </section>

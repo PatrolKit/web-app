@@ -16,7 +16,7 @@ import type { DeviceItem, DeviceRole, SellerResponse, SwapPrinterRecord } from '
 import type { SkiSwapContext } from './SkiSwapLayout';
 
 /** A bridge is the printer's network adapter, so it is managed alongside them. */
-const BRIDGE_ROLES: readonly DeviceRole[] = ['ski_swap.print_bridge'];
+const BRIDGE_ROLE: DeviceRole = 'ski_swap.print_bridge';
 
 /**
  * The Phomemos an org owns: what they are called, what paper they carry, and
@@ -394,7 +394,7 @@ export default function PrintersPage() {
         <MutationError error={bindBridgeMutation.error} />
         <DeviceCredentialList
           orgId={orgId}
-          roles={BRIDGE_ROLES}
+          role={BRIDGE_ROLE}
           printers={printers}
           canProvision={canManagePrinters}
           renderExtra={BridgePrinterPicker}

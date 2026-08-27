@@ -2,7 +2,7 @@ import { useOutletContext } from 'react-router-dom';
 import { DeviceCredentialList } from '../devices/DeviceCredentials';
 import type { DeviceRole } from '../../lib/api.types';
 
-const TIME_CLOCK_ROLES: readonly DeviceRole[] = ['time_clock.terminal'];
+const TIME_CLOCK_ROLE: DeviceRole = 'time_clock.terminal';
 
 /**
  * The tablets patrollers clock in and out on.
@@ -18,7 +18,7 @@ export default function TimeClockDevicesPage() {
     <div className="space-y-4">
       <DeviceCredentialList
         orgId={orgId}
-        roles={TIME_CLOCK_ROLES}
+        role={TIME_CLOCK_ROLE}
         canProvision={perms.has('time_tracking:manage')}
       />
     </div>

@@ -228,21 +228,26 @@ function ProvisioningCodeCard({ clientId, secret, role, printers, onDismiss }: {
  * Devices used to live on a page of their own, which is how a ski-swap admin
  * ended up unable to reach the printers they were expected to configure. Each
  * module now owns its own, and this is the piece they share: the same provision
- * form, rotate, revoke and role change, scoped to the roles that module uses.
+ * form, rotate and revoke.
+ *
+ * One list, one role. Every page that shows this list shows exactly one kind of
+ * hardware, so what to create is settled by which page you are on — there is
+ * nothing to choose and no role to change afterwards. Provision the wrong thing
+ * and you revoke it.
  *
  * The server enforces the same scoping — `ski_swap:admin` may touch ski-swap
- * hardware and nothing else — so `roles` here shapes the UI rather than
- * granting anything.
+ * hardware and nothing else — so `role` here shapes the UI rather than granting
+ * anything.
  */
 export function DeviceCredentialList({
   orgId,
-  roles,
+  role,
   printers = [],
   canProvision,
   renderExtra,
 }: {
   orgId: string;
-  roles: readonly DeviceRole[];
+  role: DeviceRole;
   /** Only needed where a bridge might be provisioned: it picks a printer. */
   printers?: SwapPrinterRecord[];
   canProvision: boolean;
@@ -251,9 +256,7 @@ export function DeviceCredentialList({
 }) {
   const qc = useQueryClient();
   const [provisionName, setProvisionName] = useState('');
-  const [provisionRole, setProvisionRole] = useState<DeviceRole>(roles[0]);
   const [showProvisionForm, setShowProvisionForm] = useState(false);
-  const [editingRole, setEditingRole] = useState<{ id: string; value: DeviceRole } | null>(null);
   const [revealedSecret, setRevealedSecret] = useState<{
     id: string;
     clientId: string;
@@ -267,15 +270,14 @@ export function DeviceCredentialList({
     queryFn: () => api.devices.list(orgId),
     enabled: !!orgId,
   });
-  const devices = allDevices.filter((d) => (roles as readonly string[]).includes(d.role));
-  const roleOptions = DEVICE_ROLES.filter((r) => (roles as readonly string[]).includes(r.value));
+  const devices = allDevices.filter((d) => d.role === role);
+  const roleInfo = DEVICE_ROLES.find((r) => r.value === role);
 
   const provisionMutation = useMutation({
-    mutationFn: () => api.devices.provision(orgId, { name: provisionName, role: provisionRole }),
+    mutationFn: () => api.devices.provision(orgId, { name: provisionName, role }),
     onSuccess: (d) => {
-      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, role: provisionRole });
+      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, role });
       setProvisionName('');
-      setProvisionRole(roles[0]);
       setShowProvisionForm(false);
       qc.invalidateQueries({ queryKey: ['devices', orgId] });
     },
@@ -294,17 +296,6 @@ export function DeviceCredentialList({
     onSettled: () => qc.invalidateQueries({ queryKey: ['devices', orgId] }),
   });
 
-  const updateRoleMutation = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: DeviceRole }) =>
-      api.devices.updateRole(orgId, id, role),
-    onSuccess: (updated) => {
-      qc.setQueryData<DeviceItem[]>(['devices', orgId], (prev) =>
-        prev?.map((d) => (d.id === updated.id ? updated : d)),
-      );
-      setEditingRole(null);
-    },
-  });
-
   if (isLoading) return <p className="text-gray-400 text-sm">Loading…</p>;
 
   return (
@@ -312,7 +303,7 @@ export function DeviceCredentialList({
           {canProvision && (
             <div className="flex justify-end">
               <button
-                onClick={() => { setShowProvisionForm(true); setProvisionName(''); setProvisionRole(roles[0]); provisionMutation.reset(); }}
+                onClick={() => { setShowProvisionForm(true); setProvisionName(''); provisionMutation.reset(); }}
                 className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
               >
                 + Provision Device
@@ -325,28 +316,20 @@ export function DeviceCredentialList({
               onSubmit={(e) => { e.preventDefault(); provisionMutation.mutate(); }}
               className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3"
             >
-              <h3 className="text-white font-medium">New Device</h3>
-              <input
-                value={provisionName}
-                onChange={(e) => setProvisionName(e.target.value)}
-                placeholder="Device name"
-                required
-                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
-              />
-              <select
-                value={provisionRole}
-                onChange={(e) => setProvisionRole(e.target.value as typeof provisionRole)}
-                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
-              >
-                {roleOptions.map((r) => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
+              <h3 className="text-white font-medium">New {roleInfo?.label ?? 'Device'}</h3>
+              <label className="block">
+                <span className="block text-xs text-gray-400 mb-1">Name</span>
+                <input
+                  value={provisionName}
+                  onChange={(e) => setProvisionName(e.target.value)}
+                  placeholder="Device name"
+                  required
+                  className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+                />
+              </label>
               {/* "Network Printer Adapter" says nothing about what the box does
                   or what to do with it next. */}
-              <p className="text-xs text-gray-500">
-                {roleOptions.find((r) => r.value === provisionRole)?.hint}
-              </p>
+              <p className="text-xs text-gray-500">{roleInfo?.hint}</p>
               <MutationError error={provisionMutation.error} />
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={() => { setShowProvisionForm(false); provisionMutation.reset(); }} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
@@ -371,7 +354,7 @@ export function DeviceCredentialList({
             />
           )}
 
-          <MutationError error={rotateMutation.error ?? revokeMutation.error ?? updateRoleMutation.error} />
+          <MutationError error={rotateMutation.error ?? revokeMutation.error} />
 
           <div className="space-y-3">
             {devices.map((d: DeviceItem) => (
@@ -380,29 +363,7 @@ export function DeviceCredentialList({
                   <span className="font-medium text-white">{d.name}</span>
                   <p className="text-xs text-gray-500 mt-0.5">Client ID: {d.clientId}</p>
                   {d.lastSeenAt && <p className="text-xs text-gray-500">Last seen: {new Date(d.lastSeenAt).toLocaleString()}</p>}
-                  {editingRole?.id === d.id ? (
-                    <div className="flex items-center gap-1 mt-1">
-                      <select
-                        autoFocus
-                        value={editingRole.value}
-                        onChange={(e) => setEditingRole({ id: d.id, value: e.target.value as typeof editingRole.value })}
-                        className="text-xs bg-surface-100 border border-gray-600 rounded px-2 py-0.5 text-white"
-                      >
-                        {roleOptions.map((r) => (
-                          <option key={r.value} value={r.value}>{r.label}</option>
-                        ))}
-                      </select>
-                      <button onClick={() => updateRoleMutation.mutate({ id: d.id, role: editingRole.value })} disabled={updateRoleMutation.isPending} className="text-xs text-green-400 hover:underline">Save</button>
-                      <button onClick={() => setEditingRole(null)} className="text-xs text-gray-500 hover:underline">Cancel</button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-xs text-gray-400">{deviceRoleLabel(d.role)}</span>
-                      {canProvision && (
-                        <button onClick={() => setEditingRole({ id: d.id, value: d.role })} className="text-xs text-gray-600 hover:text-gray-400" aria-label="Edit role">✎</button>
-                      )}
-                    </div>
-                  )}
+                  <p className="text-xs text-gray-400 mt-1">{deviceRoleLabel(d.role)}</p>
                   {renderExtra?.(d)}
                 </div>
                 <div className="flex gap-2">
