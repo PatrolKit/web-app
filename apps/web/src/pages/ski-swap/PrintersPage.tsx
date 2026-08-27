@@ -20,7 +20,12 @@ import {
 import type { PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
 import { usePrinter } from '../../contexts/PrinterContext';
 import { DeviceCredentialList, MutationError } from '../devices/DeviceCredentials';
-import { lastSeenTitle, recentlySeen, StatusLine } from '../devices/hardwareStatus';
+import {
+  lastSeenTitle,
+  OFFLINE_AFTER_UNBOUND_MS,
+  recentlySeen,
+  StatusLine,
+} from '../devices/hardwareStatus';
 import type { HardwareStatus } from '../devices/hardwareStatus';
 import type { DeviceItem, DeviceRole, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
 import BridgeEditModal from './BridgeEditModal';
@@ -142,7 +147,19 @@ export default function PrintersPage() {
 
   function BridgeStatus(bridge: DeviceItem) {
     const bound = printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === bridge.id);
-    return <StatusLine status={rollUpBridge(bridge, bound)} className="text-sm mt-1" />;
+    return (
+      <>
+        <StatusLine status={rollUpBridge(bridge, bound)} className="text-sm mt-1" />
+        {/* Its own line rather than folded into the status: whether the box
+            works and whether anything routes work to it are separate questions
+            with separate fixes, on separate pages. */}
+        {!bridge.stationName && (
+          <p className="text-xs text-gray-500 mt-0.5">
+            Not serving a station — bind it to one on the Check-in page.
+          </p>
+        )}
+      </>
+    );
   }
 
   const deletePrinterMutation = useMutation({
@@ -461,30 +478,11 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
     };
   }
 
-  if (!printer) {
-    return {
-      icon: faLinkSlashDuo,
-      label: 'No printer',
-      tone: 'unknown',
-      title: 'This bridge drives nothing. Set it up and pick its printer.',
-    };
-  }
-
-  // Both config gaps come before the liveness check, because the twenty-second
-  // rule does not apply to an unbound bridge: the firmware treats "no station"
-  // as a configuration problem and backs off to a slow retry, so judging it on
-  // a heartbeat it is not sending would flap between online and offline while
-  // nothing was actually wrong with it.
-  if (!bridge.stationName) {
-    return {
-      icon: faLinkSlashDuo,
-      label: 'Not serving a station',
-      tone: 'unknown',
-      title: 'Nothing routes work to this bridge yet. Bind it to a station on the Check-in page.',
-    };
-  }
-
-  if (!recentlySeen(bridge.lastSeenAt)) {
+  // An unbound bridge calls in on a slow retry rather than a heartbeat, so it is
+  // judged against that cadence. Holding it to the heartbeat rule would report a
+  // perfectly healthy box as offline half the time.
+  const serving = !!bridge.stationName;
+  if (!recentlySeen(bridge.lastSeenAt, serving ? undefined : OFFLINE_AFTER_UNBOUND_MS)) {
     // Every signal below comes from the bridge itself, so once it goes quiet
     // none of them are current and reporting them would be reporting history.
     return {
@@ -492,6 +490,15 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
       label: 'Offline',
       tone: 'warn',
       title: lastSeenTitle(bridge.lastSeenAt),
+    };
+  }
+
+  if (!printer) {
+    return {
+      icon: faLinkSlashDuo,
+      label: 'Online — no printer',
+      tone: 'unknown',
+      title: 'The bridge is reaching the server but drives nothing. Set it up and pick its printer.',
     };
   }
 
@@ -522,7 +529,7 @@ function rollUpBridge(bridge: DeviceItem, printer: SwapPrinterRecord | undefined
   // reaching here means both halves are current.
   return {
     icon: faCircleCheckDuo,
-    label: 'Ready',
+    label: serving ? 'Ready' : 'Online, printer connected',
     tone: 'ok',
     title: `Reaching the server, and holding the link to ${printer.name}.`,
   };

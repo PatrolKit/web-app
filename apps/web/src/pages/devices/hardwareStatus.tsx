@@ -39,9 +39,19 @@ export interface HardwareStatus {
  */
 export const OFFLINE_AFTER_MS = 20_000;
 
-export function recentlySeen(iso: string | null): boolean {
+/**
+ * The same rule for a bridge that is not bound to a station.
+ *
+ * It is not heartbeating: the firmware treats "no station" as a configuration
+ * problem a human fixes and backs off to a thirty-second retry, so judging it
+ * on four missed beats it was never going to send reports a working box as
+ * offline half the time. Two missed retries, plus slack.
+ */
+export const OFFLINE_AFTER_UNBOUND_MS = 70_000;
+
+export function recentlySeen(iso: string | null, withinMs = OFFLINE_AFTER_MS): boolean {
   if (!iso) return false;
-  return Date.now() - new Date(iso).getTime() < OFFLINE_AFTER_MS;
+  return Date.now() - new Date(iso).getTime() < withinMs;
 }
 
 /**
