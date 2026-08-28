@@ -143,6 +143,34 @@ export interface ProvisionedDevice extends DeviceItem {
   clientSecret: string;
 }
 
+export interface PlatformUserMembership {
+  id: string;
+  orgId: string;
+  orgName: string;
+  /** Soft-removed: they were a member and are not any more. */
+  removed: boolean;
+}
+
+export interface PlatformUser {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  emailVerified: boolean;
+  phone: string | null;
+  phoneVerified: boolean;
+  isSuperAdmin: boolean;
+  createdAt: string;
+  memberships: PlatformUserMembership[];
+}
+
+export interface PlatformUserPage {
+  users: PlatformUser[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export interface PlatformOrg {
   id: string;
   name: string;

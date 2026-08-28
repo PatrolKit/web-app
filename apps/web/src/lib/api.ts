@@ -277,6 +277,29 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+
+    listUsers: (params: {
+      q?: string;
+      orgId?: string;
+      membership?: 'any' | 'none';
+      page?: number;
+      limit?: number;
+    }) => {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== '') qs.set(k, String(v));
+      }
+      return request<import('./api.types').PlatformUserPage>(`/admin/users?${qs}`);
+    },
+    addMembership: (userId: string, orgId: string) =>
+      request<void>(`/admin/users/${userId}/memberships`, {
+        method: 'POST',
+        body: JSON.stringify({ orgId }),
+      }),
+    removeMembership: (userId: string, membershipId: string) =>
+      request<void>(`/admin/users/${userId}/memberships/${membershipId}`, { method: 'DELETE' }),
+    deleteUser: (userId: string) =>
+      request<void>(`/admin/users/${userId}`, { method: 'DELETE' }),
   },
 
   skiSwap: {

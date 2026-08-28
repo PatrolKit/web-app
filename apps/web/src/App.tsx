@@ -5,7 +5,9 @@ import AppShell from './components/AppShell';
 import LoginPage from './pages/auth/LoginPage';
 import VerifyPage from './pages/auth/VerifyPage';
 import MembersPage from './pages/members/MembersPage';
-import AdminPage from './pages/admin/AdminPage';
+import AdminLayout from './pages/admin/AdminLayout';
+import OrganizationsTab from './pages/admin/OrganizationsTab';
+import UsersTab from './pages/admin/UsersTab';
 import SkiSwapLayout from './pages/ski-swap/SkiSwapLayout';
 import TimeTrackingLayout from './pages/time-tracking/TimeTrackingLayout';
 import OnShiftPage from './pages/time-tracking/OnShiftPage';
@@ -89,7 +91,10 @@ export default function App() {
         <Route path="dashboard" element={<AppShell />}>
           <Route index element={<DefaultDashboardRedirect />} />
           <Route path="members" element={<MembersPage />} />
-          <Route path="admin" element={<AdminPage />} />
+          <Route path="admin" element={<AdminLayout />}>
+            <Route index element={<OrganizationsTab />} />
+            <Route path="users" element={<UsersTab />} />
+          </Route>
           {/* Modules used to be its own nav item; keep old links working. */}
           <Route path="modules" element={<Navigate to="/dashboard/org-admin/modules" replace />} />
           <Route path="org-admin" element={<OrgAdminLayout />}>

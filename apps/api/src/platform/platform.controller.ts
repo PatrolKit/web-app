@@ -1,9 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { SuperAdminGuard } from '../common/guards/super-admin.guard';
 import { PlatformService } from './platform.service';
-import { CreateOrgDto, PlatformPatchOrgDto } from '../contracts/members.contracts';
-import type { PlatformOrgResponse } from '../contracts/members.contracts';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
+import {
+  AddMembershipDto, CreateOrgDto, PlatformPatchOrgDto, PlatformUserQueryDto,
+} from '../contracts/members.contracts';
+import type { PlatformOrgResponse, PlatformUserPage } from '../contracts/members.contracts';
 
 @Controller('admin/organizations')
 @UseGuards(JwtAuthGuard, SuperAdminGuard)
@@ -36,5 +42,43 @@ export class PlatformController {
   @HttpCode(200)
   deleteOrg(@Param('id') id: string): Promise<void> {
     return this.platformService.deleteOrg(id);
+  }
+}
+
+/**
+ * Everyone on the platform, whether or not they belong anywhere.
+ *
+ * Separate from the organisations controller because it is not scoped to one:
+ * the users worth finding here are precisely the ones no org would list.
+ */
+@Controller('admin/users')
+@UseGuards(JwtAuthGuard, SuperAdminGuard)
+export class PlatformUsersController {
+  constructor(private readonly platformService: PlatformService) {}
+
+  @Get()
+  list(@Query() query: PlatformUserQueryDto): Promise<PlatformUserPage> {
+    return this.platformService.listUsers(query);
+  }
+
+  @Post(':id/memberships')
+  @HttpCode(201)
+  addMembership(@Param('id') id: string, @Body() body: AddMembershipDto): Promise<void> {
+    return this.platformService.addMembership(id, body.orgId);
+  }
+
+  @Delete(':id/memberships/:membershipId')
+  @HttpCode(200)
+  removeMembership(
+    @Param('id') id: string,
+    @Param('membershipId') membershipId: string,
+  ): Promise<void> {
+    return this.platformService.removeMembership(id, membershipId);
+  }
+
+  @Delete(':id')
+  @HttpCode(200)
+  deleteUser(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<void> {
+    return this.platformService.deleteUser(id, user.userId);
   }
 }

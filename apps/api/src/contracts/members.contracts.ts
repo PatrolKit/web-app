@@ -84,10 +84,71 @@ export const PlatformPatchOrgSchema = z
 
 export class InviteMemberDto extends createZodDto(InviteMemberSchema) {}
 export class UpdateMemberDto extends createZodDto(UpdateMemberSchema) {}
+// ─── Platform users ──────────────────────────────────────────────────────────
+
+/**
+ * Who exists on the platform, across every org.
+ *
+ * `membership` is the filter that motivated this view: someone can hold a
+ * verified contact and no membership anywhere — they signed in, or were part
+ * way through a check-in — and until now nothing listed them.
+ */
+export const PlatformUserQuerySchema = z
+  .object({
+    q: z.string().trim().max(120).optional(),
+    orgId: z.string().optional(),
+    membership: z.enum(['any', 'none']).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+  })
+  .strict();
+
+export const PlatformUserMembershipSchema = z.object({
+  id: z.string(),
+  orgId: z.string(),
+  orgName: z.string(),
+  /**
+   * Memberships are soft-deleted, so a former member is distinguishable from
+   * someone who never belonged anywhere. Both read as "no org"; only one of
+   * them has a story behind it.
+   */
+  removed: z.boolean(),
+});
+
+export const PlatformUserSchema = z.object({
+  id: z.string(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  email: z.string().nullable(),
+  emailVerified: z.boolean(),
+  phone: z.string().nullable(),
+  phoneVerified: z.boolean(),
+  isSuperAdmin: z.boolean(),
+  createdAt: z.date(),
+  memberships: z.array(PlatformUserMembershipSchema),
+});
+
+export const PlatformUserPageSchema = z.object({
+  users: z.array(PlatformUserSchema),
+  total: z.number(),
+  page: z.number(),
+  limit: z.number(),
+});
+
+export const AddMembershipSchema = z
+  .object({ orgId: z.string().min(1) })
+  .strict();
+
+export class PlatformUserQueryDto extends createZodDto(PlatformUserQuerySchema) {}
+export class AddMembershipDto extends createZodDto(AddMembershipSchema) {}
 export class CreateOrgDto extends createZodDto(CreateOrgSchema) {}
 export class PlatformPatchOrgDto extends createZodDto(PlatformPatchOrgSchema) {}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+export type PlatformUserQuery = z.infer<typeof PlatformUserQuerySchema>;
+export type PlatformUser = z.infer<typeof PlatformUserSchema>;
+export type PlatformUserPage = z.infer<typeof PlatformUserPageSchema>;
 
 export type MemberResponse = z.infer<typeof MemberResponseSchema>;
 export type InviteMemberRequest = z.infer<typeof InviteMemberSchema>;
