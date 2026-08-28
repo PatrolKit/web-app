@@ -1,4 +1,5 @@
-import { Body, Controller, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { SkipThrottle } from '@nestjs/throttler';
 import { DeviceAuthGuard } from '../common/guards/device-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -29,13 +30,27 @@ export class PrintJobController {
     @CurrentDevice() device: AuthenticatedDevice,
     @Body() body: ClaimJobsDto,
     @Query('limit') limit?: string,
+    @Query('wait') wait?: string,
+    @Res({ passthrough: true }) res?: Response,
   ) {
     // `limit=0` is a heartbeat: a bridge with a downed printer has nowhere to
     // put a job but still needs to say it is alive, or staff cannot tell a dead
     // printer from a dead bridge.
     const requested = limit === undefined ? 4 : Number(limit);
     const n = Number.isFinite(requested) ? Math.min(Math.max(requested, 0), 16) : 4;
-    return this.queue.claim(device.deviceId, n, body?.printerLink);
+    // The response travels down so an empty claim can be held open until work
+    // arrives, and abandoned the moment the bridge disconnects.
+    // `wait` is how long the caller will let the server hold an empty claim.
+    // Omitted means the default hold, which is what the firmware wants; zero is
+    // for anything that needs an answer rather than a tag.
+    const held = wait === undefined ? undefined : Number(wait);
+    return this.queue.claim(
+      device.deviceId,
+      n,
+      body?.printerLink,
+      res,
+      Number.isFinite(held) ? held : undefined,
+    );
   }
 
   @Post(':jobId/ack')

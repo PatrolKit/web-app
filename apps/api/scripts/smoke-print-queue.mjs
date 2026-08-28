@@ -63,8 +63,33 @@ ok('device token issued', !!tok.accessToken, tok.accessToken ? '' : JSON.stringi
 const H = { authorization: `Bearer ${tok.accessToken}`, 'content-type': 'application/json' };
 
 // Empty queue first
-let claim = await fetch(`${BASE}/devices/me/print-jobs/claim`, { method: 'POST', headers: H }).then(unwrap);
-ok('empty claim returns idle backoff', claim.jobs.length === 0 && claim.backoffMs === 5000, JSON.stringify(claim));
+let claim = await fetch(`${BASE}/devices/me/print-jobs/claim?wait=0`, { method: 'POST', headers: H }).then(unwrap);
+ok('empty claim returns idle backoff', claim.jobs.length === 0 && claim.backoffMs === 1000, JSON.stringify(claim));
+
+// ─── Holding an empty claim ─────────────────────────────────────────────────
+// The gap between a seller pressing print and the printer moving used to be a
+// whole polling interval, because an idle bridge was told "nothing" and sent
+// away. It now waits at the server and is woken by the enqueue.
+
+let t0 = Date.now();
+await fetch(`${BASE}/devices/me/print-jobs/claim?wait=1500`, { method: 'POST', headers: H }).then(unwrap);
+const heldFor = Date.now() - t0;
+ok('an empty claim is held rather than answered', heldFor >= 1400, `${heldFor} ms`);
+
+// Woken by the enqueue, not by a re-check: well under the 2s backstop.
+t0 = Date.now();
+const waiting = fetch(`${BASE}/devices/me/print-jobs/claim`, { method: 'POST', headers: H }).then(unwrap);
+await new Promise((r) => setTimeout(r, 300));
+await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/test`, {
+  method: 'POST', headers: { authorization: `Bearer ${staffTokenEarly}` },
+});
+const woken = await waiting;
+const wokeAfter = Date.now() - t0;
+ok('a held claim wakes when work is queued', woken.jobs.length === 1 && wokeAfter < 1500,
+   `${wokeAfter} ms, ${woken.jobs.length} job(s)`);
+for (const j of woken.jobs) {
+  await fetch(`${BASE}/devices/me/print-jobs/${j.id}/ack`, { method: 'POST', headers: H });
+}
 
 // Enqueue a calibration through the queue service's own table shape
 await prisma.printJob.create({
@@ -201,7 +226,7 @@ const recovered = await fetch(`${BASE}/devices/me/print-jobs/claim`, { method: '
 ok('an expired claim returns to the queue', recovered.jobs.length === 1, `${recovered.jobs.length} jobs`);
 
 await expire(5); // MAX_ATTEMPTS
-const afterCap = await fetch(`${BASE}/devices/me/print-jobs/claim`, { method: 'POST', headers: H }).then(unwrap);
+const afterCap = await fetch(`${BASE}/devices/me/print-jobs/claim?wait=0`, { method: 'POST', headers: H }).then(unwrap);
 ok('a job past its attempts is not re-claimed', afterCap.jobs.length === 0, `${afterCap.jobs.length} jobs`);
 ok('and is abandoned rather than left claimed',
    (await prisma.printJob.findUnique({ where: { id: stuck.id } })).status === 'abandoned',

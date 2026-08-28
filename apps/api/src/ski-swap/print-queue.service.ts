@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createId } from '@paralleldrive/cuid2';
 import { Prisma } from '@prisma/client';
+import type { PrintJob } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LabelRendererService } from './printing/label-renderer.service';
 import { PrintRecipeService, printTargetFor, type PrintRecipeKind } from './printing/print-recipe.service';
@@ -11,9 +12,37 @@ import type { StationQueueResponse } from '../contracts/ski-swap.contracts';
 const CLAIM_SECONDS = 90;
 /** Attempts before a job is abandoned rather than retried forever. */
 const MAX_ATTEMPTS = 5;
-/** Polling cadence hints, in ms — the seller is stood at the printer waiting. */
+/**
+ * Polling cadence hints, in ms.
+ *
+ * Both are short now that an empty claim is held open rather than answered
+ * immediately: the waiting happens inside the request, so a bridge that has
+ * just been told "nothing" should come straight back and start waiting again.
+ * The old idle value of five seconds was the whole of the lag between a seller
+ * pressing print and the printer moving — the work itself takes about 25ms.
+ */
 const BACKOFF_ACTIVE = 1000;
-const BACKOFF_IDLE = 5000;
+const BACKOFF_IDLE = 1000;
+
+/**
+ * How long an empty claim is held before answering.
+ *
+ * Bounded by the firmware's 20-second HTTP timeout, with room to spare: a
+ * bridge that gives up mid-request would retry work the server thinks is in
+ * flight. It also bounds how stale `lastSeenAt` gets while a request is held,
+ * which is what the twenty-second offline rule is measured against — ten
+ * seconds of holding plus a second of backoff leaves that comfortable.
+ */
+const HOLD_MS = 10_000;
+
+/**
+ * How often a held claim looks again without being told to.
+ *
+ * The wake-up is in-process, so it only carries within one server. This is the
+ * backstop for a job enqueued somewhere that signal cannot reach — a second
+ * instance, or a row written directly — and it caps how long that costs.
+ */
+const RECHECK_MS = 2_000;
 
 export type PrintJobKind = 'item' | 'receipt_header' | 'receipt_items' | 'qr' | 'calibration';
 
@@ -37,6 +66,41 @@ export interface ClaimedJob {
  */
 @Injectable()
 export class PrintQueueService {
+  /**
+   * Claims currently held open, by station, and how to wake each one.
+   *
+   * In-process on purpose: the alternative is a queue or a channel, and this
+   * server is one process serving one venue. `RECHECK_MS` is what makes that
+   * assumption safe to be wrong about rather than something to be right about.
+   */
+  private readonly waiting = new Map<string, Set<() => void>>();
+
+  /** Tells anything holding a claim for this station to look again now. */
+  private wake(stationId: string): void {
+    const listeners = this.waiting.get(stationId);
+    if (!listeners) return;
+    for (const notify of [...listeners]) notify();
+  }
+
+  /** Resolves when work is signalled for this station, or after `ms`. */
+  private waitForWork(stationId: string, ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        listeners.delete(finish);
+        if (listeners.size === 0) this.waiting.delete(stationId);
+        resolve();
+      };
+      const timer = setTimeout(finish, ms);
+      const listeners = this.waiting.get(stationId) ?? new Set<() => void>();
+      this.waiting.set(stationId, listeners);
+      listeners.add(finish);
+    });
+  }
+
   private readonly logger = new Logger(PrintQueueService.name);
 
   constructor(
@@ -79,6 +143,7 @@ export class PrintQueueService {
         seq: i,
       })),
     });
+    this.wake(station.id);
     return params.count;
   }
 
@@ -101,6 +166,7 @@ export class PrintQueueService {
         seq: 0,
       },
     });
+    this.wake(station.id);
   }
 
   /** Queues a seller's receipt: a header, then a page per batch of line items. */
@@ -131,6 +197,7 @@ export class PrintQueueService {
         })),
       ],
     });
+    this.wake(station.id);
   }
 
   /** Exercises the whole chain: server, bridge, BLE link, printer. */
@@ -146,6 +213,7 @@ export class PrintQueueService {
         seq: 0,
       },
     });
+    this.wake(station.id);
   }
 
   // ─── Claim / ack / nack ─────────────────────────────────────────────────────
@@ -163,6 +231,23 @@ export class PrintQueueService {
     deviceId: string,
     limit = 4,
     printerLink?: 'ready' | 'down',
+    /**
+     * The live response, so an empty claim can be held open until work arrives
+     * and dropped the moment the bridge hangs up. Absent in tests and scripts,
+     * where answering immediately is what is wanted.
+     *
+     * The response rather than the request: Node destroys a request stream once
+     * its body has been read, so a claim that had been parsed already looked
+     * disconnected and the hold ended after a single re-check.
+     */
+    res?: { on: (e: string, f: () => void) => void; off: (e: string, f: () => void) => void },
+    /**
+     * How long the caller is willing to have this request held, in ms, capped
+     * at `HOLD_MS`. The client owns its own HTTP timeout, so it is the only
+     * party that can say — and a caller that wants an answer now, like a
+     * diagnostic or a test, asks for zero.
+     */
+    holdMs = HOLD_MS,
   ): Promise<{
     stationId: string;
     backoffMs: number;
@@ -213,23 +298,52 @@ export class PrintQueueService {
     }
 
     const token = createId();
-    if (limit > 0) await this.prisma.$executeRaw`
-      UPDATE PrintJob
-         SET status = 'claimed',
-             claimToken = ${token},
-             claimedAt = NOW(3),
-             claimUntil = DATE_ADD(NOW(3), INTERVAL ${CLAIM_SECONDS} SECOND),
-             attempts = attempts + 1
-       WHERE stationId = ${station.id}
-         AND attempts < ${MAX_ATTEMPTS}
-         AND (status = 'queued' OR (status = 'claimed' AND claimUntil < NOW(3)))
-       ORDER BY seq, createdAt
-       LIMIT ${limit}`;
+    const take = async (): Promise<PrintJob[]> => {
+      if (limit === 0) return [];
+      await this.prisma.$executeRaw`
+        UPDATE PrintJob
+           SET status = 'claimed',
+               claimToken = ${token},
+               claimedAt = NOW(3),
+               claimUntil = DATE_ADD(NOW(3), INTERVAL ${CLAIM_SECONDS} SECOND),
+               attempts = attempts + 1
+         WHERE stationId = ${station.id}
+           AND attempts < ${MAX_ATTEMPTS}
+           AND (status = 'queued' OR (status = 'claimed' AND claimUntil < NOW(3)))
+         ORDER BY seq, createdAt
+         LIMIT ${limit}`;
+      return this.prisma.printJob.findMany({
+        where: { claimToken: token },
+        orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }],
+      });
+    };
 
-    const claimed = limit === 0 ? [] : await this.prisma.printJob.findMany({
-      where: { claimToken: token },
-      orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }],
-    });
+    // Hold the request rather than answering "nothing" straight away.
+    //
+    // The seller is standing at the printer. Answering immediately means the
+    // next chance to send them a tag is a whole backoff away, and that gap was
+    // the entire wait: the work itself takes about 25ms. Holding costs an idle
+    // socket and pays it back as a tag that starts printing as the item saves.
+    //
+    // Heartbeats are never held. `limit=0` is how a bridge says it is alive and
+    // reports its printer link, and blocking it would make both stale.
+    let claimed = await take();
+    const hold = Math.max(0, Math.min(holdMs, HOLD_MS));
+    if (claimed.length === 0 && limit > 0 && res && hold > 0) {
+      let clientGone = false;
+      const onClose = () => { clientGone = true; this.wake(station.id); };
+      res.on('close', onClose);
+      try {
+        const deadline = Date.now() + hold;
+        while (claimed.length === 0 && !clientGone && Date.now() < deadline) {
+          await this.waitForWork(station.id, Math.min(RECHECK_MS, deadline - Date.now()));
+          if (clientGone) break;
+          claimed = await take();
+        }
+      } finally {
+        res.off('close', onClose);
+      }
+    }
 
     // Rendering happens after the claim has committed, never inside it: holding
     // write locks across a canvas render would serialise stations against each
