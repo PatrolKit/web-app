@@ -23,7 +23,13 @@ async function bootstrap() {
         scriptSrcAttr: ["'unsafe-inline'", "'unsafe-hashes'"],
         styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
         fontSrc: ["'self'", 'https:', 'data:'],
-        imgSrc: ["'self'", 'data:', ...(photoHost ? [`https://${photoHost}`] : [])],
+        // `blob:` is the check-in photo preview. A seller's picture is shown
+        // back to them from an object URL before it is uploaded, and without
+        // this the browser drops it silently — the preview rendered as an empty
+        // box, on the deployed site only, since a dev server sends no policy.
+        // Object URLs are same-origin and minted by the page itself, so this
+        // grants no reach the page did not already have.
+        imgSrc: ["'self'", 'data:', 'blob:', ...(photoHost ? [`https://${photoHost}`] : [])],
         connectSrc: ["'self'"],
         frameSrc: ["'none'"],
         objectSrc: ["'none'"],
