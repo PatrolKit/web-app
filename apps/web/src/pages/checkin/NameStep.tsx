@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, ApiError } from '../../lib/api';
+import { useAuth } from '../../contexts/AuthContext';
 import { CheckinShell, contextLine, ErrorNote, inputClass, primaryButtonClass } from './shared';
 import type { CheckinContext } from '../../lib/api.types';
 
@@ -18,6 +19,7 @@ export default function NameStep({
   context: CheckinContext;
   onDone: () => void;
 }) {
+  const { refreshUser } = useAuth();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -31,6 +33,11 @@ export default function NameStep({
         firstName: firstName.trim(),
         lastName: lastName.trim() || null,
       });
+      // The session was opened on a phone number alone, so it holds a person
+      // with no name until this. Anything showing that identity back — the
+      // "signed in as" line — would otherwise read as the number for the rest
+      // of the visit.
+      await refreshUser();
       onDone();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save your name');

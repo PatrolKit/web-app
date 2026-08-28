@@ -8,6 +8,7 @@ interface AuthContextValue {
   setActiveOrgId: (id: string) => void;
   login: (token: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -55,6 +56,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  /**
+   * Re-reads who we are signed in as.
+   *
+   * A seller checking in for the first time signs in on a phone number alone
+   * and gives their name a screen later, which leaves the session holding a
+   * person with no name. Anything showing that identity back to them is wrong
+   * until this runs.
+   */
+  const refreshUser = useCallback(async () => {
+    const me = await api.me.get().catch(() => null);
+    if (me) setUser(me);
+  }, []);
+
   const logout = useCallback(async () => {
     await api.auth.logout().catch(() => {});
     clearAccessToken();
@@ -63,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, activeOrgId, setActiveOrgId, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, activeOrgId, setActiveOrgId, login, logout, refreshUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

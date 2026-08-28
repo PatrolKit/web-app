@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { PoweredByFooter } from '../public/PoweredByFooter';
 import type { CheckinContext } from '../../lib/api.types';
 
 /**
@@ -46,8 +48,38 @@ export function CheckinShell({
         </header>
         {children}
         {footer && <div className="pt-2">{footer}</div>}
+        <SignedInAs />
+        <PoweredByFooter />
       </div>
     </div>
+  );
+}
+
+/**
+ * Who this phone is currently signed in as, and a way out.
+ *
+ * Not really about changing your mind: a check-in matches on a phone number,
+ * and a household that shares one gets whoever claimed it first. Without this
+ * the second person to try is signed in as the first, consigning under their
+ * name, with nothing on screen admitting it or offering a way back.
+ *
+ * Absent before sign-in, where there is nobody to be wrong about.
+ */
+function SignedInAs() {
+  const { user, logout } = useAuth();
+  if (!user) return null;
+
+  return (
+    <p className="mt-8 text-center text-xs text-gray-500">
+      Signed in as <span className="text-gray-400">{user.displayName}</span>
+      {' · '}
+      <button
+        onClick={() => { void logout(); }}
+        className="text-brand-500 hover:underline"
+      >
+        Not you?
+      </button>
+    </p>
   );
 }
 
