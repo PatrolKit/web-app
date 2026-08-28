@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
-import { CheckinShell, formatCents } from './shared';
+import { CheckinShell, contextLine, formatCents } from './shared';
 import type { CheckinContext, CheckinSummary } from '../../lib/api.types';
 
 /**
@@ -19,7 +19,7 @@ export default function FinishStep({ context }: { context: CheckinContext }) {
   return (
     <CheckinShell
       title="You're checked in"
-      subtitle={`${context.swapTitle} · ${context.stationName}`}
+      subtitle={contextLine(context)}
       logoUrl={context.orgLogoUrl}
     >
       <div className="bg-surface-50 border border-gray-800 rounded-xl p-4 space-y-3">

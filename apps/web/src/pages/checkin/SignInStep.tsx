@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
-import { CheckinShell, ErrorNote, inputClass, primaryButtonClass, secondaryButtonClass } from './shared';
+import {
+  CheckinShell, contextLine, ErrorNote, inputClass, primaryButtonClass, secondaryButtonClass,
+} from './shared';
 import type { CheckinContext } from '../../lib/api.types';
 
 type Mode = 'contact' | 'code' | 'sent';
@@ -76,11 +78,12 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
     return (
       <CheckinShell
         title="Check your email"
-        subtitle={`We sent a sign-in link to ${email.trim()}.`}
+        subtitle={contextLine(context)}
         logoUrl={context.orgLogoUrl}
       >
         <p className="text-sm text-gray-400 text-center">
-          Open the link on this phone and you will come straight back here.
+          We sent a sign-in link to {email.trim()}. Open it on this phone and you will come
+          straight back here.
         </p>
         <button className={secondaryButtonClass} onClick={() => setMode('contact')}>
           Use a different address
@@ -93,9 +96,12 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
     return (
       <CheckinShell
         title="Enter your code"
-        subtitle={`We texted a 6-digit code to ${phone.trim()}.`}
+        subtitle={contextLine(context)}
         logoUrl={context.orgLogoUrl}
       >
+        <p className="text-sm text-gray-400 text-center">
+          We texted a 6-digit code to {phone.trim()}.
+        </p>
         <input
           className={`${inputClass} text-center tracking-[0.4em] text-2xl`}
           // This is what makes the texted code one tap instead of six
@@ -121,16 +127,11 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
 
   return (
     <CheckinShell
-      title={context.swapTitle}
-      subtitle={`${context.orgName} · ${context.stationName}`}
+      title="Let's look you up!"
+      subtitle={contextLine(context)}
       logoUrl={context.orgLogoUrl}
     >
       <div className="space-y-3">
-        {/* Larger than the swap title above it, and deliberately so. The header
-            is context — which swap, which counter — and a seller standing at a
-            table needs the instruction to be the loudest thing on the screen. */}
-        <h2 className="text-2xl font-bold text-center pb-1">Let&apos;s look you up!</h2>
-
         {/* Phone sits on the left and starts selected: an SMS code offers itself
             in the iOS keyboard bar, which email cannot match. Both are one tap,
             so nothing is hidden behind a link. */}

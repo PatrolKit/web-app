@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, ApiError } from '../../lib/api';
-import { CheckinShell, ErrorNote, inputClass, primaryButtonClass } from './shared';
+import { CheckinShell, contextLine, ErrorNote, inputClass, primaryButtonClass } from './shared';
 import type { CheckinContext } from '../../lib/api.types';
 
 /**
@@ -41,10 +41,13 @@ export default function NameStep({
   return (
     <CheckinShell
       title="What should we call you?"
-      subtitle="This goes on your receipt and your item tags."
+      subtitle={contextLine(context)}
       logoUrl={context.orgLogoUrl}
     >
       <div className="space-y-3">
+        <p className="text-sm text-gray-400 text-center">
+          This goes on your receipt and your item tags.
+        </p>
         <div className="grid grid-cols-2 gap-3">
           <input
             className={inputClass}

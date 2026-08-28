@@ -10,7 +10,7 @@ import {
 import { api, ApiError } from '../../lib/api';
 import { downscaleImage } from '../../lib/downscaleImage';
 import {
-  CheckinShell, ErrorNote, formatCents, inputClass,
+  CheckinShell, contextLine, ErrorNote, formatCents, inputClass,
   parsePriceCents, primaryButtonClass, secondaryButtonClass,
 } from './shared';
 import type { CheckinContext, CheckinSummary } from '../../lib/api.types';
@@ -157,7 +157,7 @@ export default function ItemsStep({
   return (
     <CheckinShell
       title="Add your items"
-      subtitle={`${context.swapTitle} · ${context.stationName}`}
+      subtitle={contextLine(context)}
       logoUrl={context.orgLogoUrl}
     >
       <div className="space-y-3 bg-surface-50 border border-gray-800 rounded-xl p-4">

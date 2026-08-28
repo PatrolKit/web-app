@@ -1,4 +1,17 @@
 import type { ReactNode } from 'react';
+import type { CheckinContext } from '../../lib/api.types';
+
+/**
+ * Where you are, in one line, identical on every screen of the flow.
+ *
+ * It used to be assembled per step, and drifted: the first screen said the org
+ * and the station, later ones the swap and the station, and two steps said
+ * nothing at all. A seller reading the same line on every screen can stop
+ * reading it; one that changes shape has to be re-read each time.
+ */
+export function contextLine(context: CheckinContext): string {
+  return [context.orgName, context.swapTitle, context.stationName].join(' · ');
+}
 
 /**
  * Phone-first chrome for check-in.
@@ -25,7 +38,10 @@ export function CheckinShell({
       <div className="mx-auto w-full max-w-md px-4 py-6 space-y-6">
         <header className="space-y-2 text-center">
           {logoUrl && <img src={logoUrl} alt="" className="mx-auto h-12 object-contain" />}
-          <h1 className="text-xl font-bold">{title}</h1>
+          {/* The instruction, and the loudest thing on the screen. Every step
+              puts what to do next here; anything explaining the step goes in
+              the body under it. */}
+          <h1 className="text-2xl font-bold">{title}</h1>
           {subtitle && <p className="text-sm text-gray-400">{subtitle}</p>}
         </header>
         {children}
