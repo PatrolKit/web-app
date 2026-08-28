@@ -263,11 +263,20 @@ function StationRow({
           </p>
         </div>
         <div className="flex gap-2">
-          {swapId && station.kind === 'self_service' && (
+          {/* Hidden only for a staffed station, where a QR is not a missing
+              thing but an inapplicable one — staff have the tablet in hand.
+              Without a running swap it is disabled and says why, rather than
+              vanishing and leaving you looking for it. */}
+          {station.kind === 'self_service' && (
             <button
-              className="text-xs px-2 py-1 bg-surface-100 hover:bg-surface-200 text-gray-300 rounded"
+              className="text-xs px-2 py-1 bg-surface-100 hover:bg-surface-200 text-gray-300 rounded disabled:opacity-40"
+              disabled={!swapId}
               onClick={onShowQr}
-              title="Show the QR code sellers scan"
+              title={
+                swapId
+                  ? 'Show the QR code sellers scan'
+                  : 'A QR code points at one swap, and none is running. Start one on the Swaps tab.'
+              }
             >
               <FontAwesomeIcon icon={faQrcodeDuo} /> QR
             </button>
