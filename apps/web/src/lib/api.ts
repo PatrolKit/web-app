@@ -481,6 +481,20 @@ export const api = {
       request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers`, {
         method: 'POST', body: JSON.stringify(data),
       }),
+    stationQrPdf: async (orgId: string, stationId: string): Promise<Blob> => {
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      const res = await fetch(
+        `/api/v1/orgs/${orgId}/ski-swap/stations/${stationId}/qr.pdf`,
+        { credentials: 'include', headers },
+      );
+      if (!res.ok) {
+        // The body is the API's JSON envelope on failure, not a PDF.
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? 'Could not build the printable sheet');
+      }
+      return res.blob();
+    },
     patchPrinter: (orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; bridgeDeviceId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }) =>
       request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers/${printerId}`, {
         method: 'PATCH', body: JSON.stringify(data),

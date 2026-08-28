@@ -2,6 +2,13 @@
   "collection": "@nestjs/schematics",
   "sourceRoot": "src",
   "compilerOptions": {
-    "deleteOutDir": true
+    "deleteOutDir": true,
+    "assets": [
+      {
+        "include": "ski-swap/printing/assets/*.pdf",
+        "outDir": "dist/src",
+        "watchAssets": true
+      }
+    ]
   }
 }

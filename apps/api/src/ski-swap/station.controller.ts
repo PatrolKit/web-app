@@ -1,4 +1,7 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Res, UseGuards,
+} from '@nestjs/common';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
@@ -7,6 +10,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { StationService } from './station.service';
 import { PrintQueueService } from './print-queue.service';
+import { QrSheetService } from './printing/qr-sheet.service';
 import { CreateStationDto, UpdateStationDto } from '../contracts/ski-swap.contracts';
 
 @Controller('orgs/:orgId/ski-swap/stations')
@@ -16,12 +20,34 @@ export class StationController {
   constructor(
     private readonly stations: StationService,
     private readonly queue: PrintQueueService,
+    private readonly qrSheet: QrSheetService,
   ) {}
 
   @Get()
   @RequirePermissions('ski_swap:report')
   list(@Param('orgId') orgId: string) {
     return this.stations.list(orgId);
+  }
+
+  /**
+   * The printable sheet for a self-service counter: the designed template with
+   * this station's code stamped into it.
+   *
+   * `ski_swap:manage` rather than `:admin` — printing a sign is running the
+   * swap, not configuring it, and the person taping paper to tables on the
+   * morning is rarely the person who set the hardware up.
+   */
+  @Get(':stationId/qr.pdf')
+  @RequirePermissions('ski_swap:manage')
+  @Header('Content-Type', 'application/pdf')
+  async qrSheetPdf(
+    @Param('orgId') orgId: string,
+    @Param('stationId') stationId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { pdf, filename } = await this.qrSheet.render(orgId, stationId);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.end(Buffer.from(pdf));
   }
 
   @Post()

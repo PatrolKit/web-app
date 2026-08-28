@@ -34,6 +34,7 @@ import { CheckinController, PublicCheckinController } from './checkin.controller
 import { StationService } from './station.service';
 import { StationController } from './station.controller';
 import { PrintQueueService } from './print-queue.service';
+import { QrSheetService } from './printing/qr-sheet.service';
 import { PrintJobController } from './print-job.controller';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { SkiSwapSettingsController } from './ski-swap-settings.controller';
@@ -84,6 +85,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     StationService,
     CheckinService,
     PrintQueueService,
+    QrSheetService,
   ],
   exports: [SquareCryptoService, SquareClientService],
 })

@@ -9,6 +9,7 @@ import {
   faPlugCircleXmark as faPlugCircleXmarkDuo,
   faPrint as faPrintDuo,
   faPrintSlash as faPrintSlashDuo,
+  faFilePdf as faFilePdfDuo,
   faQrcode as faQrcodeDuo,
   faSpinner as faSpinnerDuo,
   faTrash as faTrashDuo,
@@ -586,6 +587,7 @@ function SlotPicker({
  * beyond starting a check-in at that station.
  */
 function QrModal({
+  orgId,
   station,
   swapId,
   onClose,
@@ -595,18 +597,95 @@ function QrModal({
   swapId: string;
   onClose: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const url = `${SELLER_SITE_URL}/app/checkin?swap=${swapId}&station=${station.id}`;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError('Could not reach the clipboard. Select the address and copy it.');
+    }
+  }
+
+  /**
+   * The sheet is built on the server, where the design template lives — the
+   * browser only saves it. The download goes through the API client rather than
+   * a link because the session token travels in a header, which a plain
+   * navigation cannot carry.
+   */
+  async function download() {
+    setDownloading(true);
+    setError(null);
+    try {
+      const blob = await api.skiSwap.stationQrPdf(orgId, station.id);
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `checkin-${station.name.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoking immediately can cancel the save in some browsers.
+      setTimeout(() => URL.revokeObjectURL(href), 10_000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not build the printable sheet');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div
-        className="bg-surface-50 border border-gray-700 rounded-lg p-5 max-w-xs w-full space-y-4 text-center"
+        className="bg-surface-50 border border-gray-700 rounded-lg p-5 max-w-sm w-full space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-white font-medium">{station.name}</h3>
-        <div className="bg-white p-3 rounded inline-block">
-          <QRCode value={url} size={200} />
+        <h3 className="text-white font-medium text-center">{station.name}</h3>
+
+        <div className="flex justify-center">
+          {/* Small enough to leave room for the address and the download, big
+              enough that a phone reads it off the screen while someone tests a
+              station before printing anything. */}
+          <div className="bg-white p-2.5 rounded">
+            <QRCode value={url} size={140} />
+          </div>
         </div>
-        <p className="text-xs text-gray-500 break-all">{url}</p>
+
+        <div>
+          <span className="block text-xs text-gray-400 mb-1">Address</span>
+          <div className="flex gap-2">
+            <input
+              readOnly
+              value={url}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-300 font-mono"
+            />
+            <button
+              onClick={copy}
+              className="shrink-0 bg-surface-100 hover:bg-surface-200 text-gray-300 border border-gray-700 rounded px-3 text-xs"
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+
+        {error && <p className="text-red-400 text-xs">{error}</p>}
+
+        <button
+          onClick={download}
+          disabled={downloading}
+          className="w-full py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm rounded flex items-center justify-center gap-2"
+        >
+          <FontAwesomeIcon icon={faFilePdfDuo} />
+          {downloading ? 'Building…' : 'Download printable sheet'}
+        </button>
+
         <button className="w-full py-2 bg-surface-100 text-gray-300 text-sm rounded" onClick={onClose}>
           Close
         </button>
