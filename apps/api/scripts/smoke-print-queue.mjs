@@ -76,6 +76,25 @@ await fetch(`${BASE}/devices/me/print-jobs/claim?wait=1500`, { method: 'POST', h
 const heldFor = Date.now() - t0;
 ok('an empty claim is held rather than answered', heldFor >= 1400, `${heldFor} ms`);
 
+// A bridge mid-print is never held.
+//
+// The firmware flushes acks at the top of its loop, right before it claims, so
+// an ack can only leave between requests. Holding a bridge that still owes one
+// sits on the message saying the paper came out, and the seller watches a
+// spinner for a print that finished — measured at nine seconds before this.
+await prisma.printJob.create({ data: { orgId: org.id, stationId: station.id, kind: 'calibration' } });
+const held = await fetch(`${BASE}/devices/me/print-jobs/claim`, { method: 'POST', headers: H }).then(unwrap);
+ok('claims the job it will print', held.jobs.length === 1, String(held.jobs.length));
+
+t0 = Date.now();
+const midPrint = await fetch(`${BASE}/devices/me/print-jobs/claim`, { method: 'POST', headers: H }).then(unwrap);
+const waitedMidPrint = Date.now() - t0;
+ok('a bridge that still owes an ack is answered at once', waitedMidPrint < 1000,
+   `${waitedMidPrint} ms, ${midPrint.jobs.length} job(s)`);
+for (const j of held.jobs) {
+  await fetch(`${BASE}/devices/me/print-jobs/${j.id}/ack`, { method: 'POST', headers: H });
+}
+
 // Woken by the enqueue, not by a re-check: well under the 2s backstop.
 t0 = Date.now();
 const waiting = fetch(`${BASE}/devices/me/print-jobs/claim`, { method: 'POST', headers: H }).then(unwrap);

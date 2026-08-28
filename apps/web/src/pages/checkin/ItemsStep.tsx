@@ -60,7 +60,13 @@ export default function ItemsStep({
     queryFn: () => api.checkin.summary(context.orgId, context.swapId),
     // Tags are printed by hardware across the room; polling is how the screen
     // learns one came out. Cheap, and only while this screen is open.
-    refetchInterval: 3000,
+    //
+    // Faster while a spinner is on screen, because that is the only time the
+    // answer is being waited for: a seller watching "Printing…" notices three
+    // seconds of it long after the tag is in their hand. Once everything has
+    // printed there is nothing to catch up on, so it backs off.
+    refetchInterval: (query) =>
+      query.state.data?.items.some((i) => !i.hasPrintedTag) ? 1000 : 5000,
   });
 
   const [draft, setDraft] = useState<Draft>(() => {

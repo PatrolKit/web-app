@@ -329,7 +329,23 @@ export class PrintQueueService {
     // reports its printer link, and blocking it would make both stale.
     let claimed = await take();
     const hold = Math.max(0, Math.min(holdMs, HOLD_MS));
-    if (claimed.length === 0 && limit > 0 && res && hold > 0) {
+
+    // Never hold a bridge that still owes us an acknowledgement.
+    //
+    // The firmware sends acks at the top of its loop, just before it claims, so
+    // an ack can only leave between requests. Parking a mid-print bridge in a
+    // ten-second hold therefore sits on the very message that says the paper
+    // came out, and the seller watches a spinner for a print that finished.
+    // While work is outstanding the bridge is busy anyway; holding buys it
+    // nothing and costs the confirmation.
+    const outstanding =
+      claimed.length > 0
+        ? 1
+        : await this.prisma.printJob.count({
+            where: { stationId: station.id, status: 'claimed' },
+          });
+
+    if (claimed.length === 0 && outstanding === 0 && limit > 0 && res && hold > 0) {
       let clientGone = false;
       const onClose = () => { clientGone = true; this.wake(station.id); };
       res.on('close', onClose);
