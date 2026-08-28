@@ -44,20 +44,7 @@ export class SwapService {
     const skuPrefix = await this.resolveUniquePrefix(orgId, basePrefix);
 
     const parentCategoryId = await this.findOrCreatePatrolKitCategory(client);
-
-    const upsertRes = await client.catalog.object.upsert({
-      idempotencyKey: uuidv4(),
-      object: {
-        type: 'CATEGORY',
-        id: '#category',
-        categoryData: { name: title, parentCategory: { id: parentCategoryId } },
-      },
-    });
-
-    const squareCategoryId = upsertRes.catalogObject?.id;
-    if (!squareCategoryId) {
-      throw new BadRequestException('Square did not return a category ID');
-    }
+    const squareCategoryId = await this.findOrCreateSwapCategory(client, parentCategoryId, title);
 
     const swap = await this.prisma.skiSwap.create({
       data: {
@@ -177,6 +164,46 @@ export class SwapService {
     }
     // Fallback: truncated timestamp suffix
     return `${base.slice(0, 4)}${Date.now().toString().slice(-2)}`;
+  }
+
+  /**
+   * The Square category a swap's items are filed under, reused if it is there.
+   *
+   * Upserting with a fresh `#category` id and a new idempotency key is a
+   * create, every time — which is what this used to do, so re-creating a swap
+   * left the catalogue holding one category per attempt, all with the same
+   * name and no way to tell them apart.
+   *
+   * Matched within the PatrolKit parent rather than by name across the whole
+   * catalogue: a shop may well already have a category called after the season,
+   * and adopting one that is not ours would file consigned items into it.
+   */
+  private async findOrCreateSwapCategory(
+    client: SquareClient,
+    parentCategoryId: string,
+    title: string,
+  ): Promise<string> {
+    const page = await client.catalog.list({ types: 'CATEGORY' });
+    for await (const obj of page) {
+      if (obj.type !== 'CATEGORY') continue;
+      const data = (obj as { categoryData?: { name?: string; parentCategory?: { id?: string } } })
+        .categoryData;
+      if (data?.name === title && data.parentCategory?.id === parentCategoryId) {
+        return obj.id as string;
+      }
+    }
+
+    const res = await client.catalog.object.upsert({
+      idempotencyKey: uuidv4(),
+      object: {
+        type: 'CATEGORY',
+        id: '#category',
+        categoryData: { name: title, parentCategory: { id: parentCategoryId } },
+      },
+    });
+    const id = res.catalogObject?.id;
+    if (!id) throw new BadRequestException('Square did not return a category ID');
+    return id;
   }
 
   private async findOrCreatePatrolKitCategory(client: SquareClient): Promise<string> {
