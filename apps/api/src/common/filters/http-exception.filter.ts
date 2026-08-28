@@ -4,8 +4,9 @@ import {
   ArgumentsHost,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 
 interface ErrorResponse {
   success: false;
@@ -15,9 +16,12 @@ interface ErrorResponse {
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(HttpExceptionFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
@@ -39,6 +43,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
               : message;
         code = typeof obj['code'] === 'string' ? obj['code'] : undefined;
       }
+    }
+
+    // Anything that is not an HttpException reached here unplanned, and the
+    // client is told nothing but "Internal server error" — deliberately, since
+    // the detail is ours. Without logging it, though, the detail is nobody's:
+    // a 500 became a dead end that took a database probe to explain.
+    if (!(exception instanceof HttpException)) {
+      this.logger.error(
+        { err: exception, method: request?.method, url: request?.url },
+        'Unhandled exception',
+      );
     }
 
     const body: ErrorResponse = { success: false, error: message };
