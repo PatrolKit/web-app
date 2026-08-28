@@ -126,6 +126,11 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
       logoUrl={context.orgLogoUrl}
     >
       <div className="space-y-3">
+        {/* Larger than the swap title above it, and deliberately so. The header
+            is context — which swap, which counter — and a seller standing at a
+            table needs the instruction to be the loudest thing on the screen. */}
+        <h2 className="text-2xl font-bold text-center pb-1">Let&apos;s look you up</h2>
+
         {/* Phone sits on the left and starts selected: an SMS code offers itself
             in the iOS keyboard bar, which email cannot match. Both are one tap,
             so nothing is hidden behind a link. */}
