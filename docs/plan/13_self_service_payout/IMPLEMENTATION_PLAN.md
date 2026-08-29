@@ -31,14 +31,16 @@ Two fields are added and one is removed (D5). No new endpoint.
 
 | # | Decision | Rationale |
 |---|---|---|
-| **D1** | **A payout step, immediately after the name step and before items.** | Answered before anything else, so nobody reaches the end of a swap unpayable. It costs a form between a seller and the thing they queued to do — see §7 for what that risks. |
+| **D1** | **Two steps between the name and the items: address, then payout.** | Both are answered before anything else, so nobody reaches the end of a swap unpayable or uncontactable. Separate rather than combined because they answer different questions — where the person is, and where the money goes — and one screen carrying both would make the address look like a detail of the payout, which is exactly what D3 says it is not. It costs two forms between a seller and the thing they queued to do; §7 is honest about that. |
 | **D2** | **Three methods: Check, PayPal, Venmo. `DONATE` stays staff-set.** | Donating a whole payout is a decision someone should make deliberately, not tap past on a phone at a table. It remains in the enum and on the staff pages, so a seller who asks can still have it set. Different from `SwapItem.donateProceeds`, which donates one item's proceeds and is unaffected. |
-| **D3** | **Required, and what is required follows the method.** Check: a full mailing address. PayPal: one of a PayPal ID, a verified phone, or a verified email. Venmo: a Venmo ID. | These are the destinations PayPal Payouts will actually accept, so the form asks for what the payment run can use and nothing else. A method with no usable destination is the same as not asking. |
+| **D3** | **A full address is required of every seller, whatever their payout method.** | An address is not a payout detail that happens to be needed for cheques. It is how a person is reached about their own property — an unsold item to collect, a query about a tag, anything that outlives the swap — and a swap where only the cheque-takers can be reached is a swap with a gap in it. The cost is real and §7 states it: a Venmo seller gives an address nothing in this plan will ever use. |
+| **D3a** | **A destination is required too, and which one follows the method.** PayPal: a PayPal ID, a verified phone, or a verified email. Venmo: a Venmo ID. Check: the address from D3, nothing further. | These are the destinations PayPal Payouts will actually accept, so the form asks for what the payment run can use and nothing else. A method with no usable destination is the same as not asking. |
 | **D4** | **Two segmented controls: the method, and — within PayPal — the destination. A typed ID is read back for confirmation; a verified contact is offered rather than typed.** | The nesting follows the domain rather than the layout: PayPal Payouts accepts three recipient types and Venmo effectively one, so PayPal is the only method with a second choice to make. The typed/offered split is not stylistic either — a PayPal or Venmo ID is self-asserted and unverifiable (§5.1), so the only check is a person looking twice, while a verified contact is already proven and cannot be mistyped. |
 | **D5** | **Two fields: `payoutTarget` and `payoutHandle`, replacing `payoutChannel`.** | PayPal Payouts needs a recipient *type* as well as a value, so the discriminator is not ours to drop — `payoutTarget` is what it becomes at payout time. `payoutHandle` carries the value only when one was typed; for a phone or email target it stays null and the destination is resolved from `verifiedPhone` / `verifiedEmail` at payout time, so a seller who later changes their email cannot leave a stale copy behind. |
 | **D6** | **Every seller confirms their payout details, every check-in, returning or not.** | The unverifiable half of this cannot be checked by anything except a person reading it, and a returning seller is exactly who stops reading. It is also where a moved house or a closed PayPal gets caught, which nothing else in the system will notice. Confirming does not re-verify a contact: no message is sent, and existing verification stands. |
 | **D7** | **Reuse `PATCH …/ski-swap/seller-self`.** | It already accepts these fields for the signed-in seller, and `join` has already created the profile it needs by the time this step runs. A second endpoint would be a second set of rules to keep in step. |
-| **D8** | **Address stays on `User`, global to the person.** | Unchanged, and worth stating because the consequence is real: a seller who corrects their address at one org corrects it everywhere. That is the right answer for a mailing address — a person has one — but it means this screen is editing more than the swap in front of them. |
+| **D8** | **Address stays on `User`, global to the person.** | Unchanged, and worth stating because the consequence is real: a seller who corrects their address at one org corrects it everywhere. That is the right answer for a mailing address — a person has one — but it means this step is editing more than the swap in front of them. |
+| **D9** | **The payout step shows the address rather than asking again.** Check displays what was entered a screen earlier, with a way back to it. | Asking twice would be the surest way to collect two different answers, and a seller who has just typed their address and is immediately asked for it again reasonably assumes the first attempt failed. |
 
 ---
 
@@ -88,11 +90,41 @@ becoming.
 
 ---
 
-## 4. The screen
+## 4. The screens
 
-Between "What should we call you?" and "Add your items", in the same shell as
-every other step. **Two levels of segmented control**: the method, and — for
-PayPal only — where within PayPal the money goes.
+Two, between "What should we call you?" and "Add your items", in the same shell
+as every other step.
+
+### 4.1 Address
+
+Asked of everyone, whatever they choose next (D3).
+
+```
+              Where can we reach you?
+      Demo Org · Ski Swap 2026 · Station 1
+
+   For posting a cheque, and for anything
+   about your items after the swap.
+
+   Street
+   ┌────────────────────────────────────┐
+   └────────────────────────────────────┘
+   City              State      ZIP
+   ┌────────────┐   ┌─────┐   ┌────────┐
+   └────────────┘   └─────┘   └────────┘
+
+                [ Continue ]
+```
+
+The subtitle says why it is being asked. A seller about to choose Venmo will
+otherwise reasonably wonder why a swap wants their address, and "so we can
+reach you about your things" is both true and the honest reason it is required
+of them (D3).
+
+### 4.2 Payout
+
+**Two levels of segmented control**: the method, and — for PayPal only — where
+within PayPal the money goes.
 
 ```
               How should we pay you?
@@ -103,20 +135,20 @@ PayPal only — where within PayPal the money goes.
    └────────┴────────┴────────┘
 ```
 
-**Check** shows a card for the address, and nothing else:
+**Check** shows the address from the previous step, already entered (D9):
 
 ```
    ┌──────────────────────────────────────┐
-   │  Where should we post it?            │
+   │  Posting your cheque to              │
    │                                      │
-   │  Street                              │
-   │  ┌────────────────────────────────┐  │
-   │  └────────────────────────────────┘  │
-   │  City            State     ZIP       │
-   │  ┌───────────┐  ┌─────┐  ┌────────┐  │
-   │  └───────────┘  └─────┘  └────────┘  │
+   │  Chris Armenio                       │
+   │  12 Elm Street                       │
+   │  Burlington, VT 05401     [ Change ] │
    └──────────────────────────────────────┘
 ```
+
+`Change` steps back to 4.1 and returns here, so there is one address and one
+place to edit it.
 
 **PayPal** shows a second segmented control, because Payouts accepts three
 kinds of recipient and the seller picks which of theirs to use:
@@ -163,8 +195,11 @@ Continue reads the answer back, every time, for everyone:
    └────────────────────────────────────┘
 ```
 
-Six notes on the shape:
+Seven notes on the shape:
 
+- **Check asks for nothing on this screen.** The address is already known, so
+  the method that needed the most typing now needs none — it shows what will
+  happen and offers a way back if it is wrong.
 - **The nested control exists because the recipient types are real.** `EMAIL`,
   `PHONE` and `PAYPAL_ID` are PayPal Payouts' own three, so this segment is not
   a presentational choice — it is the value that goes on the payout, chosen by
@@ -197,11 +232,17 @@ specified; only the initial selection differs.
 
 ## 5. Validation
 
-Enforced server-side, in `writeUserFields`, so the staff pages get it too:
+Two different kinds of rule, enforced in two different places. Collapsing them
+would break the staff pages: a staff member correcting only a payout method on a
+seller who has no address on file must not be refused for a field they were not
+editing.
+
+**Invariants of the data**, enforced in `writeUserFields` on every write, staff
+path included. These are combinations that are wrong whenever they occur:
 
 | Method | `payoutTarget` | `payoutHandle` | Also required |
 |---|---|---|---|
-| `CHECK` | null | null | `street`, `city`, `state`, `zip` all present |
+| `CHECK` | null | null | — |
 | `PAYPAL` | `EMAIL` | null | `emailVerifiedAt` set |
 | `PAYPAL` | `PHONE` | null | `phoneVerifiedAt` set |
 | `PAYPAL` | `PAYPAL_ID` | non-blank | — |
@@ -210,8 +251,18 @@ Enforced server-side, in `writeUserFields`, so the staff pages get it too:
 
 Any other combination is refused: `VENMO` with a `PAYPAL_ID` target, `PAYPAL`
 with an `EMAIL` target and no verified email, a handle on a target that should
-not carry one. The client mirrors these to keep Continue disabled rather than
-bouncing the seller off a server error, but the server is what decides.
+not carry one.
+
+**Completeness of a check-in**, enforced where a check-in completes rather than
+on every write. A seller must have `street`, `city`, `state`, `zip` (D3) *and* a
+payout method with its destination before `POST …/checkin/:swapId/finish`
+succeeds. The two steps in §4 are what collect them, and the client keeps
+Continue disabled rather than bouncing the seller off a server error — but the
+finish endpoint is what decides, because it is the last moment anything can be
+required of someone who is about to walk away.
+
+This split is what lets staff keep patching one field at a time while a
+self-service seller still cannot leave half-known.
 
 **Nothing validates a typed ID's shape.** No length rule, no `@` prefix, no
 email regex: a Venmo username, a PayPal address and a PayPal payer ID have
@@ -250,31 +301,37 @@ to catch.
 
 ## 6. Phases
 
-**Phase 1 — The fields.** Add `payoutTarget` and `payoutHandle`, migrate
-`payoutChannel` across, drop it, and add the §5 validation with a test per row
-of that table. Update the staff Sellers page and seller profile page. Server and
-staff UI only; ships on its own and leaves check-in untouched.
+**Phase 1 — The fields and the invariants.** Add `payoutTarget` and
+`payoutHandle`, migrate `payoutChannel` across, drop it, and enforce the §5
+invariants in `writeUserFields` with a test per row of that table. Update the
+staff Sellers page and seller profile page. Server and staff UI only; ships on
+its own and leaves check-in untouched.
 
-**Phase 2 — The check-in step.** A `PayoutStep` between name and items: the
-method control, PayPal's nested destination control, the address card, and the
-confirmation — shown to everyone, returning or not (D6). Calls the existing
-`PATCH …/seller-self` (D7), prefilled from the seller's profile.
+**Phase 2 — The check-in steps.** An `AddressStep` and a `PayoutStep` between
+name and items (D1). The payout step carries the method control, PayPal's nested
+destination control, the Check summary reading back the address just entered
+(D9), and the confirmation — shown to everyone, returning or not (D6). Both call
+the existing `PATCH …/seller-self` (D7), prefilled from the seller's profile.
+The completeness gate on `finish` (§5) lands here too, since it is meaningless
+until there are steps that satisfy it.
 
-**Phase 3 — Make the gap visible.** Sellers with no payout method are invisible
-until someone tries to pay them. A count on the ski-swap dashboard and a filter
-on the Sellers page, so the people this plan cannot reach — those who checked in
-before it shipped — can be found and chased.
+**Phase 3 — Make the gap visible.** Sellers with no address or no payout method
+are invisible until someone tries to reach or pay them. A count on the ski-swap
+dashboard and a filter on the Sellers page, so the people this plan cannot reach
+— those who checked in before it shipped — can be found and chased.
 
 ---
 
 ## 7. What this costs, honestly
 
-**A blocking step before items is a real risk.** Sellers queue at a station with
-people behind them; a form between them and the thing they came to do is the
-kind of friction that produces abandoned check-ins and a staff member taking
-over. PayPal's verified segments are what keep that path to a glance and two
-taps. If it turns out most sellers pick Check and type an address, the placement
-is worth revisiting against putting a prompt on the items screen instead.
+**Two blocking steps before items is a real risk, and it is now two.** Sellers
+queue at a station with people behind them; a form between them and the thing
+they came to do is the kind of friction that produces abandoned check-ins and a
+staff member taking over. Splitting address from payout (D1) is right for
+clarity and costs a screen — the address step is the one that always requires
+typing, so it is where any abandonment will show up first. Worth watching once
+it is live: if sellers stall there, the fallback is a prompt on the items screen
+rather than a gate before them.
 
 **A typed ID is a real exposure.** A mistyped PayPal or Venmo ID can send money
 to a stranger who has no idea where it came from, and neither we nor the payment
@@ -283,9 +340,13 @@ also why PayPal's destination control opens on a verified segment — the exposu
 exists only on the segment with a text field in it, and most sellers need never
 select it. Venmo has no such escape: every Venmo destination is typed.
 
-**It collects more than the swap needs.** A mailing address is personal data
-with no purpose until a cheque is written, and D8 means it is written once for
-the person rather than once per org. Only ask for it when Check is the method.
+**It collects an address from people it will never post anything to.** A seller
+paid by Venmo gives a full mailing address that no part of this plan uses, and
+D8 means it is written once for the person rather than once per org. That is a
+deliberate choice (D3) — the address is for reaching someone about their own
+property, not only for cheques — but it should be defended on that ground rather
+than treated as free. If it ever stops being true that a swap needs to reach
+every seller, this is the first requirement to drop.
 
 **Existing sellers are not reached.** Anyone who checked in before Phase 2 still
 has no payout method, and nothing will ask them again unless they return. Phase
