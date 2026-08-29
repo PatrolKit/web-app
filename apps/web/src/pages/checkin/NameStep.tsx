@@ -53,7 +53,7 @@ export default function NameStep({
     >
       <div className="space-y-3">
         <p className="text-sm text-gray-400 text-center">
-          This goes on your receipt and your item tags.
+          This goes on your receipt, and it is how staff will find you.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <input
