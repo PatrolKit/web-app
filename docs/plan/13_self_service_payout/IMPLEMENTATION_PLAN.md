@@ -34,7 +34,7 @@ Two fields are added and one is removed (D5). No new endpoint.
 | **D1** | **A payout step, immediately after the name step and before items.** | Answered before anything else, so nobody reaches the end of a swap unpayable. It costs a form between a seller and the thing they queued to do — see §7 for what that risks. |
 | **D2** | **Three methods: Check, PayPal, Venmo. `DONATE` stays staff-set.** | Donating a whole payout is a decision someone should make deliberately, not tap past on a phone at a table. It remains in the enum and on the staff pages, so a seller who asks can still have it set. Different from `SwapItem.donateProceeds`, which donates one item's proceeds and is unaffected. |
 | **D3** | **Required, and what is required follows the method.** Check: a full mailing address. PayPal: one of a PayPal ID, a verified phone, or a verified email. Venmo: a Venmo ID. | These are the destinations PayPal Payouts will actually accept, so the form asks for what the payment run can use and nothing else. A method with no usable destination is the same as not asking. |
-| **D4** | **A typed ID is read back for confirmation; a verified contact is offered rather than typed.** | The split is not stylistic. A PayPal or Venmo ID is self-asserted and unverifiable (§5.1), so the only check that exists is a person looking at it twice. A verified phone or email is already proven, needs no typing, and cannot be mistyped — so PayPal offers those as choices and only the ID gets the second look. |
+| **D4** | **Two segmented controls: the method, and — within PayPal — the destination. A typed ID is read back for confirmation; a verified contact is offered rather than typed.** | The nesting follows the domain rather than the layout: PayPal Payouts accepts three recipient types and Venmo effectively one, so PayPal is the only method with a second choice to make. The typed/offered split is not stylistic either — a PayPal or Venmo ID is self-asserted and unverifiable (§5.1), so the only check is a person looking twice, while a verified contact is already proven and cannot be mistyped. |
 | **D5** | **Two fields: `payoutTarget` and `payoutHandle`, replacing `payoutChannel`.** | PayPal Payouts needs a recipient *type* as well as a value, so the discriminator is not ours to drop — `payoutTarget` is what it becomes at payout time. `payoutHandle` carries the value only when one was typed; for a phone or email target it stays null and the destination is resolved from `verifiedPhone` / `verifiedEmail` at payout time, so a seller who later changes their email cannot leave a stale copy behind. |
 | **D6** | **Every seller confirms their payout details, every check-in, returning or not.** | The unverifiable half of this cannot be checked by anything except a person reading it, and a returning seller is exactly who stops reading. It is also where a moved house or a closed PayPal gets caught, which nothing else in the system will notice. Confirming does not re-verify a contact: no message is sent, and existing verification stands. |
 | **D7** | **Reuse `PATCH …/ski-swap/seller-self`.** | It already accepts these fields for the signed-in seller, and `join` has already created the profile it needs by the time this step runs. A second endpoint would be a second set of rules to keep in step. |
@@ -91,32 +91,64 @@ becoming.
 ## 4. The screen
 
 Between "What should we call you?" and "Add your items", in the same shell as
-every other step.
+every other step. **Two levels of segmented control**: the method, and — for
+PayPal only — where within PayPal the money goes.
 
 ```
               How should we pay you?
       Demo Org · Ski Swap 2026 · Station 1
 
-   [  Check  ] [  PayPal  ] [  Venmo  ]
-
-   ── Check ─────────────────────────────
-   Street
-   City               State      ZIP
-
-   ── PayPal ────────────────────────────
-   Send it to
-   ( ) My phone      (555) 555-5555
-   ( ) My email      chris@example.com
-   (•) My PayPal ID  ______________
-
-   ── Venmo ─────────────────────────────
-   Your Venmo ID
-   @chris-armenio
-
-                [ Continue ]
+   ┌────────┬────────┬────────┐
+   │ Check  │ PayPal │ Venmo  │        ← method
+   └────────┴────────┴────────┘
 ```
 
-Continue reads the answer back, every time:
+**Check** shows a card for the address, and nothing else:
+
+```
+   ┌──────────────────────────────────────┐
+   │  Where should we post it?            │
+   │                                      │
+   │  Street                              │
+   │  ┌────────────────────────────────┐  │
+   │  └────────────────────────────────┘  │
+   │  City            State     ZIP       │
+   │  ┌───────────┐  ┌─────┐  ┌────────┐  │
+   │  └───────────┘  └─────┘  └────────┘  │
+   └──────────────────────────────────────┘
+```
+
+**PayPal** shows a second segmented control, because Payouts accepts three
+kinds of recipient and the seller picks which of theirs to use:
+
+```
+   ┌────────────┬────────────┬────────────┐
+   │ PayPal ID  │   Email    │   Phone    │   ← destination
+   └────────────┴────────────┴────────────┘
+
+   ── PayPal ID ──────────────────────────
+   ┌────────────────────────────────────┐
+   │ chris@example.com                  │
+   └────────────────────────────────────┘
+   Whatever your PayPal account is under.
+
+   ── Email ──────────────────────────────
+   Sending to chris@example.com  ✓ verified
+
+   ── Phone ──────────────────────────────
+   Sending to (555) 555-5555     ✓ verified
+```
+
+**Venmo** is a single field, because there is no verified form of a Venmo ID:
+
+```
+   Your Venmo ID
+   ┌────────────────────────────────────┐
+   │ @chris-armenio                     │
+   └────────────────────────────────────┘
+```
+
+Continue reads the answer back, every time, for everyone:
 
 ```
    ┌────────────────────────────────────┐
@@ -131,24 +163,35 @@ Continue reads the answer back, every time:
    └────────────────────────────────────┘
 ```
 
-Five notes on the shape:
+Six notes on the shape:
 
-- **PayPal offers three destinations because Payouts accepts three.** The two
-  verified contacts are radio options with the value shown — nothing to type,
-  nothing to mistype. Only the PayPal ID is a text field.
-- **Only contacts that are actually verified are offered.** A seller who signed
-  in by phone and never confirmed an email sees two options, not three.
-- **Venmo has one destination and it is always typed.** There is no verified
-  form of a Venmo ID (§5.1), which is why it stands alone rather than sitting
-  under the same three-way choice as PayPal.
+- **The nested control exists because the recipient types are real.** `EMAIL`,
+  `PHONE` and `PAYPAL_ID` are PayPal Payouts' own three, so this segment is not
+  a presentational choice — it is the value that goes on the payout, chosen by
+  the only person who knows the answer.
+- **A verified segment shows the value and asks for nothing.** No field, no
+  typing, no way to mistype. The PayPal ID segment is the only one with an
+  input, which is why it is the only one carrying the risk in §7.
+- **Only verified contacts get a segment.** A seller who signed in by phone and
+  never confirmed an email sees two segments, not three. If they have neither —
+  which cannot happen today, since sign-in verifies one — PayPal ID stands alone.
+- **The PayPal ID field is prefilled with a verified contact** as a starting
+  point, since a PayPal account is very often under one of them. It is a
+  starting point rather than an answer: whatever is in the box when Continue is
+  pressed is what gets paid.
 - **The confirmation runs every time, for everyone** (D6) — returning sellers
   included. It is where a moved house or a closed PayPal gets noticed, and it is
-  the only check a typed ID ever gets. The wording changes with what is being
-  confirmed: an unverifiable ID says so, an address or a verified contact simply
-  states itself.
+  the only check a typed ID ever gets. Its wording follows what is being
+  confirmed: an unverifiable ID says as much, an address or a verified contact
+  simply states itself.
 - **Confirming is not re-verifying.** No email or text is sent. The contact was
-  proven at sign-in and stays proven; this step asks whether it is still where
-  the seller wants the money, which is a different question.
+  proven at sign-in and stays proven; this asks whether it is still where the
+  seller wants the money, which is a different question with a different answer.
+
+**One assumption worth checking:** the destination control opens on a verified
+segment when the seller has one, rather than on PayPal ID, so the default path
+is the one that cannot be mistyped. The segments are ordered PayPal ID first as
+specified; only the initial selection differs.
 
 ---
 
@@ -212,9 +255,10 @@ to catch.
 of that table. Update the staff Sellers page and seller profile page. Server and
 staff UI only; ships on its own and leaves check-in untouched.
 
-**Phase 2 — The check-in step.** A `PayoutStep` between name and items, calling
-the existing `PATCH …/seller-self` (D7), prefilled from the seller's profile,
-with the confirmation from §4 shown to everyone (D6).
+**Phase 2 — The check-in step.** A `PayoutStep` between name and items: the
+method control, PayPal's nested destination control, the address card, and the
+confirmation — shown to everyone, returning or not (D6). Calls the existing
+`PATCH …/seller-self` (D7), prefilled from the seller's profile.
 
 **Phase 3 — Make the gap visible.** Sellers with no payout method are invisible
 until someone tries to pay them. A count on the ski-swap dashboard and a filter
@@ -228,15 +272,16 @@ before it shipped — can be found and chased.
 **A blocking step before items is a real risk.** Sellers queue at a station with
 people behind them; a form between them and the thing they came to do is the
 kind of friction that produces abandoned check-ins and a staff member taking
-over. PayPal's verified options are what keep it to a glance and two taps. If it
-turns out most sellers pick Check and type an address, the placement is worth
-revisiting against putting a prompt on the items screen instead.
+over. PayPal's verified segments are what keep that path to a glance and two
+taps. If it turns out most sellers pick Check and type an address, the placement
+is worth revisiting against putting a prompt on the items screen instead.
 
 **A typed ID is a real exposure.** A mistyped PayPal or Venmo ID can send money
 to a stranger who has no idea where it came from, and neither we nor the payment
 service will notice. The confirmation reduces that; it does not remove it. It is
-also why PayPal leads with its two verified options — the exposure exists only on
-the path where someone types something, and most sellers need not take it.
+also why PayPal's destination control opens on a verified segment — the exposure
+exists only on the segment with a text field in it, and most sellers need never
+select it. Venmo has no such escape: every Venmo destination is typed.
 
 **It collects more than the swap needs.** A mailing address is personal data
 with no purpose until a cheque is written, and D8 means it is written once for
