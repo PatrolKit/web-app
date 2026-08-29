@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand,
+} from '@aws-sdk/client-s3';
 
 @Injectable()
 export class S3Service {
@@ -30,6 +32,20 @@ export class S3Service {
       ContentType: contentType,
     }));
     return this.baseUrl ? `${this.baseUrl.replace(/\/$/, '')}/${key}` : `https://${this.bucket}.s3.amazonaws.com/${key}`;
+  }
+
+  /**
+   * Reads a stored photo back.
+   *
+   * Needed because a photo can outlive the moment it could be sent onward: a
+   * check-in item is not in Square yet when its picture is taken, so the copy
+   * kept here is the only one there is when the item finally appears.
+   */
+  async download(key: string): Promise<Buffer | null> {
+    if (!this.client || !key) return null;
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const bytes = await res.Body?.transformToByteArray();
+    return bytes ? Buffer.from(bytes) : null;
   }
 
   async delete(key: string): Promise<void> {

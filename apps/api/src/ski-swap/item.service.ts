@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PosAdapterFactory } from './pos/pos.adapter';
+import type { IPosAdapter } from './pos/pos.adapter';
 import { SellerService, SELLER_NAME_INCLUDE, sellerDisplayName, type SellerNameRow } from './seller.service';
 import { S3Service } from './s3.service';
 import { IdempotencyService } from '../common/services/idempotency.service';
@@ -339,10 +340,56 @@ export class ItemService {
         await this.prisma.skiSwap.update({ where: { id: swap.id }, data: { squareCategoryId: result.resolvedCategoryId } });
       }
       await this.prisma.swapItem.update({ where: { id: item.id }, data: { squareItemId: result.posItemId, squareVariationId: result.posVariationId, lastSyncedAt: new Date() } });
+
+      // Photos taken before the item reached Square have nowhere to go at the
+      // time. A station check-in defers this sync until the seller finishes, so
+      // that is every photo taken at a station: the picture was stored, the
+      // item appeared in Square minutes later, and nothing ever went back for
+      // it. Never fatal — an item in Square without its picture beats no item.
+      await this.attachPendingPhotos(orgId, item.id, result.posItemId, pos).catch((err: unknown) => {
+        console.error('[Square] attachPendingPhotos failed:', err);
+      });
+
       return 'synced';
     } catch (err) {
       console.error('[Square] syncItemToPos failed:', err);
       return 'failed';
+    }
+  }
+
+  /**
+   * Sends up any of an item's photos that Square has not been given yet.
+   *
+   * Reads them back from our own storage, which is why they are kept there
+   * rather than relying on Square's CDN copy: at the moment a check-in photo is
+   * taken, there is no Square object to hang it on.
+   */
+  private async attachPendingPhotos(
+    orgId: string,
+    itemId: string,
+    posItemId: string,
+    pos: IPosAdapter,
+  ): Promise<void> {
+    const pending = await this.prisma.swapItemPhoto.findMany({
+      where: { itemId, squareImageId: null, NOT: { s3Key: '' } },
+      orderBy: { displayOrder: 'asc' },
+    });
+    if (pending.length === 0) return;
+
+    for (const photo of pending) {
+      const bytes = await this.s3.download(photo.s3Key).catch(() => null);
+      if (!bytes) continue;
+      const res = await pos
+        .uploadImage(posItemId, bytes, 'image/jpeg')
+        .catch((err: unknown) => {
+          console.error('[Square] uploadImage failed during backfill:', err);
+          return null;
+        });
+      if (!res) continue;
+      await this.prisma.swapItemPhoto.update({
+        where: { id: photo.id },
+        data: { squareImageId: res.posImageId },
+      });
     }
   }
 
