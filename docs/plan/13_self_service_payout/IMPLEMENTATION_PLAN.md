@@ -13,18 +13,17 @@ both edit address and payout, and `PATCH /orgs/:orgId/ski-swap/seller-self`
 already accepts every field involved. Self-service was built as the fast path
 and the question was never added to it.
 
-**So this is not a modelling problem.** Everything needed already exists:
+Most of what is needed already exists:
 
 | Where | What |
 |---|---|
 | `User.street` / `city` / `state` / `zip` | Mailing address. Global to the person, not per-org. |
 | `User.payoutMethod` | `PAYPAL` \| `VENMO` \| `CHECK` \| `DONATE`. |
-| `User.payoutChannel` | `email` \| `phone` — which of the person's own contacts receives the money. |
+| `User.payoutChannel` | `email` \| `phone` — being replaced, see D5. |
 | `PATCH …/ski-swap/seller-self` | Already writes all of the above for the signed-in seller. |
 | `POST …/checkin/:swapId/join` | Already creates the `SellerProfile` that endpoint needs. |
 
-No migration. No new endpoint. The work is a screen, a validation rule that was
-documented but never written, and the decisions below.
+One field is added and one is removed (D5). No new endpoint.
 
 ---
 
@@ -32,21 +31,57 @@ documented but never written, and the decisions below.
 
 | # | Decision | Rationale |
 |---|---|---|
-| **D1** | **A payout step, immediately after the name step and before items.** | Answered before anything else, so nobody reaches the end of a swap unpayable. It costs a form between a seller and the thing they queued to do — see §6 for what that risks and how the step earns its place. |
-| **D2** | **Three methods: Check, PayPal, Venmo. `DONATE` stays staff-set.** | Donating a whole payout is a decision someone should make deliberately, not tap past on a phone at a table. It remains in the enum and on the staff pages, so a seller who asks can still have it set. Note this is a different thing from `SwapItem.donateProceeds`, which donates one item's proceeds and is unaffected. |
-| **D3** | **Required, with the requirement depending on the method.** Check needs a mailing address; PayPal and Venmo need a verified contact. | The point of asking is to be able to pay. A method with no way to reach the person is the same as not asking. |
-| **D4** | **PayPal and Venmo pay a contact the seller has already verified, never a typed handle.** | Neither service will tell you in advance whether a handle is real — see §4.1 — so a typed handle cannot be validated by anyone, by any method. A verified contact is at least proven to belong to this person; a typed one is proven to be nothing, and can be a stranger's. It also means the common case asks for nothing extra, since the contact they signed in with is already there. |
-| **D5** | **Enforce D4 on the write path.** | `ski-swap.contracts.ts` says "The service layer rejects a channel that is not verified". It does not — `writeUserFields` writes `payoutChannel` straight through. Harmless while only staff set it; load-bearing the moment sellers do. |
+| **D1** | **A payout step, immediately after the name step and before items.** | Answered before anything else, so nobody reaches the end of a swap unpayable. It costs a form between a seller and the thing they queued to do — see §6 for what that risks. |
+| **D2** | **Three methods: Check, PayPal, Venmo. `DONATE` stays staff-set.** | Donating a whole payout is a decision someone should make deliberately, not tap past on a phone at a table. It remains in the enum and on the staff pages, so a seller who asks can still have it set. Different from `SwapItem.donateProceeds`, which donates one item's proceeds and is unaffected. |
+| **D3** | **Required, with the requirement depending on the method.** Check needs a mailing address; PayPal and Venmo need a destination. | The point of asking is to be able to pay. A method with no way to reach the person is the same as not asking. |
+| **D4** | **PayPal and Venmo take a typed destination, prefilled with the seller's verified contact, and confirmed back before the step is left.** | Neither service will confirm a handle in advance (§4.1), so nothing we can build makes this destination trustworthy. Since it cannot be verified, it is instead made deliberate: prefilled so the common case needs no typing, editable because a person's PayPal is often not the contact they signed in with, and read back to them at the end so a wrong answer has to survive being looked at twice. |
+| **D5** | **One field, `User.payoutHandle`, replacing `payoutChannel`.** | Two ways to express a destination is one too many: with both, a row can say "pay my verified email" *and* carry a different handle, and nothing decides which wins. One free-text field has one meaning. Trustworthiness is not stored — it is derived, by comparing the handle to `verifiedEmail` and `verifiedPhone`, so it cannot drift out of step with the contacts it describes. |
 | **D6** | **A returning seller sees what is on file and can change it.** | "Paying you by check to 12 Elm St — change?" is one glance and one tap. Skipping silently is faster and quietly produces the undeliverable cheque, because the person who moved house is exactly the person who would not think to go and correct it. |
 | **D7** | **Reuse `PATCH …/ski-swap/seller-self`.** | It already accepts these fields for the signed-in seller, and `join` has already created the profile it needs by the time this step runs. A second endpoint would be a second set of rules to keep in step. |
 | **D8** | **Address stays on `User`, global to the person.** | Unchanged, and worth stating because the consequence is real: a seller who corrects their address at one org corrects it everywhere. That is the right answer for a mailing address — a person has one — but it means this screen is editing more than the swap in front of them. |
 
 ---
 
-## 3. The screen
+## 3. The model
+
+```prisma
+model User {
+  payoutMethod  String? @default("CHECK")   // PAYPAL | VENMO | CHECK | DONATE
+
+  /// Where a PayPal or Venmo payout goes: an email, a phone, or a @username,
+  /// as the seller gave it. Null for CHECK and DONATE.
+  ///
+  /// Free text because neither service will confirm a handle before money is
+  /// sent, so there is nothing to validate it against. Whether it is
+  /// trustworthy is derived rather than stored — it is a verified destination
+  /// exactly when it equals `verifiedEmail` or `verifiedPhone`, which cannot
+  /// go stale the way a boolean beside it would.
+  payoutHandle  String?
+
+  /// Dropped. Replaced by `payoutHandle`, which can express everything this
+  /// could and the cases it could not.
+  - payoutChannel String?
+}
+```
+
+**The migration carries the old values across.** A row with `payoutChannel =
+'email'` becomes `payoutHandle = verifiedEmail`, and `'phone'` becomes
+`verifiedPhone` — the same destination, written down instead of pointed at.
+A row whose channel names a contact that is not verified becomes null, since
+that row was never payable and the new field should not claim otherwise.
+
+**One thing found while writing this, worth recording:** the contract says "The
+service layer rejects a channel that is not verified". It does not —
+`writeUserFields` writes the value straight through. The rule leaves with the
+field it described, but the same class of gap is what D3's validation must avoid
+becoming.
+
+---
+
+## 4. The screen
 
 Between "What should we call you?" and "Add your items", in the same shell as
-every other step: instruction as the title, the standard context line beneath.
+every other step.
 
 ```
               How should we pay you?
@@ -59,123 +94,155 @@ every other step: instruction as the title, the standard context line beneath.
    City               State      ZIP
 
    ── when PayPal or Venmo ──────────────
-   Paid to your verified phone
-   (555) 555-5555                 Change
+   Your Venmo
+   @chris-armenio
+   Your phone, or whatever your Venmo is under.
 
                 [ Continue ]
 ```
 
-Three notes on the shape:
+Pressing Continue reads the answer back before accepting it:
 
-- **Check is first and selected by default.** It is the method that needs the
-  most typing, so leading with it means the form does not grow after a tap; the
-  other two shrink it.
-- **PayPal and Venmo normally ask for nothing.** The seller signed in with a
-  verified contact minutes ago, so the answer is already known and the screen
-  states it rather than asking. "Change" only appears when the person holds a
-  second verified contact.
-- **A returning seller sees their answers filled in** (D6), with the same
-  Continue. No separate confirm screen: the step already reads as a review when
-  the fields are populated.
+```
+   ┌────────────────────────────────────┐
+   │ Sending your money to              │
+   │                                    │
+   │   @chris-armenio  ·  Venmo         │
+   │                                    │
+   │ We cannot check this with Venmo,   │
+   │ so please make sure it is right.   │
+   │                                    │
+   │  [ That's right ]  [ Fix it ]      │
+   └────────────────────────────────────┘
+```
+
+Four notes on the shape:
+
+- **The handle is prefilled with the verified contact** the seller signed in
+  with, so the common case is a glance and two taps. It is editable because a
+  person's PayPal is frequently under an address they did not sign in with.
+- **The confirmation is not a formality.** It exists because this is the one
+  answer on the screen that nothing downstream can check (§4.1), so a person
+  reading it back is the only check there is. It says so, rather than pretending
+  the step is routine.
+- **Check is first and selected by default.** It needs the most typing, so
+  leading with it means the form shrinks rather than grows as you choose.
+- **A returning seller sees their answers filled in** (D6) and the same
+  confirmation, which doubles as the review D6 asks for.
 
 ---
 
-## 4. Validation
+## 5. Validation
 
 Enforced server-side, in `writeUserFields`, so the staff pages get it too:
 
 | Method | Requires |
 |---|---|
 | `CHECK` | `street`, `city`, `state`, `zip` all present |
-| `PAYPAL`, `VENMO` | `payoutChannel` set, and the matching contact verified — `email` needs `emailVerifiedAt`, `phone` needs `phoneVerifiedAt` |
+| `PAYPAL`, `VENMO` | `payoutHandle` present and non-blank |
 | `DONATE` | Nothing |
 
 The client mirrors these to keep Continue disabled rather than bouncing the
-seller off a server error, but the server is what decides. A staff member
-setting `PAYPAL` against an unverified email should be refused the same way.
+seller off a server error, but the server is what decides.
 
-### 4.1 Why not verify the handle against PayPal or Venmo?
+**Nothing validates the handle's shape.** No length rule, no `@` prefix, no
+email regex: a Venmo username, a PayPal address and a phone number have nothing
+in common, and a format check would reject correct answers while still admitting
+wrong ones. The only real check is a person reading it back.
 
-Because neither will tell you. **This should be re-checked against current
-documentation before Phase 2** — payment APIs move and the notes below are from
-a fixed point in time — but as things stand:
+### 5.1 Why the handle cannot be checked for us
 
-**There is no pre-flight lookup, for either, by design.** An endpoint that
-answered "does this email have a PayPal account" would be an account-enumeration
-oracle, so PayPal does not offer one. Nor does Venmo.
+**Re-check this against current documentation before Phase 2** — payment APIs
+move and the notes below are from a fixed point in time.
 
-**PayPal tells you afterwards instead, and authoritatively.** Its Payouts API
-returns a per-item status — `SUCCESS`, `UNCLAIMED`, `RETURNED`, `FAILED`,
-`BLOCKED`. `UNCLAIMED` is exactly the case that worries us: no PayPal account is
-tied to that contact, so PayPal emails an invitation, and if it goes unclaimed
-the money comes back to the sender after roughly a month.
+**Neither service offers a lookup, by design.** An endpoint answering "does this
+handle have an account" would be an account-enumeration oracle. PayPal does not
+offer one; nor does Venmo. `paypal.me/name` resolves or 404s, which tells you a
+handle exists and nothing about whose it is.
 
-**Venmo has no send API of its own.** Its developer surface is about accepting
-payments, not disbursing them. The disbursement route is PayPal Payouts with a
-Venmo wallet destination, which is gated and, last time it was checked, US-only.
-If that turns out not to be available, Venmo payouts are manual and the stored
-contact is a note for whoever sends them — which still works, and is still
-better than a handle nobody verified.
+**PayPal has an authorization flow, which would be better than a lookup.** "Log
+in with PayPal" is an OpenID Connect flow returning the account's payer ID and
+PayPal-verified email; a payout to a payer ID cannot land unclaimed. It proves
+control rather than existence. It is not in this plan — an OAuth round trip on a
+phone at a table, with a queue behind, is the wrong moment — but it is the right
+eventual answer for PayPal, and belongs on the seller portal framed as "connect
+PayPal so we can pay you faster".
 
-**So the conclusion runs the other way from the obvious one.** The failure this
-worries about — money sent somewhere the seller cannot collect it — cannot be
-caught at check-in by any means available. It is caught at the payout run, by
-reading back what PayPal says happened and chasing the unclaimed ones. That is
-out of scope here (§7), but it is where this gets resolved, and it is the reason
-D4 does not need a handle field to be safe.
+**Venmo has no equivalent.** No username resolution, and no identity flow for
+third parties — its developer surface is Braintree checkout, which returns a
+username in the course of *charging* a customer, the wrong consent to collect
+for paying one. A Venmo destination is self-asserted and always will be.
+
+**So the asymmetry is real and should not be papered over.** PayPal is
+eventually verifiable and Venmo is not. Until the portal work happens, both are
+self-asserted, which is what D4's confirmation exists to mitigate and §7 exists
+to catch.
 
 ---
 
-## 5. Phases
+## 6. Phases
 
-**Phase 1 — Enforce the rule that is already documented.** Add the verified-
-channel check to `writeUserFields` (D5), with tests for each method. Server
-only, ships on its own, and fixes the staff path today. Nothing depends on the
-rest of this plan.
+**Phase 1 — The field.** Add `payoutHandle`, migrate `payoutChannel` across,
+drop it, and add the D3 validation with tests per method. Update the staff
+Sellers page and seller profile page to the new field. Server and staff UI only;
+ships on its own and leaves check-in untouched.
 
 **Phase 2 — The check-in step.** A `PayoutStep` between name and items, calling
-the existing `PATCH …/seller-self` (D7). Prefill from the profile the seller
-already has (D6). Mirror the Phase 1 rules client-side.
+the existing `PATCH …/seller-self` (D7), prefilled from the seller's profile
+(D6), with the confirmation from §4.
 
 **Phase 3 — Make the gap visible.** Sellers with no payout method are invisible
-until someone tries to pay them. A count on the ski-swap dashboard, and a filter
-on the Sellers page, so the people this plan cannot reach — the ones who checked
-in before it shipped — can be found and chased.
+until someone tries to pay them. A count on the ski-swap dashboard and a filter
+on the Sellers page, so the people this plan cannot reach — those who checked in
+before it shipped — can be found and chased.
 
 ---
 
-## 6. What this costs, honestly
+## 7. What this costs, honestly
 
 **A blocking step before items is a real risk.** Sellers queue at a station with
 people behind them; a form between them and the thing they came to do is the
 kind of friction that produces abandoned check-ins and a staff member taking
-over. The step earns its place only if it is genuinely quick, which is why D4
-matters more than it looks: for PayPal and Venmo it should be one tap and
-Continue, with nothing typed. If it turns out that most sellers pick Check and
-type an address, the placement is worth revisiting against the "prompt on the
-items screen" alternative.
+over. Prefilling the handle is what keeps it to a glance and two taps. If it
+turns out most sellers pick Check and type an address, the placement is worth
+revisiting against putting a prompt on the items screen instead.
 
-**It also collects more than the swap needs.** A mailing address is personal
-data with no purpose until a cheque is written, and D8 means it is written once
-for the person rather than once per org. Worth being deliberate about: only ask
-for the address when Check is the method, and do not ask for it speculatively.
+**A self-asserted destination is a real exposure.** A mistyped handle can send
+money to a stranger who has no idea where it came from, and neither we nor the
+payment service will notice. The confirmation reduces that; it does not remove
+it. Anyone uncomfortable with that should read §5.1 and weigh Check-only against
+the convenience.
 
-**Existing sellers are not reached by any of this.** Anyone who checked in
-before Phase 2 still has no payout method, and nothing in the check-in flow will
-ask them again unless they return. Phase 3 is what stops that being discovered
-at payout time.
+**It collects more than the swap needs.** A mailing address is personal data
+with no purpose until a cheque is written, and D8 means it is written once for
+the person rather than once per org. Only ask for it when Check is the method.
+
+**Existing sellers are not reached.** Anyone who checked in before Phase 2 still
+has no payout method, and nothing will ask them again unless they return. Phase
+3 is what stops that being discovered at payout time.
 
 ---
 
-## 7. Explicitly out of scope: the payout run
+## 8. Explicitly out of scope: the payout run
 
 Nothing reads these fields today. There is no payout report, no export and no
 integration — the fields are recorded and consumed by nobody, so the money
 currently moves by whatever means the treasurer already uses.
 
-That is its own piece of work, and it is where two things in this plan actually
-get settled: whether Venmo can be paid programmatically at all, and what happens
-to a payment that lands unclaimed because the seller's verified phone is not the
-one their PayPal is under. Collecting the data first is still worth doing — it
-is the input that work will need, and it cannot be gathered retrospectively from
-people who have gone home.
+That is its own piece of work, and it is where the loose ends here get tied:
+
+- **Whether Venmo can be paid programmatically at all.** Venmo has no send API;
+  the route is PayPal Payouts with a Venmo wallet destination, which was gated
+  and US-only when last checked. If it is unavailable, Venmo payouts are manual
+  and `payoutHandle` is a note for whoever sends them.
+- **What happens to a payment that does not land.** PayPal Payouts reports each
+  item as `SUCCESS`, `UNCLAIMED`, `RETURNED`, `FAILED` or `BLOCKED`. `UNCLAIMED`
+  is the self-asserted handle being wrong, or right but not registered — PayPal
+  invites the recipient, and returns the money after roughly a month if nobody
+  claims it. Reconciling those is the payout run's job.
+- **Flagging self-asserted destinations.** Since trust is derived (D5), a payout
+  report can mark which destinations were the seller's verified contact and
+  which they typed, and a treasurer can look harder at the second group.
+
+Collecting the data first still stands: it is what that work will need, and it
+cannot be gathered afterwards from people who have gone home.
