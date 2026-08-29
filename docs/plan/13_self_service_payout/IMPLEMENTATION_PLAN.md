@@ -10,7 +10,7 @@ a row that is complete in every respect except reaching the person or paying
 them.
 
 The staff path has always asked. The Sellers page and the seller profile page
-both edit address and payout, and `PATCH /orgs/:orgId/ski-swap/seller-self`
+both edit address and payout, and `PATCH /orgs/:orgId/ski-swap/seller/me`
 already accepts every field involved. Self-service was built as the fast path
 and the question was never added to it.
 
@@ -21,7 +21,7 @@ Most of what is needed already exists:
 | `User.street` / `city` / `state` / `zip` | Mailing address. Global to the person, not per-org. |
 | `User.payoutMethod` | `PAYPAL` \| `VENMO` \| `CHECK` \| `DONATE`. |
 | `User.payoutChannel` | `email` \| `phone` — replaced by a wider discriminator (D6). |
-| `PATCH …/ski-swap/seller-self` | Already writes all of the above for the signed-in seller. |
+| `PATCH …/ski-swap/seller/me` | Already writes all of the above for the signed-in seller. |
 | `POST …/checkin/:swapId/join` | Already creates the `SellerProfile` that endpoint needs. |
 
 Two fields are added and one removed. No new endpoint.
@@ -41,7 +41,7 @@ Two fields are added and one removed. No new endpoint.
 | **D7** | **A typed ID is read back for confirmation; a verified contact is offered rather than typed.** | A PayPal or Venmo ID is self-asserted and cannot be checked by anything (§5.1), so a person looking at it twice is the only check available. A verified contact is already proven and cannot be mistyped, so it is offered as a choice and needs no second look. |
 | **D8** | **Every seller confirms, every check-in, returning or not.** | A returning seller is exactly who stops reading, and this is where a moved house or a closed PayPal gets caught — nothing else in the system will notice either. Confirming does not re-verify a contact: no message is sent and existing verification stands. |
 | **D9** | **The payout step shows the address rather than asking again**, with a way back to change it. | Asking twice is the surest way to collect two different answers, and a seller re-asked for something they typed a screen earlier reasonably assumes the first attempt failed. |
-| **D10** | **Reuse `PATCH …/ski-swap/seller-self`.** | It already accepts these fields for the signed-in seller, and `join` has created the profile it needs before either step runs. A second endpoint would be a second set of rules to keep in step. |
+| **D10** | **Reuse `PATCH …/ski-swap/seller/me`.** | It already accepts these fields for the signed-in seller, and `join` has created the profile it needs before either step runs. A second endpoint would be a second set of rules to keep in step. |
 | **D11** | **Address stays on `User`, global to the person.** | Unchanged, and worth stating because the consequence is real: a seller who corrects their address at one org corrects it everywhere. That is right for a mailing address — a person has one — but it means these steps edit more than the swap in front of them. |
 
 ---
@@ -283,7 +283,7 @@ staff Sellers page and seller profile page. Server and staff UI only; ships on
 its own and leaves check-in untouched.
 
 **Phase 2 — The check-in steps.** An `AddressStep` and a `PayoutStep` between
-name and items (D1), both calling `PATCH …/seller-self` (D10) and prefilled from
+name and items (D1), both calling `PATCH …/seller/me` (D10) and prefilled from
 the seller's profile. The completeness gate on `finish` lands here too, being
 meaningless until there are steps that satisfy it.
 

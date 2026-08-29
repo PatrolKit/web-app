@@ -143,6 +143,25 @@ export interface ProvisionedDevice extends DeviceItem {
   clientSecret: string;
 }
 
+/** What the address and payout steps start from, sent with the join. */
+export interface CheckinProfile {
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  payoutMethod: 'PAYPAL' | 'VENMO' | 'CHECK' | 'DONATE' | null;
+  payoutTarget: 'EMAIL' | 'PHONE' | 'PAYPAL_ID' | 'VENMO_ID' | null;
+  payoutHandle: string | null;
+  verifiedEmail: string | null;
+  verifiedPhone: string | null;
+}
+
+export interface CheckinJoined extends CheckinContext {
+  sellerId: string;
+  needsName: boolean;
+  profile: CheckinProfile;
+}
+
 export interface PlatformUserMembership {
   id: string;
   orgId: string;
@@ -211,7 +230,10 @@ export interface SellerResponse {
   zip: string | null;
   payoutMethod: 'PAYPAL' | 'VENMO' | 'CHECK' | 'DONATE' | null;
   /** Payouts target a verified contact rather than a free-text identifier. */
-  payoutChannel: 'email' | 'phone' | null;
+  /** PayPal Payouts' recipient type, or the kind of ID that was typed. */
+  payoutTarget: 'EMAIL' | 'PHONE' | 'PAYPAL_ID' | 'VENMO_ID' | null;
+  /** The typed value, for PAYPAL_ID and VENMO_ID only. */
+  payoutHandle: string | null;
   emailVerifiedAt: string | null;
   phoneVerifiedAt: string | null;
   createdAt: string;

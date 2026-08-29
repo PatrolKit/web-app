@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { IdempotencyService } from '../common/services/idempotency.service';
 import { PersonService } from '../common/identity/person.service';
@@ -87,7 +87,7 @@ type SellerRow = {
       email: string | null; phone: string | null;
       street: string | null; city: string | null; state: string | null; zip: string | null;
       emailVerifiedAt: Date | null; phoneVerifiedAt: Date | null;
-      payoutMethod: string | null; payoutChannel: string | null;
+      payoutMethod: string | null; payoutTarget: string | null; payoutHandle: string | null;
     };
   };
 };
@@ -109,7 +109,8 @@ export function toSellerResponse(s: SellerRow): SellerResponse {
     state: u.state,
     zip: u.zip,
     payoutMethod: u.payoutMethod as SellerResponse['payoutMethod'],
-    payoutChannel: u.payoutChannel as SellerResponse['payoutChannel'],
+    payoutTarget: u.payoutTarget as SellerResponse['payoutTarget'],
+    payoutHandle: u.payoutHandle,
     emailVerifiedAt: u.emailVerifiedAt?.toISOString() ?? null,
     phoneVerifiedAt: u.phoneVerifiedAt?.toISOString() ?? null,
     createdAt: s.createdAt.toISOString(),
@@ -126,7 +127,27 @@ export class SellerService {
     private readonly touch: MembershipTouchService,
   ) {}
 
-  async list(orgId: string, query?: string, updatedSince?: string): Promise<SellerResponse[]> {
+  /**
+   * Whether a seller could actually be reached and paid.
+   *
+   * A gap here is invisible until someone tries to act on it — a cheque with
+   * nowhere to go, an unsold item nobody can return — so it is worth being able
+   * to ask for the incomplete ones before a swap closes rather than after.
+   */
+  static isIncomplete(s: SellerResponse): boolean {
+    const noAddress = !s.street || !s.city || !s.state || !s.zip;
+    const noMethod = !s.payoutMethod;
+    const noDestination =
+      (s.payoutMethod === 'PAYPAL' || s.payoutMethod === 'VENMO') && !s.payoutTarget;
+    return noAddress || noMethod || noDestination;
+  }
+
+  async list(
+    orgId: string,
+    query?: string,
+    updatedSince?: string,
+    incompleteOnly?: boolean,
+  ): Promise<SellerResponse[]> {
     const sellers = await this.prisma.sellerProfile.findMany({
       where: {
         deletedAt: null,
@@ -167,7 +188,11 @@ export class SellerService {
     const merged = new Map(
       [...sellers, ...byBusiness].map((s) => [s.id, s] as const),
     );
-    return [...merged.values()].map(toSellerResponse);
+    const all = [...merged.values()].map(toSellerResponse);
+    // Filtered after mapping rather than in SQL: the rule spans four address
+    // columns and two payout ones, and is stated once here so the list and the
+    // dashboard count cannot drift apart.
+    return incompleteOnly ? all.filter(SellerService.isIncomplete) : all;
   }
 
   async get(orgId: string, sellerId: string): Promise<SellerResponse> {
@@ -218,7 +243,7 @@ export class SellerService {
       phone?: string | null; email?: string | null;
       businessName?: string | null;
       street?: string | null; city?: string | null; state?: string | null; zip?: string | null;
-      payoutMethod?: string | null; payoutChannel?: string | null;
+      payoutMethod?: string | null; payoutTarget?: string | null; payoutHandle?: string | null;
     },
     idempotencyKey?: string,
   ): Promise<SellerResponse> {
@@ -258,7 +283,7 @@ export class SellerService {
       phone?: string | null; email?: string | null;
       businessName?: string | null;
       street?: string | null; city?: string | null; state?: string | null; zip?: string | null;
-      payoutMethod?: string | null; payoutChannel?: string | null;
+      payoutMethod?: string | null; payoutTarget?: string | null; payoutHandle?: string | null;
     },
   ): Promise<SellerResponse> {
     const existing = await this.findOrThrow(orgId, sellerId);
@@ -435,7 +460,7 @@ export class SellerService {
       firstName?: string | null; lastName?: string | null;
       phone?: string | null; email?: string | null;
       street?: string | null; city?: string | null; state?: string | null; zip?: string | null;
-      payoutMethod?: string | null; payoutChannel?: string | null;
+      payoutMethod?: string | null; payoutTarget?: string | null; payoutHandle?: string | null;
     },
     opts: { overwrite?: boolean } = {},
   ): Promise<void> {
@@ -447,8 +472,12 @@ export class SellerService {
     };
 
     const update = {
-      ...defined('firstName', keep(normalizeNamePart(data.firstName), current.firstName)),
-      ...defined('lastName', keep(normalizeNamePart(data.lastName), current.lastName)),
+      // Normalized only when the caller actually sent the field.
+      // `normalizeNamePart(undefined)` is null, not undefined — passing it
+      // straight through made every patch that omits a name (an address, a
+      // payout) write null over the one already there.
+      ...defined('firstName', keep(namePart(data.firstName), current.firstName)),
+      ...defined('lastName', keep(namePart(data.lastName), current.lastName)),
       ...defined('phone', keep(data.phone ? normalizePhone(data.phone) : data.phone, current.phone)),
       ...defined('email', keep(data.email?.toLowerCase() ?? data.email, current.email)),
       ...defined('street', keep(data.street, current.street)),
@@ -456,13 +485,28 @@ export class SellerService {
       ...defined('state', keep(data.state, current.state)),
       ...defined('zip', keep(data.zip, current.zip)),
       ...defined('payoutMethod', data.payoutMethod),
-      ...defined('payoutChannel', data.payoutChannel),
+      ...defined('payoutTarget', data.payoutTarget),
+      ...defined('payoutHandle', data.payoutHandle),
     };
 
     if (Object.keys(update).length === 0) return;
+
+    assertPayoutIsCoherent({
+      method: 'payoutMethod' in update ? (update.payoutMethod as string | null) : current.payoutMethod,
+      target: 'payoutTarget' in update ? (update.payoutTarget as string | null) : current.payoutTarget,
+      handle: 'payoutHandle' in update ? (update.payoutHandle as string | null) : current.payoutHandle,
+      emailVerified: !!current.emailVerifiedAt,
+      phoneVerified: !!current.phoneVerifiedAt,
+    });
+
     await this.prisma.user.update({ where: { id: userId }, data: update });
     await this.touch.touchAllForUser(userId);
   }
+}
+
+/** normalizeNamePart, but absent stays absent. */
+function namePart(raw: string | null | undefined): string | null | undefined {
+  return raw === undefined ? undefined : normalizeNamePart(raw);
 }
 
 function defined<T>(key: string, value: T | undefined): Record<string, T> {
@@ -504,4 +548,65 @@ export interface SellerNameRow {
 export function sellerDisplayName(seller: SellerNameRow | null | undefined): string | null {
   if (!seller) return null;
   return displayName(seller.membership.user, seller.businessName);
+}
+
+/**
+ * The combinations a payout may be in, checked against what the row will hold
+ * after the write rather than what was sent — a patch that moves the method
+ * without the target has to be judged on the pair it leaves behind.
+ *
+ * These are invariants rather than completeness: they say a destination makes
+ * sense, not that one is present. Whether a seller has answered at all is a
+ * question for the point their check-in completes, because a staff member
+ * correcting one field on an incomplete record must not be refused for the
+ * fields they did not touch.
+ */
+export function assertPayoutIsCoherent(row: {
+  method: string | null;
+  target: string | null;
+  handle: string | null;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+}): void {
+  const { method, target, handle } = row;
+
+  // A method that pays no one carries no destination.
+  if (method === null || method === 'CHECK' || method === 'DONATE') {
+    if (target !== null || handle !== null) {
+      throw new BadRequestException(
+        `A ${method ?? 'blank'} payout has no destination to send to.`,
+      );
+    }
+    return;
+  }
+
+  if (method === 'PAYPAL') {
+    if (target !== null && !['EMAIL', 'PHONE', 'PAYPAL_ID'].includes(target)) {
+      throw new BadRequestException('PayPal can pay an email, a phone or a PayPal ID.');
+    }
+  }
+
+  if (method === 'VENMO' && target !== null && target !== 'VENMO_ID') {
+    throw new BadRequestException('Venmo can only pay a Venmo ID.');
+  }
+
+  // A typed target needs its value; a verified one must not carry a copy, which
+  // could go stale against the contact it duplicates.
+  if (target === 'PAYPAL_ID' || target === 'VENMO_ID') {
+    if (!handle || handle.trim() === '') {
+      throw new BadRequestException('That payout needs an ID to send to.');
+    }
+  } else if (handle !== null) {
+    throw new BadRequestException(
+      'A payout to a verified contact is resolved from that contact, not stored beside it.',
+    );
+  }
+
+  // A contact can only receive money once its owner has proved they hold it.
+  if (target === 'EMAIL' && !row.emailVerified) {
+    throw new BadRequestException('That email has not been verified, so it cannot be paid.');
+  }
+  if (target === 'PHONE' && !row.phoneVerified) {
+    throw new BadRequestException('That phone has not been verified, so it cannot be paid.');
+  }
 }

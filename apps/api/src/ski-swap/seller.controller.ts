@@ -45,8 +45,9 @@ export class SellerController {
     @Param('orgId') orgId: string,
     @Query('query') query?: string,
     @Query('updatedSince') updatedSince?: string,
+    @Query('incomplete') incomplete?: string,
   ) {
-    return this.sellerService.list(orgId, query, updatedSince);
+    return this.sellerService.list(orgId, query, updatedSince, incomplete === 'true');
   }
 
   @Post()

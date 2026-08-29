@@ -17,13 +17,14 @@ interface SellerForm {
   street: string; city: string; state: string; zip: string;
   payoutMethod: string;
   /** Payouts target a verified contact rather than a free-text identifier. */
-  payoutChannel: '' | 'email' | 'phone';
+  payoutTarget: '' | 'EMAIL' | 'PHONE' | 'PAYPAL_ID' | 'VENMO_ID';
+  payoutHandle: string;
 }
 
 const emptyForm: SellerForm = {
   type: '', businessName: '', firstName: '', lastName: '', phone: '', email: '',
   street: '', city: '', state: '', zip: '',
-  payoutMethod: 'CHECK', payoutChannel: '',
+  payoutMethod: 'CHECK', payoutTarget: '', payoutHandle: '',
 };
 
 /** Sort keys the table exposes — all derived, so they are named explicitly. */
@@ -64,10 +65,15 @@ export default function SellersPage() {
     );
   }
 
+  // A toggle rather than a search term, so it costs a round trip rather than
+  // one per keystroke — and the "incomplete" rule stays on the server, where the
+  // dashboard reads the same one.
+  const [incompleteOnly, setIncompleteOnly] = useState(false);
+
   const { data: sellers = [] } = useQuery({
-    queryKey: ['ski-swap/sellers', orgId],
-    // Fetch all sellers once; filtering is done client-side so the search input stays focused
-    queryFn: () => api.skiSwap.listSellers(orgId),
+    queryKey: ['ski-swap/sellers', orgId, incompleteOnly],
+    // Fetch all sellers once; text filtering is client-side so the search input stays focused
+    queryFn: () => api.skiSwap.listSellers(orgId, undefined, incompleteOnly),
     enabled: !!orgId,
     staleTime: 30_000,
   });
@@ -94,7 +100,8 @@ export default function SellersPage() {
       street: form.street || null, city: form.city || null,
       state: form.state || null, zip: form.zip || null,
       payoutMethod: form.payoutMethod || null,
-      payoutChannel: form.payoutChannel || null,
+      payoutTarget: form.payoutTarget || null,
+      payoutHandle: form.payoutHandle.trim() || null,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] }); setShowForm(false); setForm(emptyForm); },
   });
@@ -106,7 +113,8 @@ export default function SellersPage() {
       street: form.street || null, city: form.city || null,
       state: form.state || null, zip: form.zip || null,
       payoutMethod: form.payoutMethod || null,
-      payoutChannel: form.payoutChannel || null,
+      payoutTarget: form.payoutTarget || null,
+      payoutHandle: form.payoutHandle.trim() || null,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] }); setEditSeller(null); setForm(emptyForm); },
   });
@@ -165,7 +173,7 @@ export default function SellersPage() {
       firstName: s.firstName ?? '', lastName: s.lastName ?? '',
       phone: s.phone ?? '', email: s.email ?? '',
       street: s.street ?? '', city: s.city ?? '', state: s.state ?? '', zip: s.zip ?? '',
-      payoutMethod: s.payoutMethod ?? '', payoutChannel: s.payoutChannel ?? '',
+      payoutMethod: s.payoutMethod ?? '', payoutTarget: s.payoutTarget ?? '', payoutHandle: s.payoutHandle ?? '',
     });
   }
 
@@ -204,6 +212,17 @@ export default function SellersPage() {
             <option value="individual">Individual</option>
             <option value="business">Business</option>
           </select>
+          <button
+            onClick={() => setIncompleteOnly((v) => !v)}
+            className={`px-3 py-1.5 rounded text-sm border ${
+              incompleteOnly
+                ? 'bg-amber-900/40 border-amber-700 text-amber-300'
+                : 'bg-surface-50 border-gray-700 text-gray-400 hover:text-gray-200'
+            }`}
+            title="Sellers missing an address or a way to be paid"
+          >
+            Cannot be paid
+          </button>
         </div>
         {canManage && (
           <div className="flex gap-2">
@@ -376,7 +395,7 @@ export default function SellersPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <label className="block">
                         <span className="text-gray-400 text-xs">Method</span>
-                        <select value={form.payoutMethod} onChange={(e) => setForm({ ...form, payoutMethod: e.target.value, payoutChannel: '' })}
+                        <select value={form.payoutMethod} onChange={(e) => setForm({ ...form, payoutMethod: e.target.value, payoutTarget: '', payoutHandle: '' })}
                           className="mt-0.5 w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white">
                           <option value="">— not set —</option>
                           <option value="PAYPAL">PayPal</option>
@@ -385,21 +404,36 @@ export default function SellersPage() {
                           <option value="DONATE">Donate</option>
                         </select>
                       </label>
-                      {form.payoutMethod && form.payoutMethod !== 'CHECK' && form.payoutMethod !== 'DONATE' && (
+                      {(form.payoutMethod === 'PAYPAL' || form.payoutMethod === 'VENMO') && (
                         <label className="block">
                           <span className="text-gray-400 text-xs">Send to</span>
-                          <select value={form.payoutChannel}
-                            onChange={(e) => setForm({ ...form, payoutChannel: e.target.value as SellerForm['payoutChannel'] })}
+                          <select value={form.payoutTarget}
+                            onChange={(e) => setForm({ ...form, payoutTarget: e.target.value as SellerForm['payoutTarget'], payoutHandle: '' })}
                             className="mt-0.5 w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white">
                             <option value="">— select —</option>
-                            <option value="email">Their email</option>
-                            <option value="phone">Their phone</option>
+                            {form.payoutMethod === 'PAYPAL' && <option value="PAYPAL_ID">Their PayPal ID</option>}
+                            {form.payoutMethod === 'PAYPAL' && <option value="EMAIL">Their email</option>}
+                            {form.payoutMethod === 'PAYPAL' && <option value="PHONE">Their phone</option>}
+                            {form.payoutMethod === 'VENMO' && <option value="VENMO_ID">Their Venmo ID</option>}
                           </select>
                         </label>
                       )}
-                      {form.payoutChannel && (
+                      {(form.payoutTarget === 'PAYPAL_ID' || form.payoutTarget === 'VENMO_ID') && (
+                        <label className="col-span-2 block">
+                          <span className="text-gray-400 text-xs">
+                            {form.payoutTarget === 'PAYPAL_ID' ? 'PayPal ID' : 'Venmo ID'}
+                          </span>
+                          <input value={form.payoutHandle}
+                            onChange={(e) => setForm({ ...form, payoutHandle: e.target.value })}
+                            className="mt-0.5 w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white" />
+                        </label>
+                      )}
+                      {(form.payoutTarget === 'EMAIL' || form.payoutTarget === 'PHONE') && (
                         <p className="col-span-2 text-xs text-gray-500">
-                          Payouts go to the seller's {form.payoutChannel}. It must be verified first.
+                          {/* Resolved from the contact when the money moves, so it
+                              cannot be paid until the seller has proved it. */}
+                          Paid to the seller&apos;s {form.payoutTarget === 'EMAIL' ? 'email' : 'phone'}, which
+                          must be verified first.
                         </p>
                       )}
                     </div>

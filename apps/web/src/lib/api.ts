@@ -92,7 +92,10 @@ export type SellerWrite = Partial<{
   state: string | null;
   zip: string | null;
   payoutMethod: string | null;
-  payoutChannel: 'email' | 'phone' | null;
+  /** PayPal Payouts' recipient type, or the kind of ID that was typed. */
+  payoutTarget: 'EMAIL' | 'PHONE' | 'PAYPAL_ID' | 'VENMO_ID' | null;
+  /** The typed value, for PAYPAL_ID and VENMO_ID only. */
+  payoutHandle: string | null;
 }>;
 
 export const api = {
@@ -153,7 +156,7 @@ export const api = {
         method: 'POST', body: JSON.stringify(body),
       }),
     join: (orgId: string, swapId: string, stationId: string) =>
-      request<import('./api.types').CheckinContext & { sellerId: string; needsName: boolean }>(
+      request<import('./api.types').CheckinJoined>(
         `/orgs/${orgId}/ski-swap/checkin/join`,
         { method: 'POST', body: JSON.stringify({ swapId, stationId }) },
       ),
@@ -378,8 +381,17 @@ export const api = {
       request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/photos/${photoId}`, { method: 'DELETE' }),
 
     // Sellers
-    listSellers: (orgId: string, query?: string) =>
-      request<import('./api.types').SellerResponse[]>(`/orgs/${orgId}/ski-swap/sellers${query ? `?query=${encodeURIComponent(query)}` : ''}`),
+    listSellers: (orgId: string, query?: string, incompleteOnly?: boolean) => {
+      const qs = new URLSearchParams();
+      if (query) qs.set('query', query);
+      // Server-side, so the rule for "can this person be reached and paid" is
+      // stated once and the list cannot disagree with the dashboard count.
+      if (incompleteOnly) qs.set('incomplete', 'true');
+      const suffix = qs.toString() ? `?${qs}` : '';
+      return request<import('./api.types').SellerResponse[]>(
+        `/orgs/${orgId}/ski-swap/sellers${suffix}`,
+      );
+    },
     createSeller: (orgId: string, data: SellerWrite) =>
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers`, {
         method: 'POST', body: JSON.stringify(data),
@@ -504,6 +516,25 @@ export const api = {
       request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers`, {
         method: 'POST', body: JSON.stringify(data),
       }),
+    /**
+     * The signed-in seller editing their own record. Same endpoint the staff
+     * pages use, scoped to the caller — which is what lets the check-in steps
+     * write an address and a payout without an endpoint of their own.
+     */
+    updateSellerSelf: (
+      orgId: string,
+      data: {
+        street?: string; city?: string; state?: string; zip?: string;
+        payoutMethod?: 'CHECK' | 'PAYPAL' | 'VENMO' | null;
+        payoutTarget?: 'EMAIL' | 'PHONE' | 'PAYPAL_ID' | 'VENMO_ID' | null;
+        payoutHandle?: string | null;
+      },
+    ) =>
+      request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/seller/me`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
     stationQrPdf: async (orgId: string, stationId: string): Promise<Blob> => {
       const headers: Record<string, string> = {};
       if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;

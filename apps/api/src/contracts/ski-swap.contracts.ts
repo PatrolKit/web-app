@@ -58,13 +58,23 @@ export type SwapResponse = z.infer<typeof SwapResponseSchema>;
 const PAYOUT_METHODS = ['PAYPAL', 'VENMO', 'CHECK', 'DONATE'] as const;
 
 /**
- * A payout targets one of the person's own contacts rather than a free-text
- * identifier, so there is one verification concept instead of two. The service
- * layer rejects a channel that is not verified.
+ * Where a payout goes: a recipient type, and a value when one was typed.
+ *
+ * `EMAIL`, `PHONE` and `PAYPAL_ID` are PayPal Payouts' own recipient types, so
+ * the type is a discriminator rather than decoration — the payment run has to
+ * tell them apart. It also records whether the destination was proven or
+ * self-asserted, which nothing else would.
+ *
+ * Which combinations are legal is enforced in the service, not here: the rules
+ * span `payoutMethod`, the target, the handle and the person's verified
+ * contacts, and a schema cannot see the last of those.
  */
+export const PAYOUT_TARGETS = ['EMAIL', 'PHONE', 'PAYPAL_ID', 'VENMO_ID'] as const;
+
 const PayoutFields = {
   payoutMethod: z.enum(PAYOUT_METHODS).nullable().optional(),
-  payoutChannel: z.enum(['email', 'phone']).nullable().optional(),
+  payoutTarget: z.enum(PAYOUT_TARGETS).nullable().optional(),
+  payoutHandle: z.string().trim().min(1).max(191).nullable().optional(),
 };
 
 /** Person fields live on User and are global; they are edited through the seller API for convenience. */
@@ -117,7 +127,8 @@ export const SellerResponseSchema = z.object({
   state: z.string().nullable(),
   zip: z.string().nullable(),
   payoutMethod: z.enum(PAYOUT_METHODS).nullable(),
-  payoutChannel: z.enum(['email', 'phone']).nullable(),
+  payoutTarget: z.enum(PAYOUT_TARGETS).nullable(),
+  payoutHandle: z.string().nullable(),
   emailVerifiedAt: z.string().datetime().nullable(),
   phoneVerifiedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),

@@ -234,6 +234,49 @@ ok('the summary totals the items', summary.items.length === 3 && summary.totalCe
    `${summary.items.length} items, ${summary.totalCents}c`);
 ok('the summary names the seller', summary.sellerName === 'Dana Reyes', summary.sellerName);
 
+// A seller cannot leave half-known. Completeness is checked here rather than on
+// every write, so staff can still correct one field at a time on a record that
+// is missing others — this is the one moment everything has to be present.
+
+let blocked = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/finish`, {
+  method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
+});
+ok('finishing without an address is refused', blocked.status === 400, String(blocked.status));
+
+await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me`, {
+  method: 'PATCH', headers: H,
+  body: JSON.stringify({ street: '12 Elm Street', city: 'Burlington', state: 'VT', zip: '05401' }),
+});
+
+// A patch writes what it was sent and nothing else. Normalising a name the
+// caller never sent turned every address save into a rename to nobody, which
+// only showed up once check-in started saving an address on its own screen.
+const afterAddress = await prisma.user.findFirst({ where: { phone: '+15550199001' } });
+ok('saving an address leaves the name alone',
+   afterAddress.firstName === 'Dana' && afterAddress.lastName === 'Reyes',
+   `${afterAddress.firstName} ${afterAddress.lastName}`);
+// `payoutMethod` defaults to CHECK, so clearing it is how the "not answered"
+// case is reached at all.
+await prisma.user.updateMany({ where: { phone: '+15550199001' }, data: { payoutMethod: null } });
+blocked = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/finish`, {
+  method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
+});
+ok('finishing without a payout method is refused', blocked.status === 400, String(blocked.status));
+
+// Venmo, so the typed-ID path is the one exercised end to end.
+const paid = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me`, {
+  method: 'PATCH', headers: H,
+  body: JSON.stringify({ payoutMethod: 'VENMO', payoutTarget: 'VENMO_ID', payoutHandle: '@dana-reyes' }),
+});
+ok('a payout destination is accepted', paid.status === 200, String(paid.status));
+
+const mismatch = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me`, {
+  method: 'PATCH', headers: H,
+  body: JSON.stringify({ payoutMethod: 'VENMO', payoutTarget: 'PAYPAL_ID', payoutHandle: 'x@example.com' }),
+});
+ok('a destination that does not match the method is refused', mismatch.status === 400,
+   String(mismatch.status));
+
 const finish = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/finish`, {
   method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
 }).then(unwrap);
