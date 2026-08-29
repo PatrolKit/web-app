@@ -106,7 +106,12 @@ export class CheckinService {
 
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { firstName: true, lastName: true },
+      select: {
+        firstName: true, lastName: true,
+        street: true, city: true, state: true, zip: true,
+        payoutMethod: true, payoutTarget: true, payoutHandle: true,
+        verifiedEmail: true, verifiedPhone: true,
+      },
     });
 
     const membership = await this.people.upsertMembership(userId, ctx.orgId);
@@ -128,6 +133,26 @@ export class CheckinService {
        * on the roster.
        */
       needsName: !user.firstName && !user.lastName,
+
+      /**
+       * What the address and payout steps start from. Sent with the join rather
+       * than fetched separately: both steps run back to back on venue wifi,
+       * with someone waiting, and neither has anything to show until it arrives.
+       *
+       * The verified contacts travel as values because the payout step both
+       * offers them as destinations and displays which one the money goes to.
+       */
+      profile: {
+        street: user.street,
+        city: user.city,
+        state: user.state,
+        zip: user.zip,
+        payoutMethod: user.payoutMethod,
+        payoutTarget: user.payoutTarget,
+        payoutHandle: user.payoutHandle,
+        verifiedEmail: user.verifiedEmail,
+        verifiedPhone: user.verifiedPhone,
+      },
     };
   }
 
@@ -151,6 +176,27 @@ export class CheckinService {
       select: { id: true },
     });
     if (!seller) throw new NotFoundException('You are not checked in at this swap');
+
+    // The last moment anything can be asked of someone about to walk away.
+    //
+    // Completeness is checked here rather than on every write, so staff can go
+    // on correcting one field at a time on a record that is still missing
+    // others — a seller finishing a check-in is the only case where everything
+    // has to be there at once.
+    const person = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!person.street || !person.city || !person.state || !person.zip) {
+      throw new BadRequestException('We still need your address before you can finish.');
+    }
+    if (!person.payoutMethod) {
+      throw new BadRequestException('We still need to know how to pay you before you can finish.');
+    }
+    if (
+      (person.payoutMethod === 'PAYPAL' || person.payoutMethod === 'VENMO') &&
+      !person.payoutTarget
+    ) {
+      throw new BadRequestException('We still need to know where to send your money.');
+    }
+
 
     const items = await this.prisma.swapItem.findMany({
       where: { orgId, swapId, sellerId: seller.id },

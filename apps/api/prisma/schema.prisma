@@ -32,8 +32,25 @@ model User {
   zip    String?
 
   payoutMethod  String? @default("CHECK") // PAYPAL | VENMO | CHECK | DONATE
-  /// Which of this person's contacts receives a PayPal payout. Must be verified.
-  payoutChannel String?                   // email | phone
+
+  /// What kind of destination the money goes to, and therefore how a payout run
+  /// addresses it. Null for CHECK and DONATE.
+  ///
+  ///   EMAIL | PHONE  — the seller's own verified contact
+  ///   PAYPAL_ID      — a PayPal account they typed
+  ///   VENMO_ID       — a Venmo account they typed
+  ///
+  /// The first three are PayPal Payouts' own recipient types, which is why this
+  /// is a discriminator rather than free text: the payment run has to tell them
+  /// apart. It also records whether the destination was proven or self-asserted,
+  /// without a second field that could drift out of step with this one.
+  payoutTarget  String? @db.VarChar(16)
+
+  /// The typed value, for PAYPAL_ID and VENMO_ID only. Null for EMAIL and PHONE,
+  /// where the destination resolves from `verifiedEmail` / `verifiedPhone` when
+  /// the money moves — storing a copy would let someone change their email and
+  /// leave the payout pointed at the old one.
+  payoutHandle  String?
 
   /// Claims. Indexed for matching, deliberately NOT unique — an unverified
   /// claim may collide with another unverified claim.

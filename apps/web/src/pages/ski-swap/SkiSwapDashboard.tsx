@@ -1,5 +1,6 @@
 import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
@@ -21,6 +22,16 @@ export default function SkiSwapDashboard() {
     enabled: !!selectedSwap,
   });
 
+  // Sellers missing an address or a way to be paid. Invisible until someone
+  // tries to act on the gap — a cheque with nowhere to go, an unsold item
+  // nobody can return — so it is worth a tile while the swap is still running.
+  const { data: unpayable = [] } = useQuery({
+    queryKey: ['ski-swap/sellers', orgId, true],
+    queryFn: () => api.skiSwap.listSellers(orgId, undefined, true),
+    enabled: !!orgId,
+    staleTime: 30_000,
+  });
+
   if (!selectedSwap) {
     return (
       <p className="text-gray-400 text-sm">
@@ -34,11 +45,29 @@ export default function SkiSwapDashboard() {
   const revenue = stats ? `$${(stats.grossRevenueCents / 100).toFixed(2)}` : '—';
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <StatTile label="Total Items" value={stats?.totalItems ?? '—'} />
-      <StatTile label="Items Sold" value={stats?.itemsSold ?? '—'} />
-      <StatTile label="Sellers" value={stats?.totalSellers ?? '—'} />
-      <StatTile label="Est. Revenue" value={revenue} />
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatTile label="Total Items" value={stats?.totalItems ?? '—'} />
+        <StatTile label="Items Sold" value={stats?.itemsSold ?? '—'} />
+        <StatTile label="Sellers" value={stats?.totalSellers ?? '—'} />
+        <StatTile label="Est. Revenue" value={revenue} />
+      </div>
+
+      {/* Shown only when there is something to act on: a zero here is the
+          normal state, and a tile reading zero every day stops being read. */}
+      {unpayable.length > 0 && (
+        <Link
+          to="/dashboard/ski-swap/sellers"
+          className="block bg-amber-900/30 border border-amber-800 rounded-lg p-4 hover:border-amber-600"
+        >
+          <p className="text-amber-300 text-sm font-medium">
+            {unpayable.length} {unpayable.length === 1 ? 'seller' : 'sellers'} cannot be paid
+          </p>
+          <p className="text-xs text-amber-500/80 mt-0.5">
+            Missing an address or a way to send the money. Fix before the swap closes.
+          </p>
+        </Link>
+      )}
     </div>
   );
 }

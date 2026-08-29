@@ -6,9 +6,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { CheckinShell, ErrorNote } from './shared';
 import SignInStep from './SignInStep';
 import NameStep from './NameStep';
+import AddressStep from './AddressStep';
+import PayoutStep from './PayoutStep';
 import ItemsStep from './ItemsStep';
 import FinishStep from './FinishStep';
-import type { CheckinContext } from '../../lib/api.types';
+import type { CheckinJoined } from '../../lib/api.types';
 
 /**
  * Self-service check-in, start to finish.
@@ -25,7 +27,12 @@ export default function CheckinPage() {
   const stationId = params.get('station') ?? '';
   const { user, isLoading: authLoading } = useAuth();
 
-  const [joined, setJoined] = useState<(CheckinContext & { sellerId: string; needsName: boolean }) | null>(null);
+  const [joined, setJoined] = useState<CheckinJoined | null>(null);
+  /** Held here so the payout step can show it back without asking again. */
+  const [address, setAddress] = useState<{
+    street: string; city: string; state: string; zip: string;
+  } | null>(null);
+  const [payoutDone, setPayoutDone] = useState(false);
   const [namedThisSession, setNamedThisSession] = useState(false);
   const [joinError, setJoinError] = useState('');
   const [finished, setFinished] = useState(false);
@@ -95,9 +102,34 @@ export default function CheckinPage() {
   if (finished) return <FinishStep context={context} />;
 
   // Only a first-time seller sees this; everyone the roster already knows goes
-  // straight to entering items.
+  // straight past it.
   if (joined.needsName && !namedThisSession) {
     return <NameStep context={context} onDone={() => setNamedThisSession(true)} />;
+  }
+
+  // Address, then payout — both asked once per check-in, of everyone. A
+  // returning seller sees their answers already filled in and confirms them,
+  // which is where a moved house or a closed PayPal gets noticed.
+  if (!address) {
+    return (
+      <AddressStep
+        context={context}
+        profile={joined.profile}
+        onDone={setAddress}
+      />
+    );
+  }
+
+  if (!payoutDone) {
+    return (
+      <PayoutStep
+        context={context}
+        profile={joined.profile}
+        address={address}
+        onDone={() => setPayoutDone(true)}
+        onEditAddress={() => setAddress(null)}
+      />
+    );
   }
 
   return <ItemsStep context={context} onFinished={() => setFinished(true)} />;
