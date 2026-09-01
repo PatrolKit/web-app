@@ -4,12 +4,15 @@
 // Prerequisites: SSH key at ~/.ssh/patrolkit.pem, server set up per RESET_PLAN.md
 
 import { execSync } from 'child_process';
+import { existsSync } from 'fs';
 
 const SERVER = 'ec2-user@patrolkit.io';
 const KEY = `${process.env.HOME}/.ssh/patrolkit.pem`;
 const SSH = `ssh -i ${KEY} -o StrictHostKeyChecking=no`;
 
 const run = (cmd, opts = {}) => execSync(cmd, { stdio: 'inherit', ...opts });
+/** Runs a local command for its output rather than streaming it. */
+const count = (cmd) => execSync(cmd, { encoding: 'utf8' }).trim();
 const ssh = (cmd) => run(`${SSH} ${SERVER} "${cmd}"`);
 /** Runs a remote command and returns its stdout instead of streaming it. */
 const sshCapture = (cmd) =>
@@ -20,13 +23,33 @@ const sshCapture = (cmd) =>
 
 // 1. Build API and web
 //
-// The API build is incremental, and its tsbuildinfo outlives `rm -rf dist` —
-// which leaves a dist holding only whatever changed since. That is invisible
-// locally (the running server is already loaded) and fatal here, because step 2
-// rsyncs with --delete. Start from nothing.
+// `tsc` is incremental, and a stale tsbuildinfo makes it conclude the output is
+// already up to date — so `nest build` prints nothing, exits 0, and emits no
+// JavaScript whatever. This is not hypothetical: it took the site down. Step 2
+// rsyncs with --delete, so an empty dist replaced a working one and pm2
+// restarted into `Cannot find module './app.module'`.
+//
+// The build info normally lives inside the outDir and goes with it, but a stray
+// copy at the repo root — left over from the July scaffold — poisons the build
+// just as well, and the old `rm` here named a third path that never existed.
+// So: delete every one of them wherever it sits, and never trust the exit code
+// alone. A build that emits nothing has to fail here, not on the server.
 console.log('Building...');
-run('rm -rf apps/api/dist apps/api/tsconfig.tsbuildinfo');
+run("find . -name '*.tsbuildinfo' -not -path '*/node_modules/*' -delete");
+run('rm -rf apps/api/dist');
 run('pnpm --filter api build');
+
+const emitted = Number(count("find apps/api/dist/src -name '*.js' | wc -l"));
+const sources = Number(count("find apps/api/src -name '*.ts' -not -name '*.spec.ts' | wc -l"));
+if (!existsSync('apps/api/dist/src/app.module.js') || emitted < sources * 0.9) {
+  console.error(
+    `\n  FAILED: the API build produced ${emitted} files from ${sources} sources.\n` +
+    '  `nest build` exits 0 when an incremental build emits nothing, so this is\n' +
+    '  caught by counting rather than by its status. Nothing has been sent.\n' +
+    "  Check for a stale tsbuildinfo: find . -name '*.tsbuildinfo' -not -path '*/node_modules/*'\n",
+  );
+  process.exit(1);
+}
 run('pnpm --filter web build', {
   env: { ...process.env, VITE_SELLER_SITE_URL: process.env.VITE_SELLER_SITE_URL ?? 'https://skiswap.patrolkit.io' },
 });
