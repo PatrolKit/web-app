@@ -44,8 +44,12 @@ async function bootstrap() {
   app.use(json({ limit: '1mb' }));
   app.use(urlencoded({ limit: '1mb', extended: true }));
 
+  // Health probes sit outside the version prefix. Their callers are
+  // infrastructure — a load balancer, an uptime monitor, the deploy script —
+  // and none of them should have to know the API is on v1, or have their check
+  // silently move out from under them when it is on v2.
   app.setGlobalPrefix('api/v1', {
-    exclude: ['readyz'],
+    exclude: ['healthz', 'readyz'],
   });
 
   const port = process.env.PORT ?? 4000;

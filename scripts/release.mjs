@@ -105,11 +105,15 @@ ssh('pm2 delete patrolkit 2>/dev/null; set -a && source /home/ec2-user/patrolkit
 // Step 7 deletes the pm2 process before starting the new one, so anything that
 // fails in between leaves the site down — and the script would otherwise print
 // "Done." over a 502. Poll until it answers, and fail loudly if it never does.
+//
+// `/readyz`, not `/healthz`: this runs immediately after a migration, and the
+// one failure worth catching here is an app that answers while its database
+// does not. A liveness probe would report that as a clean deploy.
 console.log('Waiting for the app to come back...');
 let healthy = false;
 for (let attempt = 1; attempt <= 15; attempt++) {
   const code = execSync(
-    'curl -s -o /dev/null -w "%{http_code}" https://patrolkit.io/api/v1/healthz || true',
+    'curl -s -o /dev/null -w "%{http_code}" https://patrolkit.io/readyz || true',
     { encoding: 'utf8' },
   ).trim();
   if (code === '200') { healthy = true; break; }
@@ -119,10 +123,11 @@ for (let attempt = 1; attempt <= 15; attempt++) {
 if (!healthy) {
   console.error(
     '\n  FAILED: the app did not come back after the restart.\n' +
-    '  It may be stopped entirely — step 7 deletes the pm2 process first.\n' +
+    '  It may be stopped entirely — step 7 deletes the pm2 process first,\n' +
+    '  or it may be up but unable to reach the database — /readyz covers both.\n' +
     '  Check: ssh ... "pm2 list && pm2 logs patrolkit --lines 50 --nostream"\n',
   );
   process.exit(1);
 }
 
-console.log('\nDone. https://patrolkit.io/api/v1/healthz');
+console.log('\nDone. https://patrolkit.io/readyz');
