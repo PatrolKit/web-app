@@ -229,14 +229,16 @@ export interface SellerResponse {
   state: string | null;
   zip: string | null;
   payoutMethod: 'PAYPAL' | 'VENMO' | 'CHECK' | 'DONATE' | null;
-  /** Payouts target a verified contact rather than a free-text identifier. */
   /** PayPal Payouts' recipient type, or the kind of ID that was typed. */
   payoutTarget: 'EMAIL' | 'PHONE' | 'PAYPAL_ID' | 'VENMO_ID' | null;
   /** The typed value, for PAYPAL_ID and VENMO_ID only. */
   payoutHandle: string | null;
   emailVerifiedAt: string | null;
   phoneVerifiedAt: string | null;
+  /** Set once removed. Only ever populated for a caller passing `updatedSince`. */
+  deletedAt: string | null;
   createdAt: string;
+  /** `Membership.updatedAt` — the delta-sync watermark, not the profile's own. */
   updatedAt: string;
 }
 
@@ -274,6 +276,12 @@ export interface ItemResponse {
   hasPrintedTag: boolean;
   seller: { id: string; displayName: string; phone: string | null } | null;
   photos: { id: string; url: string }[];
+  /**
+   * Tracks the item record, not its stock. `inStock` and `soldCount` are read
+   * live from Square on every request, so a sale moves neither this nor any
+   * other column — a delta sync sees edits, not sales.
+   */
+  updatedAt: string;
 }
 
 export interface SwapStats {

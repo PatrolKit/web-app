@@ -297,6 +297,71 @@ const stranger = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/${
 });
 ok('an unauthenticated reprint is refused', stranger.status === 401, String(stranger.status));
 
+// ─── What a device syncing offline can see ───────────────────────────────────
+//
+// The iPad keeps a local mirror and polls `?updatedSince=`. Three things had to
+// be true for that to work, and none of them were: an item had to say when it
+// changed, a seller edit had to move the clock the filter reads, and a removal
+// had to arrive as a row rather than as an absence.
+
+const listed = await fetch(
+  `${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}/items?take=200`, { headers: SH },
+).then(unwrap);
+ok('an item says when it last changed', typeof listed.items[0]?.updatedAt === 'string',
+   listed.items[0]?.updatedAt);
+
+// The cursor a client would have stored, taken from the server's own clock.
+const cursor = new Date(Date.now() - 1000).toISOString();
+
+const quiet = await fetch(
+  `${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}/items?take=200&updatedSince=${encodeURIComponent(new Date(Date.now() + 60_000).toISOString())}`,
+  { headers: SH },
+).then(unwrap);
+ok('an item cursor in the future returns nothing', quiet.items.length === 0, `${quiet.items.length} items`);
+
+const sellers = await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers`, { headers: SH }).then(unwrap);
+const dana = sellers.find((x) => x.phone === '+15550199001');
+ok('a seller reports a removal field', dana !== undefined && dana.deletedAt === null,
+   JSON.stringify(dana?.deletedAt));
+
+// The edit that used to vanish: it writes `User` and bumps the membership,
+// leaving `SellerProfile.updatedAt` exactly where it was.
+await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers/${dana.id}`, {
+  method: 'PATCH', headers: SH, body: JSON.stringify({ lastName: 'Whitcomb' }),
+});
+
+const afterEdit = await fetch(
+  `${BASE}/orgs/${org.id}/ski-swap/sellers?updatedSince=${encodeURIComponent(cursor)}`,
+  { headers: SH },
+).then(unwrap);
+ok('a renamed seller reaches a delta-syncing client',
+   afterEdit.some((x) => x.id === dana.id && x.lastName === 'Whitcomb'),
+   `${afterEdit.length} changed`);
+
+const profileRow = await prisma.sellerProfile.findUnique({ where: { id: dana.id } });
+ok('and the profile row never moved, which is why it was the wrong clock',
+   profileRow.updatedAt.toISOString() < cursor,
+   `${profileRow.updatedAt.toISOString()} vs cursor ${cursor}`);
+
+// Removal. The item has to go first — a seller holding items cannot be removed.
+await prisma.swapItem.deleteMany({ where: { sellerId: dana.id } });
+const removed = await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers/${dana.id}`, {
+  method: 'DELETE', headers: SH,
+});
+ok('a seller can be removed', removed.status === 200 || removed.status === 204, String(removed.status));
+
+const afterRemoval = await fetch(
+  `${BASE}/orgs/${org.id}/ski-swap/sellers?updatedSince=${encodeURIComponent(cursor)}`,
+  { headers: SH },
+).then(unwrap);
+const tombstone = afterRemoval.find((x) => x.id === dana.id);
+ok('a removed seller arrives as a tombstone, not an absence', !!tombstone?.deletedAt,
+   JSON.stringify(tombstone?.deletedAt));
+
+const live = await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers`, { headers: SH }).then(unwrap);
+ok('and is still absent from the staff list', !live.some((x) => x.id === dana.id),
+   `${live.length} live`);
+
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
 await prisma.printJob.deleteMany({ where: { stationId: station.id } });
 await prisma.swapItem.deleteMany({ where: { swapId: swap.id } });

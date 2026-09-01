@@ -131,7 +131,19 @@ export const SellerResponseSchema = z.object({
   payoutHandle: z.string().nullable(),
   emailVerifiedAt: z.string().datetime().nullable(),
   phoneVerifiedAt: z.string().datetime().nullable(),
+  /**
+   * Set once the seller has been removed, from the swap or from the org.
+   * Returned only to a caller passing `updatedSince` — a soft removal exists so
+   * that an offline client can learn about it, which it cannot do from a list
+   * that simply stops mentioning the row.
+   */
+  deletedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
+  /**
+   * `Membership.updatedAt` — the one watermark for everything about a person at
+   * an org, and what `?updatedSince=` filters on. Not the seller profile's own
+   * timestamp, which moves only when a business name changes.
+   */
   updatedAt: z.string().datetime(),
 });
 
@@ -220,6 +232,16 @@ export const ItemResponseSchema = z.object({
   hasPrintedTag: z.boolean(),
   seller: SellerResponseSchema.pick({ id: true, displayName: true, phone: true }).nullable(),
   photos: z.array(z.object({ id: z.string(), url: z.string() })),
+  /**
+   * The watermark `GET items?updatedSince=` filters on. Without it the filter
+   * existed but nothing could supply a value for it.
+   *
+   * It tracks the item *record*, not the item's stock: `inStock` and
+   * `soldCount` are read live from Square on every request, and a sale at the
+   * register moves neither this column nor any other. A client polling deltas
+   * sees edits, not sales.
+   */
+  updatedAt: z.string().datetime(),
 });
 
 export class CreateItemDto extends createZodDto(CreateItemSchema) {}

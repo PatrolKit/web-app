@@ -14,18 +14,16 @@ import { PrintQueueService } from './print-queue.service';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
+import type { ItemResponse } from '../contracts/ski-swap.contracts';
 
 export interface ItemPhotoResponse { id: string; url: string; }
 
-export interface ItemResponse {
-  id: string; swapId: string; orgId: string;
-  name: string; description: string | null;
-  sku: string; priceCents: number; originalQuantity: number;
-  inStock: number; soldCount: number; squareSynced: boolean;
-  donateProceeds: boolean; hasPrintedTag: boolean;
-  seller: { id: string; displayName: string; phone: string | null } | null;
-  photos: ItemPhotoResponse[];
-}
+/**
+ * Re-exported from the contract rather than declared again here. This file used
+ * to carry its own structurally-identical copy, which is how a response and the
+ * schema that documents it drift apart without anything failing to compile.
+ */
+export type { ItemResponse };
 
 type SwapShape = { id: string; title: string; squareCategoryId: string; locationId: string; skuPrefix: string; skuCounter: number };
 
@@ -402,7 +400,7 @@ export class ItemService {
     return pos.getInventoryCounts(ids, swap.locationId).catch(() => new Map());
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>): ItemResponse {
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>): ItemResponse {
     const inStock = item.squareVariationId ? (inventoryMap.get(item.squareVariationId) ?? 0) : 0;
     return {
       id: item.id, swapId: item.swapId, orgId: item.orgId,
@@ -420,6 +418,7 @@ export class ItemService {
           }
         : null,
       photos: item.photos.map((p) => ({ id: p.id, url: p.url })),
+      updatedAt: item.updatedAt.toISOString(),
     };
   }
 }
