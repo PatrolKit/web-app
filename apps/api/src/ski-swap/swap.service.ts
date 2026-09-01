@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SquareClientService } from './square-client.service';
@@ -41,7 +42,7 @@ export class SwapService {
     locationId: string,
     actorId: string,
   ): Promise<SwapResponse> {
-    const client = await this.squareClient.forOrg(orgId);
+    const client = await this.squareOrExplain(orgId, 'creating a swap');
 
     const basePrefix = deriveSkuPrefix(title);
     const skuPrefix = await this.resolveUniquePrefix(orgId, basePrefix);
@@ -71,7 +72,7 @@ export class SwapService {
     data: { title?: string; active?: boolean; locationId?: string },
   ): Promise<SwapResponse> {
     const swap = await this.findOrThrow(orgId, swapId);
-    const client = await this.squareClient.forOrg(orgId);
+    const client = await this.squareOrExplain(orgId, 'changing a swap');
 
     let newSkuPrefix = swap.skuPrefix;
     let squareCategoryId = swap.squareCategoryId;
@@ -159,6 +160,33 @@ export class SwapService {
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * The Square client, with a refusal that says what the caller was doing.
+   *
+   * A swap files its items under a Square catalogue category, so it genuinely
+   * cannot be created or renamed without a connection — unlike everything
+   * downstream of it, which skips Square rather than failing. That asymmetry
+   * reads as a bug from outside: `forOrg` says only that Square is not
+   * configured, and a client left holding that from a swap-creation call has to
+   * go and read this file to find out why. It cost the iPad team an hour.
+   */
+  private async squareOrExplain(orgId: string, attempt: string) {
+    try {
+      return await this.squareClient.forOrg(orgId);
+    } catch (err) {
+      if (
+        err instanceof ServiceUnavailableException &&
+        (err.getResponse() as { code?: string }).code === 'SQUARE_NOT_CONFIGURED'
+      ) {
+        throw new ServiceUnavailableException({
+          message: `Connect Square before ${attempt} — the swap needs a catalogue category to file its items under.`,
+          code: 'SQUARE_NOT_CONFIGURED',
+        });
+      }
+      throw err;
+    }
+  }
 
   private async findOrThrow(orgId: string, swapId: string) {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId } });

@@ -15,7 +15,14 @@ export class SquareClientService {
   async forOrg(orgId: string): Promise<SquareClient> {
     const config = await this.prisma.squareConfig.findUnique({ where: { orgId } });
     if (!config) {
-      throw new ServiceUnavailableException('Square is not configured for this organization', 'SQUARE_NOT_CONFIGURED');
+      // Structured, so the code reaches the client: the exception filter reads
+      // `message` and `code` off the response object, and the second string
+      // argument lands in neither. Callers with something more specific to say
+      // catch this and re-throw with it — see SwapService.
+      throw new ServiceUnavailableException({
+        message: 'Square is not configured for this organization',
+        code: 'SQUARE_NOT_CONFIGURED',
+      });
     }
     const token = this.crypto.decrypt(config.accessTokenEnc);
     return new SquareClient({
