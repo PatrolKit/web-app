@@ -262,10 +262,24 @@ export const api = {
     // No permissions: a device is authorised by its role alone since the
     // identity consolidation, and the schema is strict — sending the retired
     // field failed every provision request.
-    provision: (orgId: string, data: { name?: string; role: import('./api.types').DeviceRole }) =>
+    provision: (
+      orgId: string,
+      data: {
+        name?: string;
+        role: import('./api.types').DeviceRole;
+        /** Time-clock terminals only: where the tablet stands. */
+        resortId?: string;
+      },
+    ) =>
       request<import('./api.types').ProvisionedDevice>(`/orgs/${orgId}/devices`, {
         method: 'POST',
         body: JSON.stringify(data),
+      }),
+    /** Places a time-clock terminal, or takes it out of service with null. */
+    bindResort: (orgId: string, id: string, resortId: string | null) =>
+      request<import('./api.types').DeviceItem>(`/orgs/${orgId}/devices/${id}/resort`, {
+        method: 'PATCH',
+        body: JSON.stringify({ resortId }),
       }),
     rotateSecret: (orgId: string, id: string) =>
       request<{ clientSecret: string }>(`/orgs/${orgId}/devices/${id}/rotate-secret`, { method: 'POST' }),

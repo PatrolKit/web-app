@@ -251,7 +251,20 @@ model Device {
   /// have lost power holding it — so the age is as load-bearing as the value.
   printerLinkAt     DateTime?
 
+  /// The resort this terminal clocks people in at. Meaningful only for
+  /// `time_clock.terminal`, the way `printerLink` is meaningful only for a
+  /// bridge.
+  ///
+  /// It lives here rather than on `Resort` because it is many-to-one: a big
+  /// base area runs several iPads. A station's binding sits the other way round
+  /// on `CheckinStation` because a counter has exactly one attendant tablet.
+  resortId          String?
+
   org               Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// SetNull, not Cascade: retiring a resort must not delete the hardware
+  /// standing in it. The tablet stays, unbound, and can be pointed somewhere
+  /// else.
+  resort            Resort?         @relation(fields: [resortId], references: [id], onDelete: SetNull)
   attendedStation   CheckinStation? @relation("StationAttendant")
   bridgedStation    CheckinStation? @relation("StationBridge")
   /// The printer this bridge drives. Only a bridge ever has one.
@@ -261,6 +274,7 @@ model Device {
   /// index MySQL requires behind the orgId foreign key. With the code gone,
   /// orgId needs one of its own — dropping the composite without this fails.
   @@index([orgId])
+  @@index([resortId])
 }
 
 model AuditLog {
@@ -544,9 +558,11 @@ model Resort {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  org    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  shifts TimeClockShift[]
-  events TimeClockEvent[]
+  org     Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  shifts  TimeClockShift[]
+  events  TimeClockEvent[]
+  /// The terminals standing at this resort. Several is normal.
+  devices Device[]
 
   @@index([orgId, deletedAt])
   @@index([orgId, updatedAt])

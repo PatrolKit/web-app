@@ -67,6 +67,10 @@ export async function smokeStaff(prisma, org, permissions) {
   // and it hid two real failures until production ran the scripts in a
   // different order.
   const rows = await prisma.permission.findMany({ where: { key: { in: permissions } } });
+  const before = await prisma.membershipPermission.findMany({
+    where: { membershipId: membership.id },
+    select: { permissionId: true },
+  });
   await prisma.membershipPermission.deleteMany({
     where: { membershipId: membership.id, permissionId: { notIn: rows.map((r) => r.id) } },
   });
@@ -77,6 +81,22 @@ export async function smokeStaff(prisma, org, permissions) {
       create: { membershipId: membership.id, permissionId: permission.id },
     });
   }
+
+  // The server caches a membership's permissions for five seconds
+  // (`PermissionsService`), and these scripts write straight to the database,
+  // so nothing tells it to look again. A script that narrows the set and then
+  // acts on it within that window is refused with the *previous* script's
+  // authority — a 403 that looks like a bug in whatever it was calling.
+  //
+  // Waited only when the set actually changed, so a run of scripts asking for
+  // the same permissions pays nothing. This is the price of sharing one user
+  // across every script; the alternative is a user per script and a slower,
+  // less honest fixture.
+  const changed =
+    before.length !== rows.length ||
+    new Set(before.map((b) => b.permissionId)).size !== new Set(rows.map((r) => r.id)).size ||
+    rows.some((r) => !before.some((b) => b.permissionId === r.id));
+  if (changed) await new Promise((r) => setTimeout(r, 5_100));
 
   return { user, membership };
 }

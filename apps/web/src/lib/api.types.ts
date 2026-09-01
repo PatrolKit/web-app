@@ -136,6 +136,12 @@ export interface DeviceItem {
   printerName: string | null;
   /** The station a bridge serves. Null when nothing routes work to it. */
   stationName: string | null;
+  /**
+   * The resort a time-clock terminal stands at. Null for every other kind of
+   * device, for one nobody has placed yet, and for one whose resort was retired.
+   */
+  resortId: string | null;
+  resortName: string | null;
   createdAt: string;
 }
 
