@@ -78,10 +78,18 @@ type SellerRow = {
   id: string;
   businessName: string | null;
   createdAt: Date;
-  updatedAt: Date;
+  deletedAt: Date | null;
   membership: {
     orgId: string;
     userId: string;
+    /**
+     * The watermark, not `SellerProfile.updatedAt`. A seller row is assembled
+     * from three tables and almost nothing a client reads lives on the profile:
+     * a rename, a corrected phone number or a new payout all write `User` and
+     * bump the membership, leaving the profile's own timestamp untouched.
+     */
+    updatedAt: Date;
+    deletedAt: Date | null;
     user: {
       firstName: string | null; lastName: string | null;
       email: string | null; phone: string | null;
@@ -94,6 +102,9 @@ type SellerRow = {
 
 export function toSellerResponse(s: SellerRow): SellerResponse {
   const u = s.membership.user;
+  // Either row can carry the tombstone: a seller can be removed from the swap,
+  // or leave the org entirely. Whichever happened, the client needs to know.
+  const deletedAt = s.deletedAt ?? s.membership.deletedAt;
   return {
     id: s.id,
     orgId: s.membership.orgId,
@@ -114,7 +125,8 @@ export function toSellerResponse(s: SellerRow): SellerResponse {
     emailVerifiedAt: u.emailVerifiedAt?.toISOString() ?? null,
     phoneVerifiedAt: u.phoneVerifiedAt?.toISOString() ?? null,
     createdAt: s.createdAt.toISOString(),
-    updatedAt: s.updatedAt.toISOString(),
+    updatedAt: s.membership.updatedAt.toISOString(),
+    deletedAt: deletedAt?.toISOString() ?? null,
   };
 }
 
@@ -148,12 +160,24 @@ export class SellerService {
     updatedSince?: string,
     incompleteOnly?: boolean,
   ): Promise<SellerResponse[]> {
+    // Tombstones appear only in a delta. A client asking "what changed since"
+    // has a local mirror and needs to be told about a removal; a caller with no
+    // cursor is a screen, and a removed seller has no business on it.
+    //
+    // The roster includes them unconditionally and leaves the filtering to its
+    // callers. That is not worth copying: this endpoint backs the staff Sellers
+    // page directly.
+    const live = updatedSince ? {} : { deletedAt: null };
+    const liveMembership = updatedSince ? {} : { deletedAt: null };
+
     const sellers = await this.prisma.sellerProfile.findMany({
       where: {
-        deletedAt: null,
+        ...live,
         membership: {
           orgId,
-          deletedAt: null,
+          ...liveMembership,
+          // The watermark is the membership's — see SellerRow.
+          ...(updatedSince ? { updatedAt: { gt: new Date(updatedSince) } } : {}),
           ...(query
             ? {
                 user: {
@@ -167,8 +191,6 @@ export class SellerService {
               }
             : {}),
         },
-        ...(updatedSince ? { updatedAt: { gt: new Date(updatedSince) } } : {}),
-        ...(query ? {} : {}),
       },
       include: SELLER_INCLUDE,
       orderBy: [{ membership: { user: { lastName: 'asc' } } }, { createdAt: 'asc' }],
@@ -177,9 +199,13 @@ export class SellerService {
     const byBusiness = query
       ? await this.prisma.sellerProfile.findMany({
           where: {
-            deletedAt: null,
+            ...live,
             businessName: { contains: query },
-            membership: { orgId, deletedAt: null },
+            membership: {
+              orgId,
+              ...liveMembership,
+              ...(updatedSince ? { updatedAt: { gt: new Date(updatedSince) } } : {}),
+            },
           },
           include: SELLER_INCLUDE,
         })
@@ -192,7 +218,9 @@ export class SellerService {
     // Filtered after mapping rather than in SQL: the rule spans four address
     // columns and two payout ones, and is stated once here so the list and the
     // dashboard count cannot drift apart.
-    return incompleteOnly ? all.filter(SellerService.isIncomplete) : all;
+    return incompleteOnly
+      ? all.filter((x) => !x.deletedAt && SellerService.isIncomplete(x))
+      : all;
   }
 
   async get(orgId: string, sellerId: string): Promise<SellerResponse> {
