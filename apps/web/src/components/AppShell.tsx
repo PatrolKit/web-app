@@ -36,9 +36,13 @@ export default function AppShell() {
   const { user, activeOrgId, setActiveOrgId, logout, isLoading } = useAuth();
   const navigate = useNavigate();
 
+  // `/readyz`, and not under the API prefix: health probes sit at the root so
+  // they do not move with the API version. It is the readiness probe rather
+  // than liveness because this drives a "server unreachable" banner — an API
+  // that answers while its database is gone is not something to call fine.
   const { isError: serverDown } = useQuery({
-    queryKey: ['healthz'],
-    queryFn: () => fetch('/api/v1/healthz').then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
+    queryKey: ['readyz'],
+    queryFn: () => fetch('/readyz').then((r) => { if (!r.ok) throw new Error(); return r.json(); }),
     refetchInterval: 10_000,
     retry: false,
     staleTime: 5_000,
