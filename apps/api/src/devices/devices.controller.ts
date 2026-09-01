@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards,
+  Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
@@ -7,7 +7,7 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { DevicesService } from './devices.service';
-import { ProvisionDeviceDto } from '../contracts/devices.contracts';
+import { ProvisionDeviceDto, BindResortDto } from '../contracts/devices.contracts';
 import type { DeviceListItem, ProvisionDeviceResponse } from '../contracts/devices.contracts';
 
 @Controller('orgs/:orgId/devices')
@@ -44,6 +44,24 @@ export class DevicesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ clientSecret: string }> {
     return this.devicesService.rotateSecret(orgId, id, user.userId);
+  }
+
+  /**
+   * Where a time-clock terminal stands. `null` unbinds it, which takes a tablet
+   * out of service without revoking its credentials.
+   *
+   * No @RequirePermissions, like the rest of this controller: the service reads
+   * the device's role and applies that module's permission.
+   */
+  @Patch(':id/resort')
+  @HttpCode(200)
+  bindResort(
+    @Param('orgId') orgId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: BindResortDto,
+  ): Promise<DeviceListItem> {
+    return this.devicesService.bindResort(orgId, user.userId, id, body.resortId);
   }
 
   @Delete(':id')

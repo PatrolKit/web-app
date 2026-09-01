@@ -39,6 +39,13 @@ export const ProvisionDeviceSchema = z
      */
     name: z.string().min(1).max(100).optional(),
     role: DeviceRoleSchema,
+    /**
+     * Where a time-clock terminal stands. Offered here so an iPad is bound
+     * before it is ever switched on, rather than being provisioned and then
+     * remembered about — the same shape as binding a station's tablet.
+     * Rejected for any other role.
+     */
+    resortId: z.string().min(1).optional(),
   })
   .strict();
 
@@ -82,6 +89,13 @@ export const DeviceListItemSchema = z.object({
    * retry while unbound rather than heartbeating.
    */
   stationName: z.string().nullable(),
+  /**
+   * The resort a time-clock terminal is bound to. Null for every other kind of
+   * device, and for a terminal nobody has placed yet. Carried here so the
+   * Devices page can show the binding it offers to change.
+   */
+  resortId: z.string().nullable(),
+  resortName: z.string().nullable(),
   createdAt: z.date(),
 });
 
@@ -110,13 +124,40 @@ export const DeviceMeResponseSchema = z.object({
   station: z
     .object({ id: z.string(), name: z.string(), code: z.string() })
     .nullable(),
+  /**
+   * The resort this terminal clocks people in at, or null when nobody has
+   * placed it yet. Null is the answer a client needs to distinguish "no resort
+   * assigned" from "not synced yet", so it is always present rather than
+   * omitted.
+   *
+   * `timeZone` travels with it because the nightly auto-close runs in resort
+   * local time: sending it means a freshly provisioned tablet is right before
+   * its first resort sync rather than after.
+   */
+  resort: z
+    .object({ id: z.string(), name: z.string(), timeZone: z.string() })
+    .nullable(),
   sellerSiteUrl: z.string(),
   orgLogoUrl: z.string().nullable().optional(),
 });
 
+/** A terminal moved between lodges, rebinding itself. */
+export const RebindDeviceSchema = z.object({ resortId: z.string().min(1) }).strict();
+
+/**
+ * An admin placing a terminal, or taking it out of service.
+ *
+ * Nullable where the device's own rebind is not: unbinding is a thing staff do
+ * to hardware they are putting away, and not something a tablet asks for about
+ * itself.
+ */
+export const BindResortSchema = z.object({ resortId: z.string().min(1).nullable() }).strict();
+
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
 export class ProvisionDeviceDto extends createZodDto(ProvisionDeviceSchema) {}
+export class RebindDeviceDto extends createZodDto(RebindDeviceSchema) {}
+export class BindResortDto extends createZodDto(BindResortSchema) {}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

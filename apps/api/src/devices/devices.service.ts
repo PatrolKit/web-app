@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -103,6 +104,9 @@ export class DevicesService {
     data: ProvisionDeviceRequest,
   ): Promise<ProvisionDeviceResponse> {
     await this.assertMayManage(orgId, actorUserId, data.role);
+    if (data.resortId !== undefined) {
+      await this.assertResortBindable(orgId, data.role, data.resortId);
+    }
 
     const clientId = createId();
     const clientSecret = randomBytes(32).toString('hex');
@@ -121,6 +125,7 @@ export class DevicesService {
         clientId,
         secretHash,
         createdBy: actorUserId,
+        resortId: data.resortId ?? null,
       },
     });
 
@@ -158,7 +163,7 @@ export class DevicesService {
     const devices = await this.prisma.device.findMany({
       where: { orgId, OR: modules.map((m) => ({ role: { startsWith: `${m}.` } })) },
       orderBy: { createdAt: 'desc' },
-      include: { bridgedPrinter: true, bridgedStation: true },
+      include: { bridgedPrinter: true, bridgedStation: true, resort: true },
     });
 
     return devices.map((d) => ({
@@ -172,6 +177,9 @@ export class DevicesService {
       printerLinkAt: d.printerLinkAt,
       printerName: d.bridgedPrinter?.name ?? null,
       stationName: d.bridgedStation && !d.bridgedStation.deletedAt ? d.bridgedStation.name : null,
+      // A retired resort reads as unbound, the same way a retired station does.
+      resortId: d.resort && !d.resort.deletedAt ? d.resort.id : null,
+      resortName: d.resort && !d.resort.deletedAt ? d.resort.name : null,
       createdAt: d.createdAt,
     }));
   }
@@ -245,6 +253,99 @@ export class DevicesService {
     });
   }
 
+  // ─── Resort binding ──────────────────────────────────────────────────────────
+
+  /**
+   * Where a time-clock terminal stands, set by whoever administers time-clock
+   * hardware.
+   *
+   * Passing null unbinds it, which is how a tablet is taken out of service
+   * without being revoked — it keeps its credentials and stops being anywhere.
+   */
+  async bindResort(
+    orgId: string,
+    actorUserId: string,
+    deviceId: string,
+    resortId: string | null,
+  ): Promise<DeviceListItem> {
+    const device = await this.prisma.device.findFirst({ where: { id: deviceId, orgId } });
+    if (!device) throw new NotFoundException('Device not found');
+
+    await this.assertMayManage(orgId, actorUserId, device.role as DeviceRole);
+    if (resortId !== null) {
+      await this.assertResortBindable(orgId, device.role as DeviceRole, resortId);
+    }
+
+    await this.prisma.device.update({ where: { id: deviceId }, data: { resortId } });
+
+    await this.auditService.log({
+      actorType: 'user',
+      actorId: actorUserId,
+      orgId,
+      action: resortId ? 'device.resort_bound' : 'device.resort_unbound',
+      targetType: 'device',
+      targetId: deviceId,
+      metadata: { resortId },
+    });
+
+    const [updated] = await this.listDevices(orgId, actorUserId).then((all) =>
+      all.filter((d) => d.id === deviceId),
+    );
+    return updated;
+  }
+
+  /**
+   * A terminal rebinding itself, having been carried to another lodge.
+   *
+   * Rebinding is wanted exactly when a computer is least available — someone is
+   * holding the iPad, in the building it just moved to. The device names a
+   * resort in its own org and nothing else: it cannot reach another org's, a
+   * retired one, or any device but itself.
+   */
+  async rebindSelf(deviceId: string, resortId: string): Promise<DeviceMeResponse> {
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device) throw new UnauthorizedException('Device not found');
+
+    await this.assertResortBindable(device.orgId, device.role as DeviceRole, resortId);
+    await this.prisma.device.update({ where: { id: deviceId }, data: { resortId } });
+
+    await this.auditService.log({
+      actorType: 'device',
+      actorId: deviceId,
+      orgId: device.orgId,
+      action: 'device.resort_rebound',
+      targetType: 'device',
+      targetId: deviceId,
+      metadata: { resortId },
+    });
+
+    return this.getDeviceMe(deviceId);
+  }
+
+  /**
+   * The one rule both write paths share: a resort binding belongs to a
+   * time-clock terminal, and names a live resort in the device's own org.
+   *
+   * Checked rather than merely documented — unlike `printerLink`, which no
+   * endpoint sets directly — because both callers here are writes, and a
+   * binding on a print bridge would be a field nothing reads and nobody can see
+   * to correct.
+   */
+  private async assertResortBindable(
+    orgId: string,
+    role: DeviceRole,
+    resortId: string,
+  ): Promise<void> {
+    if (role !== 'time_clock.terminal') {
+      throw new BadRequestException('Only a time clock terminal can be bound to a resort');
+    }
+    const resort = await this.prisma.resort.findFirst({
+      where: { id: resortId, orgId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!resort) throw new NotFoundException('Resort not found');
+  }
+
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 
@@ -259,6 +360,7 @@ export class DevicesService {
         org: true,
         attendedStation: { select: { id: true, name: true, code: true, deletedAt: true } },
         bridgedStation: { select: { id: true, name: true, code: true, deletedAt: true } },
+        resort: { select: { id: true, name: true, timeZone: true, deletedAt: true } },
       },
     });
 
@@ -287,6 +389,18 @@ export class DevicesService {
       /// Null until bound. A client that mints SKUs itself cannot do so without
       /// a station, and should say so rather than failing at the first item.
       station,
+      /**
+       * Null until someone places it. A retired resort reads as unbound rather
+       * than as a name nobody can act on — the tablet is genuinely somewhere
+       * the org no longer patrols, and should say so.
+       */
+      resort: device.resort && !device.resort.deletedAt
+        ? {
+            id: device.resort.id,
+            name: device.resort.name,
+            timeZone: device.resort.timeZone,
+          }
+        : null,
       sellerSiteUrl: this.config.get<string>('app.sellerSiteUrl')!,
       orgLogoUrl: device.org.logoUrl ?? null,
     };

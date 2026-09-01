@@ -157,6 +157,8 @@ export function DeviceCredentialList({
   role,
   canProvision,
   renderExtra,
+  provisionExtra,
+  provisionPayload,
   onEdit,
   onProvisioned,
 }: {
@@ -165,6 +167,15 @@ export function DeviceCredentialList({
   canProvision: boolean;
   /** Extra controls under a device row — the Printers page shows status here. */
   renderExtra?: (device: DeviceItem) => ReactNode;
+  /**
+   * An extra field in the provision form, and what it adds to the request.
+   *
+   * Two props rather than one render-prop because the caller owns the state
+   * either way: Time Tracking uses this to place a tablet at a resort before it
+   * is ever switched on, rather than provisioning it and then remembering.
+   */
+  provisionExtra?: ReactNode;
+  provisionPayload?: Record<string, string | undefined>;
   /**
    * Replaces the row's Edit. Given one, the caller owns editing entirely — a
    * bridge opens a screen where a secret rotation is one option among several,
@@ -207,7 +218,10 @@ export function DeviceCredentialList({
 
   const provisionMutation = useMutation({
     mutationFn: () =>
-      api.devices.provision(orgId, namesItself ? { role } : { name: provisionName, role }),
+      api.devices.provision(orgId, {
+        ...(namesItself ? { role } : { name: provisionName, role }),
+        ...(provisionPayload ?? {}),
+      }),
     onSuccess: (d) => {
       setProvisionName('');
       setShowProvisionForm(false);
@@ -275,6 +289,7 @@ export function DeviceCredentialList({
                   className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
                 />
               </label>
+              {provisionExtra}
               {/* "Network Printer Adapter" says nothing about what the box does
                   or what to do with it next. */}
               <p className="text-xs text-gray-500">{roleInfo?.hint}</p>
