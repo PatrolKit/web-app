@@ -802,3 +802,33 @@ model BootstrapPackage {
   @@unique([profileId, name])
   @@index([profileId])
 }
+
+/// Which published device image end users are offered.
+///
+/// One row, platform-wide. The bucket accumulates every image ever published,
+/// because an older one is occasionally the one somebody needs — but a customer
+/// choosing from a list of four is a customer picking wrong, so exactly one is
+/// promoted and that is the only one they ever see.
+///
+/// Promotion is deliberately separate from publishing: an image can be built,
+/// published, and flashed onto a bench card before anybody else is offered it.
+/// Nothing here validates that the named image exists; the catalogue lives in
+/// S3 and is the authority, so a promotion naming a deleted image resolves to
+/// nothing being offered rather than to a broken download.
+model DeviceImageRelease {
+  id String @id @default(cuid())
+
+  /// The image config's name, e.g. `patrolkit-device`.
+  name    String @db.VarChar(64)
+  version String @db.VarChar(64)
+
+  /// Who promoted it, for the same reason installs are journalled: this
+  /// decides what every new device in the field gets flashed with.
+  promotedBy String?  @db.VarChar(64)
+  promotedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, version])
+}

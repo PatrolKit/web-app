@@ -326,11 +326,25 @@ export const api = {
    * not a customer's.
    */
   deviceImages: {
-    list: () => request<import('./api.types').DeviceImageItem[]>('/device-images'),
+    /** The one promoted image, or null when nothing has been promoted. */
+    current: () => request<import('./api.types').DeviceImageItem | null>('/device-images/current'),
     /** Presigned and short-lived, so it is fetched at click time, never cached. */
     downloadUrl: (name: string, version: string) =>
       request<import('./api.types').DeviceImageDownload>(
         `/device-images/${encodeURIComponent(name)}/${encodeURIComponent(version)}/download`,
+      ),
+  },
+
+  deviceImagesAdmin: {
+    list: () => request<import('./api.types').AdminDeviceImageItem[]>('/admin/device-images'),
+    promote: (name: string, version: string) =>
+      request<import('./api.types').AdminDeviceImageItem[]>('/admin/device-images/promote', {
+        method: 'POST',
+        body: JSON.stringify({ name, version }),
+      }),
+    downloadUrl: (name: string, version: string) =>
+      request<import('./api.types').DeviceImageDownload>(
+        `/admin/device-images/${encodeURIComponent(name)}/${encodeURIComponent(version)}/download`,
       ),
   },
 

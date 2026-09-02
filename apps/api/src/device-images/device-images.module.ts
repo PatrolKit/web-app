@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DeviceImagesService } from './device-images.service';
 import { DeviceImagesController } from './device-images.controller';
+import { DeviceImagesAdminController } from './device-images-admin.controller';
 
 /**
  * Where a device image comes from.
@@ -10,7 +11,7 @@ import { DeviceImagesController } from './device-images.controller';
  * for every org and every module.
  */
 @Module({
-  controllers: [DeviceImagesController],
+  controllers: [DeviceImagesController, DeviceImagesAdminController],
   providers: [DeviceImagesService],
   exports: [DeviceImagesService],
 })

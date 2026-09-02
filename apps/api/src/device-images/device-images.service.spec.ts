@@ -6,9 +6,25 @@ import { DeviceImagesService } from './device-images.service';
  * be read looks exactly like a catalogue with nothing in it, and both render an
  * empty page unless the service distinguishes them.
  */
-function serviceWith(index: unknown, bucket = 'patrolkit-images') {
+function fakePrisma(release: { name: string; version: string } | null = null) {
+  return {
+    deviceImageRelease: {
+      findFirst: async () =>
+        release && { ...release, promotedAt: new Date('2026-09-02T00:00:00Z'), promotedBy: 'u1' },
+      deleteMany: async () => ({ count: 0 }),
+      create: async () => ({}),
+    },
+    $transaction: async (ops: unknown[]) => ops,
+  };
+}
+
+function serviceWith(
+  index: unknown,
+  bucket = 'patrolkit-images',
+  release: { name: string; version: string } | null = null,
+) {
   const config = { get: (k: string) => (k === 'app.deviceImageBucket' ? bucket : 'us-east-2') };
-  const svc = new DeviceImagesService(config as never);
+  const svc = new DeviceImagesService(config as never, fakePrisma(release) as never);
   // The S3 client is created in the constructor; replace it rather than reach
   // for the network.
   (svc as unknown as { client: unknown }).client = {
@@ -45,7 +61,7 @@ describe('DeviceImagesService', () => {
   });
 
   it('returns nothing, rather than failing, when no bucket is configured', async () => {
-    const svc = new DeviceImagesService({ get: () => '' } as never);
+    const svc = new DeviceImagesService({ get: () => '' } as never, fakePrisma() as never);
     await expect(svc.list()).resolves.toEqual([]);
     expect(svc.configured).toBe(false);
   });
@@ -61,6 +77,33 @@ describe('DeviceImagesService', () => {
   it('reports an unreachable catalogue rather than an empty one', async () => {
     await expect(serviceWith(new Error('AccessDenied')).list())
       .rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('offers nothing when nothing has been promoted', async () => {
+    await expect(serviceWith(VALID).current()).resolves.toBeNull();
+  });
+
+  it('offers the promoted image', async () => {
+    const current = await serviceWith(VALID, 'patrolkit-images', {
+      name: 'patrolkit-device',
+      version: '1.0.0',
+    }).current();
+    expect(current?.version).toBe('1.0.0');
+  });
+
+  it('offers nothing when the promoted image has left the catalogue', async () => {
+    // Rather than quietly substituting the newest, which would hand customers
+    // an image nobody chose — the thing promotion exists to prevent.
+    const current = await serviceWith(VALID, 'patrolkit-images', {
+      name: 'patrolkit-device',
+      version: '9.9.9',
+    }).current();
+    expect(current).toBeNull();
+  });
+
+  it('refuses to promote a version that is not published', async () => {
+    await expect(serviceWith(VALID).promote('patrolkit-device', '9.9.9', 'u1'))
+      .rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('refuses to presign an image that is not in the index', async () => {

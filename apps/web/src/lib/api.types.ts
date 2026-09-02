@@ -642,6 +642,13 @@ export interface DeviceImageItem {
   notes: string;
 }
 
+/** An image as Platform Admin sees it, with whether it is the promoted one. */
+export interface AdminDeviceImageItem extends DeviceImageItem {
+  promoted: boolean;
+  promotedAt: string | null;
+  promotedBy: string | null;
+}
+
 export interface DeviceImageDownload {
   url: string;
   expiresInSec: number;

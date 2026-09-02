@@ -45,9 +45,137 @@ export default function DeviceSoftwareTab() {
 
   return (
     <div className="space-y-8">
+      <DeviceImages />
       <Repositories repositories={repositories} />
       <Profiles repositories={repositories} profiles={profiles} />
     </div>
+  );
+}
+
+// ─── Device images ───────────────────────────────────────────────────────────
+
+/**
+ * Which image customers are offered.
+ *
+ * The bucket keeps every image ever published, because an older one is
+ * occasionally the one somebody needs. Customers see exactly one — the promoted
+ * version — so choosing it is a decision made here rather than a guess made by
+ * whoever is standing at a lift shack with an SD card.
+ */
+function DeviceImages() {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const { data: images = [], isLoading } = useQuery({
+    queryKey: ['admin-device-images'],
+    queryFn: () => api.deviceImagesAdmin.list(),
+  });
+
+  const promote = useMutation({
+    mutationFn: ({ name, version }: { name: string; version: string }) =>
+      api.deviceImagesAdmin.promote(name, version),
+    onSuccess: () => {
+      setError(null);
+      // Both views: this changes what every customer is offered.
+      void qc.invalidateQueries({ queryKey: ['admin-device-images'] });
+      void qc.invalidateQueries({ queryKey: ['device-image-current'] });
+    },
+    onError: () => setError('Could not change the released image.'),
+  });
+
+  // Administrators can download any build, promoted or not, to check it before
+  // customers are offered it.
+  async function download(name: string, version: string) {
+    setBusy(`${name}@${version}`);
+    try {
+      const { url } = await api.deviceImagesAdmin.downloadUrl(name, version);
+      window.location.href = url;
+    } catch {
+      setError('Could not start the download.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (isLoading) return <p className="text-gray-400">Loading images…</p>;
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-white font-medium">Device image</h2>
+        <p className="text-xs text-gray-400 mt-1">
+          The image customers download to set up a device. Exactly one is released at a
+          time; publishing a new build does not release it until you say so.
+        </p>
+      </div>
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+
+      {images.length === 0 ? (
+        <p className="text-sm text-gray-400">
+          No images have been published yet.
+        </p>
+      ) : (
+        <>
+          {!images.some((i) => i.promoted) && (
+            // Worth saying plainly: until something is released, the download
+            // section simply does not appear for customers.
+            <p className="text-xs text-amber-400">
+              Nothing is released. Customers are not offered a download.
+            </p>
+          )}
+          <ul className="space-y-2">
+            {images.map((img) => (
+              <li
+                key={`${img.name}@${img.version}`}
+                className={`flex flex-wrap items-center justify-between gap-3 rounded px-3 py-2 ${
+                  img.promoted ? 'bg-blue-900/30 border border-blue-700' : 'bg-gray-800/50'
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm">
+                    {img.name} {img.version}
+                    {img.promoted && (
+                      <span className="ml-2 rounded bg-blue-600 px-1.5 py-0.5 text-[11px]">
+                        Released
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {(img.sizeBytes / 1024 / 1024).toFixed(0)} MB ·{' '}
+                    {new Date(img.builtAt).toLocaleDateString()}
+                    {img.gitSha && ` · ${img.gitSha}`}
+                  </p>
+                  {img.notes && <p className="text-xs text-gray-400 mt-0.5">{img.notes}</p>}
+                  <p className="text-[11px] text-gray-500 font-mono break-all mt-1">
+                    sha256 {img.sha256}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void download(img.name, img.version)}
+                    disabled={busy === `${img.name}@${img.version}`}
+                    className="rounded border border-gray-600 px-2 py-1 text-xs hover:bg-gray-700 disabled:opacity-50"
+                  >
+                    {busy === `${img.name}@${img.version}` ? 'Preparing…' : 'Download'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => promote.mutate({ name: img.name, version: img.version })}
+                    disabled={img.promoted || promote.isPending}
+                    className="rounded bg-blue-600 px-2 py-1 text-xs hover:bg-blue-500 disabled:opacity-40"
+                  >
+                    {img.promoted ? 'Released' : 'Release'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
   );
 }
 

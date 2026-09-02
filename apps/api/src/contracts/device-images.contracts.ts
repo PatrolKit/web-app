@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { createZodDto } from 'nestjs-zod';
 
 /**
  * Device images, as published to S3 by the device-image repo.
@@ -32,7 +33,21 @@ export const DeviceImageIndexSchema = z.object({
 /** What the browser gets: the same entry minus the S3 key. */
 export const DeviceImageResponseSchema = DeviceImageEntrySchema.omit({ key: true });
 
+/** An entry as an administrator sees it, with whether it is the promoted one. */
+export const AdminDeviceImageSchema = DeviceImageResponseSchema.extend({
+  promoted: z.boolean(),
+  promotedAt: z.string().nullable(),
+  promotedBy: z.string().nullable(),
+});
+
+export const PromoteImageSchema = z.object({
+  name: z.string().min(1).max(64),
+  version: z.string().min(1).max(64),
+});
+
 export type DeviceImageEntry = z.infer<typeof DeviceImageEntrySchema>;
+export type AdminDeviceImage = z.infer<typeof AdminDeviceImageSchema>;
+export type PromoteImageInput = z.infer<typeof PromoteImageSchema>;
 export type DeviceImageResponse = z.infer<typeof DeviceImageResponseSchema>;
 
 export interface DeviceImageDownload {
@@ -43,3 +58,5 @@ export interface DeviceImageDownload {
   sha256: string;
   sizeBytes: number;
 }
+
+export class PromoteImageDto extends createZodDto(PromoteImageSchema) {}
