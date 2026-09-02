@@ -217,6 +217,8 @@ function StationRow({
     refetchInterval: 10_000,
   });
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
   const test = useMutation({ mutationFn: () => api.skiSwap.testStation(orgId, station.id) });
   const clear = useMutation({
     mutationFn: () => api.skiSwap.clearStationQueue(orgId, station.id),
@@ -273,7 +275,7 @@ function StationRow({
           {canAdmin && (
             <button
               className="text-xs px-2 py-1 bg-surface-100 hover:bg-red-900/40 text-gray-400 hover:text-red-300 rounded"
-              onClick={onDelete}
+              onClick={() => setConfirmingDelete(true)}
               title="Retire this station"
             >
               <FontAwesomeIcon icon={faTrashDuo} />
@@ -281,6 +283,37 @@ function StationRow({
           )}
         </div>
       </div>
+
+      {confirmingDelete && (
+        // In the row rather than a browser confirm(): what is lost is specific
+        // to this station — its code, and whatever hardware is bound to it —
+        // and none of that fits in a dialog nobody reads.
+        <div className="bg-red-950/30 border border-red-900 rounded p-3 space-y-2">
+          <p className="text-sm text-white">Retire {station.name}?</p>
+          <p className="text-xs text-gray-400">
+            Its code <span className="font-mono">{station.code}</span> stays claimed, so SKUs
+            already printed keep meaning what they say — but no new station can use that
+            letter.{' '}
+            {station.attendantDeviceId || station.bridgeDeviceId
+              ? 'Its hardware is released and can be bound elsewhere; nothing is revoked.'
+              : 'No hardware is bound to it.'}
+          </p>
+          <div className="flex gap-2">
+            <button
+              className="text-xs px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded"
+              onClick={() => { setConfirmingDelete(false); onDelete(); }}
+            >
+              Retire it
+            </button>
+            <button
+              className="text-xs px-3 py-1.5 text-gray-400 hover:text-white"
+              onClick={() => setConfirmingDelete(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Only the slots this kind uses. A self-service station showed an empty
           "Staff tablet" dropdown whose real effect — filling it converts the
