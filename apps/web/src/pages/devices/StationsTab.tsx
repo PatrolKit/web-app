@@ -65,6 +65,7 @@ export default function StationsTab({
   const qc = useQueryClient();
   const [adding, setAdding] = useState<StationKind | null>(null);
   const [showQr, setShowQr] = useState<CheckinStationRecord | null>(null);
+  const [retiring, setRetiring] = useState<CheckinStationRecord | null>(null);
 
   const { data: stations = [], isLoading } = useQuery({
     queryKey: ['ski-swap/stations', orgId],
@@ -180,7 +181,7 @@ export default function StationsTab({
     onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) =>
       patchStation.mutate({ id, data }),
     onProvisionBridge: (stationId: string) => provisionBridge.mutate({ stationId }),
-    onRemove: (station: CheckinStationRecord) => removeStation.mutate(station),
+    onConfirmRetire: (station: CheckinStationRecord) => setRetiring(station),
   };
 
   return (
@@ -284,6 +285,14 @@ export default function StationsTab({
 
       {showQr && swapId && (
         <QrModal orgId={orgId} station={showQr} swapId={swapId} onClose={() => setShowQr(null)} />
+      )}
+
+      {retiring && (
+        <RetireModal
+          station={retiring}
+          onCancel={() => setRetiring(null)}
+          onConfirm={() => { removeStation.mutate(retiring); setRetiring(null); }}
+        />
       )}
     </div>
   );
@@ -403,7 +412,7 @@ type RowProps = {
   bridges: DeviceItem[];
   onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) => void;
   onProvisionBridge: (stationId: string) => void;
-  onRemove: (station: CheckinStationRecord) => void;
+  onConfirmRetire: (station: CheckinStationRecord) => void;
 };
 
 function SelfStationRow({
@@ -414,7 +423,7 @@ function SelfStationRow({
   bridges,
   onPatch,
   onProvisionBridge,
-  onRemove,
+  onConfirmRetire,
   onShowQr,
 }: RowProps & { station: CheckinStationRecord; onShowQr: () => void }) {
   return (
@@ -434,7 +443,7 @@ function SelfStationRow({
           orgId={orgId}
           station={station}
           canAdmin={canAdmin}
-          onRemove={onRemove}
+          onConfirmRetire={onConfirmRetire}
           extra={
             <button
               className={actionClass}
@@ -461,7 +470,7 @@ function StaffStationRow({
   devices,
   onPatch,
   onProvisionBridge,
-  onRemove,
+  onConfirmRetire,
   onReplaceTablet,
   onRotateSecret,
   working,
@@ -509,7 +518,12 @@ function StaffStationRow({
       />
       <StatusCell orgId={orgId} station={station} />
       <td className="py-3 align-top text-right whitespace-nowrap">
-        <RowActions orgId={orgId} station={station} canAdmin={canAdmin} onRemove={onRemove} />
+        <RowActions
+          orgId={orgId}
+          station={station}
+          canAdmin={canAdmin}
+          onConfirmRetire={onConfirmRetire}
+        />
       </td>
     </tr>
   );
@@ -523,41 +537,16 @@ function RowActions({
   orgId,
   station,
   canAdmin,
-  onRemove,
+  onConfirmRetire,
   extra,
 }: {
   orgId: string;
   station: CheckinStationRecord;
   canAdmin: boolean;
-  onRemove: (station: CheckinStationRecord) => void;
+  onConfirmRetire: (station: CheckinStationRecord) => void;
   extra?: React.ReactNode;
 }) {
-  const [confirming, setConfirming] = useState(false);
   const test = useMutation({ mutationFn: () => api.skiSwap.testStation(orgId, station.id) });
-
-  if (confirming) {
-    return (
-      <div className="text-left bg-red-950/30 border border-red-900 rounded p-2 space-y-1 inline-block">
-        <p className="text-xs text-white">Retire {station.name}?</p>
-        <p className="text-xs text-gray-400 max-w-[16rem]">
-          Code <span className="font-mono">{station.code}</span> stays claimed, so tags already
-          printed keep meaning what they say.
-          {station.attendantDeviceId ? ' Its iPad is revoked with it.' : ''}
-        </p>
-        <div className="flex gap-2 pt-1">
-          <button
-            className="text-xs px-2 py-1 bg-red-700 hover:bg-red-600 text-white rounded"
-            onClick={() => { setConfirming(false); onRemove(station); }}
-          >
-            Retire it
-          </button>
-          <button className="text-xs px-2 py-1 text-gray-400 hover:text-white" onClick={() => setConfirming(false)}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <span className="space-x-1">
@@ -573,13 +562,71 @@ function RowActions({
       {canAdmin && (
         <button
           className="text-xs px-2 py-1 bg-surface-100 hover:bg-red-900/40 text-gray-400 hover:text-red-300 rounded"
-          onClick={() => setConfirming(true)}
+          onClick={() => onConfirmRetire(station)}
           title="Retire this station"
         >
           <FontAwesomeIcon icon={faTrashDuo} />
         </button>
       )}
     </span>
+  );
+}
+
+/**
+ * Retiring a station, asked in a dialog rather than in the row.
+ *
+ * It lived in the last table cell, where it was clipped by the column and
+ * pushed a horizontal scrollbar under the table — a warning about something
+ * irreversible, cut off mid-sentence. What is being given up needs room to be
+ * read: the code letter, and the iPad that goes with it.
+ */
+function RetireModal({
+  station,
+  onCancel,
+  onConfirm,
+}: {
+  station: CheckinStationRecord;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-surface-50 border border-gray-700 rounded-lg p-5 max-w-md w-full space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-white font-medium">Retire {station.name}?</h3>
+
+        <div className="space-y-2 text-sm text-gray-400">
+          <p>
+            Its code <span className="font-mono text-gray-200">{station.code}</span> stays
+            claimed, so tags already printed here keep meaning what they say. No new station
+            can use that letter — an organisation has 32 and they are never reused.
+          </p>
+          {station.attendantDeviceId && (
+            <p>Its iPad is revoked at the same time and will stop being able to check anyone in.</p>
+          )}
+          {station.bridgeDeviceId && (
+            <p>Its print bridge is released and can be bound to another station.</p>
+          )}
+        </div>
+
+        <div className="flex gap-2 justify-end">
+          <button className="text-sm text-gray-400 hover:text-white px-3 py-2" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            className="bg-red-700 hover:bg-red-600 text-white px-4 py-2 rounded text-sm"
+            onClick={onConfirm}
+          >
+            Retire it
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
