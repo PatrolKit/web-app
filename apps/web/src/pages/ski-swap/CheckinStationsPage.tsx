@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../../lib/api';
 import StationsTab from '../devices/StationsTab';
-import { DeviceCredentialList } from '../devices/DeviceCredentials';
-import type { DeviceRole } from '../../lib/api.types';
+import { DeviceCredentialList, ProvisioningCodeCard } from '../devices/DeviceCredentials';
+import BridgeEditModal from './BridgeEditModal';
+import type { AddStationResult } from '../devices/AddStationFlow';
+import type { DeviceItem, DeviceRole, ProvisionedDevice, SwapPrinterRecord } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
 /**
@@ -38,6 +41,52 @@ export default function CheckinStationsPage() {
     staleTime: 60_000,
   });
 
+  // Needed only to hand a brand-new bridge to its setup screen, which asks
+  // which printer it drives.
+  const { data: printers = [] } = useQuery({
+    queryKey: ['ski-swap/printers', orgId],
+    queryFn: () => api.skiSwap.listPrinters(orgId),
+    enabled: !!orgId,
+    staleTime: 60_000,
+  });
+
+  /**
+   * A bridge provisioned inside the station flow, which has credentials and
+   * nothing else.
+   *
+   * It goes to the same screen the Printers page uses, rather than being left
+   * bound and unconfigured: a board that has never had Wi-Fi looks exactly like
+   * a working one on this page, and only stops looking like one at a venue.
+   */
+  const [newBridge, setNewBridge] = useState<DeviceItem | null>(null);
+
+  /**
+   * A tablet provisioned inside the station flow, and its one-time secret.
+   *
+   * Held here because the server shows a client secret exactly once: the list
+   * below only reveals secrets it minted itself, so a tablet created by the
+   * flow would otherwise be issued credentials nobody ever saw and be
+   * unprovisionable without a rotation.
+   */
+  const [newTablet, setNewTablet] = useState<ProvisionedDevice | null>(null);
+
+  function handleStationAdded(result: AddStationResult) {
+    if (result.newTablet) setNewTablet(result.newTablet);
+    if (result.newBridge) {
+      const d = result.newBridge;
+      setNewBridge({
+        ...d,
+        lastSeenAt: null,
+        printerLink: null,
+        printerLinkAt: null,
+        printerName: null,
+        stationName: null,
+        resortId: null,
+        resortName: null,
+      } as DeviceItem);
+    }
+  }
+
   return (
     <div className="space-y-8">
       <section className="space-y-3">
@@ -45,9 +94,7 @@ export default function CheckinStationsPage() {
           <h2 className="text-white font-medium">Check-in stations</h2>
           <p className="text-xs text-gray-500">
             Where sellers check in. A station owns the one-character code that appears in
-            every SKU printed there, and reaches its printer through the bridge bound to
-            it. Bind a staff tablet and it becomes a staffed counter; leave it without one
-            and sellers scan its QR code themselves.
+            every SKU printed there, and reaches its printer through the bridge bound to it.
           </p>
         </div>
         <StationsTab
@@ -55,16 +102,29 @@ export default function CheckinStationsPage() {
           devices={devices}
           swapId={activeSwaps[0]?.id ?? null}
           canAdmin={canAdmin}
+          onStationAdded={handleStationAdded}
         />
+
+        {newTablet && (
+          <ProvisioningCodeCard
+            orgId={orgId}
+            deviceId={newTablet.id}
+            clientId={newTablet.clientId}
+            secret={newTablet.clientSecret}
+            sinceLastSeenAt={null}
+            onDismiss={() => setNewTablet(null)}
+          />
+        )}
       </section>
 
       <section className="space-y-3">
         <div>
-          <h2 className="text-white font-medium">Staff tablets</h2>
+          <h2 className="text-white font-medium">Tablet credentials</h2>
           <p className="text-xs text-gray-500">
-            Tablets provisioned for this org. Bind one to a station above to put it to work —
-            until then it holds credentials and nothing else. Bridges live on the Printers
-            page, with the printer each one drives.
+            Every staff tablet in this org, wherever it is stationed — this is where a
+            secret is rotated or a lost tablet revoked. Tablets are normally set up with
+            their station above; one listed here with no station is waiting to be given
+            one. Bridges live on the Printers page, with the printer each one drives.
           </p>
         </div>
         <DeviceCredentialList
@@ -73,6 +133,17 @@ export default function CheckinStationsPage() {
           canProvision={canAdmin}
         />
       </section>
+
+      {newBridge && (
+        <BridgeEditModal
+          orgId={orgId}
+          bridge={newBridge}
+          printers={printers}
+          boundPrinter={printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === newBridge.id)}
+          justProvisioned
+          onClose={() => setNewBridge(null)}
+        />
+      )}
     </div>
   );
 }

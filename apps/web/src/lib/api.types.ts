@@ -9,14 +9,17 @@
  */
 export const DEVICE_ROLES = [
   {
+    // "Station" is the counter, not the tablet. Calling the hardware a station
+    // too put two different things behind one word on the same page, on a
+    // button that provisions a tablet.
     value: 'ski_swap.staff_check_in',
-    label: 'Staff Check-In Station',
-    hint: 'A tablet staff use to check sellers in. Assign it to a station once provisioned.',
+    label: 'Staff Tablet',
+    hint: 'A tablet staff use to check sellers in. Normally set up with its station, on the Check-in page.',
   },
   {
     value: 'ski_swap.print_bridge',
     label: 'Print Bridge',
-    hint: 'An ESP-32 that bridges wifi to a Phomemo over Bluetooth. Assign it to a station once provisioned.',
+    hint: 'An ESP-32 that bridges wifi to a Phomemo over Bluetooth. Set it up over Bluetooth once provisioned.',
   },
   {
     value: 'time_clock.terminal',

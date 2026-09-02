@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import AddStationFlow from './AddStationFlow';
+import type { AddStationResult } from './AddStationFlow';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -45,14 +47,20 @@ export default function StationsTab({
   devices,
   swapId,
   canAdmin,
+  onStationAdded,
 }: {
   orgId: string;
   devices: DeviceItem[];
   swapId: string | null;
   canAdmin: boolean;
+  /**
+   * Handed anything the flow just provisioned. A new tablet has credentials
+   * nobody has seen yet and a new bridge has not been near a Bluetooth radio,
+   * so both need a screen this component does not own.
+   */
+  onStationAdded: (result: AddStationResult) => void;
 }) {
   const qc = useQueryClient();
-  const [newName, setNewName] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [showQr, setShowQr] = useState<CheckinStationRecord | null>(null);
 
@@ -63,11 +71,6 @@ export default function StationsTab({
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['ski-swap/stations', orgId] });
-
-  const createStation = useMutation({
-    mutationFn: () => api.skiSwap.createStation(orgId, newName.trim()),
-    onSuccess: () => { setNewName(''); setShowAddForm(false); void invalidate(); },
-  });
 
   const patchStation = useMutation({
     mutationFn: (v: { id: string; data: Parameters<typeof api.skiSwap.patchStation>[2] }) =>
@@ -112,7 +115,7 @@ export default function StationsTab({
       {canAdmin && (
         <div className="flex justify-end">
           <button
-            onClick={() => { setShowAddForm(true); setNewName(''); createStation.reset(); }}
+            onClick={() => setShowAddForm(true)}
             className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
           >
             + Add station
@@ -121,56 +124,33 @@ export default function StationsTab({
       )}
 
       {showAddForm && canAdmin && (
-        <form
-          onSubmit={(e) => { e.preventDefault(); createStation.mutate(); }}
-          className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3"
-        >
-          <h3 className="text-white font-medium">New station</h3>
-          <label className="block">
-            <span className="block text-xs text-gray-400 mb-1">Name</span>
-            <input
-              autoFocus
-              className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-              placeholder="e.g. Station 3"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-            />
-          </label>
-          {/* The hardware comes after, on the row: a station is the durable
-              thing and outlives whichever boxes are serving it today. */}
-          <p className="text-xs text-gray-500">
-            Bind its tablet or bridge once it exists. A station with no tablet is
-            self-service — sellers scan its QR code.
-          </p>
-          <div className="flex gap-2 justify-end">
-            <button
-              type="button"
-              onClick={() => { setShowAddForm(false); createStation.reset(); }}
-              className="text-sm text-gray-400 hover:text-white px-3 py-2"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!newName.trim() || createStation.isPending}
-              className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm disabled:opacity-40"
-            >
-              {createStation.isPending ? 'Adding…' : 'Add station'}
-            </button>
-          </div>
-        </form>
+        <AddStationFlow
+          orgId={orgId}
+          // Only hardware nobody is using: a tablet already at a counter is not
+          // on offer, and the server would refuse it anyway.
+          tablets={attendants.filter((d) => !stations.some((st) => st.attendantDeviceId === d.id))}
+          bridges={bridges.filter((d) => !stations.some((st) => st.bridgeDeviceId === d.id))}
+          onCancel={() => setShowAddForm(false)}
+          onDone={(result) => {
+            setShowAddForm(false);
+            void invalidate();
+            qc.invalidateQueries({ queryKey: ['devices', orgId] });
+            onStationAdded(result);
+          }}
+        />
       )}
 
-      {(createStation.error || provisionInto.error || patchStation.error) && (
+      {(provisionInto.error || patchStation.error) && (
         <p className="text-sm text-red-400 bg-red-950/40 border border-red-900 rounded px-3 py-2">
-          {((createStation.error ?? provisionInto.error ?? patchStation.error) as Error).message}
+          {((provisionInto.error ?? patchStation.error) as Error).message}
         </p>
       )}
 
       {stations.length === 0 ? (
         <p className="text-sm text-gray-500">
-          No check-in stations yet. A station is a QR code and a bridge — sellers scan the
-          code and their tags come out of whichever printer that bridge drives.
+          No check-in stations yet. A station is a counter sellers check in at — either
+          one they use themselves by scanning its QR code, or one a volunteer works with
+          a tablet.
         </p>
       ) : (
         <ul className="space-y-3">
@@ -302,20 +282,26 @@ function StationRow({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <SlotPicker
-          label="Staff tablet"
-          emptyLabel="— none (self-service) —"
-          value={station.attendantDeviceId}
-          options={attendants}
-          canAdmin={canAdmin}
-          onChange={(id) => onPatch({ attendantDeviceId: id })}
-          onProvision={(name) => onProvision('ski_swap.staff_check_in', name)}
-          provisionLabel="New tablet"
-        />
+      {/* Only the slots this kind uses. A self-service station showed an empty
+          "Staff tablet" dropdown whose real effect — filling it converts the
+          station — was invisible until you did it. Conversion is its own action
+          below, where it can be named. */}
+      <div className={station.kind === 'staffed' ? 'grid grid-cols-2 gap-3' : ''}>
+        {station.kind === 'staffed' && (
+          <SlotPicker
+            label="Staff tablet"
+            emptyLabel="— none —"
+            value={station.attendantDeviceId}
+            options={attendants}
+            canAdmin={canAdmin}
+            onChange={(id) => onPatch({ attendantDeviceId: id })}
+            onProvision={(name) => onProvision('ski_swap.staff_check_in', name)}
+            provisionLabel="New tablet"
+          />
+        )}
 
         <SlotPicker
-          label={station.kind === 'staffed' ? 'Bridge (optional)' : 'Bridge'}
+          label={station.kind === 'staffed' ? 'Print bridge (optional)' : 'Print bridge'}
           emptyLabel="— none —"
           value={station.bridgeDeviceId}
           options={bridges}
@@ -333,9 +319,45 @@ function StationRow({
           : station.bridgeDeviceId
             ? 'That bridge has no printer yet — give it one on the Printers page.'
             : station.kind === 'staffed'
-              ? 'No bridge, so no printer through the queue — the tablet prints over Bluetooth.'
+              // Stated as the working configuration it is, rather than as a gap:
+              // a staffed counter needs no bridge.
+              ? 'No bridge — this tablet prints over Bluetooth.'
               : 'A seller has no way to get a tag until this station has a bridge.'}
       </p>
+
+      {canAdmin && (
+        <p className="text-xs text-gray-500">
+          {station.kind === 'staffed' ? (
+            <>
+              Staffed — a volunteer checks sellers in here.{' '}
+              <button
+                className="text-brand-500 hover:underline"
+                onClick={() => onPatch({ attendantDeviceId: null })}
+                title="Releases the tablet; sellers then scan this station's QR code themselves"
+              >
+                Make it self-service
+              </button>
+            </>
+          ) : (
+            <>
+              Self-service — sellers scan this station's QR code.{' '}
+              {attendants.length > 0 ? (
+                <button
+                  className="text-brand-500 hover:underline"
+                  onClick={() => onPatch({ attendantDeviceId: attendants[0].id })}
+                  title={`Puts ${attendants[0].name} at this counter`}
+                >
+                  Staff it with {attendants[0].name}
+                </button>
+              ) : (
+                <span className="text-gray-600">
+                  Set up a tablet to staff it.
+                </span>
+              )}
+            </>
+          )}
+        </p>
+      )}
 
       {queue && (
         <div className="flex items-center gap-4 text-xs text-gray-400 border-t border-gray-800 pt-3">
