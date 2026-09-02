@@ -51,7 +51,12 @@ export function MutationError({ error }: { error: unknown }) {
  * has not seen, and it cannot be dismissed quietly while the secret still
  * matters.
  */
-function ProvisioningCodeCard({
+/**
+ * Exported because a secret is shown exactly once. Anything that provisions a
+ * device outside this list — the station setup flow does — has to be able to
+ * show the same card, or the credentials are minted and immediately lost.
+ */
+export function ProvisioningCodeCard({
   orgId,
   deviceId,
   clientId,
