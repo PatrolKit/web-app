@@ -1,0 +1,159 @@
+import { useState } from 'react';
+import { api } from '../../lib/api';
+import type { DeviceItem, ProvisionedDevice } from '../../lib/api.types';
+
+const ATTENDANT_ROLE = 'ski_swap.staff_check_in' as const;
+const BRIDGE_ROLE = 'ski_swap.print_bridge' as const;
+
+export type StationKind = 'self_service' | 'staffed';
+
+/** What the caller still has to show once the writes are done. */
+export type AddStationResult = {
+  stationId: string;
+  /** Provisioned here; its secret is shown once and has not been shown yet. */
+  newTablet: ProvisionedDevice | null;
+  /** Provisioned here; it has not been near a Bluetooth radio yet. */
+  newBridge: ProvisionedDevice | null;
+};
+
+const inputClass =
+  'w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm';
+
+/** Sentinel for "make me a new one", distinct from an id and from unset. */
+const NEW = '__new__';
+
+/**
+ * Adding one station of one kind.
+ *
+ * The two kinds are separate tables with separate buttons, so this form never
+ * asks which — it is told, and asks only for what that kind needs. A staffed
+ * station always provisions its own iPad: the station and the tablet are one
+ * thing being set up, and a tablet bound to nothing cannot check anyone in.
+ */
+export default function AddStationForm({
+  orgId,
+  kind,
+  bridges,
+  onCancel,
+  onDone,
+}: {
+  orgId: string;
+  kind: StationKind;
+  /** Unbound bridges only: one already driving a counter is not on offer. */
+  bridges: DeviceItem[];
+  onCancel: () => void;
+  onDone: (result: AddStationResult) => void;
+}) {
+  const staffed = kind === 'staffed';
+  const [name, setName] = useState('');
+  const [bridgeChoice, setBridgeChoice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  // A self-service station without a bridge is one a seller cannot use. The
+  // server has no opinion — the kind is derived from the hardware — so the
+  // requirement lives here.
+  const ready = !!name.trim() && (staffed || !!bridgeChoice);
+
+  async function submit() {
+    setBusy(true);
+    setError('');
+    try {
+      // The station first, so everything after has something to bind to. A
+      // failure part-way leaves real hardware in the list rather than nothing.
+      const station = await api.skiSwap.createStation(orgId, name.trim());
+
+      let newTablet: ProvisionedDevice | null = null;
+      let newBridge: ProvisionedDevice | null = null;
+
+      if (staffed) {
+        newTablet = await api.devices.provision(orgId, {
+          name: `${name.trim()} iPad`,
+          role: ATTENDANT_ROLE,
+        });
+        await api.skiSwap.patchStation(orgId, station.id, { attendantDeviceId: newTablet.id });
+      }
+
+      if (bridgeChoice) {
+        const bridgeId =
+          bridgeChoice === NEW
+            ? (newBridge = await api.devices.provision(orgId, { role: BRIDGE_ROLE })).id
+            : bridgeChoice;
+        await api.skiSwap.patchStation(orgId, station.id, { bridgeDeviceId: bridgeId });
+      }
+
+      onDone({ stationId: station.id, newTablet, newBridge });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not set that station up');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3">
+      <h3 className="text-white font-medium">
+        New {staffed ? 'staff' : 'self'} check-in station
+      </h3>
+
+      <label className="block">
+        <span className="block text-xs text-gray-400 mb-1">Name</span>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Front counter"
+          className={inputClass}
+        />
+      </label>
+
+      <label className="block">
+        <span className="block text-xs text-gray-400 mb-1">
+          {staffed ? 'Print bridge (optional)' : 'Print bridge'}
+        </span>
+        <select
+          value={bridgeChoice}
+          onChange={(e) => setBridgeChoice(e.target.value)}
+          className={inputClass}
+        >
+          {staffed ? (
+            <option value="">No bridge — the iPad prints over Bluetooth</option>
+          ) : (
+            <option value="">Choose a bridge…</option>
+          )}
+          <option value={NEW}>Set up a new bridge</option>
+          {bridges.map((b) => (
+            <option key={b.id} value={b.id}>{b.printerName ?? b.name}</option>
+          ))}
+        </select>
+      </label>
+
+      {bridgeChoice === NEW && (
+        <p className="text-xs text-gray-500">
+          Its Wi-Fi and printer are set next, over Bluetooth — you will need the board to hand.
+        </p>
+      )}
+
+      {staffed && (
+        <p className="text-xs text-gray-500">
+          A provisioning code is shown once this is created. Scan it with the iPad that will
+          live at this counter.
+        </p>
+      )}
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      <div className="flex gap-2 justify-end">
+        <button onClick={onCancel} className="text-sm text-gray-400 hover:text-white px-3 py-2">
+          Cancel
+        </button>
+        <button
+          onClick={submit}
+          disabled={!ready || busy}
+          className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm disabled:opacity-40"
+        >
+          {busy ? 'Setting up…' : 'Add station'}
+        </button>
+      </div>
+    </div>
+  );
+}
