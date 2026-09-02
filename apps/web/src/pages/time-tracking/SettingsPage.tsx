@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import DevicePinCard from '../../components/DevicePinCard';
 import type { TimeTrackingContext } from './TimeTrackingLayout';
 
 export default function SettingsPage() {
@@ -37,6 +38,15 @@ export default function SettingsPage() {
   return (
     <div className="space-y-8">
       {error && <p className="text-red-400 text-sm">{error}</p>}
+
+      <section className="max-w-lg">
+        <DevicePinCard
+          queryKey={['time-clock/device-pin', orgId]}
+          get={() => api.timeClock.getDevicePin(orgId)}
+          set={(devicePin) => api.timeClock.setDevicePin(orgId, devicePin)}
+          deviceLabel="time clock iPads"
+        />
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-white font-semibold">Automatic clock-out</h2>

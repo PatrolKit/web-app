@@ -1,7 +1,22 @@
 # Plan 14 — The device PIN moves to the web
 
-> **Status:** Proposed.
+> **Status:** Implemented.
 > **Touches:** `server` (api + web), `patrolkit_ios`.
+>
+> Built as written, with three departures worth recording:
+>
+> - **The PIN contracts live in `devices.contracts.ts`**, not duplicated into
+>   each module's file. Both modules' PINs are the same thing — a gate on a
+>   screen, on a piece of hardware — and only the answer differs.
+> - **`UpdateSkiSwapSettingsSchema` keeps its single required field.** §4.1
+>   proposed making it partial with a `refine`, which with one field is an
+>   elaborate way of writing "required" and leaves the service holding a
+>   `number | undefined` it has to assert away. The route still became a
+>   `PATCH` (D9); it is the method that was the lie, not the field.
+> - **The `waiting` state's Retry button now calls `refresh()`**, the same one
+>   the unbound state uses. It used to call `reload()`, which existed only to
+>   raise the PIN stage; with that gone it would have synced without rebuilding
+>   the context, leaving the screen up after the server had answered.
 
 ## 1. The gap
 
