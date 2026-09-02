@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import AddStationFlow from './AddStationFlow';
-import type { AddStationResult } from './AddStationFlow';
+import AddStationForm from './AddStationForm';
+import type { AddStationResult, StationKind } from './AddStationForm';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -15,7 +15,6 @@ import {
   faQrcode as faQrcodeDuo,
   faSpinner as faSpinnerDuo,
   faTrash as faTrashDuo,
-  faTriangleExclamation as faTriangleExclamationDuo,
 } from '@fortawesome/pro-duotone-svg-icons';
 import QRCode from 'react-qr-code';
 import { api } from '../../lib/api';
@@ -26,7 +25,7 @@ import { deviceLabel } from '../../lib/api.types';
 import type {
   CheckinStationRecord,
   DeviceItem,
-  DeviceRole,
+  ProvisionedDevice,
   StationQueueStatus,
 } from '../../lib/api.types';
 
@@ -35,12 +34,15 @@ const BRIDGE_ROLE = 'ski_swap.print_bridge';
 const ATTENDANT_ROLE = 'ski_swap.staff_check_in';
 
 /**
- * Where staff set up and watch check-in stations.
+ * Check-in stations, in two tables.
  *
- * A station is the durable thing: sellers are sent to "Station 3", and either
- * the bridge or the printer under it can be replaced mid-swap without the
- * queued work noticing. This screen is mostly about seeing that — queue depth
- * and last-seen are how a stuck station gets noticed before a queue forms.
+ * The two kinds are separate here because they are separate decisions, made
+ * before any hardware exists: a kiosk sellers use alone, or a counter an iPad
+ * is stationed at. A staffed station and its iPad are created together and stay
+ * together — the iPad can be replaced, but the station is never without one.
+ *
+ * The server still derives the kind from whether an attendant is bound; nothing
+ * about this layout needs a `kind` column.
  */
 export default function StationsTab({
   orgId,
@@ -54,14 +56,14 @@ export default function StationsTab({
   swapId: string | null;
   canAdmin: boolean;
   /**
-   * Handed anything the flow just provisioned. A new tablet has credentials
-   * nobody has seen yet and a new bridge has not been near a Bluetooth radio,
-   * so both need a screen this component does not own.
+   * Handed anything just provisioned. A new iPad has a secret shown once, and a
+   * new bridge has never seen a Bluetooth radio; both need a screen this
+   * component does not own.
    */
   onStationAdded: (result: AddStationResult) => void;
 }) {
   const qc = useQueryClient();
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [adding, setAdding] = useState<StationKind | null>(null);
   const [showQr, setShowQr] = useState<CheckinStationRecord | null>(null);
 
   const { data: stations = [], isLoading } = useQuery({
@@ -71,6 +73,10 @@ export default function StationsTab({
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['ski-swap/stations', orgId] });
+  const refreshAll = () => {
+    void invalidate();
+    void qc.invalidateQueries({ queryKey: ['devices', orgId] });
+  };
 
   const patchStation = useMutation({
     mutationFn: (v: { id: string; data: Parameters<typeof api.skiSwap.patchStation>[2] }) =>
@@ -79,106 +85,202 @@ export default function StationsTab({
   });
 
   /**
-   * Provision hardware straight into a station.
+   * A replacement iPad for a counter whose own is lost or dead.
    *
-   * Two writes, deliberately not one: the device has to exist before it can be
-   * bound, and a create that succeeded followed by a bind that failed leaves a
-   * usable device in the hardware list rather than nothing at all.
+   * The station keeps its name and its code letter — there are only 32 letters
+   * in an org's pool and every tag already printed at this counter carries this
+   * one. The old credentials are revoked in the same action rather than left
+   * live on hardware nobody has: needing a second step to do that is how a lost
+   * iPad stays able to check people in.
    */
-  const provisionInto = useMutation({
-    mutationFn: async (v: { stationId: string; role: DeviceRole; name: string }) => {
-      const device = await api.devices.provision(orgId, { name: v.name, role: v.role });
-      const slot = v.role === 'ski_swap.staff_check_in'
-        ? { attendantDeviceId: device.id }
-        : { bridgeDeviceId: device.id };
-      await api.skiSwap.patchStation(orgId, v.stationId, slot);
-      return device;
+  const replaceTablet = useMutation({
+    mutationFn: async (v: { station: CheckinStationRecord }) => {
+      const old = v.station.attendantDeviceId;
+      const device = await api.devices.provision(orgId, {
+        name: `${v.station.name} iPad`,
+        role: ATTENDANT_ROLE,
+      });
+      await api.skiSwap.patchStation(orgId, v.station.id, { attendantDeviceId: device.id });
+      if (old) await api.devices.revoke(orgId, old);
+      return { device, stationId: v.station.id };
     },
-    onSuccess: (device, variables) => {
-      qc.invalidateQueries({ queryKey: ['devices', orgId] });
-      void invalidate();
-      // The secret is shown once. Handing it up is what stops "Staff it with a
-      // new tablet" from minting credentials nobody ever sees — the same loss
-      // the add-station flow had, on the path that replaced it.
+    onSuccess: ({ device, stationId }) => {
+      refreshAll();
+      onStationAdded({ stationId, newTablet: device, newBridge: null });
+    },
+  });
+
+  /** Same iPad, new secret — for one that was wiped or had the app reinstalled. */
+  const rotateSecret = useMutation({
+    mutationFn: async (v: { station: CheckinStationRecord; deviceId: string }) => {
+      const { clientSecret } = await api.devices.rotateSecret(orgId, v.deviceId);
+      return { v, clientSecret };
+    },
+    onSuccess: ({ v, clientSecret }) => {
+      refreshAll();
       onStationAdded({
-        stationId: variables.stationId,
-        newTablet: variables.role === 'ski_swap.staff_check_in' ? device : null,
-        newBridge: variables.role === 'ski_swap.print_bridge' ? device : null,
+        stationId: v.station.id,
+        newTablet: {
+          id: v.deviceId,
+          clientId: devices.find((d) => d.id === v.deviceId)?.clientId ?? '',
+          clientSecret,
+          name: v.station.name,
+          role: ATTENDANT_ROLE,
+          orgId,
+          createdAt: new Date().toISOString(),
+        } as ProvisionedDevice,
+        newBridge: null,
       });
     },
   });
 
-  const deleteStation = useMutation({
-    mutationFn: (id: string) => api.skiSwap.deleteStation(orgId, id),
-    onSuccess: invalidate,
+  /** Provision a bridge straight into a station that has none. */
+  const provisionBridge = useMutation({
+    mutationFn: async (v: { stationId: string }) => {
+      const device = await api.devices.provision(orgId, { role: BRIDGE_ROLE });
+      await api.skiSwap.patchStation(orgId, v.stationId, { bridgeDeviceId: device.id });
+      return { device, stationId: v.stationId };
+    },
+    onSuccess: ({ device, stationId }) => {
+      refreshAll();
+      onStationAdded({ stationId, newTablet: null, newBridge: device });
+    },
   });
 
-  const bridges = devices.filter((d) => d.role === BRIDGE_ROLE);
-  const attendants = devices.filter((d) => d.role === ATTENDANT_ROLE);
+  /**
+   * Retiring a station takes its iPad with it. The two were set up as one
+   * thing; leaving live credentials on a tablet with nowhere to check anyone in
+   * is the orphan this page exists to avoid.
+   */
+  const removeStation = useMutation({
+    mutationFn: async (station: CheckinStationRecord) => {
+      await api.skiSwap.deleteStation(orgId, station.id);
+      if (station.attendantDeviceId) await api.devices.revoke(orgId, station.attendantDeviceId);
+    },
+    onSuccess: refreshAll,
+  });
+
+  const boundBridgeIds = new Set(stations.map((s) => s.bridgeDeviceId).filter(Boolean));
+  const freeBridges = devices.filter((d) => d.role === BRIDGE_ROLE && !boundBridgeIds.has(d.id));
+
+  const selfStations = stations.filter((s) => s.kind === 'self_service');
+  const staffStations = stations.filter((s) => s.kind === 'staffed');
+
+  const busyError =
+    patchStation.error ?? replaceTablet.error ?? rotateSecret.error ??
+    provisionBridge.error ?? removeStation.error;
 
   if (isLoading) return <p className="text-gray-400">Loading…</p>;
 
+  const rowProps = {
+    orgId,
+    swapId,
+    canAdmin,
+    bridges: freeBridges,
+    onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) =>
+      patchStation.mutate({ id, data }),
+    onProvisionBridge: (stationId: string) => provisionBridge.mutate({ stationId }),
+    onRemove: (station: CheckinStationRecord) => removeStation.mutate(station),
+  };
+
   return (
-    <div className="space-y-4">
-      {canAdmin && (
-        <div className="flex justify-end">
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
-          >
-            + Add station
-          </button>
-        </div>
-      )}
-
-      {showAddForm && canAdmin && (
-        <AddStationFlow
-          orgId={orgId}
-          // Only hardware nobody is using: a tablet already at a counter is not
-          // on offer, and the server would refuse it anyway.
-          tablets={attendants.filter((d) => !stations.some((st) => st.attendantDeviceId === d.id))}
-          bridges={bridges.filter((d) => !stations.some((st) => st.bridgeDeviceId === d.id))}
-          onCancel={() => setShowAddForm(false)}
-          onDone={(result) => {
-            setShowAddForm(false);
-            void invalidate();
-            qc.invalidateQueries({ queryKey: ['devices', orgId] });
-            onStationAdded(result);
-          }}
-        />
-      )}
-
-      {(provisionInto.error || patchStation.error) && (
+    <div className="space-y-8">
+      {busyError && (
         <p className="text-sm text-red-400 bg-red-950/40 border border-red-900 rounded px-3 py-2">
-          {((provisionInto.error ?? patchStation.error) as Error).message}
+          {(busyError as Error).message}
         </p>
       )}
 
-      {stations.length === 0 ? (
-        <p className="text-sm text-gray-500">
-          No check-in stations yet. A station is a counter sellers check in at — either
-          one they use themselves by scanning its QR code, or one a volunteer works with
-          a tablet.
-        </p>
-      ) : (
-        <ul className="space-y-3">
-          {stations.map((station) => (
-            <StationRow
+      <section className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-white font-medium">Self check-in stations</h2>
+            <p className="text-xs text-gray-500">
+              Sellers scan the station&apos;s QR code and check themselves in. Every one needs a
+              print bridge — it is the only way a seller gets a tag.
+            </p>
+          </div>
+          {canAdmin && (
+            <button
+              onClick={() => setAdding('self_service')}
+              className="shrink-0 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
+            >
+              + Add Self Check-in Station
+            </button>
+          )}
+        </div>
+
+        {adding === 'self_service' && (
+          <AddStationForm
+            orgId={orgId}
+            kind="self_service"
+            bridges={freeBridges}
+            onCancel={() => setAdding(null)}
+            onDone={(result) => { setAdding(null); refreshAll(); onStationAdded(result); }}
+          />
+        )}
+
+        <StationTable
+          stations={selfStations}
+          empty="No self check-in stations yet."
+          columns={['Station', 'Code', 'Print bridge', 'Status', '']}
+          renderRow={(station) => (
+            <SelfStationRow
               key={station.id}
-              orgId={orgId}
               station={station}
-              bridges={bridges}
-              attendants={attendants}
-              swapId={swapId}
-              canAdmin={canAdmin}
-              onPatch={(data) => patchStation.mutate({ id: station.id, data })}
-              onProvision={(role, name) => provisionInto.mutate({ stationId: station.id, role, name })}
-              onDelete={() => deleteStation.mutate(station.id)}
+              {...rowProps}
               onShowQr={() => setShowQr(station)}
             />
-          ))}
-        </ul>
-      )}
+          )}
+        />
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-white font-medium">Staff check-in stations</h2>
+            <p className="text-xs text-gray-500">
+              A volunteer checks sellers in on an iPad. Each station is created with its own
+              iPad and keeps it; a bridge is optional, since the iPad prints over Bluetooth.
+            </p>
+          </div>
+          {canAdmin && (
+            <button
+              onClick={() => setAdding('staffed')}
+              className="shrink-0 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
+            >
+              + Add Staff Check-in Station
+            </button>
+          )}
+        </div>
+
+        {adding === 'staffed' && (
+          <AddStationForm
+            orgId={orgId}
+            kind="staffed"
+            bridges={freeBridges}
+            onCancel={() => setAdding(null)}
+            onDone={(result) => { setAdding(null); refreshAll(); onStationAdded(result); }}
+          />
+        )}
+
+        <StationTable
+          stations={staffStations}
+          empty="No staff check-in stations yet."
+          columns={['Station', 'Code', 'iPad', 'Print bridge', 'Status', '']}
+          renderRow={(station) => (
+            <StaffStationRow
+              key={station.id}
+              station={station}
+              {...rowProps}
+              devices={devices}
+              onReplaceTablet={() => replaceTablet.mutate({ station })}
+              onRotateSecret={(deviceId) => rotateSecret.mutate({ station, deviceId })}
+              working={replaceTablet.isPending || rotateSecret.isPending}
+            />
+          )}
+        />
+      </section>
 
       {showQr && swapId && (
         <QrModal orgId={orgId} station={showQr} swapId={swapId} onClose={() => setShowQr(null)} />
@@ -187,258 +289,297 @@ export default function StationsTab({
   );
 }
 
-function StationRow({
-  orgId,
+function StationTable({
+  stations,
+  columns,
+  empty,
+  renderRow,
+}: {
+  stations: CheckinStationRecord[];
+  columns: string[];
+  empty: string;
+  renderRow: (station: CheckinStationRecord) => React.ReactNode;
+}) {
+  if (stations.length === 0) return <p className="text-sm text-gray-500">{empty}</p>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
+            {columns.map((c, i) => (
+              <th key={i} className="font-normal py-2 pr-4 whitespace-nowrap">{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{stations.map(renderRow)}</tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Shared cells, so the two tables cannot drift in how they say the same thing. */
+function StationCells({ station }: { station: CheckinStationRecord }) {
+  return (
+    <>
+      <td className="py-3 pr-4 align-top">
+        <span className="text-white font-medium">{station.name}</span>
+      </td>
+      <td className="py-3 pr-4 align-top">
+        <span className="font-mono text-gray-300">{station.code}</span>
+        <span className="block text-xs text-gray-600">…-{station.code}-nnnn</span>
+      </td>
+    </>
+  );
+}
+
+/** The bridge cell: change it, or make one if the station has none. */
+function BridgeCell({
   station,
   bridges,
-  attendants,
-  swapId,
   canAdmin,
   onPatch,
-  onProvision,
-  onDelete,
-  onShowQr,
+  onProvisionBridge,
+  required,
 }: {
-  orgId: string;
   station: CheckinStationRecord;
   bridges: DeviceItem[];
-  attendants: DeviceItem[];
-  swapId: string | null;
   canAdmin: boolean;
-  onPatch: (data: {
-    name?: string;
-    attendantDeviceId?: string | null;
-    bridgeDeviceId?: string | null;
-    printerId?: string | null;
-  }) => void;
-  onProvision: (role: DeviceRole, name: string) => void;
-  onDelete: () => void;
-  onShowQr: () => void;
+  onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) => void;
+  onProvisionBridge: (stationId: string) => void;
+  required: boolean;
 }) {
-  const qc = useQueryClient();
+  return (
+    <td className="py-3 pr-4 align-top">
+      <select
+        disabled={!canAdmin}
+        value={station.bridgeDeviceId ?? ''}
+        onChange={(e) => onPatch(station.id, { bridgeDeviceId: e.target.value || null })}
+        className="bg-surface-100 border border-gray-700 rounded px-2 py-1 text-sm text-white disabled:opacity-50 max-w-[14rem]"
+      >
+        {/* A self-service station may not be left without one; a staffed one may. */}
+        <option value="">{required ? '— none (needed) —' : '— none —'}</option>
+        {station.bridgeDeviceId && !bridges.some((b) => b.id === station.bridgeDeviceId) && (
+          <option value={station.bridgeDeviceId}>{station.printerName ?? 'Bound bridge'}</option>
+        )}
+        {bridges.map((b) => (
+          <option key={b.id} value={b.id}>{b.printerName ?? b.name}</option>
+        ))}
+      </select>
+      {canAdmin && !station.bridgeDeviceId && (
+        <button
+          onClick={() => onProvisionBridge(station.id)}
+          className="block text-xs text-brand-500 hover:underline mt-1"
+        >
+          Set up a new bridge
+        </button>
+      )}
+    </td>
+  );
+}
 
-  // Polled: a station that has stopped printing looks exactly like one that is
-  // idle until you can see the depth.
+/** A queue-aware status cell. Its own query, because it polls per station. */
+function StatusCell({ orgId, station }: { orgId: string; station: CheckinStationRecord }) {
   const { data: queue } = useQuery({
     queryKey: ['ski-swap/stations', orgId, station.id, 'queue'],
     queryFn: () => api.skiSwap.stationQueue(orgId, station.id),
-    refetchInterval: 10_000,
+    refetchInterval: 5000,
   });
-
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-
-  const test = useMutation({ mutationFn: () => api.skiSwap.testStation(orgId, station.id) });
-  const clear = useMutation({
-    mutationFn: () => api.skiSwap.clearStationQueue(orgId, station.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/stations', orgId, station.id, 'queue'] }),
-  });
-
-  const bridgeSilent = !!queue && queue.queued > 0 && !recentlySeen(queue.bridgeLastSeenAt);
-  const printerDown =
-    !!queue && queue.queued > 0 && recentlySeen(queue.bridgeLastSeenAt) && queue.printerLink === 'down';
-
   return (
-    <li className="bg-surface-50 border border-gray-800 rounded-lg p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-white font-medium flex items-center gap-2">
-            {station.name}
-            <span className="text-xs font-mono text-gray-500">code {station.code}</span>
-          </h3>
-          {/* One line for "can this station print right now", so a row can be
-              read at a glance across a venue. The two indicators below say
-              which half is at fault. */}
-          {queue && <StationStatus station={station} queue={queue} />}
-          <p className="text-xs text-gray-500 mt-1">
-            Every SKU printed here reads <span className="font-mono">…-{station.code}-nnnn</span>
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {/* Hidden only for a staffed station, where a QR is not a missing
-              thing but an inapplicable one — staff have the tablet in hand.
-              Without a running swap it is disabled and says why, rather than
-              vanishing and leaving you looking for it. */}
-          {station.kind === 'self_service' && (
+    <td className="py-3 pr-4 align-top min-w-[13rem]">
+      {queue ? <StationStatus station={station} queue={queue} /> : <span className="text-gray-600">…</span>}
+      {queue && (queue.queued > 0 || queue.claimed > 0) && (
+        <span className="block text-xs text-gray-600">
+          {queue.queued} queued · {queue.claimed} printing
+        </span>
+      )}
+    </td>
+  );
+}
+
+type RowProps = {
+  orgId: string;
+  swapId: string | null;
+  canAdmin: boolean;
+  bridges: DeviceItem[];
+  onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) => void;
+  onProvisionBridge: (stationId: string) => void;
+  onRemove: (station: CheckinStationRecord) => void;
+};
+
+function SelfStationRow({
+  station,
+  orgId,
+  swapId,
+  canAdmin,
+  bridges,
+  onPatch,
+  onProvisionBridge,
+  onRemove,
+  onShowQr,
+}: RowProps & { station: CheckinStationRecord; onShowQr: () => void }) {
+  return (
+    <tr className="border-b border-gray-800/60">
+      <StationCells station={station} />
+      <BridgeCell
+        station={station}
+        bridges={bridges}
+        canAdmin={canAdmin}
+        onPatch={onPatch}
+        onProvisionBridge={onProvisionBridge}
+        required
+      />
+      <StatusCell orgId={orgId} station={station} />
+      <td className="py-3 align-top text-right whitespace-nowrap">
+        <RowActions
+          orgId={orgId}
+          station={station}
+          canAdmin={canAdmin}
+          onRemove={onRemove}
+          extra={
             <button
-              className="text-xs px-2 py-1 bg-surface-100 hover:bg-surface-200 text-gray-300 rounded disabled:opacity-40"
+              className={actionClass}
               disabled={!swapId}
               onClick={onShowQr}
-              title={
-                swapId
-                  ? 'Show the QR code sellers scan'
-                  : 'A QR code points at one swap, and none is running. Start one on the Swaps tab.'
-              }
+              title={swapId
+                ? 'Show the QR code sellers scan'
+                : 'A QR code points at one swap, and none is running. Start one on the Swaps tab.'}
             >
               <FontAwesomeIcon icon={faQrcodeDuo} /> QR
             </button>
-          )}
-          <button
-            className="text-xs px-2 py-1 bg-surface-100 hover:bg-surface-200 text-gray-300 rounded disabled:opacity-40"
-            disabled={test.isPending || !station.bridgeDeviceId}
-            onClick={() => test.mutate()}
-            title="Queues a calibration label — exercises server, bridge, BLE, and printer"
-          >
-            <FontAwesomeIcon icon={faPrintDuo} /> {test.isPending ? 'Queued' : 'Test'}
-          </button>
-          {canAdmin && (
-            <button
-              className="text-xs px-2 py-1 bg-surface-100 hover:bg-red-900/40 text-gray-400 hover:text-red-300 rounded"
-              onClick={() => setConfirmingDelete(true)}
-              title="Retire this station"
-            >
-              <FontAwesomeIcon icon={faTrashDuo} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {confirmingDelete && (
-        // In the row rather than a browser confirm(): what is lost is specific
-        // to this station — its code, and whatever hardware is bound to it —
-        // and none of that fits in a dialog nobody reads.
-        <div className="bg-red-950/30 border border-red-900 rounded p-3 space-y-2">
-          <p className="text-sm text-white">Retire {station.name}?</p>
-          <p className="text-xs text-gray-400">
-            Its code <span className="font-mono">{station.code}</span> stays claimed, so SKUs
-            already printed keep meaning what they say — but no new station can use that
-            letter.{' '}
-            {station.attendantDeviceId || station.bridgeDeviceId
-              ? 'Its hardware is released and can be bound elsewhere; nothing is revoked.'
-              : 'No hardware is bound to it.'}
-          </p>
-          <div className="flex gap-2">
-            <button
-              className="text-xs px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded"
-              onClick={() => { setConfirmingDelete(false); onDelete(); }}
-            >
-              Retire it
-            </button>
-            <button
-              className="text-xs px-3 py-1.5 text-gray-400 hover:text-white"
-              onClick={() => setConfirmingDelete(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Only the slots this kind uses. A self-service station showed an empty
-          "Staff tablet" dropdown whose real effect — filling it converts the
-          station — was invisible until you did it. Conversion is its own action
-          below, where it can be named. */}
-      <div className={station.kind === 'staffed' ? 'grid grid-cols-2 gap-3' : ''}>
-        {station.kind === 'staffed' && (
-          <SlotPicker
-            label="Staff tablet"
-            emptyLabel="— none —"
-            value={station.attendantDeviceId}
-            options={attendants}
-            canAdmin={canAdmin}
-            onChange={(id) => onPatch({ attendantDeviceId: id })}
-            onProvision={(name) => onProvision('ski_swap.staff_check_in', name)}
-            provisionLabel="New tablet"
-          />
-        )}
-
-        <SlotPicker
-          label={station.kind === 'staffed' ? 'Print bridge (optional)' : 'Print bridge'}
-          emptyLabel="— none —"
-          value={station.bridgeDeviceId}
-          options={bridges}
-          canAdmin={canAdmin}
-          onChange={(id) => onPatch({ bridgeDeviceId: id })}
-          onProvision={(name) => onProvision('ski_swap.print_bridge', name)}
-          provisionLabel="New bridge"
+          }
         />
+      </td>
+    </tr>
+  );
+}
 
-      </div>
-
-      <p className="text-xs text-gray-500">
-        {station.printerName
-          ? <>Prints to <span className="text-gray-300">{station.printerName}</span>, through its bridge.</>
-          : station.bridgeDeviceId
-            ? 'That bridge has no printer yet — give it one on the Printers page.'
-            : station.kind === 'staffed'
-              // Stated as the working configuration it is, rather than as a gap:
-              // a staffed counter needs no bridge.
-              ? 'No bridge — this tablet prints over Bluetooth.'
-              : 'A seller has no way to get a tag until this station has a bridge.'}
-      </p>
-
-      {canAdmin && (
-        <p className="text-xs text-gray-500">
-          {station.kind === 'staffed' ? (
-            <>
-              Staffed — a volunteer checks sellers in here.{' '}
-              <button
-                className="text-brand-500 hover:underline"
-                onClick={() => onPatch({ attendantDeviceId: null })}
-                title="Releases the tablet; sellers then scan this station's QR code themselves"
-              >
-                Make it self-service
-              </button>
-            </>
-          ) : (
-            <>
-              Self-service — sellers scan this station's QR code.{' '}
-              {attendants.length > 0 ? (
-                <button
-                  className="text-brand-500 hover:underline"
-                  onClick={() => onPatch({ attendantDeviceId: attendants[0].id })}
-                  title={`Puts ${attendants[0].name} at this counter`}
-                >
-                  Staff it with {attendants[0].name}
-                </button>
-              ) : (
-                <button
-                  className="text-brand-500 hover:underline"
-                  onClick={() => onProvision('ski_swap.staff_check_in', `${station.name} tablet`)}
-                  title="Provisions a tablet and puts it at this counter"
-                >
-                  Staff it with a new tablet
-                </button>
-              )}
-            </>
-          )}
-        </p>
-      )}
-
-      {queue && (
-        <div className="flex items-center gap-4 text-xs text-gray-400 border-t border-gray-800 pt-3">
-          <span>{queue.queued} queued</span>
-          <span>{queue.claimed} printing</span>
-          {queue.failed > 0 && <span className="text-amber-400">{queue.failed} failed</span>}
-          {queue.abandoned > 0 && (
-            <span className="text-amber-400">{queue.abandoned} gave up</span>
-          )}
-          {queue.queued > 0 && canAdmin && (
+function StaffStationRow({
+  station,
+  orgId,
+  canAdmin,
+  bridges,
+  devices,
+  onPatch,
+  onProvisionBridge,
+  onRemove,
+  onReplaceTablet,
+  onRotateSecret,
+  working,
+}: RowProps & {
+  station: CheckinStationRecord;
+  devices: DeviceItem[];
+  onReplaceTablet: () => void;
+  onRotateSecret: (deviceId: string) => void;
+  working: boolean;
+}) {
+  const tablet = devices.find((d) => d.id === station.attendantDeviceId);
+  return (
+    <tr className="border-b border-gray-800/60">
+      <StationCells station={station} />
+      <td className="py-3 pr-4 align-top">
+        <span className="text-gray-300">{tablet ? deviceLabel(tablet) : '—'}</span>
+        {canAdmin && tablet && (
+          <span className="block text-xs mt-1 space-x-2">
             <button
-              className="ml-auto text-gray-500 hover:text-red-300"
-              onClick={() => clear.mutate()}
-              title="Discard queued work nobody wants any more"
+              className="text-brand-500 hover:underline disabled:opacity-40"
+              disabled={working}
+              onClick={() => onRotateSecret(tablet.id)}
+              title="Same iPad, new code — for one that was wiped or reinstalled"
             >
-              Clear
+              New code
             </button>
-          )}
+            <button
+              className="text-brand-500 hover:underline disabled:opacity-40"
+              disabled={working}
+              onClick={onReplaceTablet}
+              title="Provisions a different iPad for this counter and revokes this one"
+            >
+              Replace iPad
+            </button>
+          </span>
+        )}
+      </td>
+      <BridgeCell
+        station={station}
+        bridges={bridges}
+        canAdmin={canAdmin}
+        onPatch={onPatch}
+        onProvisionBridge={onProvisionBridge}
+        required={false}
+      />
+      <StatusCell orgId={orgId} station={station} />
+      <td className="py-3 align-top text-right whitespace-nowrap">
+        <RowActions orgId={orgId} station={station} canAdmin={canAdmin} onRemove={onRemove} />
+      </td>
+    </tr>
+  );
+}
+
+const actionClass =
+  'text-xs px-2 py-1 bg-surface-100 hover:bg-surface-200 text-gray-300 rounded disabled:opacity-40';
+
+/** Test and retire, plus whatever the kind adds. */
+function RowActions({
+  orgId,
+  station,
+  canAdmin,
+  onRemove,
+  extra,
+}: {
+  orgId: string;
+  station: CheckinStationRecord;
+  canAdmin: boolean;
+  onRemove: (station: CheckinStationRecord) => void;
+  extra?: React.ReactNode;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const test = useMutation({ mutationFn: () => api.skiSwap.testStation(orgId, station.id) });
+
+  if (confirming) {
+    return (
+      <div className="text-left bg-red-950/30 border border-red-900 rounded p-2 space-y-1 inline-block">
+        <p className="text-xs text-white">Retire {station.name}?</p>
+        <p className="text-xs text-gray-400 max-w-[16rem]">
+          Code <span className="font-mono">{station.code}</span> stays claimed, so tags already
+          printed keep meaning what they say.
+          {station.attendantDeviceId ? ' Its iPad is revoked with it.' : ''}
+        </p>
+        <div className="flex gap-2 pt-1">
+          <button
+            className="text-xs px-2 py-1 bg-red-700 hover:bg-red-600 text-white rounded"
+            onClick={() => { setConfirming(false); onRemove(station); }}
+          >
+            Retire it
+          </button>
+          <button className="text-xs px-2 py-1 text-gray-400 hover:text-white" onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {bridgeSilent && (
-        <p className="text-xs text-amber-400 flex items-center gap-2">
-          <FontAwesomeIcon icon={faTriangleExclamationDuo} />
-          Work is queued but the bridge has not checked in. Check its power and wifi.
-        </p>
+  return (
+    <span className="space-x-1">
+      {extra}
+      <button
+        className={actionClass}
+        disabled={test.isPending || !station.bridgeDeviceId}
+        onClick={() => test.mutate()}
+        title="Queues a calibration label — exercises server, bridge, BLE, and printer"
+      >
+        <FontAwesomeIcon icon={faPrintDuo} /> {test.isPending ? 'Queued' : 'Test'}
+      </button>
+      {canAdmin && (
+        <button
+          className="text-xs px-2 py-1 bg-surface-100 hover:bg-red-900/40 text-gray-400 hover:text-red-300 rounded"
+          onClick={() => setConfirming(true)}
+          title="Retire this station"
+        >
+          <FontAwesomeIcon icon={faTrashDuo} />
+        </button>
       )}
-
-      {printerDown && (
-        <p className="text-xs text-amber-400 flex items-center gap-2">
-          <FontAwesomeIcon icon={faTriangleExclamationDuo} />
-          The bridge is online but cannot reach its printer. Check the printer&apos;s power
-          and that nothing else is paired to it.
-        </p>
-      )}
-    </li>
+    </span>
   );
 }
 
@@ -560,99 +701,6 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): Hardw
   };
 }
 
-/**
- * One hardware slot: pick something already provisioned, or make one here.
- *
- * Provisioning used to mean leaving the station, creating a device, and coming
- * back to bind it — three steps to answer "this counter needs a bridge". The
- * credential still appears in the hardware list; this just saves the round trip.
- */
-function SlotPicker({
-  label,
-  emptyLabel,
-  value,
-  options,
-  canAdmin,
-  onChange,
-  onProvision,
-  provisionLabel,
-}: {
-  label: string;
-  emptyLabel: string;
-  value: string | null;
-  options: DeviceItem[];
-  canAdmin: boolean;
-  onChange: (id: string | null) => void;
-  onProvision: (name: string) => void;
-  provisionLabel: string;
-}) {
-  const [naming, setNaming] = useState(false);
-  const [name, setName] = useState('');
-
-  if (naming) {
-    return (
-      <div className="block">
-        <span className="block text-xs text-gray-400 mb-1">{label}</span>
-        <div className="flex gap-1">
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name it"
-            className="flex-1 min-w-0 bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
-          />
-          <button
-            className="text-xs px-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white rounded"
-            disabled={!name.trim()}
-            onClick={() => { onProvision(name.trim()); setName(''); setNaming(false); }}
-          >
-            Add
-          </button>
-          <button
-            className="text-xs px-2 text-gray-400 hover:text-white"
-            onClick={() => { setName(''); setNaming(false); }}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <label className="block">
-      <span className="block text-xs text-gray-400 mb-1">{label}</span>
-      <div className="flex gap-1">
-        <select
-          className="flex-1 min-w-0 bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white disabled:opacity-50"
-          disabled={!canAdmin}
-          value={value ?? ''}
-          onChange={(e) => onChange(e.target.value || null)}
-        >
-          <option value="">{emptyLabel}</option>
-          {options.map((d) => (
-            <option key={d.id} value={d.id}>{deviceLabel(d)}</option>
-          ))}
-        </select>
-        {canAdmin && !value && (
-          <button
-            className="text-xs px-2 bg-surface-100 hover:bg-surface-200 text-gray-300 rounded whitespace-nowrap"
-            onClick={() => setNaming(true)}
-            title={`Provision a ${provisionLabel.toLowerCase()} and bind it here`}
-          >
-            + {provisionLabel}
-          </button>
-        )}
-      </div>
-    </label>
-  );
-}
-
-/**
- * The code a seller scans. It encodes the swap and the station — the same pair
- * the server revalidates on every call, so a photograph of it grants nothing
- * beyond starting a check-in at that station.
- */
 function QrModal({
   orgId,
   station,

@@ -3,25 +3,23 @@ import { useQuery } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../../lib/api';
 import StationsTab from '../devices/StationsTab';
-import { DeviceCredentialList, ProvisioningCodeCard } from '../devices/DeviceCredentials';
+import { ProvisioningCodeCard } from '../devices/DeviceCredentials';
 import BridgeEditModal from './BridgeEditModal';
-import type { AddStationResult } from '../devices/AddStationFlow';
-import type { DeviceItem, DeviceRole, ProvisionedDevice, SwapPrinterRecord } from '../../lib/api.types';
+import type { AddStationResult } from '../devices/AddStationForm';
+import type { DeviceItem, ProvisionedDevice, SwapPrinterRecord } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
 /**
- * Only tablets are managed here. A bridge lives with the printer it drives, on
- * the Printers page — a station reaches its printer through its bridge.
- */
-const STATION_ROLE: DeviceRole = 'ski_swap.staff_check_in';
-
-/**
- * Check-in stations and the hardware that serves them.
+ * Check-in stations, of both kinds.
  *
- * A station is a counter: a SKU namespace, a printer, and either a staff tablet
- * or a bridge driving it. Both kinds live here because they are the same thing —
- * they already share the org's 32-character code pool, since a SKU's namespace
- * character has to identify exactly one place items were checked in.
+ * A station is a counter: a SKU namespace, a printer, and either an iPad staff
+ * work or a QR code sellers scan. Both kinds live on one page because they
+ * share the org's 32-character code pool — a SKU's namespace character has to
+ * identify exactly one place items were checked in.
+ *
+ * There is nothing here but the two tables. Hardware is not provisioned on its
+ * own: an iPad with no counter cannot check anyone in, and a bridge with no
+ * station has nothing to print for.
  */
 export default function CheckinStationsPage() {
   const { orgId, perms } = useOutletContext<SkiSwapContext>();
@@ -51,24 +49,20 @@ export default function CheckinStationsPage() {
   });
 
   /**
-   * A bridge provisioned inside the station flow, which has credentials and
-   * nothing else.
+   * An iPad's provisioning code, which the server returns exactly once.
    *
-   * It goes to the same screen the Printers page uses, rather than being left
-   * bound and unconfigured: a board that has never had Wi-Fi looks exactly like
-   * a working one on this page, and only stops looking like one at a venue.
-   */
-  const [newBridge, setNewBridge] = useState<DeviceItem | null>(null);
-
-  /**
-   * A tablet provisioned inside the station flow, and its one-time secret.
-   *
-   * Held here because the server shows a client secret exactly once: the list
-   * below only reveals secrets it minted itself, so a tablet created by the
-   * flow would otherwise be issued credentials nobody ever saw and be
-   * unprovisionable without a rotation.
+   * Shown here for every path that mints one — a new staff station, a
+   * replacement iPad, a new code for the same iPad — because a secret nobody
+   * sees is a tablet that can never be paired.
    */
   const [newTablet, setNewTablet] = useState<ProvisionedDevice | null>(null);
+
+  /**
+   * A bridge that has credentials and nothing else. It goes to the same screen
+   * the Printers page uses: a board that has never had Wi-Fi looks exactly like
+   * a working one here, and only stops looking like one at a venue.
+   */
+  const [newBridge, setNewBridge] = useState<DeviceItem | null>(null);
 
   function handleStationAdded(result: AddStationResult) {
     if (result.newTablet) setNewTablet(result.newTablet);
@@ -88,58 +82,25 @@ export default function CheckinStationsPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-white font-medium">Check-in stations</h2>
-          <p className="text-xs text-gray-500">
-            Where sellers check in. A station owns the one-character code that appears in
-            every SKU printed there, and reaches its printer through the bridge bound to it.
-          </p>
-        </div>
-        <StationsTab
-          orgId={orgId}
-          devices={devices}
-          swapId={activeSwaps[0]?.id ?? null}
-          canAdmin={canAdmin}
-          onStationAdded={handleStationAdded}
-        />
+    <div className="space-y-6">
+      <StationsTab
+        orgId={orgId}
+        devices={devices}
+        swapId={activeSwaps[0]?.id ?? null}
+        canAdmin={canAdmin}
+        onStationAdded={handleStationAdded}
+      />
 
-        {newTablet && (
-          <ProvisioningCodeCard
-            orgId={orgId}
-            deviceId={newTablet.id}
-            clientId={newTablet.clientId}
-            secret={newTablet.clientSecret}
-            sinceLastSeenAt={null}
-            onDismiss={() => setNewTablet(null)}
-          />
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-white font-medium">Tablet credentials</h2>
-          <p className="text-xs text-gray-500">
-            Every staff tablet in this org — this is where a secret is rotated or a lost
-            tablet revoked. There is no button to make one here on purpose: a tablet with
-            no counter cannot check anyone in, so tablets come into being with the staffed
-            station they serve, above. Bridges live on the Printers page, with the printer
-            each one drives.
-          </p>
-        </div>
-        {/*
-          * Read-only on purpose. Provisioning here produced a tablet bound to
-          * nothing — `devices/me` answers `station: null` and the iPad cannot
-          * mint a SKU — and then asked someone to go and attach it, which is
-          * the second step this page had no reason to ask for.
-          */}
-        <DeviceCredentialList
+      {newTablet && (
+        <ProvisioningCodeCard
           orgId={orgId}
-          role={STATION_ROLE}
-          canProvision={false}
+          deviceId={newTablet.id}
+          clientId={newTablet.clientId}
+          secret={newTablet.clientSecret}
+          sinceLastSeenAt={null}
+          onDismiss={() => setNewTablet(null)}
         />
-      </section>
+      )}
 
       {newBridge && (
         <BridgeEditModal
