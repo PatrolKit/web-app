@@ -15,6 +15,10 @@ function navClass({ isActive }: { isActive: boolean }): string {
  * worth finding here are exactly the ones no org would list — someone who
  * signed in and was never given a membership belongs to nothing, and so
  * appeared nowhere.
+ *
+ * Device Software belongs here for the same reason: what a signage display
+ * runs is one answer for the whole platform, not a setting an org holds an
+ * opinion about.
  */
 export default function AdminLayout() {
   const { user } = useAuth();
@@ -27,6 +31,7 @@ export default function AdminLayout() {
       <nav className="flex gap-1 border-b border-gray-800 pb-2">
         <NavLink to="/dashboard/admin" end className={navClass}>Organizations</NavLink>
         <NavLink to="/dashboard/admin/users" className={navClass}>Users</NavLink>
+        <NavLink to="/dashboard/admin/device-software" className={navClass}>Device Software</NavLink>
       </nav>
 
       <Outlet />

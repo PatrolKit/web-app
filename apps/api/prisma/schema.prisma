@@ -31,7 +31,7 @@ model User {
   state  String?
   zip    String?
 
-  payoutMethod  String? @default("CHECK") // PAYPAL | VENMO | CHECK | DONATE
+  payoutMethod String? @default("CHECK") // PAYPAL | VENMO | CHECK | DONATE
 
   /// What kind of destination the money goes to, and therefore how a payout run
   /// addresses it. Null for CHECK and DONATE.
@@ -44,13 +44,13 @@ model User {
   /// is a discriminator rather than free text: the payment run has to tell them
   /// apart. It also records whether the destination was proven or self-asserted,
   /// without a second field that could drift out of step with this one.
-  payoutTarget  String? @db.VarChar(16)
+  payoutTarget String? @db.VarChar(16)
 
   /// The typed value, for PAYPAL_ID and VENMO_ID only. Null for EMAIL and PHONE,
   /// where the destination resolves from `verifiedEmail` / `verifiedPhone` when
   /// the money moves — storing a copy would let someone change their email and
   /// leave the payout pointed at the old one.
-  payoutHandle  String?
+  payoutHandle String?
 
   /// Claims. Indexed for matching, deliberately NOT unique — an unverified
   /// claim may collide with another unverified claim.
@@ -117,7 +117,7 @@ model Membership {
   /// Delta-sync watermark covering User + Membership + profiles. Deliberately
   /// NOT `@updatedAt`: a rename on User must bump it, which Prisma cannot do.
   /// Maintained by MembershipTouchService.
-  updatedAt DateTime @default(now())
+  updatedAt DateTime  @default(now())
   /// Soft removal. Memberships are never hard-deleted — offline devices need
   /// the tombstone to learn that someone left the roster.
   deletedAt DateTime?
@@ -174,7 +174,7 @@ model ContactChallenge {
 
   codeHash String
   /// Capped at 5. A 6-digit OTP needs a per-challenge counter, not just an IP throttle.
-  attempts Int @default(0)
+  attempts Int    @default(0)
 
   /// What this sign-in was for, so the session can resume it whichever browser
   /// context confirms. Structured and server-interpreted — never a URL, and
@@ -231,25 +231,25 @@ model OrgModule {
 }
 
 model Device {
-  id                String    @id @default(cuid())
-  orgId             String
-  name              String
-  clientId          String    @unique
-  secretHash        String
+  id         String    @id @default(cuid())
+  orgId      String
+  name       String
+  clientId   String    @unique
+  secretHash String
   /// Authorises the device on its own. There is no per-device permission set —
   /// a device's job is its role.
-  role              String    @db.VarChar(100)
-  lastSeenAt        DateTime?
-  createdBy         String?
-  createdAt         DateTime  @default(now())
+  role       String    @db.VarChar(100)
+  lastSeenAt DateTime?
+  createdBy  String?
+  createdAt  DateTime  @default(now())
 
   /// Last reported state of a bridge's BLE link to its printer: ready | down.
   /// Null for every other kind of device, and for a bridge that has not yet
   /// reported one. Reported on the claim, so it costs no extra request.
-  printerLink       String?   @db.VarChar(16)
+  printerLink   String?   @db.VarChar(16)
   /// When that report arrived. A stale `ready` means nothing — the bridge could
   /// have lost power holding it — so the age is as load-bearing as the value.
-  printerLinkAt     DateTime?
+  printerLinkAt DateTime?
 
   /// The resort this terminal clocks people in at. Meaningful only for
   /// `time_clock.terminal`, the way `printerLink` is meaningful only for a
@@ -258,17 +258,36 @@ model Device {
   /// It lives here rather than on `Resort` because it is many-to-one: a big
   /// base area runs several iPads. A station's binding sits the other way round
   /// on `CheckinStation` because a counter has exactly one attendant tablet.
-  resortId          String?
+  resortId String?
 
-  org               Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org             Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   /// SetNull, not Cascade: retiring a resort must not delete the hardware
   /// standing in it. The tablet stays, unbound, and can be pointed somewhere
   /// else.
-  resort            Resort?         @relation(fields: [resortId], references: [id], onDelete: SetNull)
-  attendedStation   CheckinStation? @relation("StationAttendant")
-  bridgedStation    CheckinStation? @relation("StationBridge")
+  resort          Resort?         @relation(fields: [resortId], references: [id], onDelete: SetNull)
+  attendedStation CheckinStation? @relation("StationAttendant")
+  bridgedStation  CheckinStation? @relation("StationBridge")
   /// The printer this bridge drives. Only a bridge ever has one.
-  bridgedPrinter    SwapPrinter?    @relation("BridgedPrinter")
+  bridgedPrinter  SwapPrinter?    @relation("BridgedPrinter")
+
+  /// What an image-based device last told us about itself, from the headers on
+  /// its bootstrap check-in. Meaningful only for devices running the PatrolKit
+  /// device image, the way `printerLink` is meaningful only for a bridge.
+  ///
+  /// Recorded verbatim and never parsed for authorization: this is the only
+  /// view anyone has of what a display is actually running, and "provisioned"
+  /// and "running the right software" are different claims.
+  hardwareId        String?   @db.VarChar(128)
+  imageName         String?   @db.VarChar(128)
+  imageVersion      String?   @db.VarChar(64)
+  /// The raw `name=version,…` header. Displayed, never queried — a device with
+  /// two packages is the normal case and a join table would be three tables to
+  /// render one line of text.
+  installedPackages String?   @db.Text
+  /// The last manifest fetch, including the 304s. Steady state is almost
+  /// entirely 304s, so a `bootstrapAt` that only moved on 200s would look like
+  /// a device that had stopped calling in.
+  bootstrapAt       DateTime?
 
   /// The composite unique on (orgId, skiSwapDeviceCode) used to double as the
   /// index MySQL requires behind the orgId foreign key. With the code gone,
@@ -382,9 +401,9 @@ model SwapItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  swap   SkiSwap        @relation(fields: [swapId], references: [id], onDelete: Cascade)
-  org    Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  seller SellerProfile? @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  swap   SkiSwap         @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  org    Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  seller SellerProfile?  @relation(fields: [sellerId], references: [id], onDelete: SetNull)
   photos SwapItemPhoto[]
 
   @@unique([swapId, sku])
@@ -427,9 +446,9 @@ model SwapPrinter {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  org          Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  seller       SellerProfile?  @relation(fields: [assignedSellerId], references: [id], onDelete: SetNull)
-  bridge       Device?         @relation("BridgedPrinter", fields: [bridgeDeviceId], references: [id], onDelete: SetNull)
+  org    Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  seller SellerProfile? @relation(fields: [assignedSellerId], references: [id], onDelete: SetNull)
+  bridge Device?        @relation("BridgedPrinter", fields: [bridgeDeviceId], references: [id], onDelete: SetNull)
 
   @@index([orgId])
   @@index([assignedSellerId])
@@ -451,15 +470,15 @@ model CheckinStation {
   /// The staff tablet stationed at this counter. Its presence is what makes the
   /// station staffed rather than self-service — a stored `kind` could contradict
   /// the hardware attached to it, so the kind is derived instead.
-  attendantDeviceId String? @unique
+  attendantDeviceId String?   @unique
   /// The bridge that prints for this station. Re-bindable: hardware dies
   /// mid-swap, and queued jobs survive because they belong to the station, not
   /// the bridge. Required for self-service, where a seller has no other way to
   /// get a tag; optional for staffed, where the tablet can print over Bluetooth.
-  bridgeDeviceId    String? @unique
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  bridgeDeviceId    String?   @unique
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   attendant Device?      @relation("StationAttendant", fields: [attendantDeviceId], references: [id], onDelete: SetNull)
@@ -474,8 +493,8 @@ model CheckinStation {
 /// rendered when the job is claimed, so a job adapts to whichever printer is
 /// actually attached at that moment.
 model PrintJob {
-  id    String @id @default(cuid())
-  orgId String
+  id        String  @id @default(cuid())
+  orgId     String
   /// Where the job goes.
   stationId String
   /// Which printer it was queued against. Diagnostics only — the render
@@ -490,12 +509,12 @@ model PrintJob {
   itemId   String?
 
   /// item | receipt_header | receipt_items | qr | calibration
-  kind String
+  kind   String
   /// Anything the recipe needs beyond the ids above — the page index of a
   /// paginated receipt, the text of a QR label.
   params Json?
   /// Ordering within one seller's batch, so tags emerge in entry order.
-  seq  Int @default(0)
+  seq    Int    @default(0)
 
   /// queued | claimed | printed | failed | abandoned
   status     String    @default("queued")
@@ -545,13 +564,13 @@ model SkiSwapSettings {
 // ─── Time Clock ───────────────────────────────────────────────────────────────
 
 model Resort {
-  id     String  @id @default(cuid())
-  orgId  String
-  name   String
-  street String?
-  city   String?
-  state  String?
-  zip    String?
+  id        String    @id @default(cuid())
+  orgId     String
+  name      String
+  street    String?
+  city      String?
+  state     String?
+  zip       String?
   /// IANA zone derived from the address; shift arithmetic depends on it.
   timeZone  String    @default("America/New_York")
   deletedAt DateTime?
@@ -647,4 +666,118 @@ model TimeClockSettings {
   updatedAt           DateTime @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+// ─── Device bootstrap ─────────────────────────────────────────────────────────
+
+/// An apt repository a device may install from.
+///
+/// Platform-scoped, deliberately: there is no `orgId` because the fleet installs
+/// PatrolKit's software from PatrolKit's repository. An org that could name its
+/// own repository could install its own software on hardware we support.
+model BootstrapRepository {
+  id String @id @default(cuid())
+
+  /// The apt source name. Constrained to `[a-z0-9][a-z0-9-]*` by the device's
+  /// own schema, so it is validated on the way in rather than discovered on the
+  /// way out.
+  name       String @unique @db.VarChar(64)
+  uri        String @db.VarChar(512)
+  suite      String @db.VarChar(64)
+  /// Comma-separated on the way in, rendered as a JSON array on the way out.
+  /// One row per component would be a table to hold the word "main".
+  components String @db.VarChar(255)
+  arch       String @default("arm64") @db.VarChar(16)
+
+  /// The signing key fingerprint the device must already carry.
+  ///
+  /// The server cannot validate this and must not pretend to: every key a
+  /// device will ever honour is baked into its image at build time, and a
+  /// manifest naming any other is rejected outright — silently, on the device,
+  /// with no error path back here. A typo takes out every device of every role
+  /// that names this repository.
+  signedByKeyId String @db.VarChar(64)
+  /// apt pin priority, when a repository must win or lose against another.
+  pinPriority   Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profiles BootstrapProfile[]
+}
+
+/// What one device role runs. One row per role, platform-wide.
+///
+/// This is the record that makes the device image generic in fact rather than
+/// in principle — it is where "this device is a signage device, here is the
+/// package and version to run" is expressed, instead of being baked into an
+/// image at build time.
+model BootstrapProfile {
+  id String @id @default(cuid())
+
+  /// The `Device.role` this serves, e.g. `signage.display`.
+  role       String @unique @db.VarChar(100)
+  /// Informational, passed through as `manifest.deviceType`. The image never
+  /// branches on it.
+  deviceType String @db.VarChar(64)
+
+  /// Off serves a 404, which a device answers by keeping the manifest it has.
+  /// Deleting the profile would do the same thing and lose the configuration.
+  enabled Boolean @default(true)
+
+  updateEnabled      Boolean @default(true)
+  /// `HH:MM-HH:MM` local to the device, or null to leave the image's own
+  /// configured window in force.
+  updateWindow       String? @db.VarChar(16)
+  checkinIntervalSec Int     @default(3600)
+
+  /// Counts edits, not resolutions.
+  ///
+  /// A package that tracks latest changes what is served with no edit behind
+  /// it, so this cannot be the cache key — the ETag over the resolved manifest
+  /// is. Devices diff package versions and never read this, so the two moving
+  /// independently costs nothing.
+  manifestVersion Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Rendered in name order, so editing an unrelated repository cannot churn
+  /// the ETag and wake up a fleet.
+  repositories BootstrapRepository[]
+  packages     BootstrapPackage[]
+}
+
+/// One package a role installs, pinned or tracking.
+model BootstrapPackage {
+  id        String @id @default(cuid())
+  profileId String
+
+  name    String  @db.VarChar(128)
+  /// The pinned version, or null to track the newest in the repository.
+  ///
+  /// The device diffs version strings and treats any difference as work to do,
+  /// in either direction — a manifest that pins backwards is a deliberate
+  /// rollback and is honoured as one.
+  version String? @db.VarChar(64)
+
+  /// What tracking last resolved to, and when.
+  ///
+  /// Durable rather than merely cached: it is what gets served when the apt
+  /// index is unreachable. Without it, a repository having a bad five minutes
+  /// would stop every device of this role checking in.
+  resolvedVersion String?   @db.VarChar(64)
+  resolvedAt      DateTime?
+
+  /// Render order. Cosmetic to the device, which installs the set, but it keeps
+  /// the manifest bytes — and therefore the ETag — stable across edits.
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile BootstrapProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, name])
+  @@index([profileId])
 }

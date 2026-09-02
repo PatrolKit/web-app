@@ -19,6 +19,10 @@ export const DeviceRoleSchema = z.enum([
   'ski_swap.print_bridge',
   /// A tablet patrollers clock in and out on.
   'time_clock.terminal',
+  /// A screen in a patrol room, running the PatrolKit device image. It is told
+  /// what software to run by `GET /devices/me/bootstrap` rather than by having
+  /// an image built for it.
+  'signage.display',
 ]);
 export type DeviceRole = z.infer<typeof DeviceRoleSchema>;
 
@@ -40,10 +44,14 @@ export const ProvisionDeviceSchema = z
     name: z.string().min(1).max(100).optional(),
     role: DeviceRoleSchema,
     /**
-     * Where a time-clock terminal stands. Offered here so an iPad is bound
-     * before it is ever switched on, rather than being provisioned and then
-     * remembered about — the same shape as binding a station's tablet.
-     * Rejected for any other role.
+     * Where the hardware stands. Offered here so a device is bound before it is
+     * ever switched on, rather than being provisioned and then remembered about
+     * — the same shape as binding a station's tablet. Rejected for any role
+     * that has no resort.
+     *
+     * Optional in the schema and required by the service for `signage.display`:
+     * whether a resort is mandatory depends on the role, and the schema cannot
+     * see one field from another without making every role's rule live here.
      */
     resortId: z.string().min(1).optional(),
   })
@@ -90,12 +98,25 @@ export const DeviceListItemSchema = z.object({
    */
   stationName: z.string().nullable(),
   /**
-   * The resort a time-clock terminal is bound to. Null for every other kind of
-   * device, and for a terminal nobody has placed yet. Carried here so the
-   * Devices page can show the binding it offers to change.
+   * The resort this device is bound to. Null for a kind of device that has no
+   * resort, and for one nobody has placed yet. Carried here so the Devices page
+   * can show the binding it offers to change.
    */
   resortId: z.string().nullable(),
   resortName: z.string().nullable(),
+  /**
+   * What a device running the PatrolKit device image last reported on its
+   * bootstrap check-in. Null for every other kind of device, and for a display
+   * that has been provisioned but has never reached the server.
+   *
+   * Carried on the list because "provisioned" and "running the right software"
+   * are different claims, and this page is the only place either is visible.
+   */
+  hardwareId: z.string().nullable(),
+  imageName: z.string().nullable(),
+  imageVersion: z.string().nullable(),
+  installedPackages: z.string().nullable(),
+  bootstrapAt: z.date().nullable(),
   createdAt: z.date(),
 });
 

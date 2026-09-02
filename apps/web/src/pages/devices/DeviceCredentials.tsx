@@ -159,7 +159,9 @@ export function DeviceCredentialList({
   renderExtra,
   provisionExtra,
   provisionPayload,
+  provisionReady = true,
   onEdit,
+  editLabel = 'Edit',
   onProvisioned,
 }: {
   orgId: string;
@@ -177,11 +179,25 @@ export function DeviceCredentialList({
   provisionExtra?: ReactNode;
   provisionPayload?: Record<string, string | undefined>;
   /**
+   * Whether the extra field is filled in well enough to submit. Defaults to
+   * true, for the callers whose extra field is optional.
+   *
+   * A display refuses to be provisioned without a resort — the server says so,
+   * and a disabled button says it before the round trip rather than after.
+   */
+  provisionReady?: boolean;
+  /**
    * Replaces the row's Edit. Given one, the caller owns editing entirely — a
    * bridge opens a screen where a secret rotation is one option among several,
    * rather than the whole meaning of the button.
    */
   onEdit?: (device: DeviceItem) => void;
+  /**
+   * What that button says. "Edit" is right when it opens a screen of settings;
+   * a display's opens the Bluetooth flow that is the whole of setting one up,
+   * and calling that "Edit" hides it.
+   */
+  editLabel?: string;
   /**
    * Given one, the credential card is skipped and this is handed the brand-new
    * device. A bridge has nothing to show on a card — no QR to scan, nothing to
@@ -298,7 +314,7 @@ export function DeviceCredentialList({
                 <button type="button" onClick={() => { setShowProvisionForm(false); provisionMutation.reset(); }} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
                 <button
                   type="submit"
-                  disabled={provisionMutation.isPending || !provisionName.trim()}
+                  disabled={provisionMutation.isPending || !provisionName.trim() || !provisionReady}
                   className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm disabled:opacity-40"
                 >
                   {provisionMutation.isPending ? 'Provisioning…' : 'Provision'}
@@ -343,7 +359,7 @@ export function DeviceCredentialList({
                     <button
                       onClick={() => (onEdit ? onEdit(d) : rotateMutation.mutate(d.id))}
                       className="text-xs text-yellow-500 hover:underline"
-                    >Edit</button>
+                    >{onEdit ? editLabel : 'Edit'}</button>
                   )}
                   {canProvision && (
                     <button

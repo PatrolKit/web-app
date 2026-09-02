@@ -23,6 +23,11 @@ export const DEVICE_ROLES = [
     label: 'Time Clock',
     hint: 'A tablet patrollers clock in and out on.',
   },
+  {
+    value: 'signage.display',
+    label: 'Display',
+    hint: 'A screen in a patrol room. Set it up over Bluetooth once provisioned — it needs the Wi-Fi it will live on, and the PIN shown on the screen itself.',
+  },
 ] as const;
 
 export type DeviceRole = (typeof DEVICE_ROLES)[number]['value'];
@@ -137,11 +142,22 @@ export interface DeviceItem {
   /** The station a bridge serves. Null when nothing routes work to it. */
   stationName: string | null;
   /**
-   * The resort a time-clock terminal stands at. Null for every other kind of
-   * device, for one nobody has placed yet, and for one whose resort was retired.
+   * The resort this device stands at. Null for a kind of device that has none,
+   * for one nobody has placed yet, and for one whose resort was retired.
    */
   resortId: string | null;
   resortName: string | null;
+  /**
+   * What a device running the PatrolKit device image last reported when it
+   * fetched its bootstrap manifest. Null for every other kind of device, and
+   * for a display that has been provisioned but has never reached the server.
+   */
+  hardwareId: string | null;
+  imageName: string | null;
+  imageVersion: string | null;
+  /** The raw `name=version,…` the device sent. Rendered, never parsed for meaning. */
+  installedPackages: string | null;
+  bootstrapAt: string | null;
   createdAt: string;
 }
 
@@ -524,4 +540,77 @@ export interface HoursReportRow {
   shiftCount: number;
   totalMinutes: number;
   minutesByDutyType: Record<string, number>;
+}
+
+// ─── Device bootstrap (platform admin) ───────────────────────────────────────
+
+export interface BootstrapRepositoryItem {
+  id: string;
+  name: string;
+  uri: string;
+  suite: string;
+  components: string[];
+  arch: 'arm64' | 'armhf';
+  /**
+   * The signing key fingerprint. The server cannot validate this: every key a
+   * device honours is baked into its image, and a manifest naming any other is
+   * rejected on the device, silently.
+   */
+  signedByKeyId: string;
+  pinPriority: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BootstrapPackageItem {
+  id: string;
+  name: string;
+  /** Null means track the newest the repository carries. */
+  version: string | null;
+  /** What tracking last resolved to, and when it last asked. */
+  resolvedVersion: string | null;
+  resolvedAt: string | null;
+}
+
+export interface BootstrapProfileItem {
+  id: string;
+  role: DeviceRole;
+  deviceType: string;
+  enabled: boolean;
+  updateEnabled: boolean;
+  updateWindow: string | null;
+  checkinIntervalSec: number;
+  /** Counts edits. Devices compare the ETag over the resolved manifest instead. */
+  manifestVersion: number;
+  repositories: BootstrapRepositoryItem[];
+  packages: BootstrapPackageItem[];
+  updatedAt: string;
+}
+
+export interface BootstrapRepositoryInput {
+  name: string;
+  uri: string;
+  suite: string;
+  components: string[];
+  arch: 'arm64' | 'armhf';
+  signedByKeyId: string;
+  pinPriority?: number | null;
+}
+
+export interface BootstrapProfileInput {
+  deviceType: string;
+  enabled: boolean;
+  updateEnabled: boolean;
+  updateWindow: string | null;
+  checkinIntervalSec: number;
+  repositoryIds: string[];
+  packages: { name: string; version: string | null }[];
+}
+
+/** Exactly what a device of this role would be served, and under what ETag. */
+export interface ManifestPreview {
+  manifest: Record<string, unknown> | null;
+  etag: string | null;
+  /** Why a manifest cannot currently be produced, if it cannot. */
+  error: string | null;
 }

@@ -95,6 +95,62 @@ async function main() {
   });
   console.log('✓ modules seeded');
 
+  // 2b. Device bootstrap: where the fleet installs from, and what each role runs.
+  //
+  // Platform-scoped and not tied to any org. The repository identifiers are the
+  // real deployed ones (APT_REPO_PLAN §7a) — in particular the key fingerprint,
+  // which the server cannot validate and which every device silently rejects if
+  // it is wrong.
+  const aptRepo = await prisma.bootstrapRepository.upsert({
+    where: { name: 'patrolkit' },
+    update: {
+      uri: 'https://apt.patrolkit.io',
+      suite: 'trixie',
+      components: 'main',
+      arch: 'arm64',
+      signedByKeyId: 'A267DE35610137808C467188B7B81B42B960F4F0',
+    },
+    create: {
+      id: createId(),
+      name: 'patrolkit',
+      uri: 'https://apt.patrolkit.io',
+      suite: 'trixie',
+      components: 'main',
+      arch: 'arm64',
+      signedByKeyId: 'A267DE35610137808C467188B7B81B42B960F4F0',
+    },
+  });
+
+  // Created, never updated. This is a bring-up default so a freshly imaged Pi
+  // installs *something* the first time it is provisioned; the moment anyone
+  // edits it in Platform Admin, the seed must stop having an opinion. The
+  // package is the repository's stub app because it is the only one published
+  // — swap it for the real signage package when there is one.
+  const signageProfile = await prisma.bootstrapProfile.findUnique({
+    where: { role: 'signage.display' },
+  });
+  if (!signageProfile) {
+    await prisma.bootstrapProfile.create({
+      data: {
+        id: createId(),
+        role: 'signage.display',
+        deviceType: 'patrolkit-signage',
+        updateWindow: '03:00-05:00',
+        checkinIntervalSec: 3600,
+        repositories: { connect: { id: aptRepo.id } },
+        packages: {
+          create: [
+            // Tracking rather than pinned: nothing has been released to pin to,
+            // and during bring-up "whatever was published last" is the answer.
+            { id: createId(), name: 'patrolkit-stub-app', version: null, position: 0 },
+          ],
+        },
+      },
+    });
+    console.log('✓ signage bootstrap profile seeded (patrolkit-stub-app, tracking latest)');
+  }
+  console.log('✓ device bootstrap seeded');
+
   // 3. Upsert super admin
   const superAdminEmail = process.env.SEED_SUPERADMIN_EMAIL;
   if (superAdminEmail) {

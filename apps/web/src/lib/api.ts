@@ -319,6 +319,39 @@ export const api = {
       request<void>(`/admin/users/${userId}`, { method: 'DELETE' }),
   },
 
+  /**
+   * What every PatrolKit device installs, and where it comes from.
+   *
+   * Super-admin only and not scoped to an org — this is the platform's fleet,
+   * not a customer's.
+   */
+  bootstrap: {
+    listRepositories: () =>
+      request<import('./api.types').BootstrapRepositoryItem[]>('/admin/bootstrap/repositories'),
+    createRepository: (data: import('./api.types').BootstrapRepositoryInput) =>
+      request<import('./api.types').BootstrapRepositoryItem>('/admin/bootstrap/repositories', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    updateRepository: (id: string, data: import('./api.types').BootstrapRepositoryInput) =>
+      request<import('./api.types').BootstrapRepositoryItem>(`/admin/bootstrap/repositories/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+    deleteRepository: (id: string) =>
+      request<void>(`/admin/bootstrap/repositories/${id}`, { method: 'DELETE' }),
+
+    listProfiles: () =>
+      request<import('./api.types').BootstrapProfileItem[]>('/admin/bootstrap/profiles'),
+    upsertProfile: (role: string, data: import('./api.types').BootstrapProfileInput) =>
+      request<import('./api.types').BootstrapProfileItem>(`/admin/bootstrap/profiles/${role}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+    preview: (role: string) =>
+      request<import('./api.types').ManifestPreview>(`/admin/bootstrap/profiles/${role}/preview`),
+  },
+
   skiSwap: {
     // Square config
     getConfig: (orgId: string) =>
