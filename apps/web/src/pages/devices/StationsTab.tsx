@@ -94,9 +94,17 @@ export default function StationsTab({
       await api.skiSwap.patchStation(orgId, v.stationId, slot);
       return device;
     },
-    onSuccess: () => {
+    onSuccess: (device, variables) => {
       qc.invalidateQueries({ queryKey: ['devices', orgId] });
       void invalidate();
+      // The secret is shown once. Handing it up is what stops "Staff it with a
+      // new tablet" from minting credentials nobody ever sees — the same loss
+      // the add-station flow had, on the path that replaced it.
+      onStationAdded({
+        stationId: variables.stationId,
+        newTablet: variables.role === 'ski_swap.staff_check_in' ? device : null,
+        newBridge: variables.role === 'ski_swap.print_bridge' ? device : null,
+      });
     },
   });
 
@@ -383,9 +391,13 @@ function StationRow({
                   Staff it with {attendants[0].name}
                 </button>
               ) : (
-                <span className="text-gray-600">
-                  Set up a tablet to staff it.
-                </span>
+                <button
+                  className="text-brand-500 hover:underline"
+                  onClick={() => onProvision('ski_swap.staff_check_in', `${station.name} tablet`)}
+                  title="Provisions a tablet and puts it at this counter"
+                >
+                  Staff it with a new tablet
+                </button>
               )}
             </>
           )}
