@@ -62,6 +62,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     return request<T>(path, init);
   }
 
+  // 204 means "done, nothing to say", so there is no body to parse. Reading one
+  // anyway made every delete in the app look like a failure: the row really was
+  // removed, `res.json()` rejected on the empty body, the catch below turned
+  // that into `success: false`, and the throw stopped react-query from ever
+  // invalidating its list. Nothing refreshed, and nothing said why.
+  if (res.status === 204 || res.status === 205) {
+    return undefined as T;
+  }
+
   const body = await res.json().catch(() => ({ success: false, error: 'Invalid response' }));
 
   if (!res.ok || !body.success) {
