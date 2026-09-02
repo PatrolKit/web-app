@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DeviceCredentialList } from '../devices/DeviceCredentials';
+import DeviceImageDownload from '../devices/DeviceImageDownload';
 import SetupDisplayModal from './SetupDisplayModal';
 import { api } from '../../lib/api';
 import type { DeviceItem, DeviceRole } from '../../lib/api.types';
@@ -110,6 +111,7 @@ export default function SignageDevicesPage() {
 
   return (
     <div className="space-y-4">
+      <DeviceImageDownload />
       <DeviceCredentialList
         orgId={orgId}
         role={SIGNAGE_ROLE}

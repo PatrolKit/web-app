@@ -41,5 +41,7 @@ export default registerAs('app', () => ({
   // Ski Swap
   squareEncryptionKey: process.env.SQUARE_ENCRYPTION_KEY ?? '',
   photoBucket: process.env.PHOTO_BUCKET ?? '',
+  /** Private. Downloads are presigned per request; nothing is public. */
+  deviceImageBucket: process.env.DEVICE_IMAGE_BUCKET ?? 'patrolkit-images',
   photoBaseUrl: process.env.PHOTO_BASE_URL ?? '',
 }));

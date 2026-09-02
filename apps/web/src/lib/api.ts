@@ -325,6 +325,15 @@ export const api = {
    * Super-admin only and not scoped to an org — this is the platform's fleet,
    * not a customer's.
    */
+  deviceImages: {
+    list: () => request<import('./api.types').DeviceImageItem[]>('/device-images'),
+    /** Presigned and short-lived, so it is fetched at click time, never cached. */
+    downloadUrl: (name: string, version: string) =>
+      request<import('./api.types').DeviceImageDownload>(
+        `/device-images/${encodeURIComponent(name)}/${encodeURIComponent(version)}/download`,
+      ),
+  },
+
   bootstrap: {
     listRepositories: () =>
       request<import('./api.types').BootstrapRepositoryItem[]>('/admin/bootstrap/repositories'),

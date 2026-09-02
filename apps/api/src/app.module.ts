@@ -23,6 +23,7 @@ import { MembersModule } from './members/members.module';
 import { PlatformModule } from './platform/platform.module';
 import { OrgModulesModule } from './modules/modules.module';
 import { DevicesModule } from './devices/devices.module';
+import { DeviceImagesModule } from './device-images/device-images.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
 import { AuditModule } from './common/audit/audit.module';
 import { SkiSwapModule } from './ski-swap/ski-swap.module';
@@ -75,6 +76,7 @@ import appConfig from './config/app.config';
     OrgModulesModule,
     DevicesModule,
     BootstrapModule,
+    DeviceImagesModule,
     AuditModule,
     SkiSwapModule,
     TimeClockModule,

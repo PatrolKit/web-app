@@ -625,3 +625,27 @@ export interface ManifestPreview {
   /** Why a manifest cannot currently be produced, if it cannot. */
   error: string | null;
 }
+
+// ─── Device images ────────────────────────────────────────────────────────────
+
+/** One published image, as listed for download. No S3 key: the server presigns. */
+export interface DeviceImageItem {
+  name: string;
+  version: string;
+  filename: string;
+  sha256: string;
+  sizeBytes: number;
+  gitSha: string;
+  builtAt: string;
+  /** apt signing keys the image will trust. Shown for provenance. */
+  trustedKeys: string[];
+  notes: string;
+}
+
+export interface DeviceImageDownload {
+  url: string;
+  expiresInSec: number;
+  filename: string;
+  sha256: string;
+  sizeBytes: number;
+}
