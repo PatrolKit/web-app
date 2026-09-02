@@ -86,32 +86,16 @@ export default function StationsTab({
   });
 
   /**
-   * A replacement iPad for a counter whose own is lost or dead.
+   * A fresh pairing code for the iPad at a counter.
    *
-   * The station keeps its name and its code letter — there are only 32 letters
-   * in an org's pool and every tag already printed at this counter carries this
-   * one. The old credentials are revoked in the same action rather than left
-   * live on hardware nobody has: needing a second step to do that is how a lost
-   * iPad stays able to check people in.
+   * One action, not two. "Replace iPad" used to provision a new device and
+   * revoke the old, which sounds more thorough for a lost tablet and is not:
+   * rotating the secret locks the old one out just as completely. All the
+   * second button bought was a new row in the devices table, at the cost of
+   * resetting the station's last-seen history — so the choice was between two
+   * spellings of the same thing, made at the moment someone is trying to get a
+   * counter working again.
    */
-  const replaceTablet = useMutation({
-    mutationFn: async (v: { station: CheckinStationRecord }) => {
-      const old = v.station.attendantDeviceId;
-      const device = await api.devices.provision(orgId, {
-        name: `${v.station.name} iPad`,
-        role: ATTENDANT_ROLE,
-      });
-      await api.skiSwap.patchStation(orgId, v.station.id, { attendantDeviceId: device.id });
-      if (old) await api.devices.revoke(orgId, old);
-      return { device, stationId: v.station.id };
-    },
-    onSuccess: ({ device, stationId }) => {
-      refreshAll();
-      onStationAdded({ stationId, newTablet: device, newBridge: null });
-    },
-  });
-
-  /** Same iPad, new secret — for one that was wiped or had the app reinstalled. */
   const rotateSecret = useMutation({
     mutationFn: async (v: { station: CheckinStationRecord; deviceId: string }) => {
       const { clientSecret } = await api.devices.rotateSecret(orgId, v.deviceId);
@@ -130,21 +114,7 @@ export default function StationsTab({
           orgId,
           createdAt: new Date().toISOString(),
         } as ProvisionedDevice,
-        newBridge: null,
       });
-    },
-  });
-
-  /** Provision a bridge straight into a station that has none. */
-  const provisionBridge = useMutation({
-    mutationFn: async (v: { stationId: string }) => {
-      const device = await api.devices.provision(orgId, { role: BRIDGE_ROLE });
-      await api.skiSwap.patchStation(orgId, v.stationId, { bridgeDeviceId: device.id });
-      return { device, stationId: v.stationId };
-    },
-    onSuccess: ({ device, stationId }) => {
-      refreshAll();
-      onStationAdded({ stationId, newTablet: null, newBridge: device });
     },
   });
 
@@ -168,8 +138,7 @@ export default function StationsTab({
   const staffStations = stations.filter((s) => s.kind === 'staffed');
 
   const busyError =
-    patchStation.error ?? replaceTablet.error ?? rotateSecret.error ??
-    provisionBridge.error ?? removeStation.error;
+    patchStation.error ?? rotateSecret.error ?? removeStation.error;
 
   if (isLoading) return <p className="text-gray-400">Loading…</p>;
 
@@ -180,7 +149,6 @@ export default function StationsTab({
     bridges: freeBridges,
     onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) =>
       patchStation.mutate({ id, data }),
-    onProvisionBridge: (stationId: string) => provisionBridge.mutate({ stationId }),
     onConfirmRetire: (station: CheckinStationRecord) => setRetiring(station),
   };
 
@@ -275,9 +243,8 @@ export default function StationsTab({
               station={station}
               {...rowProps}
               devices={devices}
-              onReplaceTablet={() => replaceTablet.mutate({ station })}
               onRotateSecret={(deviceId) => rotateSecret.mutate({ station, deviceId })}
-              working={replaceTablet.isPending || rotateSecret.isPending}
+              working={rotateSecret.isPending}
             />
           )}
         />
@@ -347,14 +314,12 @@ function BridgeCell({
   bridges,
   canAdmin,
   onPatch,
-  onProvisionBridge,
   required,
 }: {
   station: CheckinStationRecord;
   bridges: DeviceItem[];
   canAdmin: boolean;
   onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) => void;
-  onProvisionBridge: (stationId: string) => void;
   required: boolean;
 }) {
   return (
@@ -374,13 +339,10 @@ function BridgeCell({
           <option key={b.id} value={b.id}>{b.printerName ?? b.name}</option>
         ))}
       </select>
-      {canAdmin && !station.bridgeDeviceId && (
-        <button
-          onClick={() => onProvisionBridge(station.id)}
-          className="block text-xs text-brand-500 hover:underline mt-1"
-        >
-          Set up a new bridge
-        </button>
+      {/* Bridges are set up on the Printers page, where the Bluetooth handshake
+          lives; here they are only chosen. */}
+      {canAdmin && required && !station.bridgeDeviceId && (
+        <span className="block text-xs text-amber-500/80 mt-1">Needs one</span>
       )}
     </td>
   );
@@ -411,7 +373,6 @@ type RowProps = {
   canAdmin: boolean;
   bridges: DeviceItem[];
   onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) => void;
-  onProvisionBridge: (stationId: string) => void;
   onConfirmRetire: (station: CheckinStationRecord) => void;
 };
 
@@ -422,7 +383,6 @@ function SelfStationRow({
   canAdmin,
   bridges,
   onPatch,
-  onProvisionBridge,
   onConfirmRetire,
   onShowQr,
 }: RowProps & { station: CheckinStationRecord; onShowQr: () => void }) {
@@ -434,7 +394,6 @@ function SelfStationRow({
         bridges={bridges}
         canAdmin={canAdmin}
         onPatch={onPatch}
-        onProvisionBridge={onProvisionBridge}
         required
       />
       <StatusCell orgId={orgId} station={station} />
@@ -469,15 +428,12 @@ function StaffStationRow({
   bridges,
   devices,
   onPatch,
-  onProvisionBridge,
   onConfirmRetire,
-  onReplaceTablet,
   onRotateSecret,
   working,
 }: RowProps & {
   station: CheckinStationRecord;
   devices: DeviceItem[];
-  onReplaceTablet: () => void;
   onRotateSecret: (deviceId: string) => void;
   working: boolean;
 }) {
@@ -488,24 +444,14 @@ function StaffStationRow({
       <td className="py-3 pr-4 align-top">
         <span className="text-gray-300">{tablet ? deviceLabel(tablet) : '—'}</span>
         {canAdmin && tablet && (
-          <span className="block text-xs mt-1 space-x-2">
-            <button
-              className="text-brand-500 hover:underline disabled:opacity-40"
-              disabled={working}
-              onClick={() => onRotateSecret(tablet.id)}
-              title="Same iPad, new code — for one that was wiped or reinstalled"
-            >
-              New code
-            </button>
-            <button
-              className="text-brand-500 hover:underline disabled:opacity-40"
-              disabled={working}
-              onClick={onReplaceTablet}
-              title="Provisions a different iPad for this counter and revokes this one"
-            >
-              Replace iPad
-            </button>
-          </span>
+          <button
+            className="block text-xs text-brand-500 hover:underline disabled:opacity-40 mt-1"
+            disabled={working}
+            onClick={() => onRotateSecret(tablet.id)}
+            title="Issues a new code and locks out the old one — for an iPad that was wiped, reinstalled, lost or swapped"
+          >
+            New pairing code
+          </button>
         )}
       </td>
       <BridgeCell
@@ -513,7 +459,6 @@ function StaffStationRow({
         bridges={bridges}
         canAdmin={canAdmin}
         onPatch={onPatch}
-        onProvisionBridge={onProvisionBridge}
         required={false}
       />
       <StatusCell orgId={orgId} station={station} />
