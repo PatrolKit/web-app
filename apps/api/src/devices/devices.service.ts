@@ -39,6 +39,24 @@ import { ModuleAccessService } from '../common/services/module-access.service';
 const ROLE_OWNER: Record<string, { moduleKey: string; permission: string }> = {
   ski_swap: { moduleKey: 'ski_swap', permission: 'ski_swap:admin' },
   time_clock: { moduleKey: 'time_tracking', permission: 'time_tracking:manage' },
+  // `manage` rather than `admin`, following time tracking: whoever runs the
+  // displays supplies the hardware for them. A separate `signage:admin` gate
+  // would mean the person who publishes to a screen cannot provision one.
+  signage: { moduleKey: 'signage', permission: 'signage:manage' },
+};
+
+/**
+ * The roles that stand somewhere, and whether a resort is required to provision
+ * one.
+ *
+ * A time-clock tablet may sit unbound — that is how one is taken out of service
+ * without being revoked, and an unbound terminal says so and boards nothing. A
+ * display cannot: it has no state to refuse from, so an unbound one is a dark
+ * screen, which is indistinguishable from a broken one.
+ */
+const RESORT_BOUND: Record<string, { required: boolean }> = {
+  'time_clock.terminal': { required: false },
+  'signage.display': { required: true },
 };
 
 @Injectable()
@@ -106,6 +124,8 @@ export class DevicesService {
     await this.assertMayManage(orgId, actorUserId, data.role);
     if (data.resortId !== undefined) {
       await this.assertResortBindable(orgId, data.role, data.resortId);
+    } else if (RESORT_BOUND[data.role]?.required) {
+      throw new BadRequestException('This device must be given a resort before it is provisioned');
     }
 
     const clientId = createId();
@@ -180,6 +200,11 @@ export class DevicesService {
       // A retired resort reads as unbound, the same way a retired station does.
       resortId: d.resort && !d.resort.deletedAt ? d.resort.id : null,
       resortName: d.resort && !d.resort.deletedAt ? d.resort.name : null,
+      hardwareId: d.hardwareId,
+      imageName: d.imageName,
+      imageVersion: d.imageVersion,
+      installedPackages: d.installedPackages,
+      bootstrapAt: d.bootstrapAt,
       createdAt: d.createdAt,
     }));
   }
@@ -256,11 +281,12 @@ export class DevicesService {
   // ─── Resort binding ──────────────────────────────────────────────────────────
 
   /**
-   * Where a time-clock terminal stands, set by whoever administers time-clock
-   * hardware.
+   * Where a device stands, set by whoever administers that module's hardware.
    *
    * Passing null unbinds it, which is how a tablet is taken out of service
    * without being revoked — it keeps its credentials and stops being anywhere.
+   * A display can be unbound the same way; it simply has nothing to show until
+   * it is placed again.
    */
   async bindResort(
     orgId: string,
@@ -323,11 +349,11 @@ export class DevicesService {
   }
 
   /**
-   * The one rule both write paths share: a resort binding belongs to a
-   * time-clock terminal, and names a live resort in the device's own org.
+   * The one rule every write path shares: a resort binding belongs to a device
+   * that stands somewhere, and names a live resort in the device's own org.
    *
    * Checked rather than merely documented — unlike `printerLink`, which no
-   * endpoint sets directly — because both callers here are writes, and a
+   * endpoint sets directly — because every caller here is a write, and a
    * binding on a print bridge would be a field nothing reads and nobody can see
    * to correct.
    */
@@ -336,8 +362,8 @@ export class DevicesService {
     role: DeviceRole,
     resortId: string,
   ): Promise<void> {
-    if (role !== 'time_clock.terminal') {
-      throw new BadRequestException('Only a time clock terminal can be bound to a resort');
+    if (!RESORT_BOUND[role]) {
+      throw new BadRequestException('This kind of device does not stand at a resort');
     }
     const resort = await this.prisma.resort.findFirst({
       where: { id: resortId, orgId, deletedAt: null },

@@ -15,7 +15,9 @@ import ShiftsPage from './pages/time-tracking/ShiftsPage';
 import HoursReportPage from './pages/time-tracking/HoursReportPage';
 import RosterPage from './pages/time-tracking/RosterPage';
 import TimeTrackingSettingsPage from './pages/time-tracking/SettingsPage';
+import DeviceSoftwareTab from './pages/admin/DeviceSoftwareTab';
 import SignageLayout, { SignagePlaceholder } from './pages/signage/SignageLayout';
+import SignageDevicesPage from './pages/signage/DevicesPage';
 import SkiSwapDashboard from './pages/ski-swap/SkiSwapDashboard';
 import CheckinStationsPage from './pages/ski-swap/CheckinStationsPage';
 import PrintersPage from './pages/ski-swap/PrintersPage';
@@ -94,6 +96,7 @@ export default function App() {
           <Route path="admin" element={<AdminLayout />}>
             <Route index element={<OrganizationsTab />} />
             <Route path="users" element={<UsersTab />} />
+            <Route path="device-software" element={<DeviceSoftwareTab />} />
           </Route>
           {/* Modules used to be its own nav item; keep old links working. */}
           <Route path="modules" element={<Navigate to="/dashboard/org-admin/modules" replace />} />
@@ -123,6 +126,7 @@ export default function App() {
           </Route>
           <Route path="signage" element={<SignageLayout />}>
             <Route index element={<SignagePlaceholder />} />
+            <Route path="devices" element={<SignageDevicesPage />} />
           </Route>
         </Route>
         {/* Org seller lookup — broad catch-all; must be before the * redirect */}
