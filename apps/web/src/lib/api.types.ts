@@ -430,6 +430,17 @@ export interface SkiSwapSettings {
   labelsPerItem: number;
 }
 
+/**
+ * The PIN that unlocks a device's settings screen, for whichever module asked.
+ *
+ * Null means no PIN is set, which means the screen opens unguarded — not that
+ * the caller was refused a look. Being refused is a 403; this shape only ever
+ * reaches someone entitled to the answer.
+ */
+export interface DevicePinResponse {
+  devicePin: string | null;
+}
+
 // ─── Public seller detail ─────────────────────────────────────────────────────
 
 export interface PublicSellerDetailItem {

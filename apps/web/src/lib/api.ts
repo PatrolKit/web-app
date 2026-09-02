@@ -663,7 +663,16 @@ export const api = {
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`),
     updateSettings: (orgId: string, data: { labelsPerItem: number }) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`, {
-        method: 'PUT', body: JSON.stringify(data),
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+
+    // Device PIN — its own route, because settings is readable at `:report`
+    // level and this is not.
+    getDevicePin: (orgId: string) =>
+      request<import('./api.types').DevicePinResponse>(`/orgs/${orgId}/ski-swap/settings/device-pin`),
+    setDevicePin: (orgId: string, devicePin: string | null) =>
+      request<import('./api.types').DevicePinResponse>(`/orgs/${orgId}/ski-swap/settings/device-pin`, {
+        method: 'PUT', body: JSON.stringify({ devicePin }),
       }),
   },
 
@@ -702,6 +711,15 @@ export const api = {
     updateSettings: (orgId: string, data: { autoCloseLocalTime?: string; autoCloseAfterHours?: number }) =>
       request<import('./api.types').TimeClockSettingsResponse>(`/orgs/${orgId}/time-clock/settings`, {
         method: 'PATCH', body: JSON.stringify(data),
+      }),
+
+    // Device PIN — its own route, because settings is readable at `:report`
+    // level and this is not.
+    getDevicePin: (orgId: string) =>
+      request<import('./api.types').DevicePinResponse>(`/orgs/${orgId}/time-clock/settings/device-pin`),
+    setDevicePin: (orgId: string, devicePin: string | null) =>
+      request<import('./api.types').DevicePinResponse>(`/orgs/${orgId}/time-clock/settings/device-pin`, {
+        method: 'PUT', body: JSON.stringify({ devicePin }),
       }),
 
     // Roster
