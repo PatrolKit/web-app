@@ -121,16 +121,23 @@ export default function CheckinStationsPage() {
         <div>
           <h2 className="text-white font-medium">Tablet credentials</h2>
           <p className="text-xs text-gray-500">
-            Every staff tablet in this org, wherever it is stationed — this is where a
-            secret is rotated or a lost tablet revoked. Tablets are normally set up with
-            their station above; one listed here with no station is waiting to be given
-            one. Bridges live on the Printers page, with the printer each one drives.
+            Every staff tablet in this org — this is where a secret is rotated or a lost
+            tablet revoked. There is no button to make one here on purpose: a tablet with
+            no counter cannot check anyone in, so tablets come into being with the staffed
+            station they serve, above. Bridges live on the Printers page, with the printer
+            each one drives.
           </p>
         </div>
+        {/*
+          * Read-only on purpose. Provisioning here produced a tablet bound to
+          * nothing — `devices/me` answers `station: null` and the iPad cannot
+          * mint a SKU — and then asked someone to go and attach it, which is
+          * the second step this page had no reason to ask for.
+          */}
         <DeviceCredentialList
           orgId={orgId}
           role={STATION_ROLE}
-          canProvision={canAdmin}
+          canProvision={false}
         />
       </section>
 
