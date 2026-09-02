@@ -217,6 +217,15 @@ async function main() {
           },
         });
 
+        // Same reasoning as the time-clock row below: a demo org with no PIN
+        // has an unguarded admin sheet on its check-in iPads, which is the
+        // opposite of what the setting is there to demonstrate.
+        await prisma.skiSwapSettings.upsert({
+          where: { orgId: demoOrg.id },
+          update: {},
+          create: { id: createId(), orgId: demoOrg.id, devicePin: '4021' },
+        });
+
         console.log(`✓ Demo org seeded with owner membership (all permissions)`);
 
         // Dev users with escalating ski-swap permission levels for testing
@@ -270,10 +279,13 @@ async function main() {
           }
         }
 
+        // Seeded with a PIN rather than without one: null means the terminal's
+        // settings sheet opens unguarded, and a demo org that ships that way
+        // teaches the wrong lesson about what the column is for.
         await prisma.timeClockSettings.upsert({
           where: { orgId: demoOrg.id },
           update: {},
-          create: { id: createId(), orgId: demoOrg.id },
+          create: { id: createId(), orgId: demoOrg.id, devicePin: '4021' },
         });
 
         // Most roster rows carry a contact, matching a real import; the last has

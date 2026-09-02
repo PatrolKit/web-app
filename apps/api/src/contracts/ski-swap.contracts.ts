@@ -419,6 +419,11 @@ export type SwapPrinterResponse = z.infer<typeof SwapPrinterResponseSchema>;
 
 // ─── Ski Swap Settings ────────────────────────────────────────────────────────
 
+/**
+ * Sent to a PATCH, not a PUT: the settings row carries more than this — a
+ * device PIN, and whatever comes next — so a body naming one field is a change
+ * to apply, not a replacement for the whole resource.
+ */
 export const UpdateSkiSwapSettingsSchema = z
   .object({ labelsPerItem: z.number().int().min(1).max(3) })
   .strict();

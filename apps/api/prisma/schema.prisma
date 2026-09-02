@@ -555,8 +555,21 @@ model SkiSwapSettings {
   id            String   @id @default(cuid())
   orgId         String   @unique
   labelsPerItem Int      @default(1)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+
+  /// The PIN that unlocks the admin sheet on a `ski_swap.staff_check_in` iPad.
+  ///
+  /// Four digits, and stored in the clear on purpose: this gates a settings
+  /// screen against someone standing at the table, not a credential, and the
+  /// question an administrator actually asks is what the PIN *is*. Hashing it
+  /// would cost that lookup and buy nothing — four digits fall to a loop.
+  ///
+  /// Null means no gate: the sheet opens straight through. That is also the
+  /// answer a device that has never synced arrives at, which is deliberate —
+  /// locking it out would brick the one screen that can diagnose a bad sync.
+  devicePin String? @db.VarChar(4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 }
@@ -658,12 +671,20 @@ model TimeClockShift {
 }
 
 model TimeClockSettings {
-  id                  String   @id @default(cuid())
-  orgId               String   @unique
-  autoCloseLocalTime  String   @default("03:00")
-  autoCloseAfterHours Int      @default(4)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                  String @id @default(cuid())
+  orgId               String @unique
+  autoCloseLocalTime  String @default("03:00")
+  autoCloseAfterHours Int    @default(4)
+
+  /// The PIN that unlocks the settings sheet on a `time_clock.terminal`.
+  ///
+  /// Same shape and same rules as `SkiSwapSettings.devicePin`; a separate
+  /// column because they are separate answers — the swap tables and the patrol
+  /// room are different rooms with different people standing in them.
+  devicePin String? @db.VarChar(4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 }

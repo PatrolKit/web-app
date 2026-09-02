@@ -174,11 +174,45 @@ export const RebindDeviceSchema = z.object({ resortId: z.string().min(1) }).stri
  */
 export const BindResortSchema = z.object({ resortId: z.string().min(1).nullable() }).strict();
 
+// ─── Device PIN ───────────────────────────────────────────────────────────────
+
+/**
+ * The PIN that unlocks a device's settings screen.
+ *
+ * It lives here rather than with either module because both modules' PINs are
+ * the same thing — a gate on a screen, on a piece of hardware — and only the
+ * answer differs. The two settings rows each store their own; the shape is
+ * defined once.
+ *
+ * Four digits, fixed: both keypads on the iPad are numeric and the ski-swap one
+ * submits itself on the fourth tap. A variable length would cost that pad a
+ * confirm button to buy strength a gate anyone can stand in front of does not
+ * have either way.
+ */
+export const DevicePinSchema = z.string().regex(/^\d{4}$/, 'Must be exactly 4 digits');
+
+export const DevicePinResponseSchema = z.object({
+  /** Null when no PIN is set, which means the settings screen opens unguarded. */
+  devicePin: z.string().nullable(),
+});
+
+/**
+ * `null` removes the PIN, and is the only way to say so.
+ *
+ * The field is required rather than optional precisely so that "remove it" is
+ * something a caller has to mean: a body that could omit the field would make
+ * clearing indistinguishable from a client that forgot to send it.
+ */
+export const UpdateDevicePinSchema = z
+  .object({ devicePin: DevicePinSchema.nullable() })
+  .strict();
+
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
 export class ProvisionDeviceDto extends createZodDto(ProvisionDeviceSchema) {}
 export class RebindDeviceDto extends createZodDto(RebindDeviceSchema) {}
 export class BindResortDto extends createZodDto(BindResortSchema) {}
+export class UpdateDevicePinDto extends createZodDto(UpdateDevicePinSchema) {}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -187,3 +221,5 @@ export type ProvisionDeviceResponse = z.infer<typeof ProvisionDeviceResponseSche
 export type DeviceListItem = z.infer<typeof DeviceListItemSchema>;
 export type DeviceTokenResponse = z.infer<typeof DeviceTokenResponseSchema>;
 export type DeviceMeResponse = z.infer<typeof DeviceMeResponseSchema>;
+export type DevicePinResponse = z.infer<typeof DevicePinResponseSchema>;
+export type UpdateDevicePinRequest = z.infer<typeof UpdateDevicePinSchema>;
