@@ -253,21 +253,27 @@ export class ImageProvisioningSession {
   }
 
   /**
-   * Stages every field, commits, and waits for the device to come up.
+   * Stages every field and commits. Returns as soon as the device accepts it.
    *
-   * `onCommitted` fires the instant the device accepts the commit — before
-   * Wi-Fi, before the server. Everything written is on the device from that
-   * point whether or not it gets any further, so that is when a caller may
-   * treat the configuration as true. A failure afterwards is a wrong password,
-   * not a lost write.
+   * It deliberately does **not** wait for the device to come online, because on
+   * a first install it never can: the device installs, seals, and reboots
+   * itself, which drops this connection. Waiting here for `state: "online"`
+   * waits for a notification from a radio that has been switched off — the
+   * whole flow simply hung until it timed out, on a display that had in fact
+   * worked. The print bridge has no equivalent step, which is how the
+   * assumption came across unexamined.
+   *
+   * The signal that provisioning worked is the server hearing from the device.
+   * That survives the reboot, proves the credentials and the network rather
+   * than merely the write, and is what the caller should wait on. `status`
+   * keeps streaming until the link drops and is worth showing as progress —
+   * an error on it (a refused Wi-Fi password) is a fast, certain failure long
+   * before any server-side timeout.
    */
   async commit(
     input: ImageProvisioningInput,
-    {
-      timeoutMs = 300_000,
-      onCommitted,
-    }: { timeoutMs?: number; onCommitted?: () => void } = {},
-  ): Promise<ImageStatus> {
+    { onCommitted }: { onCommitted?: () => void } = {},
+  ): Promise<void> {
     if (!isProvisionableOrigin(input.baseUrl)) {
       throw new Error(
         `The device refuses anything but https, and this page is served from ${input.baseUrl}. ` +
@@ -291,11 +297,8 @@ export class ImageProvisioningSession {
     await this.write(Slot.APP_PAYLOAD, encoder.encode(JSON.stringify(input.appPayload)));
 
     // Everything above is staged; nothing has touched disk until this line.
-    const reachedOnline = this.waitForOnline(timeoutMs);
     await this.write(Slot.COMMIT, Uint8Array.of(COMMIT_APPLY));
     onCommitted?.();
-
-    return reachedOnline;
   }
 
   /**
@@ -364,39 +367,16 @@ export class ImageProvisioningSession {
   }
 
   /**
-   * Resolves when the device is up, rejects on an error it reports afterwards.
+   * Called when the link drops.
    *
-   * Errors are only honoured from the moment this is called. A device that has
-   * been provisioned before arrives already reporting `WIFI_AUTH_FAILED` for
-   * the network it can no longer reach — which is the reason someone is
-   * re-provisioning it, not a reason to refuse to.
+   * On a first install that is the device rebooting itself after sealing, which
+   * is success rather than failure — so this reports the fact and lets the
+   * caller decide what it means.
    */
-  private waitForOnline(timeoutMs: number): Promise<ImageStatus> {
-    return new Promise<ImageStatus>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        stop();
-        reject(
-          new Error(
-            'The device did not come online. Check the Wi-Fi name and password, and that this ' +
-              'network can reach the internet.',
-          ),
-        );
-      }, timeoutMs);
-
-      const stop = this.onStatus((status) => {
-        if (status.state === 'online') {
-          clearTimeout(timer);
-          stop();
-          resolve(status);
-          return;
-        }
-        if (status.error) {
-          clearTimeout(timer);
-          stop();
-          reject(new Error(describeError(status.error)));
-        }
-      });
-    });
+  onDisconnect(listener: () => void): () => void {
+    const handler = () => listener();
+    this.device.addEventListener('gattserverdisconnected', handler);
+    return () => this.device.removeEventListener('gattserverdisconnected', handler);
   }
 }
 

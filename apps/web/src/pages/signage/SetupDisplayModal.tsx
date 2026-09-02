@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import {
   BadPinError,
   ImageProvisioningSession,
   PinRequiredError,
   currentBaseUrl,
+  describeError,
   describeState,
   isProvisionableOrigin,
   isWebBluetoothSupported,
@@ -44,12 +46,61 @@ export default function SetupDisplayModal({
   const [ssid, setSsid] = useState('');
   const [psk, setPsk] = useState('');
   const [committed, setCommitted] = useState(false);
+  const [rebooted, setRebooted] = useState(false);
+  /**
+   * The device's last check-in when the commit was written.
+   *
+   * Confirmation waits for it to *move*, not merely to exist: a display being
+   * re-provisioned already has one from its previous life, and comparing
+   * against history would confirm every re-provision instantly.
+   */
+  const [checkedInSince, setCheckedInSince] = useState<string | null>(null);
+  /** Long enough to be worth explaining, short enough to still be watching. */
+  const [waitingTooLong, setWaitingTooLong] = useState(false);
+
+  /**
+   * Whether the server has heard from the display since the commit.
+   *
+   * This — not the Bluetooth link — is what says provisioning worked. The
+   * device installs, seals and reboots itself, so the radio goes away long
+   * before it is finished; a check-in proves the credentials, the network and
+   * the route to us, which is everything the write was for.
+   */
+  const { data: devices } = useQuery({
+    queryKey: ['devices', orgId],
+    queryFn: () => api.devices.list(orgId),
+    enabled: step === 'working',
+    refetchInterval: 2000,
+    // Setting a display up means walking over to look at it, which is exactly
+    // when this tab stops being frontmost.
+    refetchIntervalInBackground: true,
+  });
+  const live = devices?.find((d) => d.id === device.id);
+  const checkedIn = !!live?.bootstrapAt && live.bootstrapAt !== checkedInSince;
 
   const session = useRef<ImageProvisioningSession | null>(null);
 
   // The radio is a shared, single-user resource: a session left open blocks the
   // next display, and there is no other owner to clean it up.
   useEffect(() => () => session.current?.close(), []);
+
+  // Success: the server heard from it. Failure: the device said why, over a
+  // link that is still up — a refused Wi-Fi password is certain in seconds,
+  // where waiting for a check-in that will never come takes minutes.
+  useEffect(() => {
+    if (step !== 'working') return;
+    if (checkedIn) setStep('done');
+    else if (status?.error) setError(describeError(status.error));
+  }, [step, checkedIn, status?.error]);
+
+  // Not a timeout: nothing is cancelled and the poll keeps running, because a
+  // device on a slow link can genuinely take this long and giving up on it
+  // would be wrong. It just stops looking like nothing is happening.
+  useEffect(() => {
+    if (step !== 'working') return;
+    const timer = setTimeout(() => setWaitingTooLong(true), 180_000);
+    return () => clearTimeout(timer);
+  }, [step]);
 
   const baseUrl = currentBaseUrl();
   const httpsOk = isProvisionableOrigin(baseUrl);
@@ -116,6 +167,11 @@ export default function SetupDisplayModal({
       // only copy that will ever exist and it is going straight onto the device.
       const { clientSecret } = await api.devices.rotateSecret(orgId, device.id);
 
+      setCheckedInSince(device.bootstrapAt);
+      // The link will drop when the device reboots itself after sealing. That
+      // is the expected end of this connection, not a failure.
+      session.current!.onDisconnect(() => setRebooted(true));
+
       await session.current!.commit(
         {
           ssid,
@@ -138,7 +194,6 @@ export default function SetupDisplayModal({
         },
         { onCommitted: () => setCommitted(true) },
       );
-      setStep('done');
     });
 
   const factoryReset = () =>
@@ -329,14 +384,36 @@ export default function SetupDisplayModal({
 
         {step === 'working' && (
           <div className="space-y-3">
-            <p className="text-sm text-gray-300">{status ? describeState(status) : 'Writing…'}</p>
+            <p className="text-sm text-gray-300">
+              {rebooted
+                ? 'The display has restarted itself'
+                : status
+                  ? describeState(status)
+                  : 'Writing…'}
+            </p>
             {committed && (
               /* The commit is the commitment: everything written is on the
                  device from here, whether or not it gets any further. */
               <p className="text-xs text-gray-500">
-                Settings saved to the display. Waiting for it to join {ssid} and check in — installing
-                can take a few minutes on a slow link.
+                Settings saved to the display. Waiting for it to join {ssid} and reach the server.
               </p>
+            )}
+            {rebooted && (
+              /* Said out loud because it looks like a failure and is not: the
+                 device installs, seals, and restarts, which is what takes the
+                 Bluetooth link away. */
+              <p className="text-xs text-gray-500">
+                Restarting is part of setting one up — it installs, locks its filesystem, and reboots.
+                Bluetooth drops when it does, so the rest of this is the server hearing from it.
+              </p>
+            )}
+            {waitingTooLong && (
+              <Notice tone="amber">
+                Still nothing after three minutes. It is safe to close this — the display keeps
+                trying on its own, and the Devices list shows its last check-in. If it never
+                appears, the usual causes are a wrong Wi-Fi password or a network that cannot
+                reach the internet.
+              </Notice>
             )}
           </div>
         )}
@@ -344,9 +421,16 @@ export default function SetupDisplayModal({
         {step === 'done' && (
           <div className="space-y-3">
             <Notice tone="green">
-              {device.name} is online. It has joined {status?.ssid ?? ssid}, asked the server what to
-              run, and installed it.
+              {device.name} has joined {ssid} and asked the server what to run.
             </Notice>
+            {/* Two different claims, and only the first is proven here. What it
+                ends up running arrives on a later check-in, after it has
+                installed and restarted. */}
+            <p className="text-xs text-gray-500">
+              {live?.installedPackages
+                ? `Running ${live.installedPackages.split(',').join(', ')}.`
+                : 'It is installing now and will restart itself when it is done. The Devices list shows what it ends up running.'}
+            </p>
             <button onClick={onClose} className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm">
               Done
             </button>
