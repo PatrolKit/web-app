@@ -3,7 +3,6 @@ import { api } from '../../lib/api';
 import type { DeviceItem, ProvisionedDevice } from '../../lib/api.types';
 
 const ATTENDANT_ROLE = 'ski_swap.staff_check_in' as const;
-const BRIDGE_ROLE = 'ski_swap.print_bridge' as const;
 
 export type StationKind = 'self_service' | 'staffed';
 
@@ -12,15 +11,10 @@ export type AddStationResult = {
   stationId: string;
   /** Provisioned here; its secret is shown once and has not been shown yet. */
   newTablet: ProvisionedDevice | null;
-  /** Provisioned here; it has not been near a Bluetooth radio yet. */
-  newBridge: ProvisionedDevice | null;
 };
 
 const inputClass =
   'w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm';
-
-/** Sentinel for "make me a new one", distinct from an id and from unset. */
-const NEW = '__new__';
 
 /**
  * Adding one station of one kind.
@@ -29,6 +23,11 @@ const NEW = '__new__';
  * asks which — it is told, and asks only for what that kind needs. A staffed
  * station always provisions its own iPad: the station and the tablet are one
  * thing being set up, and a tablet bound to nothing cannot check anyone in.
+ *
+ * A bridge is only ever chosen here, never created. Setting one up means
+ * holding the board and sending it Wi-Fi over Bluetooth, which is the Printers
+ * page's job — offering it here produced a bridge that was bound, looked
+ * configured, and had never been switched on.
  */
 export default function AddStationForm({
   orgId,
@@ -64,7 +63,6 @@ export default function AddStationForm({
       const station = await api.skiSwap.createStation(orgId, name.trim());
 
       let newTablet: ProvisionedDevice | null = null;
-      let newBridge: ProvisionedDevice | null = null;
 
       if (staffed) {
         newTablet = await api.devices.provision(orgId, {
@@ -75,14 +73,10 @@ export default function AddStationForm({
       }
 
       if (bridgeChoice) {
-        const bridgeId =
-          bridgeChoice === NEW
-            ? (newBridge = await api.devices.provision(orgId, { role: BRIDGE_ROLE })).id
-            : bridgeChoice;
-        await api.skiSwap.patchStation(orgId, station.id, { bridgeDeviceId: bridgeId });
+        await api.skiSwap.patchStation(orgId, station.id, { bridgeDeviceId: bridgeChoice });
       }
 
-      onDone({ stationId: station.id, newTablet, newBridge });
+      onDone({ stationId: station.id, newTablet });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not set that station up');
       setBusy(false);
@@ -120,16 +114,18 @@ export default function AddStationForm({
           ) : (
             <option value="">Choose a bridge…</option>
           )}
-          <option value={NEW}>Set up a new bridge</option>
           {bridges.map((b) => (
             <option key={b.id} value={b.id}>{b.printerName ?? b.name}</option>
           ))}
         </select>
       </label>
 
-      {bridgeChoice === NEW && (
-        <p className="text-xs text-gray-500">
-          Its Wi-Fi and printer are set next, over Bluetooth — you will need the board to hand.
+      {/* Self-service cannot go without one, so an empty list is a dead end
+          rather than a choice — say where bridges come from. */}
+      {!staffed && bridges.length === 0 && (
+        <p className="text-xs text-amber-400">
+          No print bridge is free. Set one up on the Printers page first — it needs its Wi-Fi
+          and its printer over Bluetooth, with the board to hand.
         </p>
       )}
 

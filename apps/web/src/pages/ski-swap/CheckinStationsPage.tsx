@@ -4,9 +4,8 @@ import { useOutletContext } from 'react-router-dom';
 import { api } from '../../lib/api';
 import StationsTab from '../devices/StationsTab';
 import { ProvisioningCodeCard } from '../devices/DeviceCredentials';
-import BridgeEditModal from './BridgeEditModal';
 import type { AddStationResult } from '../devices/AddStationForm';
-import type { DeviceItem, ProvisionedDevice, SwapPrinterRecord } from '../../lib/api.types';
+import type { ProvisionedDevice } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
 /**
@@ -17,9 +16,10 @@ import type { SkiSwapContext } from './SkiSwapLayout';
  * share the org's 32-character code pool — a SKU's namespace character has to
  * identify exactly one place items were checked in.
  *
- * There is nothing here but the two tables. Hardware is not provisioned on its
- * own: an iPad with no counter cannot check anyone in, and a bridge with no
- * station has nothing to print for.
+ * There is nothing here but the two tables. An iPad is created with the counter
+ * it serves — one bound to nothing cannot check anyone in — and a bridge is
+ * only ever chosen here, never created: setting one up means holding the board
+ * and sending it Wi-Fi over Bluetooth, which belongs on the Printers page.
  */
 export default function CheckinStationsPage() {
   const { orgId, perms } = useOutletContext<SkiSwapContext>();
@@ -39,15 +39,6 @@ export default function CheckinStationsPage() {
     staleTime: 60_000,
   });
 
-  // Needed only to hand a brand-new bridge to its setup screen, which asks
-  // which printer it drives.
-  const { data: printers = [] } = useQuery({
-    queryKey: ['ski-swap/printers', orgId],
-    queryFn: () => api.skiSwap.listPrinters(orgId),
-    enabled: !!orgId,
-    staleTime: 60_000,
-  });
-
   /**
    * An iPad's provisioning code, which the server returns exactly once.
    *
@@ -57,28 +48,8 @@ export default function CheckinStationsPage() {
    */
   const [newTablet, setNewTablet] = useState<ProvisionedDevice | null>(null);
 
-  /**
-   * A bridge that has credentials and nothing else. It goes to the same screen
-   * the Printers page uses: a board that has never had Wi-Fi looks exactly like
-   * a working one here, and only stops looking like one at a venue.
-   */
-  const [newBridge, setNewBridge] = useState<DeviceItem | null>(null);
-
   function handleStationAdded(result: AddStationResult) {
     if (result.newTablet) setNewTablet(result.newTablet);
-    if (result.newBridge) {
-      const d = result.newBridge;
-      setNewBridge({
-        ...d,
-        lastSeenAt: null,
-        printerLink: null,
-        printerLinkAt: null,
-        printerName: null,
-        stationName: null,
-        resortId: null,
-        resortName: null,
-      } as DeviceItem);
-    }
   }
 
   return (
@@ -99,17 +70,6 @@ export default function CheckinStationsPage() {
           secret={newTablet.clientSecret}
           sinceLastSeenAt={null}
           onDismiss={() => setNewTablet(null)}
-        />
-      )}
-
-      {newBridge && (
-        <BridgeEditModal
-          orgId={orgId}
-          bridge={newBridge}
-          printers={printers}
-          boundPrinter={printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === newBridge.id)}
-          justProvisioned
-          onClose={() => setNewBridge(null)}
         />
       )}
     </div>
