@@ -68,8 +68,15 @@ export class SkuService {
    * can carry, producing an unscannable tag nobody notices until the register.
    */
   async allocateCode(orgId: string): Promise<string> {
+    // Every row, including retired ones. A retired station keeps its code on
+    // purpose — a SKU printed at station A has to go on meaning station A
+    // forever, so the letter can never be handed to a different counter — and
+    // the unique index counts tombstones whether or not this query does.
+    // Filtering them out here handed back a letter the database already held,
+    // and the create failed with a raw constraint violation: a 500 for the
+    // ordinary act of adding a station to an org that had ever retired one.
     const stations = await this.prisma.checkinStation.findMany({
-      where: { orgId, deletedAt: null },
+      where: { orgId },
       select: { code: true },
     });
 
@@ -79,9 +86,12 @@ export class SkuService {
       if (!taken.has(c)) return c;
     }
 
+    // Retiring frees nothing, so saying "retire one" would send someone round
+    // a loop that cannot end.
     throw new ConflictException(
-      `All ${SKU_CODE_ALPHABET.length} station codes are in use in this organisation. ` +
-        'Retire a station before creating another.',
+      `This organisation has used all ${SKU_CODE_ALPHABET.length} station codes. ` +
+        'A code is never reused, even after a station is retired, so that a SKU always ' +
+        'names the counter it was printed at.',
     );
   }
 }

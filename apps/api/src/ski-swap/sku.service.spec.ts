@@ -67,19 +67,64 @@ describe('SkuService', () => {
     expect(SKU_CODE_ALPHABET).not.toContain(code);
   });
 
+  /**
+   * Allocation, against a stub that honours the filter it is handed.
+   *
+   * The previous stub answered the same rows whatever `where` it was given, so
+   * it could not tell whether the service asked about every station or only the
+   * live ones. It asked about only the live ones, and the difference reached a
+   * venue as a 500 on the ordinary act of adding a station.
+   */
+  function stationsIn(rows: { code: string; deletedAt: Date | null }[]) {
+    const prisma = makePrisma();
+    prisma.checkinStation.findMany.mockImplementation(
+      ({ where }: { where: { deletedAt?: null } }) =>
+        Promise.resolve(
+          rows
+            .filter((r) => (where.deletedAt === null ? r.deletedAt === null : true))
+            .map((r) => ({ code: r.code })),
+        ),
+    );
+    return prisma;
+  }
+
   // Stations are the only consumers now. Devices used to take one each, which
   // meant a bridge burned a character it never minted a SKU with.
-  it('allocates the first code no live station holds', async () => {
-    const prisma = makePrisma();
-    prisma.checkinStation.findMany.mockResolvedValue([{ code: 'A' }, { code: 'B' }]);
+  it('allocates the first code no station holds', async () => {
+    const prisma = stationsIn([
+      { code: 'A', deletedAt: null },
+      { code: 'B', deletedAt: null },
+    ]);
     expect(await new SkuService(asPrisma(prisma)).allocateCode('org1')).toBe('C');
   });
 
-  it('fails loudly when the pool is exhausted rather than widening the code', async () => {
-    const prisma = makePrisma();
-    prisma.checkinStation.findMany.mockResolvedValue(
-      [...SKU_CODE_ALPHABET].map((c) => ({ code: c })),
+  it('does not hand out a retired station\'s code', async () => {
+    // The unique index counts tombstones, so reusing one is a constraint
+    // violation — and a retired code has to stay retired anyway, or a SKU
+    // printed at the old station A would name the new one.
+    const prisma = stationsIn([
+      { code: 'A', deletedAt: new Date('2026-01-01') },
+      { code: 'B', deletedAt: null },
+    ]);
+    expect(await new SkuService(asPrisma(prisma)).allocateCode('org1')).toBe('C');
+  });
+
+  it('counts a retired code against the pool', async () => {
+    const prisma = stationsIn(
+      [...SKU_CODE_ALPHABET].map((c) => ({ code: c, deletedAt: new Date('2026-01-01') })),
     );
-    await expect(new SkuService(asPrisma(prisma)).allocateCode('org1')).rejects.toThrow(/in use/);
+    await expect(new SkuService(asPrisma(prisma)).allocateCode('org1')).rejects.toThrow(
+      /used all/,
+    );
+  });
+
+  it('does not tell someone to retire a station to free a code', async () => {
+    // Retiring frees nothing, so that advice is a loop with no exit.
+    const prisma = stationsIn(
+      [...SKU_CODE_ALPHABET].map((c) => ({ code: c, deletedAt: null })),
+    );
+    await expect(new SkuService(asPrisma(prisma)).allocateCode('org1')).rejects.not.toThrow(
+      /retire a station before/i,
+    );
   });
 });
