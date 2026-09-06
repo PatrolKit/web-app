@@ -27,7 +27,10 @@ import { RequireDeviceRole } from '../common/decorators/require-device-role.deco
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { SellerService } from './seller.service';
 import { ContactChallengeService } from '../auth/contact-challenge.service';
-import { CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto } from '../contracts/ski-swap.contracts';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
+import { AddTicketRangeDto, CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto } from '../contracts/ski-swap.contracts';
+import { LegacyTicketService } from './legacy-ticket.service';
 
 @Controller('orgs/:orgId/ski-swap/sellers')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
@@ -37,7 +40,43 @@ export class SellerController {
   constructor(
     private readonly sellerService: SellerService,
     private readonly challenges: ContactChallengeService,
+    private readonly tickets: LegacyTicketService,
   ) {}
+
+  // ─── Legacy ticket ranges ─────────────────────────────────────────────────
+
+  /**
+   * The blocks issued to this seller for a swap, with how much of each is
+   * spent. Swap-scoped, so the caller says which one.
+   */
+  @Get(':sellerId/ticket-ranges')
+  @RequirePermissions('ski_swap:report')
+  listTicketRanges(
+    @Param('orgId') orgId: string,
+    @Param('sellerId') sellerId: string,
+    @Query('swapId') swapId: string,
+  ) {
+    return this.tickets.listForSellerWithUse(orgId, swapId, sellerId);
+  }
+
+  @Post(':sellerId/ticket-ranges')
+  @HttpCode(201)
+  @RequirePermissions('ski_swap:admin')
+  addTicketRange(
+    @Param('orgId') orgId: string,
+    @Param('sellerId') sellerId: string,
+    @Body() body: AddTicketRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tickets.addRange(orgId, body.swapId, sellerId, body, user.userId);
+  }
+
+  @Delete(':sellerId/ticket-ranges/:rangeId')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  removeTicketRange(@Param('orgId') orgId: string, @Param('rangeId') rangeId: string) {
+    return this.tickets.removeRange(orgId, rangeId);
+  }
 
   @Get()
   @RequirePermissions('ski_swap:report')

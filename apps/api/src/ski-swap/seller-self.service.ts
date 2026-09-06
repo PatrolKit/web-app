@@ -1,10 +1,11 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ItemService } from './item.service';
 import type { SellerResponse } from '../contracts/ski-swap.contracts';
 import { SellerService } from './seller.service';
 import { PrintQueueService } from './print-queue.service';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
+import { LegacyTicketService } from './legacy-ticket.service';
 
 @Injectable()
 export class SellerSelfService {
@@ -14,6 +15,7 @@ export class SellerSelfService {
     private readonly sellerService: SellerService,
     private readonly printQueue: PrintQueueService,
     private readonly settings: SkiSwapSettingsService,
+    private readonly tickets: LegacyTicketService,
   ) {}
 
   // ─── Seller record ────────────────────────────────────────────────────────
@@ -100,12 +102,13 @@ export class SellerSelfService {
     userId: string,
     data: {
       swapId: string;
-      name: string;
+      name?: string;
       description?: string;
       priceCents: number;
       quantity: number;
       donateProceeds?: boolean;
       stationId?: string;
+      sku?: string;
     },
     idempotencyKey?: string,
   ) {
@@ -113,10 +116,49 @@ export class SellerSelfService {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: data.swapId, orgId, active: true } });
     if (!swap) throw new NotFoundException('Active swap not found');
 
+    const onTickets = await this.tickets.isLegacySeller(data.swapId, seller.id);
+
+    // A ticket number is honoured only from a seller who holds one. Accepting
+    // it from anyone else would let them mint a SKU that collides with the
+    // counter's sequence.
+    if (data.sku !== undefined && !onTickets) {
+      throw new BadRequestException('This seller does not use issued tickets.');
+    }
+
+    let name = data.name?.trim();
+    let sku: string | undefined;
+
+    if (onTickets) {
+      if (data.sku) {
+        sku = data.sku.trim();
+        await this.tickets.assertUsable(data.swapId, seller.id, sku);
+      } else {
+        // No number given: take the suggestion, and refuse only when there is
+        // genuinely nothing unused left rather than merely nothing to suggest.
+        await this.tickets.assertNotExhausted(data.swapId, seller.id);
+        const { suggested } = await this.tickets.formState(data.swapId, seller.id);
+        if (suggested === null) {
+          throw new BadRequestException(
+            'You have worked to the end of your tickets. Enter the number of a skipped one.',
+          );
+        }
+        sku = String(suggested);
+        await this.tickets.assertUsable(data.swapId, seller.id, sku);
+      }
+      if (!name) name = await this.tickets.fallbackName(seller.id, sku);
+    } else if (!name) {
+      throw new BadRequestException('An item needs a name.');
+    }
+
     return this.itemService.createAtStation(
       orgId,
       data.swapId,
-      { ...data, sellerId: seller.id },
+      {
+        ...data,
+        name,
+        sellerId: seller.id,
+        ...(sku ? { sku, alreadyPrinted: true } : {}),
+      },
       idempotencyKey,
     );
   }

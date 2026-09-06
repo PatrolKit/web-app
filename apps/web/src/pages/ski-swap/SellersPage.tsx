@@ -7,6 +7,7 @@ import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SellerImportModal from './SellerImportModal';
+import SellerTicketRanges from './SellerTicketRanges';
 import PrintReceiptModal from './PrintReceiptModal';
 
 interface SellerForm {
@@ -439,6 +440,18 @@ export default function SellersPage() {
                     </div>
                   </div>
                 </>
+              )}
+
+              {/* Editing a business seller: the blocks of tickets they were
+                  issued, which is the alternative to giving them a printer. */}
+              {editSeller && editSeller.businessName && (
+                <SellerTicketRanges
+                  orgId={orgId}
+                  sellerId={editSeller.id}
+                  swapId={selectedSwap?.id ?? null}
+                  swapTitle={selectedSwap?.title ?? null}
+                  canAdmin={perms.has('ski_swap:admin')}
+                />
               )}
 
               {/* Step 2b — Business: name + email only */}

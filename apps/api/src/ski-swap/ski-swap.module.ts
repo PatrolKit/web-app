@@ -24,6 +24,7 @@ import { S3Service } from './s3.service';
 import { SquarePosAdapterFactory } from './pos/square.pos.adapter';
 import { PosAdapterFactory } from './pos/pos.adapter';
 import { SellerSelfService } from './seller-self.service';
+import { LegacyTicketService } from './legacy-ticket.service';
 import { SellerSelfController } from './seller-self.controller';
 import { BusinessSellerService } from './business-seller.service';
 import { BusinessSellerController } from './business-seller.controller';
@@ -79,6 +80,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     PublicLookupService,
     PublicSellerService,
     SellerSelfService,
+    LegacyTicketService,
     BusinessSellerService,
     PrinterService,
     SkiSwapSettingsService,
