@@ -28,7 +28,7 @@ import {
   useClockTick,
 } from '../devices/hardwareStatus';
 import type { HardwareStatus } from '../devices/hardwareStatus';
-import type { DeviceItem, DeviceRole, SellerResponse, SwapPrinterRecord } from '../../lib/api.types';
+import type { DeviceItem, DeviceRole, SwapPrinterRecord } from '../../lib/api.types';
 import BridgeEditModal from './BridgeEditModal';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
@@ -75,18 +75,11 @@ export default function PrintersPage() {
   const [printerFormError, setPrinterFormError] = useState<string | null>(null);
   const [editingPrinter, setEditingPrinter] = useState<SwapPrinterRecord | null>(null);
   const [editPrinterName, setEditPrinterName] = useState('');
-  const [editPrinterAssignedSellerId, setEditPrinterAssignedSellerId] = useState<string>('');
   const [editMargins, setEditMargins] = useState<PrinterMargins>(DEFAULT_PRINTER_MARGINS);
 
   const { data: printers = [] } = useQuery({
     queryKey: ['ski-swap/printers', orgId],
     queryFn: () => api.skiSwap.listPrinters(orgId),
-    enabled: !!orgId && canManagePrinters,
-  });
-
-  const { data: sellers = [] } = useQuery<SellerResponse[]>({
-    queryKey: ['ski-swap/sellers', orgId],
-    queryFn: () => api.skiSwap.listSellers(orgId),
     enabled: !!orgId && canManagePrinters,
   });
 
@@ -273,7 +266,7 @@ export default function PrintersPage() {
                 className="bg-surface-200 rounded-lg p-6 w-full max-w-sm space-y-4"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  patchPrinterMutation.mutate({ name: editPrinterName, assignedSellerId: editPrinterAssignedSellerId || null, ...editMargins });
+                  patchPrinterMutation.mutate({ name: editPrinterName, ...editMargins });
                 }}
               >
                 <h2 className="text-white font-semibold">Edit Printer</h2>
@@ -283,18 +276,29 @@ export default function PrintersPage() {
                   required
                   className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
                 />
+                {/* Reported, not chosen. Which printer a seller gets is a fact
+                    about the seller — and the alternative to giving them one is
+                    issuing them tickets, which this screen knows nothing about.
+                    Releasing it stays here, because that is about the printer. */}
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Assign to seller (leave blank for org pool)</label>
-                  <select
-                    value={editPrinterAssignedSellerId}
-                    onChange={(e) => setEditPrinterAssignedSellerId(e.target.value)}
-                    className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-                  >
-                    <option value="">Org pool (unassigned)</option>
-                    {sellers.filter((s) => s.businessName !== null).map((s) => (
-                      <option key={s.id} value={s.id}>{s.displayName}</option>
-                    ))}
-                  </select>
+                  <label className="text-xs text-gray-400 block mb-1">Assigned to</label>
+                  {editingPrinter.assignedSellerName ? (
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-white">{editingPrinter.assignedSellerName}</span>
+                      <button
+                        type="button"
+                        onClick={() => patchPrinterMutation.mutate({ assignedSellerId: null })}
+                        disabled={patchPrinterMutation.isPending}
+                        className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                      >
+                        Unassign
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">
+                      Org pool — assign it on the seller&apos;s own page.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">Paper size</label>
@@ -375,7 +379,6 @@ export default function PrintersPage() {
                   <button
                     onClick={() => {
                       setEditingPrinter(p); setEditPrinterName(p.name);
-                      setEditPrinterAssignedSellerId(p.assignedSellerId ?? '');
                       setEditMargins({ marginTop: p.marginTop, marginBottom: p.marginBottom, marginLeft: p.marginLeft, marginRight: p.marginRight });
                     }}
                     className="text-xs text-brand-500 hover:underline"
