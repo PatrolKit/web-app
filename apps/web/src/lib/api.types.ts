@@ -309,6 +309,38 @@ export interface ItemResponse {
   updatedAt: string;
 }
 
+/** A block of pre-printed tickets issued to a business seller for one swap. */
+export interface LegacyTicketRange {
+  id: string;
+  swapId: string;
+  sellerId: string;
+  startNumber: number;
+  endNumber: number;
+  ticketCount: number;
+  /** Derived from the items, so it counts numbers actually on goods. */
+  usedCount: number;
+}
+
+/**
+ * What the item form opens with.
+ *
+ * `suggested: null` with `exhausted: false` is the ordinary state past the top
+ * of a range: nothing to offer, but a skipped ticket may still be entered.
+ */
+export interface TicketFormState {
+  ranges: { startNumber: number; endNumber: number }[];
+  suggested: number | null;
+  exhausted: boolean;
+}
+
+/** One row's fate in a ticket-item import. */
+export interface TicketImportRow {
+  line: number;
+  sku: string;
+  outcome: 'ok' | 'created' | 'error';
+  error?: string;
+}
+
 export interface SwapStats {
   totalItems: number;
   totalSellers: number;

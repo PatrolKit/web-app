@@ -292,7 +292,12 @@ export const SellerSwapSummarySchema = z.object({ id: z.string(), title: z.strin
 export const SellerItemCreateSchema = z
   .object({
     swapId: z.string(),
-    name: z.string().min(1).max(200),
+    /**
+     * Optional only for a seller on issued tickets, where the description lives
+     * on the paper tag. Blank becomes "<seller> <number>" — the service decides,
+     * because `SwapItem.name` is non-null and Square requires a name.
+     */
+    name: z.string().max(200).optional(),
     description: z.string().max(2000).optional(),
     priceCents: z.number().int().positive(),
     quantity: z.number().int().positive(),
@@ -303,6 +308,12 @@ export const SellerItemCreateSchema = z
      * business seller entering items from their own desk.
      */
     stationId: z.string().optional(),
+    /**
+     * A ticket number, for a seller on issued tickets. Honoured only when they
+     * hold a range covering it — an ordinary seller sending one is refused,
+     * because their number would collide with the minted sequence.
+     */
+    sku: z.string().max(20).optional(),
   })
   .strict();
 
@@ -351,6 +362,48 @@ export const SellerItemUpdateSchema = z
 export class SellerItemCreateDto extends createZodDto(SellerItemCreateSchema) {}
 export class SellerItemUpdateDto extends createZodDto(SellerItemUpdateSchema) {}
 export type SellerSwapSummary = z.infer<typeof SellerSwapSummarySchema>;
+
+// ─── Legacy ticket ranges ─────────────────────────────────────────────────────
+
+/**
+ * A block of pre-printed tickets issued to a business seller for one swap.
+ *
+ * `usedCount` is derived from the items rather than stored, so it counts the
+ * numbers actually on goods — not how far down the pad the seller has worked.
+ */
+export const LegacyTicketRangeResponseSchema = z.object({
+  id: z.string(),
+  swapId: z.string(),
+  sellerId: z.string(),
+  startNumber: z.number().int(),
+  endNumber: z.number().int(),
+  ticketCount: z.number().int(),
+  usedCount: z.number().int(),
+});
+
+export const AddTicketRangeSchema = z
+  .object({
+    swapId: z.string().min(1),
+    startNumber: z.number().int().positive(),
+    endNumber: z.number().int().positive(),
+  })
+  .strict();
+
+/**
+ * What the item form needs to open: the number to offer, and whether the seller
+ * has anything left at all. Separate answers — past the top of their ranges
+ * there is nothing to suggest, but a skipped ticket they have found is still
+ * enterable.
+ */
+export const TicketFormStateSchema = z.object({
+  ranges: z.array(z.object({ startNumber: z.number().int(), endNumber: z.number().int() })),
+  suggested: z.number().int().nullable(),
+  exhausted: z.boolean(),
+});
+
+export class AddTicketRangeDto extends createZodDto(AddTicketRangeSchema) {}
+export type LegacyTicketRangeResponse = z.infer<typeof LegacyTicketRangeResponseSchema>;
+export type TicketFormState = z.infer<typeof TicketFormStateSchema>;
 
 // ─── Printers ─────────────────────────────────────────────────────────────────
 

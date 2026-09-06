@@ -25,6 +25,7 @@ import { SellerSelfService } from './seller-self.service';
 import { PatchSellerDto, SellerItemCreateDto, SellerItemUpdateDto } from '../contracts/ski-swap.contracts';
 import { PrinterService } from './printer.service';
 import { ReprintItemDto } from '../contracts/ski-swap.contracts';
+import { LegacyTicketService } from './legacy-ticket.service';
 
 @Controller('orgs/:orgId/ski-swap/seller/me')
 @UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, SellerProfileGuard)
@@ -33,7 +34,44 @@ export class SellerSelfController {
   constructor(
     private readonly sellerSelfService: SellerSelfService,
     private readonly printerService: PrinterService,
+    private readonly tickets: LegacyTicketService,
   ) {}
+
+  /**
+   * A whole inventory at once, for a shop with more items than patience.
+   *
+   * Checked in full before anything is written: a half-imported inventory is
+   * worse than a rejected one, because the seller cannot tell which half.
+   */
+  @Post('items/import')
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async importItems(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('swapId') swapId: string,
+  ) {
+    const seller = await this.sellerSelfService.getSellerRecord(orgId, user.userId);
+    const { rows } = this.tickets.parseItemCsv(file.buffer);
+    return this.tickets.importItems(orgId, swapId, seller.id, rows);
+  }
+
+  /**
+   * The number to offer, the blocks it came from, and whether anything is left.
+   *
+   * `suggested: null` with `exhausted: false` is the ordinary state past the top
+   * of a range: nothing to offer, but a skipped ticket may still be entered.
+   */
+  @Get('ticket-state')
+  async ticketState(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('swapId') swapId: string,
+  ) {
+    const seller = await this.sellerSelfService.getSellerRecord(orgId, user.userId);
+    return this.tickets.formState(swapId, seller.id);
+  }
 
   // ─── Profile ──────────────────────────────────────────────────────────────
 

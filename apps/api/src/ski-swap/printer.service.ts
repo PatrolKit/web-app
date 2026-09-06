@@ -4,12 +4,14 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { createId } from '@paralleldrive/cuid2';
 import type { SwapPrinterResponse } from '../contracts/ski-swap.contracts';
 import { SELLER_NAME_INCLUDE, sellerDisplayName, type SellerNameRow } from './seller.service';
+import { LegacyTicketService } from './legacy-ticket.service';
 
 @Injectable()
 export class PrinterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissionsService: PermissionsService,
+    private readonly tickets: LegacyTicketService,
   ) {}
 
   async list(orgId: string, userId?: string): Promise<SwapPrinterResponse[]> {
@@ -98,6 +100,11 @@ export class PrinterService {
           `That printer is driven by "${existing.bridge?.name ?? 'a bridge'}". Release it there before assigning it to a seller.`,
         );
       }
+
+      // A printer and issued tickets are alternative answers to "how does this
+      // item get a tag". A seller holding both would have two SKUs competing
+      // for one item, so the exclusivity is enforced from both directions.
+      await this.tickets.assertNoRanges(orgId, data.assignedSellerId);
     }
 
     if (data.bridgeDeviceId) {

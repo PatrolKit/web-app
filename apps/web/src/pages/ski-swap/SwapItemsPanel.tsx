@@ -19,6 +19,8 @@ export interface SwapItemsPanelApi {
 }
 
 export interface CreateItemInput {
+  /** A ticket number, for a seller on issued tickets. Absent otherwise. */
+  sku?: string;
   name: string;
   description?: string;
   priceCents: number;
@@ -45,6 +47,19 @@ export interface SwapItemsPanelProps {
   canManage: boolean;
   queryKeyPrefix: string;
   panelApi: SwapItemsPanelApi;
+  /**
+   * Present when the seller is on issued tickets rather than a printer. The
+   * number replaces the minted SKU, the name stops being required, and there is
+   * nothing to print — the tag is already on the goods.
+   */
+  tickets?: {
+    ranges: { startNumber: number; endNumber: number }[];
+    /** The number to offer. Null past the top of the ranges, which is not an error. */
+    suggested: number | null;
+    /** True only when nothing at all is unused — the one state that refuses. */
+    exhausted: boolean;
+    onUsed: () => void;
+  };
   showSearch?: boolean;
   sellers?: SellerResponse[];
   emptyMessage?: string;
@@ -60,15 +75,23 @@ interface ItemFormData {
   quantity: string;
   sellerId: string;
   donateProceeds: boolean;
+  /** The ticket on the item, for a seller on issued tickets. */
+  sku: string;
 }
 
-const emptyForm: ItemFormData = { name: '', description: '', priceDollars: '', quantity: '1', sellerId: '', donateProceeds: false };
+const emptyForm: ItemFormData = { name: '', description: '', priceDollars: '', quantity: '1', sellerId: '', donateProceeds: false, sku: '' };
+
+/** "67000–67499", or "67000–67499, 68000–68499" for a shop with two pads. */
+function describeRanges(ranges: { startNumber: number; endNumber: number }[]): string {
+  return ranges.map((r) => `${r.startNumber}–${r.endNumber}`).join(', ');
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi,
   showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
+  tickets,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
@@ -99,8 +122,12 @@ export default function SwapItemsPanel({
       quantity: 1,
       sellerId: form.sellerId || undefined,
       donateProceeds: form.donateProceeds,
+      ...(tickets ? { sku: form.sku.trim() } : {}),
     }),
     onSuccess: (item) => {
+      // The suggestion is derived from the items, so it is stale the moment one
+      // is saved — without this the next add would offer the number just used.
+      tickets?.onUsed();
       if (pendingPhoto && panelApi.uploadPhoto) {
         uploadPhotoMutation.mutate(
           { itemId: item.id, file: pendingPhoto.file },
@@ -155,6 +182,9 @@ export default function SwapItemsPanel({
       priceDollars: (item.priceCents / 100).toFixed(2),
       quantity: String(item.originalQuantity),
       sellerId: item.seller?.id ?? '',
+      // Carried so the shape is complete; editing never changes a ticket
+      // number, because the ticket is physically on the goods.
+      sku: item.sku,
       donateProceeds: item.donateProceeds,
     });
   }
@@ -216,7 +246,17 @@ export default function SwapItemsPanel({
         </div>
         {canManage && (
           <button
-            onClick={() => { setShowForm(true); setEditItem(null); setForm(emptyForm); }}
+            onClick={() => {
+              setShowForm(true);
+              setEditItem(null);
+              // Pre-filled with the suggestion when there is one. Past the top
+              // of the ranges it opens blank rather than refusing, because a
+              // skipped ticket may still be in the box.
+              setForm({
+                ...emptyForm,
+                sku: tickets?.suggested != null ? String(tickets.suggested) : '',
+              });
+            }}
             className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
           >
             + Add Item
@@ -266,7 +306,10 @@ export default function SwapItemsPanel({
                       onClick={() => { if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id); }}
                       className="text-xs text-red-500 hover:underline"
                     >Delete</button>
-                    {item.hasPrintedTag ? (
+                    {/* Hidden for a seller on issued tickets: the tag is
+                        already on the goods, and there is no printer to send
+                        one to. */}
+                    {tickets ? null : item.hasPrintedTag ? (
                       <button
                         onClick={() => handlePrint(item)}
                         disabled={printingItem}
@@ -302,12 +345,34 @@ export default function SwapItemsPanel({
           >
             <h2 className="text-white font-semibold">{editItem ? 'Edit Item' : 'Add Item'}</h2>
 
+            {tickets && !editItem && (
+              <label className="block">
+                <span className="block text-xs text-gray-400 mb-1">Ticket number</span>
+                <input
+                  autoFocus
+                  value={form.sku}
+                  onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                  // Selected rather than locked: the common case is accepting
+                  // the suggestion, but a ticket found later has to be typeable.
+                  onFocus={(e) => e.currentTarget.select()}
+                  inputMode="numeric"
+                  placeholder="e.g. 67169"
+                  className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono"
+                />
+                <span className="block text-xs text-gray-500 mt-1">
+                  {tickets.suggested !== null
+                    ? `Next in ${describeRanges(tickets.ranges)}. Type another if this one was lost or you are using a different ticket.`
+                    : `No next ticket — you have worked to the end of ${describeRanges(tickets.ranges)}. If you have found a skipped one, enter its number.`}
+                </span>
+              </label>
+            )}
+
             <input
-              required
-              autoFocus={!editItem}
+              required={!tickets}
+              autoFocus={!editItem && !tickets}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="Name"
+              placeholder={tickets ? 'Name (optional)' : 'Name'}
               className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
             />
             <textarea

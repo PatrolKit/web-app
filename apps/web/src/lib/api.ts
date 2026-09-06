@@ -481,6 +481,46 @@ export const api = {
       }),
     deleteSeller: (orgId: string, sellerId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, { method: 'DELETE' }),
+
+    // Legacy ticket ranges — blocks the org issued to a business seller.
+    listTicketRanges: (orgId: string, sellerId: string, swapId: string) =>
+      request<import('./api.types').LegacyTicketRange[]>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/ticket-ranges?swapId=${swapId}`,
+      ),
+    addTicketRange: (
+      orgId: string,
+      sellerId: string,
+      data: { swapId: string; startNumber: number; endNumber: number },
+    ) =>
+      request<import('./api.types').LegacyTicketRange[]>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/ticket-ranges`,
+        { method: 'POST', body: JSON.stringify(data) },
+      ),
+    removeTicketRange: (orgId: string, sellerId: string, rangeId: string) =>
+      request<import('./api.types').LegacyTicketRange[]>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/ticket-ranges/${rangeId}`,
+        { method: 'DELETE' },
+      ),
+    /** A whole inventory at once. Nothing is written unless every row passes. */
+    importTicketItems: (orgId: string, swapId: string, file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('swapId', swapId);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      return fetch(`/api/v1/orgs/${orgId}/ski-swap/seller/me/items/import`, {
+        method: 'POST', credentials: 'include', headers, body: form,
+      }).then((r) => r.json() as Promise<{
+        success: boolean;
+        error?: string;
+        data?: { line: number; sku: string; outcome: 'ok' | 'created' | 'error'; error?: string }[];
+      }>);
+    },
+    /** What the seller's own item form opens with. */
+    ticketState: (orgId: string, swapId: string) =>
+      request<import('./api.types').TicketFormState>(
+        `/orgs/${orgId}/ski-swap/seller/me/ticket-state?swapId=${swapId}`,
+      ),
     initiateVerification: (orgId: string, sellerId: string, channel: 'email' | 'phone') =>
       request<{ challengeId: string; devCode?: string }>(
         `/orgs/${orgId}/ski-swap/sellers/${sellerId}/verify/${channel}/initiate`,
@@ -554,7 +594,7 @@ export const api = {
      */
     sellerCreateItem: (
       orgId: string,
-      data: { swapId: string; name: string; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean; stationId?: string },
+      data: { swapId: string; name?: string; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean; stationId?: string; sku?: string },
       idempotencyKey?: string,
     ) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items`, {
