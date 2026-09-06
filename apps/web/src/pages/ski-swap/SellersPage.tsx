@@ -7,7 +7,7 @@ import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SellerImportModal from './SellerImportModal';
-import SellerTicketRanges from './SellerTicketRanges';
+import SellerTicketSource from './SellerTicketSource';
 import PrintReceiptModal from './PrintReceiptModal';
 
 interface SellerForm {
@@ -442,10 +442,11 @@ export default function SellersPage() {
                 </>
               )}
 
-              {/* Editing a business seller: the blocks of tickets they were
-                  issued, which is the alternative to giving them a printer. */}
+              {/* Where this seller's tags come from — a printer of their own,
+                  or tickets we issued. The two are alternatives, so they are
+                  chosen in one place rather than on two screens. */}
               {editSeller && editSeller.businessName && (
-                <SellerTicketRanges
+                <SellerTicketSource
                   orgId={orgId}
                   sellerId={editSeller.id}
                   swapId={selectedSwap?.id ?? null}
