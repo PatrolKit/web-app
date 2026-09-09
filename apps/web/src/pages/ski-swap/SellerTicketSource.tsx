@@ -32,6 +32,7 @@ export default function SellerTicketSource({
   sellerId,
   swapId,
   swapTitle,
+  legacyTicketsEnabled,
   canAdmin,
 }: {
   orgId: string;
@@ -39,6 +40,8 @@ export default function SellerTicketSource({
   /** Ranges belong to a swap; a printer does not. */
   swapId: string | null;
   swapTitle: string | null;
+  /** Whether this swap takes tickets from the stockpile at all. */
+  legacyTicketsEnabled: boolean;
   canAdmin: boolean;
 }) {
   const qc = useQueryClient();
@@ -63,6 +66,16 @@ export default function SellerTicketSource({
 
   const mine = printers.find((p) => p.assignedSellerId === sellerId) ?? null;
   const hasRanges = ranges.length > 0;
+
+  /**
+   * Whether tickets are one of the answers on offer here.
+   *
+   * Off for a swap that does not take them — there is nothing to issue, and a
+   * tab for it is a tab staff have to learn to ignore. Ranges already issued
+   * keep it visible even then, because a block a shop is holding paper for must
+   * not vanish from the screen when somebody flips the swap setting.
+   */
+  const ticketsOffered = legacyTicketsEnabled || hasRanges;
 
   // Opens on whichever answer is already true, so the page reflects the seller
   // rather than a default.
@@ -117,17 +130,19 @@ export default function SellerTicketSource({
     <div className="space-y-2 pt-1 border-t border-gray-700">
       <div className="flex items-center gap-2">
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket source</p>
-        <div className="flex gap-1">
-          <button type="button" className={tabClass(tab === 'printer')} onClick={() => { setTab('printer'); setError(''); }}>
-            Printer
-          </button>
-          <button type="button" className={tabClass(tab === 'tickets')} onClick={() => { setTab('tickets'); setError(''); }}>
-            Issued tickets
-          </button>
-        </div>
+        {ticketsOffered && (
+          <div className="flex gap-1">
+            <button type="button" className={tabClass(tab === 'printer')} onClick={() => { setTab('printer'); setError(''); }}>
+              Printer
+            </button>
+            <button type="button" className={tabClass(tab === 'tickets')} onClick={() => { setTab('tickets'); setError(''); }}>
+              Issued tickets
+            </button>
+          </div>
+        )}
       </div>
 
-      {tab === 'printer' && (
+      {(tab === 'printer' || !ticketsOffered) && (
         hasRanges ? (
           <p className="text-xs text-gray-500">
             This seller uses issued tickets. Remove their ranges before assigning a printer.
@@ -156,7 +171,7 @@ export default function SellerTicketSource({
         )
       )}
 
-      {tab === 'tickets' && (
+      {tab === 'tickets' && ticketsOffered && (
         mine ? (
           <p className="text-xs text-gray-500">
             This seller has a printer ({mine.name}). Unassign it before issuing tickets.
@@ -197,7 +212,14 @@ export default function SellerTicketSource({
               </ul>
             )}
 
-            {canAdmin && (
+            {!legacyTicketsEnabled && (
+              <p className="text-xs text-amber-400">
+                This swap no longer accepts legacy tickets. These blocks still work; no
+                more can be issued.
+              </p>
+            )}
+
+            {canAdmin && legacyTicketsEnabled && (
               <div className="flex items-center gap-2 pt-1">
                 <input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="from" inputMode="numeric" className={numberClass} />
                 <span className="text-gray-600">–</span>

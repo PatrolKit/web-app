@@ -115,6 +115,8 @@ function harness(opts: { requireConsignmentScan?: boolean } = {}) {
     { next: async () => `SS26-A-000${n + 1}` } as never,
     { enqueueItemTags: async () => {} } as never,
     { get: async () => ({ labelsPerItem: 1, ...toggle }) } as never,
+    // No ticket blocks issued in these tests, so every number is unallocated.
+    { holderOf: async () => null } as never,
   );
 
   // `syncItemToPos` is the private seam between an item and the catalogue, and

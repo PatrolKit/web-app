@@ -69,15 +69,20 @@ export class SwapService {
   async patch(
     orgId: string,
     swapId: string,
-    data: { title?: string; active?: boolean; locationId?: string },
+    data: { title?: string; active?: boolean; locationId?: string; legacyTicketsEnabled?: boolean },
   ): Promise<SwapResponse> {
     const swap = await this.findOrThrow(orgId, swapId);
-    const client = await this.squareOrExplain(orgId, 'changing a swap');
 
     let newSkuPrefix = swap.skuPrefix;
     let squareCategoryId = swap.squareCategoryId;
 
     if (data.title !== undefined && data.title !== swap.title) {
+      // Square is reached for only when the title moves, which is the one
+      // change it has to hear about — the category is named after the swap.
+      // Asking for a client up front made every patch depend on Square, so
+      // flipping a boolean failed with "Connect Square before changing a swap"
+      // whenever it was down, and cost a round trip when it was not.
+      const client = await this.squareOrExplain(orgId, 'renaming a swap');
       const parentCategoryId = await this.findOrCreatePatrolKitCategory(client);
 
       // The version is Square's optimistic lock, and fetching it is also how we
@@ -133,6 +138,9 @@ export class SwapService {
             : {}),
           ...(data.active !== undefined ? { active: data.active } : {}),
           ...(data.locationId !== undefined ? { locationId: data.locationId } : {}),
+          ...(data.legacyTicketsEnabled !== undefined
+            ? { legacyTicketsEnabled: data.legacyTicketsEnabled }
+            : {}),
           activeSkuPrefix: willBeActive ? newSkuPrefix : null,
         },
       })
@@ -285,6 +293,7 @@ export class SwapService {
     locationId: string;
     active: boolean;
     skuPrefix: string;
+    legacyTicketsEnabled: boolean;
     createdAt: Date;
     updatedAt: Date;
   }): SwapResponse {
@@ -296,6 +305,7 @@ export class SwapService {
       locationId: swap.locationId,
       active: swap.active,
       skuPrefix: swap.skuPrefix,
+      legacyTicketsEnabled: swap.legacyTicketsEnabled,
       createdAt: swap.createdAt.toISOString(),
       updatedAt: swap.updatedAt.toISOString(),
     };

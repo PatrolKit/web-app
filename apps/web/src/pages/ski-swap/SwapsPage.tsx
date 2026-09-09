@@ -9,8 +9,8 @@ function mutationError(err: unknown): string {
   return err instanceof ApiError ? err.message : 'Something went wrong';
 }
 
-interface SwapForm { title: string; locationId: string; }
-const emptyForm: SwapForm = { title: '', locationId: '' };
+interface SwapForm { title: string; locationId: string; legacyTicketsEnabled: boolean; }
+const emptyForm: SwapForm = { title: '', locationId: '', legacyTicketsEnabled: false };
 
 export default function SwapsPage() {
   const { orgId, perms, setSelectedSwapId } = useOutletContext<SkiSwapContext>();
@@ -55,6 +55,8 @@ export default function SwapsPage() {
     mutationFn: (s: SwapResponse) => api.skiSwap.patchSwap(orgId, s.id, {
       title: form.title !== s.title ? form.title : undefined,
       locationId: form.locationId !== s.locationId ? form.locationId : undefined,
+      legacyTicketsEnabled:
+        form.legacyTicketsEnabled !== s.legacyTicketsEnabled ? form.legacyTicketsEnabled : undefined,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] }); qc.invalidateQueries({ queryKey: ['ski-swap/swaps-all', orgId] });
@@ -78,7 +80,11 @@ export default function SwapsPage() {
 
   function openEdit(s: SwapResponse) {
     setEditSwap(s);
-    setForm({ title: s.title, locationId: s.locationId });
+    setForm({
+      title: s.title,
+      locationId: s.locationId,
+      legacyTicketsEnabled: s.legacyTicketsEnabled,
+    });
     setShowForm(true);
   }
 
@@ -161,6 +167,29 @@ export default function SwapsPage() {
             )}
           </label>
 
+          {/* Edit only. A new swap starts off — that is what "default off"
+              means — and turning it on is a decision about a swap that exists,
+              usually taken when the first box of old tickets turns up. */}
+          {editSwap && (
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={form.legacyTicketsEnabled}
+                onChange={(e) => setForm({ ...form, legacyTicketsEnabled: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block text-sm text-white">Accept legacy tickets</span>
+                <span className="block text-gray-500 text-xs mt-0.5">
+                  For gear that arrives already carrying a numbered ticket from the old
+                  stockpile, instead of a tag printed at check-in. Turns on issuing ticket
+                  blocks to business sellers, and the staff iPad's option to scan a loose
+                  one during an individual's check-in.
+                </span>
+              </span>
+            </label>
+          )}
+
           <div className="flex gap-2">
             <button type="submit" disabled={isSubmitting || !form.locationId || !form.title}
               className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium">
@@ -211,6 +240,14 @@ export default function SwapsPage() {
                   <span className={`text-xs px-2 py-0.5 rounded ${s.active ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-400'}`}>
                     {s.active ? 'Active' : 'Inactive'}
                   </span>
+                  {s.legacyTicketsEnabled && (
+                    <span
+                      className="ml-2 text-xs px-2 py-0.5 rounded bg-surface-100 text-gray-400"
+                      title="Accepts gear that arrives on a numbered ticket from the old stockpile"
+                    >
+                      Legacy tickets
+                    </span>
+                  )}
                 </td>
                 {perms.has('ski_swap:admin') && (
                   <td className="py-2 flex gap-3">

@@ -417,7 +417,11 @@ export const api = {
       request<import('./api.types').SwapResponse>(`/orgs/${orgId}/ski-swap/swaps`, {
         method: 'POST', body: JSON.stringify({ title, locationId }),
       }),
-    patchSwap: (orgId: string, swapId: string, data: { title?: string; active?: boolean; locationId?: string }) =>
+    patchSwap: (
+      orgId: string,
+      swapId: string,
+      data: { title?: string; active?: boolean; locationId?: string; legacyTicketsEnabled?: boolean },
+    ) =>
       request<import('./api.types').SwapResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),

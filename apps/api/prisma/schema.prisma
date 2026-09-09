@@ -346,6 +346,18 @@ model SkiSwap {
   /// many NULLs in a unique index, so inactive swaps never collide — which is
   /// what stops two live swaps issuing the same SKU.
   activeSkuPrefix  String?
+  /// Whether this swap accepts gear that arrives already carrying a numbered
+  /// ticket from the stockpile, instead of a tag printed at check-in.
+  ///
+  /// One pile of tickets, spent two ways: a business seller is handed a block
+  /// and fills them in beforehand (`LegacyTicketRange`), and an individual can
+  /// be given a loose one at the counter, scanned in on the staff iPad. This
+  /// says whether either is on offer at this swap.
+  ///
+  /// Per swap rather than per org because a patrol can run one swap clearing
+  /// old stock and the next entirely on printed tags — and it retires itself
+  /// when the stockpile is gone. Off unless somebody asks for it.
+  legacyTicketsEnabled Boolean @default(false)
   createdBy        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

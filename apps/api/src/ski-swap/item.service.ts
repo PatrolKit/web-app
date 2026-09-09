@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -12,6 +13,7 @@ import { IdempotencyService } from '../common/services/idempotency.service';
 import { SkuService } from './sku.service';
 import { PrintQueueService } from './print-queue.service';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
+import { LegacyTicketService, ticketNumberOf } from './legacy-ticket.service';
 import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
 import type { ItemResponse } from '../contracts/ski-swap.contracts';
@@ -35,6 +37,11 @@ function idempotencyScope(orgId: string, swapId: string): string {
 /** What a Square push did: landed, was not configured, or errored. */
 export type PosSyncResult = 'synced' | 'skipped' | 'failed';
 
+/** A collision on `@@unique([swapId, sku])` — one number, two items. */
+function isDuplicateSku(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
+}
+
 @Injectable()
 export class ItemService {
   constructor(
@@ -46,6 +53,7 @@ export class ItemService {
     private readonly skuService: SkuService,
     private readonly printQueue: PrintQueueService,
     private readonly settings: SkiSwapSettingsService,
+    private readonly tickets: LegacyTicketService,
   ) {}
 
   async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string; consigned?: boolean }): Promise<{ items: ItemResponse[]; total: number }> {
@@ -122,6 +130,27 @@ export class ItemService {
       : null;
     if (data.stationId && !station) throw new NotFoundException('Station not found');
 
+    /**
+     * A loose ticket must not be one already issued to a shop.
+     *
+     * There is one stockpile, spent two ways: blocks handed to a business
+     * seller, and single tickets given out at the counter. Nothing physically
+     * stops the wrong ticket coming off the wrong pile, and taking it here
+     * would quietly hand a shop's number to somebody else — discovered when
+     * the shop enters theirs and is refused for a duplicate they never made.
+     *
+     * A business seller entering their own is the ordinary case and passes:
+     * the block is theirs.
+     */
+    if (data.sku) {
+      const holder = await this.tickets.holderOf(swapId, data.sku);
+      if (holder && holder.sellerId !== data.sellerId) {
+        throw new ConflictException(
+          `Ticket ${data.sku} is part of a block issued to ${holder.name}.`,
+        );
+      }
+    }
+
     // Read once, here, and answered onto the row. Nothing consults it again.
     const awaitsConsignment =
       data.selfService && station
@@ -159,6 +188,11 @@ export class ItemService {
         where: { id: item.id },
         data: { hasPrintedTag: true },
       });
+      // The response was built before that write. Without this the client is
+      // handed `hasPrintedTag: false` for an item whose tag is demonstrably
+      // already on it — and offers a reprint of a ticket that came out of a
+      // box, which there is no way to reprint.
+      item.hasPrintedTag = true;
     }
 
     return item;
@@ -204,6 +238,26 @@ export class ItemService {
         consignedAt: data.awaitsConsignment ? null : new Date(),
       },
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true },
+    }).catch((err: unknown) => {
+      /**
+       * `@@unique([swapId, sku])` is the only thing standing between one
+       * physical ticket and two items, and it was reaching the client as a bare
+       * 500. Scanning a ticket that is already on something is the likeliest
+       * thing to happen at a counter — a re-scan, or two stations working the
+       * same pile — and a volunteer holding an iPad needs to be told which
+       * ticket, not "Internal server error".
+       *
+       * Caught rather than checked beforehand: a look-then-insert leaves a gap
+       * two stations can both pass through, and the index does not.
+       */
+      if (isDuplicateSku(err)) {
+        throw new ConflictException(
+          ticketNumberOf(sku) !== null
+            ? `Ticket ${sku} is already on another item.`
+            : `${sku} is already in use in this swap.`,
+        );
+      }
+      throw err;
     });
 
     // Square is where "on sale" lives, so an item waiting to be accepted must

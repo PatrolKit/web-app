@@ -204,6 +204,33 @@ export class LegacyTicketService {
   // ─── Spending a number ─────────────────────────────────────────────────────
 
   /** Every ticket number already on an item in this swap. */
+  /**
+   * Which business seller, if any, was issued this number for this swap.
+   *
+   * One stockpile is spent two ways — a block handed to a shop, or a loose
+   * ticket given to somebody at the counter — so a number an individual scans
+   * has to be checked against what is already spoken for. Null means nobody
+   * holds it, which is the ordinary answer for a loose one.
+   */
+  async holderOf(swapId: string, sku: string): Promise<{ sellerId: string; name: string } | null> {
+    const n = ticketNumberOf(sku);
+    if (n === null) return null;
+
+    const row = await this.prisma.legacyTicketRange.findFirst({
+      where: { swapId, startNumber: { lte: n }, endNumber: { gte: n } },
+      select: {
+        sellerId: true,
+        seller: { include: { membership: { include: { user: true } } } },
+      },
+    });
+    if (!row) return null;
+
+    return {
+      sellerId: row.sellerId,
+      name: displayName(row.seller.membership.user, row.seller.businessName),
+    };
+  }
+
   async usedNumbers(swapId: string): Promise<Set<number>> {
     const items = await this.prisma.swapItem.findMany({
       where: { swapId },

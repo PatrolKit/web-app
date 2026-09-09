@@ -233,6 +233,12 @@ export interface SwapResponse {
   locationId: string;
   active: boolean;
   skuPrefix: string;
+  /**
+   * Whether this swap takes gear already carrying a numbered ticket from the
+   * stockpile, rather than a tag printed at check-in — for a business seller
+   * working through a block, or an individual handed a loose one at the counter.
+   */
+  legacyTicketsEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }

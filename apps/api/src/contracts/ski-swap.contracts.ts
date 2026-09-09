@@ -31,9 +31,12 @@ export const PatchSwapSchema = z
     title: z.string().min(1).max(100).optional(),
     active: z.boolean().optional(),
     locationId: z.string().min(1).optional(),
+    legacyTicketsEnabled: z.boolean().optional(),
   })
   .strict()
-  .refine((v) => v.title !== undefined || v.active !== undefined || v.locationId !== undefined, {
+  // Counted rather than named, so a field added above cannot be silently
+  // rejected here as "nothing to do" — which is how the last one was missed.
+  .refine((v) => Object.keys(v).length > 0, {
     message: 'At least one field must be provided',
   });
 
@@ -45,6 +48,15 @@ export const SwapResponseSchema = z.object({
   locationId: z.string(),
   active: z.boolean(),
   skuPrefix: z.string(),
+  /**
+   * Whether this swap takes gear already carrying a numbered ticket from the
+   * stockpile, rather than a tag printed at check-in.
+   *
+   * The staff iPad reads it on its ordinary swap sync and shows or hides its
+   * Add Legacy Ticket button. Absent reads as off, so an older server cannot
+   * switch the button on by omission.
+   */
+  legacyTicketsEnabled: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
