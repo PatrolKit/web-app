@@ -36,6 +36,79 @@ function fit(ctx: SKRSContext2D, text: string, maxWidth: number): string {
 }
 
 /**
+ * The rows a line of `size` type actually occupies.
+ *
+ * These templates used to advance by the point size itself, which is smaller
+ * than the line box — at 14 the overlap was a dot or two and invisible, and at
+ * 24 it puts an item's descenders into the SKU underneath. It also paginated a
+ * receipt differently from the iPad, which measures rendered height, so the
+ * same list broke across pages in different places depending on what printed
+ * it. 1.2 is Inter's ascent-plus-descent to within a dot at these sizes.
+ */
+function lineHeight(size: number): number {
+  return Math.round(size * 1.2);
+}
+
+/**
+ * The largest size at or below `preferred` at which `text` fits `maxWidth`.
+ *
+ * The alternative is `fit`, which cuts the string and adds an ellipsis. That was
+ * survivable while this type was small; at the sizes the tag now uses, a long
+ * item name loses most of itself rather than a couple of characters. Shrinking
+ * keeps the whole name and only costs legibility gradually.
+ *
+ * Steps by 2 and floors at `minSize`, matching `LabelGenerator.renderFitted` —
+ * a tag from a phone and a tag from a bridge have to come out the same.
+ */
+function fitSize(
+  ctx: SKRSContext2D, text: string, preferred: number, minSize: number, maxWidth: number,
+): number {
+  let size = preferred;
+  while (size > minSize) {
+    ctx.font = labelFont(size, 'bold');
+    if (ctx.measureText(text).width <= maxWidth) return size;
+    size -= 2;
+  }
+  return minSize;
+}
+
+/**
+ * Sets the fitted font and returns the text to draw at it.
+ *
+ * The floor can still be too wide — a fifty-character item name does not fit a
+ * label at any legible size — and the iPad lets that overflow and be clipped by
+ * the grid, which loses both ends of the name and prints into the margin. Below
+ * the floor this falls back to what this renderer already did: cut it and mark
+ * the cut.
+ */
+function fitted(
+  ctx: SKRSContext2D, text: string, preferred: number, minSize: number, maxWidth: number,
+): string {
+  ctx.font = labelFont(fitSize(ctx, text, preferred, minSize, maxWidth), 'bold');
+  return fit(ctx, text, maxWidth);
+}
+
+/**
+ * The largest size at or below `preferred` at which *every* string fits.
+ *
+ * Lines meant to read as one sentence have to share a size. Fitted separately, a
+ * short line stays large while a long one steps down, and the pair reads as a
+ * mistake rather than as a fit. Steps by 1, matching
+ * `LabelGenerator.commonFittedSize`.
+ */
+function commonFitSize(
+  ctx: SKRSContext2D, texts: string[], preferred: number, minSize: number, maxWidth: number,
+): number {
+  let size = preferred;
+  while (size > minSize) {
+    ctx.font = labelFont(size, 'bold');
+    if (texts.every((t) => ctx.measureText(t).width <= maxWidth)) return size;
+    size -= 1;
+  }
+  return minSize;
+}
+
+/**
  * Draws a QR code as filled squares rather than compositing a second canvas.
  * `qrcode` gives the module matrix directly, which avoids a canvas-to-canvas
  * blit and keeps every module aligned to a whole dot — a half-dot QR module on
@@ -100,19 +173,24 @@ export function drawItemTag(ctx: SKRSContext2D, W: number, H: number, item: Item
     col += moduleW;
   }
 
-  ctx.font = labelFont(16);
+  ctx.font = labelFont(16, 'bold');
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText(item.sku, CX, halfH - 10);
 
   ctx.fillRect(0, halfH, W, 1);
 
-  const bottomH = H - halfH;
+  // Baselines counted down from the divider rather than as fractions of the
+  // lower half, so a tag rendered here lands on the same rows as one from the
+  // iPad. With symmetric top and bottom margins the two coordinate systems —
+  // this content box, and the iPad's full-head grid — agree on where halfH is.
   ctx.font = labelFont(44, 'bold');
-  ctx.fillText(`$${(item.priceCents / 100).toFixed(2)}`, CX, halfH + Math.floor(bottomH * 0.55));
+  ctx.fillText(`$${(item.priceCents / 100).toFixed(2)}`, CX, halfH + 60);
 
-  ctx.font = labelFont(15);
-  ctx.fillText(fit(ctx, item.name, W), CX, halfH + Math.floor(bottomH * 0.82));
+  // Fitted, not truncated: at 24 a long name would run into the branding strip,
+  // and 15 — the size this used to be fixed at — is the floor, so nothing gets
+  // smaller than it was, only bigger when there is room.
+  ctx.fillText(fitted(ctx, item.name, 24, 15, W), CX, halfH + 90);
 }
 
 /** Sticks on the printer itself so staff can tell one from another. */
@@ -168,15 +246,21 @@ export async function drawReceiptHeader(
     }
   }
 
-  const DATE_H = 16, NAME_H = 18, PHONE_H = 16, LINE_GAP = 3;
-  let ty = Math.floor((halfH - (DATE_H + NAME_H + PHONE_H + LINE_GAP * 2)) / 2);
+  const DATE_H = 20, PHONE_H = 20, LINE_GAP = 2;
+  // The block sits to the right of the logo, so that is the width the name has
+  // to live in. Bounded rather than given the full column: at 26 a long name
+  // set across the whole width would run over the org's mark.
+  const NAME_H = fitSize(ctx, data.sellerName, 26, 12, W - (LOGO_SIZE + 8));
+
+  const blockH = lineHeight(DATE_H) + lineHeight(NAME_H) + lineHeight(PHONE_H) + LINE_GAP * 2;
+  let ty = Math.floor((halfH - blockH) / 2);
   ctx.textAlign = 'right';
   ctx.font = labelFont(DATE_H, 'bold');
   ctx.fillText(data.date, W, ty);
-  ty += DATE_H + LINE_GAP;
+  ty += lineHeight(DATE_H) + LINE_GAP;
   ctx.font = labelFont(NAME_H, 'bold');
-  ctx.fillText(fit(ctx, data.sellerName, W), W, ty);
-  ty += NAME_H + LINE_GAP;
+  ctx.fillText(fit(ctx, data.sellerName, W - (LOGO_SIZE + 8)), W, ty);
+  ty += lineHeight(NAME_H) + LINE_GAP;
   ctx.font = labelFont(PHONE_H, 'bold');
   ctx.fillText(data.phone, W, ty);
 
@@ -187,13 +271,18 @@ export async function drawReceiptHeader(
   const QR_X = W - QR_SIZE - 8;
   drawQr(ctx, data.qrUrl, QR_X, halfH + 1 + Math.floor((bottomAvail - QR_SIZE) / 2), QR_SIZE);
 
-  const SCAN_SIZE = 14, SCAN_GAP = 3;
-  const scanY = halfH + 1 + Math.floor((bottomAvail - (SCAN_SIZE * 2 + SCAN_GAP)) / 2);
+  // One sentence over two lines, so one size for both — the larger of the two
+  // strings decides it. Centred in the column left of the QR rather than pushed
+  // against the margin, which is where the type is now big enough to matter.
+  const SCAN_GAP = 4;
+  const scanAreaW = QR_X - 8;
+  const SCAN_SIZE = commonFitSize(ctx, ['Scan to track', 'your items:'], 30, 12, scanAreaW);
+  const scanY = halfH + 1 + Math.floor((bottomAvail - (lineHeight(SCAN_SIZE) * 2 + SCAN_GAP)) / 2);
   ctx.fillStyle = '#000';
   ctx.font = labelFont(SCAN_SIZE, 'bold');
-  ctx.textAlign = 'left';
-  ctx.fillText('Scan to track', 0, scanY, QR_X - 4);
-  ctx.fillText('your items:', 0, scanY + SCAN_SIZE + SCAN_GAP, QR_X - 4);
+  ctx.textAlign = 'center';
+  ctx.fillText('Scan to track', Math.floor(scanAreaW / 2), scanY);
+  ctx.fillText('your items:', Math.floor(scanAreaW / 2), scanY + lineHeight(SCAN_SIZE) + SCAN_GAP);
 }
 
 /**
@@ -210,15 +299,15 @@ export function drawReceiptItems(
   ctx.fillStyle = '#000';
   ctx.textBaseline = 'top';
 
-  const NAME_H = 18, SKU_H = 14, LINE_GAP = 2, ITEM_GAP = 4;
-  const itemH = NAME_H + LINE_GAP + SKU_H;
+  const NAME_H = 24, SKU_H = 18, HEADER_H = 20, LINE_GAP = 2, ITEM_GAP = 4;
+  const itemH = lineHeight(NAME_H) + LINE_GAP + lineHeight(SKU_H);
   let y = 0;
 
   if (showHeader) {
-    ctx.font = labelFont(16, 'bold');
+    ctx.font = labelFont(HEADER_H, 'bold');
     ctx.textAlign = 'center';
     ctx.fillText('Your Items:', W / 2, y);
-    y += 22;
+    y += lineHeight(HEADER_H) + 6;
   }
 
   let drawn = 0;
@@ -230,16 +319,20 @@ export function drawReceiptItems(
     ctx.font = labelFont(NAME_H, 'bold');
     const priceW = ctx.measureText(priceStr).width;
 
+    // The name takes whatever the price leaves, and shrinks to stay inside it
+    // rather than being cut — the amount owed is the one thing on this line
+    // that must never be crowded.
     ctx.textAlign = 'left';
-    ctx.fillText(fit(ctx, item.name, W - priceW - 4), 0, y);
+    ctx.fillText(fitted(ctx, item.name, NAME_H, 12, W - priceW - 8), 0, y);
     ctx.textAlign = 'right';
+    ctx.font = labelFont(NAME_H, 'bold');
     ctx.fillText(priceStr, W, y);
-    y += NAME_H + LINE_GAP;
+    y += lineHeight(NAME_H) + LINE_GAP;
 
     ctx.font = labelFont(SKU_H, 'bold');
     ctx.textAlign = 'left';
     ctx.fillText(item.sku, 4, y);
-    y += SKU_H;
+    y += lineHeight(SKU_H);
     drawn++;
   }
 
@@ -276,7 +369,11 @@ export function drawQrLabel(
 export async function drawRotatedBranding(
   ctx: SKRSContext2D, W: number, H: number, margins: PrinterMargins,
 ): Promise<void> {
-  const LOGO_SIZE = 16, LOGO_TEXT_SIZE = 11, GAP = 4, PB_SIZE = 11;
+  // PB_SLOT is the strip column the logo block starts after, and is what
+  // BRANDING_STRIP_W is built from (11 + 2 + 16). PB_SIZE is the type set in
+  // that slot, which is smaller than the slot — so shrinking the words does not
+  // move the mark below them.
+  const LOGO_SIZE = 16, LOGO_TEXT_SIZE = 11, GAP = 4, PB_SLOT = 11, PB_SIZE = 9;
 
   ctx.save();
   ctx.translate(W - margins.marginRight - BRANDING_STRIP_W / 2, H / 2);
@@ -285,7 +382,7 @@ export async function drawRotatedBranding(
   ctx.textBaseline = 'top';
 
   const poweredByRY = -BRANDING_STRIP_W / 2;
-  const logoRY = poweredByRY + PB_SIZE + 2;
+  const logoRY = poweredByRY + PB_SLOT + 2;
 
   ctx.font = labelFont(PB_SIZE, 'bold');
   ctx.fillStyle = '#555';
