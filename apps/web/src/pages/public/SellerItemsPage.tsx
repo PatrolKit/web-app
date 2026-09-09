@@ -75,6 +75,10 @@ export default function SellerItemsPage() {
                     <tbody>
                       {swap.items.map((item) => {
                         const sold = item.soldCount > 0;
+                        // Waiting outranks "not yet sold", which would be
+                        // technically true and quietly misleading: the item
+                        // cannot sell, because nobody has taken it yet.
+                        const waiting = !item.consigned;
                         return (
                           <tr key={item.itemId} className="border-b border-gray-800 last:border-0">
                             <td className="px-3 py-2 text-white">{item.name}</td>
@@ -85,10 +89,12 @@ export default function SellerItemsPage() {
                                 className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                                   sold
                                     ? 'bg-green-900/40 text-green-400'
-                                    : 'bg-surface-100 text-gray-400'
+                                    : waiting
+                                      ? 'bg-yellow-900/40 text-yellow-300'
+                                      : 'bg-surface-100 text-gray-400'
                                 }`}
                               >
-                                {sold ? 'Sold' : 'Not yet sold'}
+                                {sold ? 'Sold' : waiting ? 'Waiting to be accepted' : 'Not yet sold'}
                               </span>
                             </td>
                           </tr>

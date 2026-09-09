@@ -299,6 +299,13 @@ export interface ItemResponse {
   squareSynced: boolean;
   donateProceeds: boolean;
   hasPrintedTag: boolean;
+  /**
+   * When a staff member accepted this item onto the floor.
+   *
+   * Null means it is waiting to be seen, and an item is in Square exactly when
+   * this is set — so null is also the answer to "can this be sold".
+   */
+  consignedAt: string | null;
   seller: { id: string; displayName: string; phone: string | null } | null;
   photos: { id: string; url: string }[];
   /**
@@ -463,6 +470,15 @@ export interface StationQueueStatus {
 
 export interface SkiSwapSettings {
   labelsPerItem: number;
+  /**
+   * Whether a self check-in item waits for a staff member to scan it before it
+   * goes on sale.
+   *
+   * Describes what happens to items checked in from now on. It is read once, at
+   * check-in, and the answer stored on the item, so this says nothing about
+   * what is already on the floor.
+   */
+  requireConsignmentScan: boolean;
 }
 
 /**
@@ -487,6 +503,8 @@ export interface PublicSellerDetailItem {
   inStock: number;
   soldCount: number;
   donateProceeds: boolean;
+  /** False while the item is still waiting for a staff member to accept it. */
+  consigned: boolean;
 }
 
 export interface PublicSellerDetailSwap {

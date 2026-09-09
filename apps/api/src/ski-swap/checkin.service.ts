@@ -210,9 +210,21 @@ export class CheckinService {
     );
     await this.queue.enqueueReceipt({ orgId, stationId: station.id, swapId, sellerId: seller.id, pageCount });
 
+    /**
+     * Only what has been accepted. An item still waiting for a staff member to
+     * look at it must not be sellable, and the way to guarantee that is for it
+     * not to be in the catalogue at all — its push happens when it is
+     * consigned, not here.
+     *
+     * With the org toggle off every item is consigned at creation, so this is
+     * the whole batch and nothing changes.
+     */
+    const consigned = items.filter((i) => i.consignedAt !== null);
+    const awaiting = items.length - consigned.length;
+
     // Deliberately after the receipt is queued: a Square outage must not hold a
     // seller at the counter with no paperwork.
-    const failed = await this.pushToSquare(orgId, swapId, items.map((i) => i.id));
+    const failed = await this.pushToSquare(orgId, swapId, consigned.map((i) => i.id));
 
     return {
       itemCount: items.length,
@@ -223,6 +235,12 @@ export class CheckinService {
        * seller who has done everything right.
        */
       squareFailures: failed,
+      /**
+       * How many of them still need a staff member to look at them. Zero for
+       * an org that has not turned the scan on, which is what lets the finish
+       * screen decide what to say without knowing about the setting.
+       */
+      awaitingConsignment: awaiting,
     };
   }
 

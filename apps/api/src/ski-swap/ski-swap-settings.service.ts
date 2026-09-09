@@ -11,16 +11,40 @@ export class SkiSwapSettingsService {
 
   async get(orgId: string): Promise<SkiSwapSettingsResponse> {
     const row = await this.prisma.skiSwapSettings.findUnique({ where: { orgId } });
-    return { labelsPerItem: row?.labelsPerItem ?? DEFAULT_LABELS_PER_ITEM };
+    return {
+      labelsPerItem: row?.labelsPerItem ?? DEFAULT_LABELS_PER_ITEM,
+      // Off for an org that has never said otherwise: the extra step belongs to
+      // organisations that asked for it.
+      requireConsignmentScan: row?.requireConsignmentScan ?? false,
+    };
   }
 
-  async upsert(orgId: string, labelsPerItem: number): Promise<SkiSwapSettingsResponse> {
+  /**
+   * A patch, not a replacement — the two settings are edited from different
+   * controls and neither should clear the other by being saved.
+   */
+  async upsert(
+    orgId: string,
+    data: { labelsPerItem?: number; requireConsignmentScan?: boolean },
+  ): Promise<SkiSwapSettingsResponse> {
     const row = await this.prisma.skiSwapSettings.upsert({
       where: { orgId },
-      update: { labelsPerItem },
-      create: { orgId, labelsPerItem },
+      update: {
+        ...(data.labelsPerItem !== undefined ? { labelsPerItem: data.labelsPerItem } : {}),
+        ...(data.requireConsignmentScan !== undefined
+          ? { requireConsignmentScan: data.requireConsignmentScan }
+          : {}),
+      },
+      create: {
+        orgId,
+        labelsPerItem: data.labelsPerItem ?? DEFAULT_LABELS_PER_ITEM,
+        requireConsignmentScan: data.requireConsignmentScan ?? false,
+      },
     });
-    return { labelsPerItem: row.labelsPerItem };
+    return {
+      labelsPerItem: row.labelsPerItem,
+      requireConsignmentScan: row.requireConsignmentScan,
+    };
   }
 
   /** Null for an org that has never set one, which means the sheet opens unguarded. */

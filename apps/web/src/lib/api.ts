@@ -174,7 +174,13 @@ export const api = {
         `/orgs/${orgId}/ski-swap/checkin/summary?swapId=${encodeURIComponent(swapId)}`,
       ),
     finish: (orgId: string, swapId: string, stationId: string) =>
-      request<{ itemCount: number; receiptPages: number; squareFailures: number }>(
+      request<{
+        itemCount: number;
+        receiptPages: number;
+        squareFailures: number;
+        /** How many of them are waiting for a staff member to accept them. */
+        awaitingConsignment: number;
+      }>(
         `/orgs/${orgId}/ski-swap/checkin/finish`,
         { method: 'POST', body: JSON.stringify({ swapId, stationId }) },
       ),
@@ -423,17 +429,37 @@ export const api = {
       request<import('./api.types').SwapStats>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats`),
 
     // Items
-    listItems: (orgId: string, swapId: string, opts?: { query?: string; sellerId?: string; skip?: number; take?: number }) => {
+    listItems: (
+      orgId: string,
+      swapId: string,
+      opts?: {
+        query?: string; sellerId?: string; skip?: number; take?: number;
+        /** `false` for what is still waiting to be accepted, `true` for what is on the floor. */
+        consigned?: boolean;
+      },
+    ) => {
       const params = new URLSearchParams();
       if (opts?.query) params.set('query', opts.query);
       if (opts?.sellerId) params.set('sellerId', opts.sellerId);
       if (opts?.skip !== undefined) params.set('skip', String(opts.skip));
       if (opts?.take !== undefined) params.set('take', String(opts.take));
+      if (opts?.consigned !== undefined) params.set('consigned', String(opts.consigned));
       const qs = params.toString();
       return request<{ items: import('./api.types').ItemResponse[]; total: number }>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items${qs ? `?${qs}` : ''}`
       );
     },
+    /** One item by the number on its tag, exactly — what a scanner needs. */
+    findItemBySku: (orgId: string, swapId: string, sku: string) =>
+      request<import('./api.types').ItemResponse>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/by-sku/${encodeURIComponent(sku)}`,
+      ),
+    /** Accepts an item onto the floor, which is also what puts it in Square. */
+    consignItem: (orgId: string, swapId: string, itemId: string) =>
+      request<import('./api.types').ItemResponse>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/consign`,
+        { method: 'POST' },
+      ),
     createItem: (orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean }) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items`, {
         method: 'POST', body: JSON.stringify(data),
@@ -733,7 +759,11 @@ export const api = {
     // Settings
     getSettings: (orgId: string) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`),
-    updateSettings: (orgId: string, data: { labelsPerItem: number }) =>
+    updateSettings: (
+      orgId: string,
+      // A patch: sending one setting must not clear the other.
+      data: { labelsPerItem?: number; requireConsignmentScan?: boolean },
+    ) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),

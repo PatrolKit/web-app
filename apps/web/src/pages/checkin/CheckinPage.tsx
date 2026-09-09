@@ -35,7 +35,13 @@ export default function CheckinPage() {
   const [payoutDone, setPayoutDone] = useState(false);
   const [namedThisSession, setNamedThisSession] = useState(false);
   const [joinError, setJoinError] = useState('');
-  const [finished, setFinished] = useState(false);
+  /**
+   * Null until check-in is done; afterwards, what finishing reported. Held
+   * rather than reduced to a boolean because the finish screen tells a seller
+   * to wait with their items only when some of them are actually waiting, and
+   * that is the only place the count is available.
+   */
+  const [finished, setFinished] = useState<{ awaitingConsignment: number } | null>(null);
 
   const { data: context, error: contextError, isLoading } = useQuery({
     queryKey: ['checkin/context', swapId, stationId],
@@ -99,7 +105,9 @@ export default function CheckinPage() {
     return <CheckinShell title="Check-in"><p className="text-center text-gray-400">Setting you up…</p></CheckinShell>;
   }
 
-  if (finished) return <FinishStep context={context} />;
+  if (finished) {
+    return <FinishStep context={context} awaitingConsignment={finished.awaitingConsignment} />;
+  }
 
   // Only a first-time seller sees this; everyone the roster already knows goes
   // straight past it.
@@ -132,5 +140,5 @@ export default function CheckinPage() {
     );
   }
 
-  return <ItemsStep context={context} onFinished={() => setFinished(true)} />;
+  return <ItemsStep context={context} onFinished={setFinished} />;
 }

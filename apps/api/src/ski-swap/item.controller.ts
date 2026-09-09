@@ -1,6 +1,6 @@
 import {
   Body, Controller, Delete, Get, Headers, HttpCode, Param,
-  Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors,
+  Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
@@ -12,6 +12,7 @@ import { RequireDeviceRole } from '../common/decorators/require-device-role.deco
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { ItemService } from './item.service';
 import { CreateItemDto, PatchItemDto } from '../contracts/ski-swap.contracts';
+import type { Request } from 'express';
 
 @Controller('orgs/:orgId/ski-swap/swaps/:swapId/items')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
@@ -30,6 +31,7 @@ export class ItemController {
     @Query('skip') skip?: string,
     @Query('take') take?: string,
     @Query('updatedSince') updatedSince?: string,
+    @Query('consigned') consigned?: string,
   ) {
     return this.itemService.list(orgId, swapId, {
       query,
@@ -37,7 +39,44 @@ export class ItemController {
       skip: skip ? parseInt(skip, 10) : undefined,
       take: take ? parseInt(take, 10) : undefined,
       updatedSince,
+      consigned: consigned === undefined ? undefined : consigned === 'true',
     });
+  }
+
+  /**
+   * One item by the number on its tag, exactly — what a scanner needs.
+   *
+   * A path segment rather than a search parameter because a SKU identifies the
+   * item; `?query=` is the fuzzy search that already exists and would match
+   * more than the tag in someone's hand.
+   */
+  @Get('by-sku/:sku')
+  @RequirePermissions('ski_swap:report')
+  findBySku(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Param('sku') sku: string,
+  ) {
+    return this.itemService.findBySku(orgId, swapId, sku);
+  }
+
+  /**
+   * Accepts an item onto the floor, which is also what puts it in Square.
+   *
+   * Open to the staff iPad as well as to staff on the web: the whole point is
+   * that someone standing at the table with the goods can do it.
+   */
+  @Post(':itemId/consign')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:manage')
+  consign(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Param('itemId') itemId: string,
+    @Req() req: Request & { user?: { userId: string }; device?: { deviceId: string } },
+  ) {
+    const actorId = req.user?.userId ?? req.device?.deviceId ?? null;
+    return this.itemService.consign(orgId, swapId, itemId, actorId);
   }
 
   @Post()

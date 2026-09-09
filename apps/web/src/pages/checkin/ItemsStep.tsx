@@ -50,7 +50,7 @@ export default function ItemsStep({
   onFinished,
 }: {
   context: CheckinContext;
-  onFinished: () => void;
+  onFinished: (result: { awaitingConsignment: number }) => void;
 }) {
   const qc = useQueryClient();
   const summaryKey = ['checkin/summary', context.orgId, context.swapId];
@@ -149,9 +149,9 @@ export default function ItemsStep({
     setFinishing(true);
     setError('');
     try {
-      await api.checkin.finish(context.orgId, context.swapId, context.stationId);
+      const result = await api.checkin.finish(context.orgId, context.swapId, context.stationId);
       localStorage.removeItem(draftKey(context.swapId));
-      onFinished();
+      onFinished({ awaitingConsignment: result.awaitingConsignment });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not finish check-in');
       setFinishing(false);

@@ -45,6 +45,7 @@ export class PublicSellerService {
         priceCents: true,
         originalQuantity: true,
         donateProceeds: true,
+        consignedAt: true,
       },
     });
 
@@ -75,6 +76,9 @@ export class PublicSellerService {
           inStock: item.originalQuantity,
           soldCount: 0,
           donateProceeds: item.donateProceeds,
+          // A date rather than the date: the seller is told whether their item
+          // was taken, not when a volunteer got to it.
+          consigned: item.consignedAt !== null,
         })),
       })),
     };

@@ -157,6 +157,11 @@ export class SellerSelfService {
         ...data,
         name,
         sellerId: seller.id,
+        // Nobody else is in this path — a seller entering their own things.
+        // Whether that means waiting for a scan is `createAtStation`'s to
+        // decide; it also needs a station, and that rule lives with it rather
+        // than being spelled twice.
+        selfService: true,
         ...(sku ? { sku, alreadyPrinted: true } : {}),
       },
       idempotencyKey,

@@ -64,6 +64,8 @@ export default function AdministrationPage() {
 
       <LabelsPerItemSection orgId={orgId} />
 
+      <AcceptingItemsSection orgId={orgId} />
+
       <div className="space-y-6">
       <h2 className="text-white font-semibold">Square API Configuration</h2>
       {!config && (
@@ -195,6 +197,69 @@ function LabelsPerItemSection({ orgId }: { orgId: string }) {
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Whether staff have to scan a self check-in item before it can sell.
+ *
+ * The setting is read once, at check-in, and its answer stored on the item, so
+ * turning it on does nothing to what is already on the floor. That is stated on
+ * the control rather than left for an administrator to discover: someone who
+ * switches it on mid-swap expecting the floor to empty is otherwise surprised
+ * by inventory they thought they had just held back.
+ */
+function AcceptingItemsSection({ orgId }: { orgId: string }) {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['ski-swap/settings', orgId],
+    queryFn: () => api.skiSwap.getSettings(orgId),
+    enabled: !!orgId,
+    staleTime: 60_000,
+  });
+  const mutation = useMutation({
+    mutationFn: (requireConsignmentScan: boolean) =>
+      api.skiSwap.updateSettings(orgId, { requireConsignmentScan }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/settings', orgId] }),
+  });
+  const on = settings?.requireConsignmentScan ?? false;
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-white font-semibold">Accepting items</h2>
+      <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm text-white">Staff must scan self check-in items before they sell</p>
+            <p className="text-xs text-gray-500">
+              A seller who checks themselves in tags their items and waits. Nothing they entered
+              reaches the register until a staff member scans it.
+            </p>
+            <p className="text-xs text-gray-500">
+              Applies to items checked in from now on — anything already on the floor stays there.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            aria-label="Staff must scan self check-in items before they sell"
+            onClick={() => mutation.mutate(!on)}
+            disabled={mutation.isPending || settings === undefined}
+            className={`shrink-0 mt-0.5 w-11 h-6 rounded-full transition-colors disabled:opacity-40 ${on ? 'bg-brand-600' : 'bg-surface-200'}`}
+          >
+            <span
+              className={`block w-5 h-5 bg-white rounded-full transition-transform ${on ? 'translate-x-5' : 'translate-x-0.5'}`}
+            />
+          </button>
+        </div>
+        {mutation.isError && (
+          <p className="text-xs text-red-400">
+            {mutation.error instanceof ApiError ? mutation.error.message : 'Could not save that.'}
+          </p>
+        )}
       </div>
     </div>
   );

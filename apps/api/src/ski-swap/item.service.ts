@@ -48,7 +48,7 @@ export class ItemService {
     private readonly settings: SkiSwapSettingsService,
   ) {}
 
-  async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string }): Promise<{ items: ItemResponse[]; total: number }> {
+  async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string; consigned?: boolean }): Promise<{ items: ItemResponse[]; total: number }> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const where = {
       swapId, orgId,
@@ -63,6 +63,12 @@ export class ItemService {
       ] } : {}),
       ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
       ...(opts.updatedSince ? { updatedAt: { gt: new Date(opts.updatedSince) } } : {}),
+      // What a staff member still has to look through, or what has been taken.
+      ...(opts.consigned === undefined
+        ? {}
+        : opts.consigned
+          ? { consignedAt: { not: null } }
+          : { consignedAt: null }),
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.swapItem.findMany({ where, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } }, orderBy: { createdAt: 'desc' }, skip: opts.skip ?? 0, take: opts.take ?? 50 }),
@@ -95,6 +101,16 @@ export class ItemService {
       name: string; description?: string; priceCents: number; quantity: number;
       sellerId?: string; donateProceeds?: boolean; sku?: string;
       stationId?: string; alreadyPrinted?: boolean;
+      /**
+       * The seller entered this themselves, with no staff present.
+       *
+       * Only these can be made to wait for a scan — anything a staff member
+       * typed was already in somebody's hands, and a second handling buys
+       * nothing. Waiting also needs a station: a business seller listing stock
+       * from their own desk entered it themselves too, and there is nobody at
+       * a table to come and look through a box that has not arrived.
+       */
+      selfService?: boolean;
     },
     idempotencyKey?: string,
   ): Promise<ItemResponse> {
@@ -106,6 +122,12 @@ export class ItemService {
       : null;
     if (data.stationId && !station) throw new NotFoundException('Station not found');
 
+    // Read once, here, and answered onto the row. Nothing consults it again.
+    const awaitsConsignment =
+      data.selfService && station
+        ? (await this.settings.get(orgId)).requireConsignmentScan
+        : false;
+
     const item = await this.create(
       orgId,
       swapId,
@@ -115,6 +137,7 @@ export class ItemService {
         // At a station the person is standing there watching; Square waits for
         // the batch at finish.
         deferPos: !!station,
+        awaitsConsignment,
       },
       idempotencyKey,
     );
@@ -150,7 +173,7 @@ export class ItemService {
    * finish (D17) — and an item that is not on the floor yet cannot be sold at
    * the register in the meantime.
    */
-  async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
+  async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(idempotencyScope(orgId, swapId), idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -167,11 +190,25 @@ export class ItemService {
     }
 
     const item = await this.prisma.swapItem.create({
-      data: { id: createId(), swapId, orgId, sellerId: data.sellerId ?? null, name: data.name, description: data.description ?? null, priceCents: data.priceCents, sku, originalQuantity: data.quantity, donateProceeds: data.donateProceeds ?? false },
+      data: {
+        id: createId(), swapId, orgId, sellerId: data.sellerId ?? null,
+        name: data.name, description: data.description ?? null,
+        priceCents: data.priceCents, sku, originalQuantity: data.quantity,
+        donateProceeds: data.donateProceeds ?? false,
+        /**
+         * The setting is read by the caller and answered here, once. An item
+         * that must wait carries null; everything else is consigned at birth,
+         * which is what lets the org toggle change later without moving
+         * anything already on the floor.
+         */
+        consignedAt: data.awaitsConsignment ? null : new Date(),
+      },
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true },
     });
 
-    if (!data.deferPos) await this.syncItemToPos(orgId, swap, item);
+    // Square is where "on sale" lives, so an item waiting to be accepted must
+    // not reach it — not priced at zero, not flagged: absent.
+    if (!data.deferPos && !data.awaitsConsignment) await this.syncItemToPos(orgId, swap, item);
 
     const refreshed = data.deferPos
       ? item
@@ -307,6 +344,63 @@ export class ItemService {
     return swap;
   }
 
+  // ─── Consignment ───────────────────────────────────────────────────────────
+
+  /**
+   * Finds an item by the number on its tag, exactly.
+   *
+   * `list`'s search matches `sku` with `contains`, which is right for someone
+   * typing into a box and wrong for a scanner: `67169` would also match
+   * `671690`, and a staff member accepting a pile would silently accept the
+   * wrong thing.
+   */
+  async findBySku(orgId: string, swapId: string, sku: string): Promise<ItemResponse> {
+    const swap = await this.findSwapOrThrow(orgId, swapId);
+    const tag = sku.trim();
+    const item = await this.prisma.swapItem.findFirst({
+      where: { orgId, swapId, sku: tag },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
+    });
+    if (!item) throw new NotFoundException(`No item in this swap has tag ${tag}.`);
+    const inventoryMap = await this.fetchInventoryMap(orgId, swap, [item]);
+    return this.toResponse(item, inventoryMap);
+  }
+
+  /**
+   * Accepts an item onto the floor, and puts it in Square.
+   *
+   * Idempotent on purpose: a scanner double-reads a barcode constantly, and the
+   * second read of a tag a staff member has just accepted must not be an error
+   * they have to think about.
+   */
+  async consign(
+    orgId: string,
+    swapId: string,
+    itemId: string,
+    actorId: string | null,
+  ): Promise<ItemResponse> {
+    const swap = await this.findSwapOrThrow(orgId, swapId);
+    const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId, swapId } });
+    if (!existing) throw new NotFoundException('Item not found');
+
+    if (existing.consignedAt === null) {
+      const accepted = await this.prisma.swapItem.update({
+        where: { id: itemId },
+        data: { consignedAt: new Date(), consignedBy: actorId },
+      });
+      // The item reaches the catalogue exactly here — being accepted and being
+      // sellable are the same event.
+      await this.syncItemToPos(orgId, swap, accepted);
+    }
+
+    const item = await this.prisma.swapItem.findUniqueOrThrow({
+      where: { id: itemId },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
+    });
+    const inventoryMap = await this.fetchInventoryMap(orgId, swap, [item]);
+    return this.toResponse(item, inventoryMap);
+  }
+
   /**
    * Pushes one already-saved item to Square. The batched half of D17 — check-in
    * defers every push to finish, and this is what finish calls.
@@ -400,7 +494,7 @@ export class ItemService {
     return pos.getInventoryCounts(ids, swap.locationId).catch(() => new Map());
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>): ItemResponse {
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>): ItemResponse {
     const inStock = item.squareVariationId ? (inventoryMap.get(item.squareVariationId) ?? 0) : 0;
     return {
       id: item.id, swapId: item.swapId, orgId: item.orgId,
@@ -410,6 +504,7 @@ export class ItemService {
       squareSynced: !!item.squareItemId,
       donateProceeds: item.donateProceeds,
       hasPrintedTag: item.hasPrintedTag,
+      consignedAt: item.consignedAt?.toISOString() ?? null,
       seller: item.seller
         ? {
             id: item.seller.id,

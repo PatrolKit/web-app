@@ -428,6 +428,21 @@ model SwapItem {
   donateProceeds    Boolean   @default(false)
   hasPrintedTag     Boolean   @default(false)
 
+  /// When a staff member accepted this item onto the floor.
+  ///
+  /// Null means it is waiting to be seen: the seller has tagged it and is
+  /// standing beside it. An item is pushed to Square when this is set and never
+  /// before, so null is also the answer to "can this be sold".
+  ///
+  /// Set at creation for everything except a self check-in at an org that has
+  /// `requireConsignmentScan` on — the setting is read once, there, and never
+  /// again. That is what lets the toggle change mid-swap without moving
+  /// anything already on the floor.
+  consignedAt       DateTime?
+  /// Whoever accepted it: a user id, or a device id when the staff iPad did.
+  /// The audit log carries which of the two, so this does not need to.
+  consignedBy       String?
+
   createdBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -440,6 +455,7 @@ model SwapItem {
   @@unique([swapId, sku])
   @@index([orgId])
   @@index([sellerId])
+  @@index([swapId, consignedAt])
 }
 
 model SwapItemPhoto {
@@ -586,6 +602,15 @@ model SkiSwapSettings {
   id            String   @id @default(cuid())
   orgId         String   @unique
   labelsPerItem Int      @default(1)
+
+  /// Whether a self check-in item waits for a staff member to scan it before
+  /// it can be sold. Off by default: an org that has not asked for the extra
+  /// step should not get it.
+  ///
+  /// Read once, when an item is created, and stored on the row. Changing it
+  /// decides what happens to items checked in from now on and never revisits
+  /// what is already on the floor.
+  requireConsignmentScan Boolean @default(false)
 
   /// The PIN that unlocks the admin sheet on a `ski_swap.staff_check_in` iPad.
   ///

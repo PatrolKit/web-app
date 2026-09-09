@@ -230,6 +230,12 @@ export const ItemResponseSchema = z.object({
   squareSynced: z.boolean(),
   donateProceeds: z.boolean(),
   hasPrintedTag: z.boolean(),
+  /**
+   * When a staff member accepted this item onto the floor, or null while it is
+   * still waiting to be looked at. An item is in Square exactly when this is
+   * set — null means it cannot be sold, because it is not in the catalogue.
+   */
+  consignedAt: z.string().datetime().nullable(),
   seller: SellerResponseSchema.pick({ id: true, displayName: true, phone: true }).nullable(),
   photos: z.array(z.object({ id: z.string(), url: z.string() })),
   /**
@@ -478,11 +484,20 @@ export type SwapPrinterResponse = z.infer<typeof SwapPrinterResponseSchema>;
  * to apply, not a replacement for the whole resource.
  */
 export const UpdateSkiSwapSettingsSchema = z
-  .object({ labelsPerItem: z.number().int().min(1).max(3) })
+  .object({
+    labelsPerItem: z.number().int().min(1).max(3).optional(),
+    /**
+     * Whether a self check-in item waits for a staff member to scan it before
+     * it can be sold. Decides what happens to items checked in from now on;
+     * anything already on the floor is untouched.
+     */
+    requireConsignmentScan: z.boolean().optional(),
+  })
   .strict();
 
 export const SkiSwapSettingsResponseSchema = z.object({
   labelsPerItem: z.number().int(),
+  requireConsignmentScan: z.boolean(),
 });
 
 export class UpdateSkiSwapSettingsDto extends createZodDto(UpdateSkiSwapSettingsSchema) {}
@@ -499,6 +514,11 @@ export const PublicSellerDetailItemSchema = z.object({
   inStock: z.number().int(),
   soldCount: z.number().int(),
   donateProceeds: z.boolean(),
+  /**
+   * False while the item is still waiting for a staff member to accept it, so
+   * a seller who checks later can see which of their things were taken.
+   */
+  consigned: z.boolean(),
 });
 
 export const PublicSellerDetailSwapSchema = z.object({

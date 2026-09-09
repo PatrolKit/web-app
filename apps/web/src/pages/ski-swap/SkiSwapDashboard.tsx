@@ -14,7 +14,7 @@ function StatTile({ label, value }: { label: string; value: string | number }) {
 }
 
 export default function SkiSwapDashboard() {
-  const { orgId, selectedSwap, perms } = useOutletContext<SkiSwapContext>();
+  const { orgId, selectedSwap, perms, requireConsignmentScan } = useOutletContext<SkiSwapContext>();
 
   const { data: stats } = useQuery({
     queryKey: ['ski-swap/stats', orgId, selectedSwap?.id],
@@ -30,6 +30,23 @@ export default function SkiSwapDashboard() {
     queryFn: () => api.skiSwap.listSellers(orgId, undefined, true),
     enabled: !!orgId,
     staleTime: 30_000,
+  });
+
+  /**
+   * How many people are standing next to a pile waiting for a volunteer.
+   *
+   * Asked for only when the scan is on: with it off every item is consigned at
+   * creation, so the answer is always zero and the request buys nothing. One
+   * item is fetched because only `total` is read.
+   */
+  const { data: waiting } = useQuery({
+    queryKey: ['ski-swap/items', orgId, selectedSwap?.id, 'awaiting-consignment'],
+    queryFn: () => api.skiSwap.listItems(orgId, selectedSwap!.id, { consigned: false, take: 1 }),
+    enabled: !!selectedSwap && requireConsignmentScan,
+    // Short: this is the number that moves during a swap, and it is read by
+    // someone deciding whether to send another volunteer to the tables.
+    staleTime: 15_000,
+    refetchInterval: 30_000,
   });
 
   if (!selectedSwap) {
@@ -52,6 +69,20 @@ export default function SkiSwapDashboard() {
         <StatTile label="Sellers" value={stats?.totalSellers ?? '—'} />
         <StatTile label="Est. Revenue" value={revenue} />
       </div>
+
+      {/* Only while there is somebody waiting. Nothing here accepts an item —
+          that happens at the table, on the staff iPad — so this says where to
+          go rather than pretending to be an action. */}
+      {(waiting?.total ?? 0) > 0 && (
+        <div className="bg-amber-900/30 border border-amber-800 rounded-lg p-4">
+          <p className="text-amber-300 text-sm font-medium">
+            {waiting!.total} {waiting!.total === 1 ? 'item is' : 'items are'} waiting to be accepted
+          </p>
+          <p className="text-xs text-amber-500/80 mt-0.5">
+            Their sellers are standing with them. Staff scan each tag at the check-in table.
+          </p>
+        </div>
+      )}
 
       {/* Shown only when there is something to act on: a zero here is the
           normal state, and a tile reading zero every day stops being read. */}
