@@ -127,7 +127,7 @@ export default function PayoutStep({
             <p className="text-xs text-gray-400">Sending your money to</p>
             <p className="text-lg text-white font-medium break-words">{dest.text}</p>
             <p className="text-xs text-gray-500">
-              {method === 'CHECK' ? 'By cheque' : method === 'VENMO' ? 'Venmo' : 'PayPal'}
+              {method === 'CHECK' ? 'By check' : method === 'VENMO' ? 'Venmo' : 'PayPal'}
             </p>
           </div>
 
@@ -172,7 +172,7 @@ export default function PayoutStep({
           // Asks for nothing: the address arrived a screen ago, and one place to
           // edit it means one answer.
           <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-1">
-            <p className="text-xs text-gray-400">Posting your cheque to</p>
+            <p className="text-xs text-gray-400">Mailing your check to</p>
             <p className="text-sm text-white">{address.street}</p>
             <p className="text-sm text-white">
               {address.city}, {address.state} {address.zip}

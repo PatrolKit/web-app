@@ -180,7 +180,7 @@ export class SwapService {
         (err.getResponse() as { code?: string }).code === 'SQUARE_NOT_CONFIGURED'
       ) {
         throw new ServiceUnavailableException({
-          message: `Connect Square before ${attempt} — the swap needs a catalogue category to file its items under.`,
+          message: `Connect Square before ${attempt} — the swap needs a catalog category to file its items under.`,
           code: 'SQUARE_NOT_CONFIGURED',
         });
       }

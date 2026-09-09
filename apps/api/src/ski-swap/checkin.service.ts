@@ -76,7 +76,7 @@ export class CheckinService {
 
     const normalized = this.people.normalize(input);
     if (!normalized.email && !normalized.phone) {
-      throw new BadRequestException('An email address or mobile number is required');
+      throw new BadRequestException('An email address or phone number is required');
     }
     // One channel, chosen here: phone leads, because an SMS code offers itself
     // in the iOS keyboard bar and an emailed link does not.

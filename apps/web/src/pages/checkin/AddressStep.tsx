@@ -57,7 +57,7 @@ export default function AddressStep({
     >
       <div className="space-y-3">
         <p className="text-sm text-gray-400 text-center">
-          For posting a cheque, and for anything about your items after the swap.
+          For mailing a check, and for anything about your items after the swap.
         </p>
 
         <label className="block">

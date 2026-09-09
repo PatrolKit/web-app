@@ -40,7 +40,7 @@ describe('creating a swap without Square', () => {
       .catch((e: unknown) => e);
 
     expect(bodyOf(err).message).toBe(
-      'Connect Square before creating a swap — the swap needs a catalogue category to file its items under.',
+      'Connect Square before creating a swap — the swap needs a catalog category to file its items under.',
     );
   });
 
@@ -49,7 +49,7 @@ describe('creating a swap without Square', () => {
       .create('org-1', 'Ski Swap 2026', 'loc-1', 'actor-1')
       .catch((e: unknown) => e);
 
-    expect(bodyOf(err).message).toContain('catalogue category');
+    expect(bodyOf(err).message).toContain('catalog category');
   });
 
   it('keeps the code, so a client can branch without matching prose', async () => {

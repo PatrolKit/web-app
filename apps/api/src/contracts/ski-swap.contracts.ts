@@ -345,7 +345,7 @@ export const CheckinRegisterSchema = z
   })
   .strict()
   .refine((v) => Boolean(v.email) || Boolean(v.phone), {
-    message: 'An email address or mobile number is required',
+    message: 'An email address or phone number is required',
   });
 
 export const ReprintItemSchema = z.object({ stationId: z.string().min(1) }).strict();

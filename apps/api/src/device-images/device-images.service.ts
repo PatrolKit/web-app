@@ -61,7 +61,7 @@ export class DeviceImagesService {
       raw = (await res.Body?.transformToString()) ?? '';
     } catch (err) {
       this.log.error(`could not read s3://${this.bucket}/index.json: ${String(err)}`);
-      throw new ServiceUnavailableException('The image catalogue is unavailable');
+      throw new ServiceUnavailableException('The image catalog is unavailable');
     }
 
     const parsed = DeviceImageIndexSchema.safeParse(JSON.parse(raw));
@@ -69,7 +69,7 @@ export class DeviceImagesService {
       // Publishing wrote something this cannot read. Loud, because the symptom
       // otherwise is a download page that is simply empty.
       this.log.error(`malformed image index: ${parsed.error.message}`);
-      throw new ServiceUnavailableException('The image catalogue is malformed');
+      throw new ServiceUnavailableException('The image catalog is malformed');
     }
     return parsed.data.images;
   }
@@ -93,7 +93,7 @@ export class DeviceImagesService {
     );
     if (!found) {
       this.log.warn(
-        `promoted image ${release.name} ${release.version} is not in the catalogue; ` +
+        `promoted image ${release.name} ${release.version} is not in the catalog; ` +
           'offering nothing rather than substituting another version',
       );
       return null;
@@ -145,7 +145,7 @@ export class DeviceImagesService {
   }
 
   async presign(name: string, version: string): Promise<DeviceImageDownload> {
-    if (!this.client) throw new NotFoundException('No image catalogue is configured');
+    if (!this.client) throw new NotFoundException('No image catalog is configured');
 
     // Resolved from the index rather than built from the path parameters, so a
     // caller cannot steer the key and read another object out of the bucket.
