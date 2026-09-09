@@ -46,7 +46,9 @@ if (!existsSync('apps/api/dist/src/app.module.js') || emitted < sources * 0.9) {
     `\n  FAILED: the API build produced ${emitted} files from ${sources} sources.\n` +
     '  `nest build` exits 0 when an incremental build emits nothing, so this is\n' +
     '  caught by counting rather than by its status. Nothing has been sent.\n' +
-    "  Check for a stale tsbuildinfo: find . -name '*.tsbuildinfo' -not -path '*/node_modules/*'\n",
+    "  Check for a stale tsbuildinfo: find . -name '*.tsbuildinfo' -not -path '*/node_modules/*'\n" +
+    '  Check also that no dev server is running: `nest start --watch` writes to\n' +
+    '  the same dist, and two compilers on one directory short the emit.\n',
   );
   process.exit(1);
 }

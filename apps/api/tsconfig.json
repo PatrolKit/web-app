@@ -21,5 +21,24 @@
     "paths": {
       "@patrolkit/contracts/*": ["src/contracts/*"]
     }
-  }
+  },
+  /*
+   * Kept out of the program, not merely out of the output.
+   *
+   * `tsconfig.base.json` already excludes "dist", but a base config's paths
+   * resolve against the file that declares them — so that entry means the
+   * repository root's dist, and never covered this one. Without an `include`,
+   * TypeScript then globs every .ts under apps/api, which after one build means
+   * the .d.ts files in dist/ are inputs to the next compile:
+   *
+   *   error TS5055: Cannot write file 'dist/src/....d.ts'
+   *                 because it would overwrite input file.
+   *
+   * 176 of those, and the emit comes out short. `nest start --watch` then
+   * cannot find dist/src/main.js, falls back to dist/main, and crash-loops on
+   * "Cannot find module" — which looks like a broken dev server rather than a
+   * compiler eating its own output. Same cause behind release.mjs occasionally
+   * refusing to sync a build that emitted only declarations.
+   */
+  "exclude": ["dist", "node_modules"]
 }
