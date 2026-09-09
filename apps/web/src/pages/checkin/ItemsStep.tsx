@@ -280,7 +280,11 @@ export default function ItemsStep({
             </details>
           )}
 
-          <button className={secondaryButtonClass} disabled={finishing} onClick={finish}>
+          {/* Primary, like every other forward step in this flow. Grey is the
+              retreat colour here — "Fix it", "use a different email" — so the
+              one button that ends check-in was reading as disabled, next to a
+              genuinely disabled Add button that looked more pressable than it. */}
+          <button className={primaryButtonClass} disabled={finishing} onClick={finish}>
             {finishing ? 'Printing your receipt…' : "I'm done — print my receipt"}
           </button>
         </div>
