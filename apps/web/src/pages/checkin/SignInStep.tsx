@@ -187,10 +187,20 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
           // number: a screenshot of it is the evidence attached to the toll-free
           // registration, so this wording and the wording filed with AWS must match.
           <p className="text-xs text-gray-500 leading-relaxed">
-            By tapping Text me a code you agree to receive a sign-in code and
-            notifications about your consigned items from PatrolKit. Message frequency
-            varies. Message and data rates may apply. Reply STOP to unsubscribe, HELP
-            for help.
+            By tapping Text me a code you agree to receive a sign-in code from
+            PatrolKit. Message frequency varies. Message and data rates may apply.
+            Reply STOP to unsubscribe, HELP for help, or contact{' '}
+            <a href="mailto:support@patrolkit.io" className="underline hover:text-gray-300">
+              support@patrolkit.io
+            </a>
+            .{' '}
+            <a href="/terms.html" className="underline hover:text-gray-300">
+              Terms of Service
+            </a>{' '}
+            &middot;{' '}
+            <a href="/privacy.html" className="underline hover:text-gray-300">
+              Privacy Policy
+            </a>
           </p>
         )}
       </div>
