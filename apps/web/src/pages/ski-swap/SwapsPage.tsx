@@ -285,6 +285,17 @@ export default function SwapsPage() {
                       Legacy tickets
                     </span>
                   )}
+                  {/* Coloured rather than a second grey pill: the two settings
+                      differ by one trailing word, and a column of near-identical
+                      badges is read by its colour, not by its text. */}
+                  {s.legacyTicketsOnly && (
+                    <span
+                      className="ml-2 text-xs px-2 py-0.5 rounded bg-amber-900/40 text-amber-300"
+                      title="Every item comes in on a numbered ticket — nothing prints a tag"
+                    >
+                      Tickets only
+                    </span>
+                  )}
                 </td>
                 {perms.has('ski_swap:admin') && (
                   <td className="py-2 flex gap-3">
