@@ -73,13 +73,16 @@ function harness(
     { enqueueItemTags: async () => {} } as never,
     { get: async () => ({ labelsPerItem: 1, requireConsignmentScan: false }) } as never,
     { holderOf: async () => opts.holder ?? null } as never,
+    // These items are named rather than described (Plan 19), so the only
+    // taxonomy call they reach is the one that fills in a response.
+    { describeItems: async () => new Map() } as never,
   );
   (service as unknown as { syncItemToPos: () => Promise<string> }).syncItemToPos = async () => 'skipped';
 
   return { service, rows };
 }
 
-const ITEM = { name: 'Volkl Kendo 88 skis', priceCents: 24900, quantity: 1 };
+const ITEM = { fallbackName: 'Volkl Kendo 88 skis', priceCents: 24900, quantity: 1 };
 const scan = (sku: string, sellerId?: string) => ({
   ...ITEM, sku, stationId: 'station-1', ...(sellerId ? { sellerId } : {}),
 });

@@ -97,6 +97,7 @@ model Organization {
   swapPrinters    SwapPrinter[]
   ticketRanges    LegacyTicketRange[]
   skiSwapSettings SkiSwapSettings?
+  taxonomyNodes   TaxonomyNode[]
   checkinStations CheckinStation[]
   printJobs       PrintJob[]
 
@@ -463,19 +464,26 @@ model SwapItem {
   /// The audit log carries which of the two, so this does not need to.
   consignedBy       String?
 
+  /// The CATEGORY node this item was described under. Null for an item created
+  /// by an importer that only had a name (Plan 19 D12).
+  categoryId String?
+
   createdBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  swap   SkiSwap         @relation(fields: [swapId], references: [id], onDelete: Cascade)
-  org    Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  seller SellerProfile?  @relation(fields: [sellerId], references: [id], onDelete: SetNull)
-  photos SwapItemPhoto[]
+  swap     SkiSwap             @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  org      Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  seller   SellerProfile?      @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  photos   SwapItemPhoto[]
+  category TaxonomyNode?       @relation("ItemCategory", fields: [categoryId], references: [id], onDelete: Restrict)
+  attributes SwapItemAttribute[]
 
   @@unique([swapId, sku])
   @@index([orgId])
   @@index([sellerId])
   @@index([swapId, consignedAt])
+  @@index([orgId, categoryId])
 }
 
 model SwapItemPhoto {
@@ -644,10 +652,153 @@ model SkiSwapSettings {
   /// locking it out would brick the one screen that can diagnose a bad sync.
   devicePin String? @db.VarChar(4)
 
+  /// Bumped whenever any taxonomy node visible to this org changes — its own,
+  /// or a global one. The clients' cache key for the resolved tree. A counter
+  /// rather than a timestamp because the phone compares it for equality, not
+  /// for order.
+  taxonomyVersion Int @default(1)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+// ─── Item description tree (Plan 19) ─────────────────────────────────────────
+
+enum TaxonomyKind {
+  CATEGORY
+  ATTRIBUTE
+  VALUE
+}
+
+enum TaxonomyInput {
+  /// Pick one of the child VALUE nodes. The only kind that branches.
+  SELECT
+  /// Type a number, rendered with `unit`. A leaf, always (D9).
+  NUMBER
+}
+
+enum TaxonomyStatus {
+  /// Offered to everyone in scope.
+  APPROVED
+  /// Minted by free entry. Usable by the item that created it, and visible in
+  /// the org's queue. Not offered to anyone else until approved (D7).
+  PENDING
+}
+
+/// One node of the item-description tree: a category, a question, or an answer.
+///
+/// Global rows (`orgId = null`) are curated by platform admins and visible to
+/// every org. Org rows are that org's own, and may hang off a global parent —
+/// that is how an org adds a brand to the shared Manufacturer list without
+/// forking it (D2).
+model TaxonomyNode {
+  id       String       @id @default(cuid())
+  kind     TaxonomyKind
+  /// Null ⇒ global. Set ⇒ belongs to one org.
+  orgId    String?
+  /// Null only for a CATEGORY.
+  parentId String?
+
+  /// What the seller reads. Also what lands in the derived name, so it is
+  /// written the way it should print: "Helly Hansen", not "helly-hansen".
+  label String @db.VarChar(120)
+
+  // ── Icon: at most one of the two (D11) ────────────────────────────────────
+  /// A key into the web app's icon registry. Never a Font Awesome name, and
+  /// validated against the registry on write so a typo is refused at the admin
+  /// screen rather than discovered as a blank chip.
+  iconKey String? @db.VarChar(40)
+
+  /// A 128×128 PNG for a node the registry does not cover.
+  ///
+  /// `iconUrl` is the only one of the three clients read, and it is always a
+  /// URL — never a data URI. One of the other two holds the bytes: `iconS3Key`
+  /// when S3 is configured, keyed by node id so promotion needs no copy;
+  /// `iconBlob` otherwise, read only by the proxy route.
+  iconUrl   String? @db.Text
+  iconS3Key String? @db.VarChar(300)
+  iconBlob  Bytes?  @db.MediumBlob
+
+  status       TaxonomyStatus @default(APPROVED)
+  displayOrder Int            @default(0)
+  /// Hides a node from new picks without deleting it. A node any item points
+  /// at may never be hard-deleted, and this is how it leaves the tree
+  /// instead (D4).
+  retiredAt    DateTime?
+
+  // ── ATTRIBUTE only ────────────────────────────────────────────────────────
+  input TaxonomyInput?
+  /// Where this answer sits in the derived name, ascending. Null ⇒ captured
+  /// but not named — a detail worth having in a report and not on a tag.
+  nameSlot Int?
+  /// Appended to a NUMBER with no space: 112 + "cm" ⇒ "112cm".
+  unit     String? @db.VarChar(12)
+  minValue Float?
+  maxValue Float?
+  step     Float?
+  /// Whether a seller may type a value that is not listed, minting a PENDING
+  /// org value (D7). SELECT only.
+  allowFreeEntry Boolean @default(false)
+
+  // ── Dedupe ────────────────────────────────────────────────────────────────
+  /// `<orgId|global>:<parentId|root>:<label lower-cased, trimmed, spaces
+  /// collapsed>`. One non-null column rather than a composite unique, because
+  /// both `orgId` and `parentId` are nullable and MySQL would let two global
+  /// categories with the same label through. Maintained in the service, never
+  /// by the client.
+  dedupeKey String @unique @db.VarChar(400)
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  /// Who approved a PENDING value, and when. Null while pending.
+  approvedBy String?
+  approvedAt DateTime?
+  /// Set when an org asks for this value to become global. Null otherwise.
+  suggestedAt DateTime?
+
+  org      Organization?  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  parent   TaxonomyNode?  @relation("TaxonomyTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children TaxonomyNode[] @relation("TaxonomyTree")
+
+  itemCategories    SwapItem[]          @relation("ItemCategory")
+  itemAttributeUses SwapItemAttribute[] @relation("AttributeNode")
+  itemValueUses     SwapItemAttribute[] @relation("ValueNode")
+
+  @@index([orgId, kind])
+  @@index([parentId, displayOrder])
+  /// The org approval queue, which is the only query that wants status alone.
+  @@index([orgId, status])
+}
+
+/// One answered question on one item. Pointers only (D3); labels are read back
+/// through the tree, which D4 guarantees is still there.
+model SwapItemAttribute {
+  id     String @id @default(cuid())
+  itemId String
+
+  /// The ATTRIBUTE node that was asked.
+  attributeId String
+  /// The VALUE node that was picked. Null for a NUMBER answer, which has no
+  /// node to point at — the answer is the number.
+  valueId     String?
+  /// The NUMBER answer, unrendered. Its unit comes from the attribute, so a
+  /// report compares 112 to 115 rather than parsing "112cm".
+  numberValue Float?
+
+  createdAt DateTime @default(now())
+
+  item      SwapItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  // Restrict, deliberately: this is where D4 is enforced.
+  attribute TaxonomyNode  @relation("AttributeNode", fields: [attributeId], references: [id], onDelete: Restrict)
+  value     TaxonomyNode? @relation("ValueNode", fields: [valueId], references: [id], onDelete: Restrict)
+
+  /// One answer per question per item.
+  @@unique([itemId, attributeId])
+  @@index([valueId])
+  @@index([attributeId])
 }
 
 // ─── Time Clock ───────────────────────────────────────────────────────────────

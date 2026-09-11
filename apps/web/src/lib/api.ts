@@ -335,6 +335,58 @@ export const api = {
   },
 
   /**
+   * The shared item-description tree, and the promotion inbox (Plan 19 §6.4).
+   *
+   * Super-admin only: what every org sees is not one org's to change. An org
+   * curates its own overlay through `skiSwap.taxonomy*` and asks for a global
+   * change rather than making one.
+   */
+  taxonomyAdmin: {
+    tree: () => request<import('./api.types').TaxonomyAdminNode[]>('/admin/taxonomy'),
+    suggestions: () =>
+      request<import('./api.types').TaxonomySuggestion[]>('/admin/taxonomy/suggestions'),
+    create: (data: {
+      kind: 'CATEGORY' | 'ATTRIBUTE' | 'VALUE'; parentId?: string; label: string;
+      iconKey?: string | null; displayOrder?: number;
+      input?: 'SELECT' | 'NUMBER'; nameSlot?: number | null; unit?: string | null;
+      minValue?: number | null; maxValue?: number | null; step?: number | null;
+      allowFreeEntry?: boolean;
+    }) =>
+      request<import('./api.types').TaxonomyAdminNode>('/admin/taxonomy/nodes', {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    patch: (
+      nodeId: string,
+      data: {
+        label?: string; iconKey?: string | null; displayOrder?: number;
+        nameSlot?: number | null; unit?: string | null; minValue?: number | null;
+        maxValue?: number | null; step?: number | null; allowFreeEntry?: boolean;
+        retired?: boolean;
+      },
+    ) =>
+      request<import('./api.types').TaxonomyAdminNode>(`/admin/taxonomy/nodes/${nodeId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    promote: (nodeId: string) =>
+      request<{ promoted: number; mergedInto: string | null }>(
+        `/admin/taxonomy/nodes/${nodeId}/promote`, { method: 'POST' },
+      ),
+    uploadIcon: async (nodeId: string, file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      const res = await fetch(`/api/v1/admin/taxonomy/nodes/${nodeId}/icon`, {
+        method: 'POST', credentials: 'include', headers, body: form,
+      });
+      if (!res.ok) throw new Error((await res.text()) || 'Could not upload that icon');
+      return (await res.json()) as { iconUrl: string };
+    },
+    deleteIcon: (nodeId: string) =>
+      request<void>(`/admin/taxonomy/nodes/${nodeId}/icon`, { method: 'DELETE' }),
+  },
+
+  /**
    * What every PatrolKit device installs, and where it comes from.
    *
    * Super-admin only and not scoped to an org — this is the platform's fleet,
@@ -493,11 +545,11 @@ export const api = {
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/consign`,
         { method: 'POST' },
       ),
-    createItem: (orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean }) =>
+    createItem: (orgId: string, swapId: string, data: { categoryId: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string }) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items`, {
         method: 'POST', body: JSON.stringify(data),
       }),
-    patchItem: (orgId: string, swapId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean }) =>
+    patchItem: (orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean }) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
@@ -637,6 +689,79 @@ export const api = {
     removeBusinessSeller: (orgId: string, userId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/business-sellers/${userId}`, { method: 'DELETE' }),
 
+    // ─── Item description tree (Plan 19) ─────────────────────────────────────
+
+    /** The resolved tree the item form is generated from. */
+    taxonomy: (orgId: string) =>
+      request<import('./api.types').ResolvedTaxonomy>(`/orgs/${orgId}/ski-swap/taxonomy`),
+    /** A deferred branch — a manufacturer's model list — fetched when opened. */
+    taxonomyChildren: (orgId: string, nodeId: string) =>
+      request<import('./api.types').TaxonomyChildrenResponse>(
+        `/orgs/${orgId}/ski-swap/taxonomy/nodes/${nodeId}/children`,
+      ),
+    /** The approval queue and this org's own values. */
+    taxonomyAdmin: (orgId: string) =>
+      request<import('./api.types').OrgTaxonomyAdmin>(`/orgs/${orgId}/ski-swap/taxonomy/admin`),
+    patchTaxonomyNode: (
+      orgId: string,
+      nodeId: string,
+      data: {
+        label?: string; iconKey?: string | null; displayOrder?: number;
+        nameSlot?: number | null; unit?: string | null; minValue?: number | null;
+        maxValue?: number | null; step?: number | null; allowFreeEntry?: boolean;
+        approve?: true; retired?: boolean;
+      },
+    ) =>
+      request<import('./api.types').TaxonomyAdminNode>(
+        `/orgs/${orgId}/ski-swap/taxonomy/nodes/${nodeId}`,
+        { method: 'PATCH', body: JSON.stringify(data) },
+      ),
+    createTaxonomyNode: (
+      orgId: string,
+      data: {
+        kind: 'CATEGORY' | 'ATTRIBUTE' | 'VALUE'; parentId?: string; label: string;
+        iconKey?: string | null; displayOrder?: number;
+        input?: 'SELECT' | 'NUMBER'; nameSlot?: number | null; unit?: string | null;
+        minValue?: number | null; maxValue?: number | null; step?: number | null;
+        allowFreeEntry?: boolean;
+      },
+    ) =>
+      request<import('./api.types').TaxonomyAdminNode>(`/orgs/${orgId}/ski-swap/taxonomy/nodes`, {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    /** "Use that instead" — folds one value into another. */
+    mergeTaxonomyNode: (orgId: string, nodeId: string, targetId: string) =>
+      request<{ itemsRepointed: number }>(
+        `/orgs/${orgId}/ski-swap/taxonomy/nodes/${nodeId}/merge`,
+        { method: 'POST', body: JSON.stringify({ targetId }) },
+      ),
+    /** "Suggest for everyone" — the org asks; a platform admin decides. */
+    suggestTaxonomyNode: (orgId: string, nodeId: string) =>
+      request<import('./api.types').TaxonomyAdminNode>(
+        `/orgs/${orgId}/ski-swap/taxonomy/nodes/${nodeId}/suggest`,
+        { method: 'POST' },
+      ),
+    discardTaxonomyNode: (orgId: string, nodeId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/taxonomy/nodes/${nodeId}`, { method: 'DELETE' }),
+    /**
+     * Uploads a node's icon. Multipart, so it bypasses `request` for the same
+     * reason the logo and CSV uploads do: the JSON content-type would break it.
+     */
+    uploadTaxonomyIcon: async (orgId: string, nodeId: string, file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      const res = await fetch(
+        `/api/v1/orgs/${orgId}/ski-swap/taxonomy/nodes/${nodeId}/icon`,
+        { method: 'POST', credentials: 'include', headers, body: form },
+      );
+      if (!res.ok) throw new Error((await res.text()) || 'Could not upload that icon');
+      return (await res.json()) as { iconUrl: string };
+    },
+    deleteTaxonomyIcon: (orgId: string, nodeId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/taxonomy/nodes/${nodeId}/icon`, { method: 'DELETE' }),
+
     // Seller self-service
     sellerGetProfile: (orgId: string) =>
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/seller/me`),
@@ -658,7 +783,7 @@ export const api = {
      */
     sellerCreateItem: (
       orgId: string,
-      data: { swapId: string; name?: string; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean; stationId?: string; sku?: string },
+      data: { swapId: string; categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean; stationId?: string; sku?: string },
       idempotencyKey?: string,
     ) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items`, {
@@ -666,7 +791,7 @@ export const api = {
         body: JSON.stringify(data),
         ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
       }),
-    sellerPatchItem: (orgId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; donateProceeds?: boolean; hasPrintedTag?: boolean }) =>
+    sellerPatchItem: (orgId: string, itemId: string, data: { categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string | null; priceCents?: number; quantity?: number; donateProceeds?: boolean; hasPrintedTag?: boolean }) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),

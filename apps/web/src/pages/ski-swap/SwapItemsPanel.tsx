@@ -2,8 +2,11 @@ import { useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
-import type { ItemResponse, SellerResponse } from '../../lib/api.types';
+import type { ItemAttributeInput, ItemResponse, SellerResponse } from '../../lib/api.types';
 import SearchableSelect from '../../components/SearchableSelect';
+import ItemDescriber, {
+  emptyDescriber, toAttributeInputs, type DescriberState,
+} from '../../components/ItemDescriber';
 import { usePrinter } from '../../contexts/PrinterContext';
 import { isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
 
@@ -21,7 +24,9 @@ export interface SwapItemsPanelApi {
 export interface CreateItemInput {
   /** A ticket number, for a seller on issued tickets. Absent otherwise. */
   sku?: string;
-  name: string;
+  /** What the item is. The name is derived from this and the answers (Plan 19). */
+  categoryId: string;
+  attributes?: ItemAttributeInput[];
   description?: string;
   priceCents: number;
   quantity: number;
@@ -30,7 +35,8 @@ export interface CreateItemInput {
 }
 
 export interface PatchItemInput {
-  name?: string;
+  categoryId?: string;
+  attributes?: ItemAttributeInput[];
   description?: string | null;
   priceCents?: number;
   quantity?: number;
@@ -71,7 +77,7 @@ export interface SwapItemsPanelProps {
 // ─── Form state ───────────────────────────────────────────────────────────────
 
 interface ItemFormData {
-  name: string;
+  describer: DescriberState;
   description: string;
   priceDollars: string;
   quantity: string;
@@ -81,7 +87,7 @@ interface ItemFormData {
   sku: string;
 }
 
-const emptyForm: ItemFormData = { name: '', description: '', priceDollars: '', quantity: '1', sellerId: '', donateProceeds: false, sku: '' };
+const emptyForm: ItemFormData = { describer: emptyDescriber, description: '', priceDollars: '', quantity: '1', sellerId: '', donateProceeds: false, sku: '' };
 
 /** "67000–67499", or "67000–67499, 68000–68499" for a shop with two pads. */
 function describeRanges(ranges: { startNumber: number; endNumber: number }[]): string {
@@ -118,7 +124,8 @@ export default function SwapItemsPanel({
 
   const createMutation = useMutation({
     mutationFn: () => panelApi.createItem(swapId!, {
-      name: form.name,
+      categoryId: form.describer.categoryId!,
+      attributes: toAttributeInputs(form.describer),
       description: form.description || undefined,
       priceCents: Math.round(parseFloat(form.priceDollars) * 100),
       quantity: 1,
@@ -150,7 +157,12 @@ export default function SwapItemsPanel({
 
   const patchMutation = useMutation({
     mutationFn: () => panelApi.patchItem(editItem!.id, {
-      name: form.name,
+      ...(form.describer.categoryId
+        ? {
+            categoryId: form.describer.categoryId,
+            attributes: toAttributeInputs(form.describer),
+          }
+        : {}),
       description: form.description || null,
       priceCents: Math.round(parseFloat(form.priceDollars) * 100),
       quantity: parseInt(form.quantity, 10),
@@ -179,7 +191,25 @@ export default function SwapItemsPanel({
   function openEdit(item: ItemResponse) {
     setEditItem(item);
     setForm({
-      name: item.name,
+      /**
+       * Rebuilt from what the item stored, not from its name.
+       *
+       * An answer whose question the current tree no longer asks simply does not
+       * come back, and saving drops it — the tree is the authority on what can be
+       * said. An item with no category at all (one an importer created) opens with
+       * the picker empty, and gets a description the first time anyone edits it.
+       */
+      describer: {
+        categoryId: item.category?.id ?? null,
+        answers: Object.fromEntries(
+          item.attributes.map((a) => [
+            a.attributeId,
+            a.valueId
+              ? { valueId: a.valueId }
+              : { numberValue: a.numberValue !== null ? String(a.numberValue) : '' },
+          ]),
+        ),
+      },
       description: item.description ?? '',
       priceDollars: (item.priceCents / 100).toFixed(2),
       quantity: String(item.originalQuantity),
@@ -372,18 +402,25 @@ export default function SwapItemsPanel({
               </label>
             )}
 
-            <input
-              required={!tickets}
-              autoFocus={!editItem && !tickets}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder={tickets ? 'Name (optional)' : 'Name'}
-              className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+            <ItemDescriber
+              orgId={orgId}
+              value={form.describer}
+              onChange={(describer) => setForm({ ...form, describer })}
+              // Wider screen, so every question shows rather than the tail of
+              // them collapsing behind "More detail".
+              layout="grid"
+              renderPreview={(name) =>
+                name ? (
+                  <p className="text-sm text-white bg-surface-100 rounded px-3 py-2 border border-gray-700">
+                    {name}
+                  </p>
+                ) : null
+              }
             />
             <textarea
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="Description (optional)"
+              placeholder="Notes (optional)"
               rows={2}
               className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white resize-none"
             />

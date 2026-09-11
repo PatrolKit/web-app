@@ -313,6 +313,23 @@ export interface ItemResponse {
   donateProceeds: boolean;
   hasPrintedTag: boolean;
   /**
+   * What this item is, as the tree reads it now. Null for one an importer
+   * created from a name alone.
+   *
+   * `name` above is the historic record — derived once and frozen, and what the
+   * tag and the receipt say. These are resolved through the tree on every read,
+   * so the two are allowed to disagree after an administrator tidies a label.
+   */
+  category: { id: string; label: string } | null;
+  attributes: {
+    attributeId: string;
+    attributeLabel: string;
+    valueId: string | null;
+    /** Already rendered: a value's label, or a number with its unit. */
+    valueLabel: string;
+    numberValue: number | null;
+  }[];
+  /**
    * When a staff member accepted this item onto the floor.
    *
    * Null means it is waiting to be seen, and an item is in Square exactly when
@@ -730,4 +747,36 @@ export interface DeviceImageDownload {
   filename: string;
   sha256: string;
   sizeBytes: number;
+}
+
+// ─── Item description tree (Plan 19) ─────────────────────────────────────────
+//
+// Re-exported from the API contracts rather than mirrored by hand. These shapes
+// are recursive — an attribute holds values, a value holds attributes — and a
+// hand copy of that is how a response and the schema documenting it drift apart
+// without anything failing to compile.
+//
+// `import type` only: the contract module imports zod and nestjs-zod, and a
+// value import would drag both into the browser bundle. Types are erased.
+
+export type {
+  ResolvedIcon,
+  ResolvedTaxonomy,
+  ResolvedCategory,
+  ResolvedAttribute,
+  ResolvedValue,
+  TaxonomyChildrenResponse,
+  TaxonomyAdminNode,
+  OrgTaxonomyAdmin,
+  PendingValue,
+  TaxonomySuggestion,
+} from '@patrolkit/contracts/taxonomy.contracts';
+
+/** One answered question, on the way to the server. */
+export interface ItemAttributeInput {
+  attributeId: string;
+  valueId?: string;
+  numberValue?: number;
+  /** A value the seller typed. Mints a value the org has yet to approve. */
+  freeText?: string;
 }

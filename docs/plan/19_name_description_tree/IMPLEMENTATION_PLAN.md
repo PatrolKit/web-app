@@ -9,6 +9,10 @@ category, answers as many or as few of its questions as they care to, and the
 name is composed from the answers. Free text does not disappear — it moves to
 `description`, where it belongs, as notes.
 
+It covers `apps/api` and `apps/web`. The native staff-iPad app in
+`patrolkit_ios` consumes the same item contract and needs the same picker; that
+is its own piece of work, sequenced after this one (§10).
+
 ## 1. The gap
 
 `SwapItem` carries `name String` and `description String?`. Both are opaque.
@@ -23,9 +27,9 @@ Four things consume them and none can do better than pass them through:
 
 Nothing can filter by manufacturer, group the floor by category, tell a seller
 what a Head Kore 112 went for last year, or notice that four people have
-brought the same jacket. Not because the queries are hard, but because the
-data to query does not exist. It was never captured, and it cannot be
-recovered from the strings afterwards.
+brought the same jacket. Not because the queries are hard, but because the data
+to query does not exist. It was never captured, and it cannot be recovered from
+the strings afterwards.
 
 The placeholder in `ItemsStep` — `"What is it? e.g. Volkl Kendo skis, 177cm"` —
 is the shape of the answer the system wants. It just has no way to ask for it.
@@ -34,18 +38,18 @@ is the shape of the answer the system wants. It just has no way to ask for it.
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | One self-referential `TaxonomyNode` table with a `kind` of CATEGORY, ATTRIBUTE or VALUE | The tree the user drew *is* alternating category→attribute→value→attribute. One table means branching costs nothing extra, and there is one place to look. §2.1 |
+| D1 | One self-referential `TaxonomyNode` table with a `kind` of CATEGORY, ATTRIBUTE or VALUE | The tree in the brief *is* alternating category→attribute→value→attribute. One table means branching costs nothing extra, and there is one place to look. §2.1 |
 | D2 | Two scopes in one table: `orgId = null` is global, `orgId` set is that org's | Promotion is then a column change, not a copy between tables. An org's tree is the global tree plus its own rows; there is no merge step and no divergence. |
-| D3 | The item stores **pointers only**; the derived name is what is frozen | The name is already a stored string on the row, and it is what a receipt shows. Denormalising the component labels beside it would buy a second, weaker copy of the same guarantee. What makes the pointers safe is D3a, not duplication. §2.2 |
-| D3a | A node that any item points at is **retired, never deleted** | `retiredAt` hides it from new picks; the foreign key refuses the delete. This is the rule the whole pointer scheme rests on — with it, a pointer can never dangle and there is nothing for a stored label to protect against. |
-| D4 | `SwapItem.name` stays, and is **derived** on write | Every existing consumer — tag, Square, seller site, CSV, receipt — keeps working untouched. The name becomes a projection of the attributes rather than an independent fact. |
-| D5 | Nothing is required except the category and the price | A seller at a table with a queue behind them answers two questions or eight, their choice. "Skis — $45" is a valid item, and it is *less* typing than today. |
-| D6 | Free entry mints a **pending org value**, usable immediately | The seller cannot be blocked at the table by a brand nobody entered yet. The org sees it in a queue afterwards and decides whether it joins the list. §8 |
-| D7 | The escape hatch is a category, not a text box | An `Other` category whose one question is a free-entry SELECT. Anything the tree cannot describe becomes a pending value, which is exactly the signal the org needs to grow the tree. One mechanism, not two. |
-| D8 | Only SELECT values branch; NUMBER answers are leaves | A continuum has no children. Saying so in the model stops the UI generator having to ask. |
-| D9 | Approving, and promoting, are separate acts by separate people | An org approves for itself (`ski_swap:admin`). A platform admin promotes to global (`SuperAdminGuard`). Neither can do the other's job. |
-| D10 | A node may carry an **icon**, chosen from a registry compiled into the web app | The column stores a key, not an asset and not a Font Awesome name. Every icon in this codebase is a static named import; a free-form name could not be resolved at runtime without importing the whole Pro set and destroying the bundle a seller's phone downloads. §4.4 |
-| D11 | The CSV import paths keep free text and are out of scope | `legacy-ticket.service.ts` and the proxy-seller importer map a column to `name`. Structured import is a column-mapping problem of its own; see §10. |
+| D3 | An item stores **pointers**; its derived name is what is frozen | Two columns, two questions. The pointers answer "what is this, today" and follow the tree as it is tidied. `SwapItem.name` answers "what did we print" and never moves. §2.2 |
+| D4 | A node any item points at is **retired, never deleted** | `retiredAt` hides it from new picks; the foreign key refuses the delete. This is what makes D3 safe: a pointer can never dangle. |
+| D5 | `SwapItem.name` stays, and is **derived** on write | Every existing consumer — tag, Square, seller site, CSV, receipt — keeps working untouched. The name becomes a projection of the attributes rather than an independent fact. |
+| D6 | Nothing is required except the category and the price | A seller at a table with a queue behind them answers two questions or eight, their choice. "Skis — $45" is a valid item, and it is *less* typing than today. |
+| D7 | Free entry mints a **pending org value**, usable immediately | The seller cannot be blocked at the table by a brand nobody entered yet. The org sees it in a queue afterwards and decides whether it joins the list. §8 |
+| D8 | The escape hatch is a category, not a text box | An `Other` category whose one question is a free-entry SELECT. Anything the tree cannot describe becomes a pending value, which is exactly the signal the org needs to grow the tree. One mechanism, not two. |
+| D9 | Only SELECT values branch; NUMBER answers are leaves | A continuum has no children. Saying so in the model stops the UI generator having to ask. |
+| D10 | Approving, and promoting, are separate acts by separate people | An org approves for itself (`ski_swap:admin`). A platform admin promotes to global (`SuperAdminGuard`). Neither can do the other's job. |
+| D11 | A node's optional icon is **either** a compiled-in registry key **or** an uploaded image, never both | The registry covers what the app already draws, costs no request and matches the rest of the UI; an upload covers what it does not, without waiting for a release. Two nullable columns and an exclusivity rule, not a polymorphic one. §4.4 has the mechanics. |
+| D12 | The CSV import paths keep free text and are out of scope | `legacy-ticket.service.ts` and the proxy-seller importer map a column to `name`. Structured import is a column-mapping problem of its own; see §10. |
 
 ### 2.1 Why one node table
 
@@ -64,8 +68,8 @@ Jacket ┬── Manufacturer ── Helly Hansen
 
 Read the levels: a **category** has **attributes**; an attribute has **values**;
 a value may have further **attributes**. It alternates, forever, and the
-alternation is the only rule. A schema with three tables has to express the
-same rule in three foreign keys and two of them are the same edge wearing
+alternation is the only rule. A schema with three tables has to express that
+same rule in three foreign keys, two of which are the same edge wearing
 different names.
 
 One table with `kind` and `parentId` gives it in one:
@@ -77,52 +81,41 @@ One table with `kind` and `parentId` gives it in one:
 
 Subcategories fall out of this without being modelled. "Skis → Type → Alpine →
 (Waist width, Rocker profile)" is a value with attributes under it; it behaves
-as a subcategory and needs no new concept. That is why D8 exists: the one
+as a subcategory and needs no new concept. That is why D9 exists: the one
 constraint worth enforcing is that NUMBER attributes cannot have children,
 because a number is not a branch point.
 
-### 2.2 Why pointers are enough
+### 2.2 Two columns, two questions
 
-The obvious worry is a platform admin renaming "Volkl" to "Völkl" in March and
-silently rewriting what last autumn's items said. Two things already answer it,
-and neither is a denormalised label.
+An item's answers are foreign keys into the tree. Its name is a string derived
+once and never recomputed by anything but an edit to that item. The pair is
+deliberate, and each half answers a different question.
 
-**The name is frozen.** `SwapItem.name` is a stored column, derived once on
-write (D4). A rename touches no item row. The receipt, the tag that was printed,
-the Square catalogue object and the seller's history all read that column and
-all keep saying "Volkl Kendo 177cm Skis". The immutable record already exists;
-copying the pieces of it into a second set of columns is a weaker restatement of
-a guarantee the `name` column gives outright.
+**`SwapItem.name` is the historic record.** Derived on write (D5), it is what
+the receipt shows, what came out of the label printer, and what sits in the
+Square catalogue. A platform admin renaming "Volkl" to "Völkl" in March touches
+no item row; last autumn's items go on saying "Volkl Kendo 177cm Skis" because
+that is what they said.
 
-**A used node cannot vanish.** Retire, never delete (D3a), enforced by the
-foreign key. So `attributeId` and `valueId` always resolve, and the detail view
-of an old item can always render its answers.
+**The pointers are the live reading.** `attributeId` and `valueId` always
+resolve, because a node in use cannot be deleted (D4), so an old item's detail
+view renders its answers against the tree as it stands now. That is what a
+report groups by, and it is why fourteen clubs' "Rossignol" become one the
+moment they are merged, with nothing to migrate.
 
-What that leaves is the narrow case where the two disagree: an item named
-"Volkl Kendo 177cm Skis" whose Manufacturer row now resolves to "Völkl". That
-is not a bug to design against — it is the *right* reading. The item is the
-same pair of skis, the brand is the same brand, and the tree now spells it
-properly. Pointers give the honest answer to "what is this, today"; the frozen
-name gives the honest answer to "what did we print". Both questions get asked,
-and each has exactly one column answering it.
+So the two are allowed to disagree: an item named "Volkl Kendo 177cm Skis"
+whose Manufacturer now reads "Völkl". That is the right reading — same skis,
+same brand, better spelling — not a defect to reconcile.
 
-Pointers-only is also strictly simpler where it counts. A merge (§8.3) becomes
-repointing a foreign key rather than repointing it *and* rewriting labels on
-every affected row. A report groups by node id and finds "Rossignol" and
-"rossignol" already unified the moment the merge happened, with nothing to
-migrate.
-
-The one case pointers genuinely do not cover is a rename used as a *repurpose* —
-someone renames the value "Blue" to "Navy" because they wanted a Navy option,
-and a hundred blue jackets quietly become navy. The defence is that renaming is
-not how you add a value, the audit log records who did it, and `retiredAt`
-exists so the right move (retire "Blue", add "Navy") costs nothing. A
-denormalised label would paper over that mistake rather than prevent it.
+The case this does not cover is a rename used as a repurpose: renaming "Blue"
+to "Navy" because someone wanted a Navy option turns a hundred blue jackets
+navy. The defence is that renaming is not how a value is added, `retiredAt`
+makes retire-and-add free, and the audit log records who did it.
 
 ## 3. The model
 
-MySQL 8.0, so: no partial indexes, and `NULL`s are distinct in unique indexes.
-Both matter below.
+MySQL 8.0, which treats `NULL`s in a unique index as distinct. That shapes the
+dedupe column below.
 
 ```prisma
 enum TaxonomyKind {
@@ -134,7 +127,7 @@ enum TaxonomyKind {
 enum TaxonomyInput {
   /// Pick one of the child VALUE nodes. The only kind that branches.
   SELECT
-  /// Type a number, rendered with `unit`. A leaf, always (D8).
+  /// Type a number, rendered with `unit`. A leaf, always (D9).
   NUMBER
 }
 
@@ -142,7 +135,7 @@ enum TaxonomyStatus {
   /// Offered to everyone in scope.
   APPROVED
   /// Minted by free entry. Usable by the item that created it, and visible in
-  /// the org's queue. Not offered to anyone else until approved (D6).
+  /// the org's queue. Not offered to anyone else until approved (D7).
   PENDING
 }
 
@@ -164,19 +157,33 @@ model TaxonomyNode {
   /// written the way it should print: "Helly Hansen", not "helly-hansen".
   label String @db.VarChar(120)
 
-  /// A key into the web app's icon registry (§4.4) — `"skis"`, `"jacket"` —
-  /// never a Font Awesome name and never a URL. Null is the common case: most
-  /// nodes are a word, and a row of chips where three have pictures and five
-  /// do not looks broken. Validated against the registry on write, so a typo
-  /// is refused at the admin screen rather than discovered as a blank chip.
-  icon String? @db.VarChar(40)
+  // ── Icon: at most one of the two (D11) ────────────────────────────────────
+  /// A key into the web app's icon registry (§4.4) — `"skis"`, `"jacket"`.
+  /// Never a Font Awesome name, and validated against the registry on write so
+  /// a typo is refused at the admin screen rather than discovered as a blank
+  /// chip.
+  iconKey String? @db.VarChar(40)
+
+  /// A 128×128 PNG for a node the registry does not cover (§4.4).
+  ///
+  /// `iconUrl` is the only one of the three clients read, and it is always a
+  /// URL — never a data URI. One of the other two holds the bytes: `iconS3Key`
+  /// when S3 is configured, keyed by node id so promotion (§8.4) needs no
+  /// copy; `iconBlob` otherwise, read only by the proxy route.
+  iconUrl   String? @db.Text
+  iconS3Key String? @db.VarChar(300)
+  iconBlob  Bytes?  @db.MediumBlob
+
+  // Both kinds set is the one illegal combination, enforced in the service.
+  // Prisma cannot express CHECK, so the constraint below is optional and
+  // hand-written if wanted:
+  //   CONSTRAINT icon_one_of CHECK (iconKey IS NULL OR iconUrl IS NULL)
 
   status       TaxonomyStatus @default(APPROVED)
   displayOrder Int            @default(0)
   /// Hides a node from new picks without deleting it. A node any item points
-  /// at may never be hard-deleted — the foreign key refuses it — and this is
-  /// how it leaves the tree instead (D3a). The rule the whole pointer scheme
-  /// rests on: retire, never delete.
+  /// at may never be hard-deleted, and this is how it leaves the tree
+  /// instead (D4).
   retiredAt    DateTime?
 
   // ── ATTRIBUTE only ────────────────────────────────────────────────────────
@@ -190,15 +197,15 @@ model TaxonomyNode {
   maxValue Float?
   step     Float?
   /// Whether a seller may type a value that is not listed, minting a PENDING
-  /// org value (D6). SELECT only.
+  /// org value (D7). SELECT only.
   allowFreeEntry Boolean @default(false)
 
   // ── Dedupe ────────────────────────────────────────────────────────────────
   /// `<orgId|global>:<parentId|root>:<label lower-cased, trimmed, spaces
-  /// collapsed>`. A single non-null column because MySQL treats NULLs in a
-  /// unique index as distinct, and both `orgId` and `parentId` are nullable —
-  /// a composite unique over them would not actually stop a duplicate global
-  /// category. Maintained in the service, never by the client.
+  /// collapsed>`. One non-null column rather than a composite unique, because
+  /// both `orgId` and `parentId` are nullable and MySQL would let two global
+  /// categories with the same label through. Maintained in the service, never
+  /// by the client.
   dedupeKey String @unique @db.VarChar(400)
 
   createdBy String?
@@ -228,11 +235,7 @@ model SwapItem {
   // … unchanged …
 
   /// The CATEGORY node this item was described under. Null for an item
-  /// created by an importer that only had a name (D11).
-  ///
-  /// `name` above is the frozen record of what this item said (D4); this is
-  /// the live pointer to what it is. They are allowed to drift when the tree
-  /// is tidied, and §2.2 says why that is correct rather than a defect.
+  /// created by an importer that only had a name (D12).
   categoryId String?
 
   attributes SwapItemAttribute[]
@@ -240,8 +243,8 @@ model SwapItem {
   @@index([orgId, categoryId])
 }
 
-/// One answered question on one item. Pointers only (D3) — the labels are
-/// read back through the tree, which D3a guarantees is still there.
+/// One answered question on one item. Pointers only (D3); labels are read back
+/// through the tree, which D4 guarantees is still there.
 model SwapItemAttribute {
   id     String @id @default(cuid())
   itemId String
@@ -258,8 +261,7 @@ model SwapItemAttribute {
   createdAt DateTime @default(now())
 
   item      SwapItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  // Restrict, deliberately: this is D3a expressed where it is actually
-  // enforced. A node in use cannot be deleted, so a pointer cannot dangle.
+  // Restrict, deliberately: this is where D4 is enforced.
   attribute TaxonomyNode  @relation("AttributeNode", fields: [attributeId], references: [id], onDelete: Restrict)
   value     TaxonomyNode? @relation("ValueNode", fields: [valueId], references: [id], onDelete: Restrict)
 
@@ -282,15 +284,12 @@ model SkiSwapSettings {
 }
 ```
 
-Pre-production, so per the standing practice the database is dropped and
-reseeded rather than migrated. No backfill is written: there are no live rows
-whose names need decomposing, and writing one for data that will be wiped is
-work that can only be wrong.
+Pre-production, so the database is dropped and reseeded rather than migrated.
+No backfill is written: there are no live rows whose names need decomposing.
 
 ## 4. The resolved tree — the contract the UI is generated from
 
-This is the section the UI is built against. Everything above exists to produce
-this document, and everything in §6 is a rendering of it.
+Everything in §6 is a rendering of this document.
 
 ### 4.1 Shape
 
@@ -301,11 +300,19 @@ interface ResolvedTaxonomy {
   categories: ResolvedCategory[];
 }
 
+/**
+ * A node's icon, absent when it has none. Discriminated rather than two
+ * optional fields, so a renderer cannot forget to check the second one.
+ */
+type ResolvedIcon =
+  | { kind: 'registry'; key: string }   // look up in TAXONOMY_ICONS (§4.4)
+  | { kind: 'image'; url: string };     // 128×128 PNG, render in an <img>
+
 interface ResolvedCategory {
   id: string;
   label: string;                  // "Skis"
-  /** Registry key (§4.4). Absent ⇒ render the label alone. */
-  icon?: string;
+  /** Absent ⇒ render the label alone (§4.4). */
+  icon?: ResolvedIcon;
   scope: 'global' | 'org';
   displayOrder: number;
   attributes: ResolvedAttribute[];
@@ -314,7 +321,7 @@ interface ResolvedCategory {
 interface ResolvedAttribute {
   id: string;
   label: string;                  // "Manufacturer"
-  icon?: string;
+  icon?: ResolvedIcon;
   scope: 'global' | 'org';
   input: 'select' | 'number';
   displayOrder: number;
@@ -337,7 +344,7 @@ interface ResolvedAttribute {
 interface ResolvedValue {
   id: string;
   label: string;                  // "Head"
-  icon?: string;
+  icon?: ResolvedIcon;
   scope: 'global' | 'org';
   displayOrder: number;
   /** Questions that appear only once this value is chosen. Empty for a leaf. */
@@ -345,31 +352,31 @@ interface ResolvedValue {
 }
 ```
 
-Notes that the generator depends on:
+Notes the generator depends on:
 
 - Only APPROVED, un-retired nodes appear. A PENDING value is never in this
   document — the client that minted it holds it in local state for that one
   item (§8.1).
-- `scope` is informational: it drives a small "added by your club" marker in
-  the admin screens and nothing in the seller UI. Sellers should not be able to
+- `scope` is informational: it drives an "added by your club" marker in the
+  admin screens and nothing in the seller UI. Sellers should not be able to
   tell where a value came from.
 - Order within a level is `displayOrder`, then `label` as the tiebreak.
-- An attribute with `valuesDeferred` renders as a control that loads on open.
 
 ### 4.2 Rendering rules
 
 | Condition | Control |
 |---|---|
 | Categories | A grid of tappable chips, one per category, each with its `icon` above its label. The one place an icon does real work: it is how a category is found at a glance on a phone. |
-| `input: 'select'`, ≤ 8 values, no deferral | A row of chips. One tap, no dropdown, no keyboard. An `icon` renders inline before the label when present. |
+| `input: 'select'`, ≤ 8 values, no deferral | A row of chips. One tap, no dropdown, no keyboard. An `icon` renders inline before the label. |
 | `input: 'select'`, > 8 values | A searchable select (`components/SearchableSelect`, already in the codebase). Icons render in the list rows, not in the closed control. |
 | `input: 'select'` with `allowFreeEntry` | The same control, plus a persistent "Add …" row carrying whatever has been typed (§8.1). |
 | `input: 'number'` | A numeric field, `inputMode="numeric"`, suffixed with `unit`, validated against `min`/`max`/`step` client-side and again on the server. |
 | `valuesDeferred` | Renders disabled until its parent is chosen; fetches on first open and shows a spinner in the list, not over the form. |
 | Any answered SELECT with nested `attributes` | Those attributes render **indented directly beneath it**, in `displayOrder`. Clearing the parent clears them and discards their answers. |
-| Every attribute | Optional. No asterisks, no validation on submit, no "required" anywhere except the category (D5). |
-| `icon` absent, or a key the registry does not know | Render the label alone, with no gap where an icon would be. Never a placeholder glyph: a missing icon should be invisible, not a broken image. |
-| An attribute's own `icon` | Rendered beside its question label. Mostly unused — see §4.4 on why it is allowed anyway. |
+| Every attribute | Optional. No asterisks, no validation on submit, no "required" anywhere except the category (D6). |
+| `icon.kind === 'registry'` | `<FontAwesomeIcon icon={TAXONOMY_ICONS[icon.key]} />`. Inherits the text color, so it is theme-correct for free. |
+| `icon.kind === 'image'` | An `<img>` at the same box size, `loading="lazy"`, with `alt=""` — the label beside it is already the accessible name, so the image is decorative. |
+| `icon` absent, or a registry key this build does not know | Render the label alone, with no gap where an icon would be. Never a placeholder glyph, and never a broken-image frame: a missing icon should be invisible. |
 
 The form is therefore a fold over one category's attributes, where choosing a
 value splices that value's attributes into the list at its own position. The
@@ -381,7 +388,8 @@ rail.
 
 ```jsonc
 {
-  "id": "cat_skis", "label": "Skis", "scope": "global", "displayOrder": 10,
+  "id": "cat_skis", "label": "Skis", "icon": { "kind": "registry", "key": "skis" },
+  "scope": "global", "displayOrder": 10,
   "attributes": [
     {
       "id": "att_ski_mfr", "label": "Manufacturer", "input": "select",
@@ -417,18 +425,19 @@ name **"Head Kore 112cm Powder Skis"**. The jacket example — Manufacturer=Hell
 Hansen, Gender=Mens, Color=Blue with slots 10/20/30 — yields **"Helly Hansen
 Mens Blue Jacket"**.
 
-### 4.4 Icons, and why they are a registry rather than a name
+### 4.4 Icons
 
-Every icon in this web app is a static named import —
-`import { faPrint as faPrintDuo } from '@fortawesome/pro-duotone-svg-icons'` —
-and the bundler drops the rest of the Pro set. There is no `library.add`, no
-`findIconDefinition`, and no dynamic lookup anywhere in `apps/web`. That is a
-good property and this feature must not be the thing that costs it: the client
-most affected is a seller's phone on venue wifi, and importing the whole
-duotone set to resolve a string from the database would add megabytes to the
-one bundle that can least afford them.
+A node may carry a registry icon or an uploaded image, and no node carries both
+(D11). The two exist for different reasons and the order matters: the registry
+is the default, and an upload is what covers the gap.
 
-So `TaxonomyNode.icon` holds a **registry key**, not a Font Awesome name:
+**The registry, for what the app already draws.** Every icon in `apps/web` is a
+static named import — `import { faPrint as faPrintDuo } from
+'@fortawesome/pro-duotone-svg-icons'` — and the bundler drops the rest of the
+Pro set. There is no `library.add`, no `findIconDefinition`, no dynamic lookup
+anywhere. Resolving a database string against the whole duotone set at runtime
+would add megabytes to the bundle a seller's phone pulls over venue wifi, so
+`iconKey` indexes a map instead:
 
 ```ts
 // apps/web/src/lib/taxonomyIcons.ts — the single file to edit to add one.
@@ -444,46 +453,54 @@ export const TAXONOMY_ICONS = {
 export type TaxonomyIconKey = keyof typeof TAXONOMY_ICONS;
 ```
 
-The consequences, stated plainly because they are the cost of the choice:
+A registry icon costs no request and inherits the surrounding text color, so it
+is correct in both themes with nothing asked of whoever chose it. The key list
+is mirrored as a string array in `contracts/ski-swap.contracts.ts` and enforced
+by the Zod schema, with a test asserting the two match. Ship it broad — roughly
+sixty keys covering gear and apparel — so the common cases need no upload.
 
-- **Adding an icon needs a web deploy.** A platform admin creating a
-  "Splitboard" category can pick from the registry or have no icon; a new glyph
-  is a one-line pull request against the file above. The registry should
-  therefore ship broad — roughly sixty keys covering gear, apparel, colours and
-  the generic fallbacks — so that day-to-day curation never waits on a release.
-- **The API validates against it.** The key list is duplicated as a plain
-  string array in `contracts/ski-swap.contracts.ts` and enforced by the Zod
-  schema, so an unknown key is refused at the admin screen rather than
-  discovered later as a blank chip. The two lists are small, adjacent in the
-  same change, and covered by a test that asserts they match.
-- **Orgs pick from the same registry.** An org value may carry an icon and may
-  not supply an asset. This is what stops fourteen clubs' uploaded logos from
-  arriving in a list that is meant to read as one thing, and it means promoting
-  an org node to global (§8.4) carries its icon across with nothing to migrate.
+**An upload, for what it does not cover.** A platform admin adding a
+"Splitboard" category, or a club whose own value wants a mark, uploads a small
+image rather than waiting for a release. This follows the org-logo flow in
+`orgs.service.ts:55` rather than inventing a second pattern:
 
-Icons are allowed on all three kinds because the column is on all three and
-special-casing it would be more code than permitting it. In practice they earn
-their place on **categories**, where they are the difference between reading
-thirteen words and glancing at a grid, and occasionally on a small closed value
-list — Colour is the obvious one, where the "icon" a swatch would be is a
-genuinely better control and is noted in §10 as not built here. On a
-forty-entry model list they are noise, and the seed should leave them null.
+- `FileInterceptor` with a 2MB limit, accepting PNG, JPEG, WebP or SVG.
+- Always re-encoded through `sharp` — already a dependency, used for item
+  photos — to a 128×128 PNG, `fit: 'inside'`, transparency preserved. One size,
+  because the only sizes drawn are a 40px chip and a 20px list row and a retina
+  chip wants 80. Rasterizing is also what makes an SVG upload safe: whatever
+  script or external reference it carried does not survive.
+- Stored at `taxonomy-icons/{nodeId}.png`. Keyed by node id alone, so promoting
+  an org node to global (§8.4) needs no copy and no re-point.
+- `iconUrl` always holds a URL, never a data URI. With S3 configured it is the
+  object's URL; without, the bytes go in `iconBlob` and it points at a proxy
+  route — `GET …/taxonomy/nodes/:id/icon`, the shape `orgs.controller.ts:31`
+  already uses for logos, with a long `Cache-Control`. The org logo inlines
+  itself; thirteen inlined category images in one tree response would undo
+  §7.2.
+- A global node's icon is uploaded by a platform admin and seen by every org;
+  an org node's by `ski_swap:admin`, and seen only there. Sellers never upload
+  an icon.
+
+An upload is a request a seller's phone makes on arrival, which is why the
+rendering rule says `loading="lazy"` and why the picker in §6.4 offers the
+registry first. On a forty-entry model list neither kind is worth it, and the
+seed leaves them null.
 
 ## 5. The derived name
 
 One function, used by every write path, server-side only. The client may
-preview it; it may not supply it.
-
-The write path has already loaded the category's subtree to validate the
-answers (§7.3), so every label it needs is in hand:
+preview it; it may not supply it. The write path has already loaded the
+category's subtree to validate the answers (§7.3), so every label it needs is
+in hand:
 
 ```
 deriveName(category, answers) =
   answers
-    .map(a => ({ attr: node(a.attributeId), value: node(a.valueId) }))
+    .map(a => ({ attr: node(a.attributeId), value: node(a.valueId), num: a.numberValue }))
     .filter(x => x.attr.nameSlot !== null)
     .sort(by attr.nameSlot, then by attr.displayOrder)
-    .map(x => x.value ? x.value.label : `${a.numberValue}${x.attr.unit ?? ''}`)
+    .map(x => x.value ? x.value.label : `${x.num}${x.attr.unit ?? ''}`)
     .concat(category.label)
     .join(' ')
 ```
@@ -495,22 +512,19 @@ with no answers at all is simply "Skis".
 Four consequences worth stating:
 
 - **The tag.** `label-templates.ts` already shrinks a name to fit and will go
-  on doing so. A fully answered item is longer than most typed names, so
-  expect smaller type on a 40×30. `nameSlot: null` is the lever: a detail the
-  org wants in reports but not on the tag gets no slot. Seed accordingly —
-  Color earns a slot, Rocker profile does not.
+  on doing so. A fully answered item is longer than most typed names, so expect
+  smaller type on a 40×30. `nameSlot: null` is the lever: a detail the org
+  wants in reports but not on the tag gets no slot. Seed accordingly — Color
+  earns a slot, Rocker profile does not.
 - **Square.** `syncItemToPos` sends `item.name` as it always has. Nothing in
   the POS adapter changes.
-- **It is computed once and then frozen.** The name is derived on create and
-  re-derived on any edit to that item's answers, and at no other time. A rename
-  in the tree does not touch a single item row — that is what makes this column,
-  and not a set of copied labels, the durable record (§2.2). An item that is
-  edited afterwards picks up the current spelling, because editing it is someone
-  saying so.
+- **It is computed once and then frozen.** Derived on create, re-derived when
+  that item's own answers are edited, and at no other time. A rename in the
+  tree touches no item row (§2.2). An item edited afterwards picks up the
+  current spelling, because editing it is someone saying so.
 - **Duplicates are expected and fine.** Two people bringing the same skis now
-  produce the same name, distinguished by SKU as they already are. This is a
-  feature: it is what makes "how many Head Kore 112s are on the floor" a
-  question with an answer.
+  produce the same name, distinguished by SKU as they already are. That is what
+  makes "how many Head Kore 112s are on the floor" a question with an answer.
 
 `description` keeps its current type and its 2000-character limit, and is
 relabelled **Notes** in every UI. It never enters the name. It continues to go
@@ -528,9 +542,9 @@ roughly 300px of usable height above the keyboard.
 │ Add your items               │
 │                              │
 │ What is it?                  │
-│ ┌────┐┌────┐┌────┐┌────┐     │   ← category chips, icon over label
-│ │ 🎿 ││ 🏂 ││ 👢 ││ 🧥 │     │      (Font Awesome duotone, not emoji —
-│ │Skis││Brd ││Boot││Jckt│     │       §4.4; drawn this way for the sketch)
+│ ┌────┐┌────┐┌────┐┌────┐     │
+│ │ ◆  ││ ◆  ││ ◆  ││ ◆  │     │   ← the node's icon (§4.4)
+│ │Skis││Brd ││Boot││Jckt│     │
 │ └────┘└────┘└────┘└────┘     │
 │ [Pants][Helmet][More…]       │
 │                              │
@@ -569,10 +583,10 @@ roughly 300px of usable height above the keyboard.
   `{categoryId, answers, price, notes}`. Its key is versioned so a stale draft
   from the old shape is discarded rather than parsed into nonsense.
 
-### 6.2 Staff web and the staff iPad — `SwapItemsPanel.tsx`
+### 6.2 Staff web — `SwapItemsPanel.tsx`
 
-The same picker component, laid out for a wider screen: attributes in two
-columns, nothing collapsed behind **More detail**, the name preview on the
+The same picker component as §6.1, laid out for a wider screen: attributes in
+two columns, nothing collapsed behind **More detail**, the name preview on the
 line where the name input used to be. `ItemFormData` loses `name` and gains
 `categoryId` and `answers`; `description` stays and is relabelled Notes.
 
@@ -594,23 +608,23 @@ failure mode here that would be hard to notice and impossible to undo.
 Item details
 
 Waiting for approval (3)
-┌──────────────────────────────────────────────────────────┐
-│ "Rossignol"  Skis › Manufacturer        added 2h ago, 4 items │
-│   Similar: Rossignol (global)        [Use that instead] │
-│                                      [Approve] [Discard]│
-│ "Kore 99"    Skis › Head › Model        added 2h ago, 1 item  │
-│                                      [Approve] [Discard]│
-│ "vintage sled"  Other › What is it?     added 1d ago, 1 item  │
-│                                      [Approve] [Discard]│
-│                        Discard is disabled while items use a value │
-└──────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ "Rossignol"     Skis › Manufacturer         2h ago · 4 items   │
+│   Similar: Rossignol (global)  [Use that instead]              │
+│                                [Approve]  [Discard]            │
+│ "Kore 99"       Skis › Head › Model         2h ago · 1 item    │
+│                                [Approve]  [Discard]            │
+│ "vintage sled"  Other › What is it?         1d ago · 1 item    │
+│                                [Approve]  [Discard]            │
+└────────────────────────────────────────────────────────────────┘
 
-Your club's values (12)                     [Add a value]
-  Skis › Manufacturer › Wagner       6 items   [Suggest for everyone]
-    ↳ icon: none                               [Choose an icon]
-  …
+Your club's values (12)                            [Add a value]
+┌────────────────────────────────────────────────────────────────┐
+│ Skis › Manufacturer › Wagner   6 items   ◆ icon  [Edit]        │
+│                                          [Suggest for everyone]│
+└────────────────────────────────────────────────────────────────┘
 
-The shared list                             (read only)
+The shared list                                       (read only)
   Skis, Snowboard, Boots, Poles, Helmet, Jacket, Pants, …
 ```
 
@@ -619,8 +633,13 @@ The shared list                             (read only)
   and a pile: "Rossignol" pending next to "Rossignol" global should be one
   click to merge, not a judgement call.
 - **Use that instead** is the merge of §8.3.
+- **Discard** is disabled while any item uses the value, which is every pending
+  value until one is edited away from it (§8.1). The two live choices on a
+  fresh pending value are Approve and Use that instead.
 - **Suggest for everyone** raises a promotion request (§8.4). The org cannot
   promote; it can only ask.
+- An org value may carry an icon: the same registry staff see, or an image the
+  club uploads for a mark the registry has no equivalent of (§4.4).
 - The shared list is visible and not editable here. An org that wants a global
   change asks for one.
 
@@ -631,18 +650,19 @@ The shared list                             (read only)
 - A tree editor over global nodes: add, rename, reorder, retire. Adding an
   attribute asks for its input kind, unit and `nameSlot`; adding a value asks
   only for a label and whether it branches.
-- An **icon picker** on every node: a grid of the registry (§4.4) with a
-  search over the keys, and a "no icon" option that is the default and needs to
-  look like a deliberate choice rather than an empty state. Categories are
-  where it matters, so the category form shows it above the fold and the value
-  form puts it behind a disclosure.
+- An **icon picker** on every node, in the order §4.4 argues for: the registry
+  grid first, searchable by key; an **Upload an image** tab behind it; and a
+  "no icon" option that is the default and needs to look like a deliberate
+  choice rather than an empty state. Choosing either clears the other, because
+  both cannot be set (D11). The category form shows the picker above the fold;
+  the value form puts it behind a disclosure.
 - A **promotion inbox**: every org value flagged with **Suggest for everyone**,
   grouped by the global parent it would land under, with a usage count across
   orgs. Promoting sets `orgId = null` and, if any ancestor is still org-scoped,
   promotes the ancestors first — a global node may never have an org parent,
   and the endpoint enforces it rather than trusting the UI.
 - Renaming a global node bumps `taxonomyVersion` for every org. Retiring one
-  hides it from new picks and changes nothing already captured (D3).
+  hides it from new picks and changes nothing already captured (D4).
 
 ## 7. The API
 
@@ -690,36 +710,44 @@ attributes: z.array(z.object({
 description: z.string().max(2000).optional(),   // unchanged, now "Notes"
 ```
 
-The service validates that every `attributeId` is reachable from
-`categoryId` in this org's tree, that a `valueId` is a child of its attribute,
-that a `numberValue` is within range and lands on the step, and that free entry
-is only used where `allowFreeEntry` is set. Then it derives the name (§5) and
+The service validates that every `attributeId` is reachable from `categoryId`
+in this org's tree, that a `valueId` is a child of its attribute, that a
+`numberValue` is within range and lands on the step, and that free entry is
+only used where `allowFreeEntry` is set. Then it derives the name (§5) and
 writes the item and its `SwapItemAttribute` rows in one transaction.
 
 `ItemResponseSchema` keeps `name` and `description` exactly as they are — every
 existing client keeps working — and gains `category: { id, label } | null` and
 `attributes: { attributeId, attributeLabel, valueId, valueLabel, numberValue }[]`.
-
-The labels in that response are **resolved through the tree on read**, not
-stored (D3). They are therefore current, while `name` beside them is historic,
-and §2.2 explains why that pairing is the intended one rather than an
-inconsistency to reconcile.
+Those labels are resolved through the tree on read rather than stored (D3), so
+they are current while `name` beside them is historic.
 
 ### 7.4 Managing the tree
 
 ```
 POST   /orgs/:orgId/ski-swap/taxonomy/values          mint (staff, explicit)
-PATCH  /orgs/:orgId/ski-swap/taxonomy/nodes/:id       approve · rename · reorder · retire · set icon
+PATCH  /orgs/:orgId/ski-swap/taxonomy/nodes/:id       approve · rename · reorder · retire · set iconKey
 POST   /orgs/:orgId/ski-swap/taxonomy/nodes/:id/merge → { targetId }
 POST   /orgs/:orgId/ski-swap/taxonomy/nodes/:id/suggest
 DELETE /orgs/:orgId/ski-swap/taxonomy/nodes/:id       discard an *unused* PENDING value
 
+POST   /orgs/:orgId/ski-swap/taxonomy/nodes/:id/icon   multipart upload, 2MB
+DELETE /orgs/:orgId/ski-swap/taxonomy/nodes/:id/icon   clears both columns
+GET    /orgs/:orgId/ski-swap/taxonomy/nodes/:id/icon   the bytes, when S3 is off
+
 GET    /admin/taxonomy                                 global tree
 POST   /admin/taxonomy/nodes                           add global
 PATCH  /admin/taxonomy/nodes/:id
+POST   /admin/taxonomy/nodes/:id/icon                  global upload
+DELETE /admin/taxonomy/nodes/:id/icon
 GET    /admin/taxonomy/suggestions                     promotion inbox
 POST   /admin/taxonomy/nodes/:id/promote               orgId → null, ancestors first
 ```
+
+`iconUrl` and `iconS3Key` are written only by the upload and delete routes,
+never by `PATCH` — a client that could set the URL directly could point a node
+at anything. `PATCH` carries `iconKey` alone, and setting it clears an uploaded
+image along with its object.
 
 Org routes take `ski_swap:admin`; `/admin/*` takes `SuperAdminGuard`, matching
 `PlatformController`. Every state change writes an audit entry under
@@ -738,7 +766,7 @@ seller types "Rossignol"
 PENDING org value ──approve──► APPROVED org value ──suggest──► promotion inbox
       │                              │                              │
       │                              └──merge──► an existing value  │
-      └──discard──► deleted (only if no item uses it — D3a)     promote
+      └──discard──► deleted, once no item uses it (D4)          promote
                                                                     │
                                                                     ▼
                                                            APPROVED global value
@@ -747,7 +775,7 @@ PENDING org value ──approve──► APPROVED org value ──suggest──�
 ### 8.1 Minting, at the table
 
 Free entry is allowed wherever `allowFreeEntry` is set. The client shows an
-"Add "Rossignol"" row under the filtered list once what has been typed matches
+`Add "Rossignol"` row under the filtered list once what has been typed matches
 nothing exactly. Taking it sends `freeText` with the item; the server creates a
 PENDING org node under that attribute and points the item's answer at it, in
 the same transaction as the item.
@@ -762,12 +790,11 @@ one, approved or pending. Two sellers typing "Rossignol" ten minutes apart
 produce one pending value with two items behind it, which is what the queue in
 §6.3 counts.
 
-Every pending value in the queue has at least one item behind it, since one
-created it. **Discard** is therefore offered only once that count reaches zero
-— an item has to be deleted or edited away from it first — and otherwise the
-two real choices are Approve and Use that instead. The foreign key enforces
-this whatever the UI does (D3a): a node in use cannot be deleted, and the
-endpoint returns the usage count rather than a constraint error.
+That count is also why discarding is rarely available: every pending value has
+at least one item behind it, since one created it, and the foreign key refuses
+to delete a node in use (D4). The endpoint returns the usage count rather than
+a constraint error, so the UI can disable the button rather than fail the
+click.
 
 ### 8.2 Approving
 
@@ -778,17 +805,15 @@ items already pointing at it are untouched — they were already right.
 ### 8.3 Merging
 
 **Use that instead** repoints every `SwapItemAttribute.valueId` from the
-pending node to the target and deletes the pending node. That is the whole
-operation — two statements, no rows rewritten, which is the dividend of
-pointers-only (§2.2).
+pending node to the target and deletes the pending node. No item rows are
+rewritten.
 
 The affected items' `name` columns are **not** recomputed. A merge says the two
 values were always the same thing; it does not claim the tag that was printed
-said something else. Correcting a name would also mean correcting a label
-already stuck to a pair of skis, which nothing in this system can do. The audit
-entry records both labels and the item count, so the discrepancy between an
-item named "Rossignal Skis" and a Manufacturer that now reads "Rossignol" has a
-traceable cause.
+said something else, and correcting the name would mean correcting a label
+already stuck to a pair of skis. The audit entry records both labels and the
+item count, so an item named "Rossignal Skis" whose Manufacturer now reads
+"Rossignol" has a traceable cause.
 
 Merging is available to `ski_swap:admin` between any two org values, not only
 from a pending one — the same operation cleans up a pair that were both
@@ -804,8 +829,11 @@ two guards:
   way.
 - **Collision.** If a global node already exists with the same normalized label
   under the same parent, promotion becomes a merge into it (§8.3), across every
-  org that has its own copy. That is the payoff of the whole two-tier scheme:
+  org that has its own copy. That is the payoff of the two-tier scheme:
   fourteen clubs' "Rossignol" collapse into one.
+
+An uploaded icon needs no attention here: the S3 key is the node id, so the
+image is already where a global node's image lives (§4.4).
 
 Promotion bumps `taxonomyVersion` for every org.
 
@@ -814,12 +842,13 @@ Promotion bumps `taxonomyVersion` for every org.
 Ships as a data file consumed by `prisma/seed.ts`, so the global tree is
 reproducible and reviewable in a diff rather than clicked into existence.
 
-Categories to start, each seeded with an icon key (§4.4) because the category
-grid is the one screen where icons carry the navigation: Skis, Snowboard, Ski
+Categories to start, each with a registry `iconKey` because the category grid
+is the one screen where icons carry the navigation (§4.4): Skis, Snowboard, Ski
 boots, Snowboard boots, Poles, Helmet, Goggles, Jacket, Pants, Gloves, Base
-layer, Bag, Other. Attributes and values seed with `icon: null` throughout —
-the exception being Colour, which is deliberately left for the swatch control
-in §10 rather than approximated with thirteen circle glyphs.
+layer, Bag, Other. The seed uploads nothing — an asset would have to live in the
+repo and reach a bucket that may not exist — so a category the registry cannot
+cover ships without an icon and gets one from the admin screen. Attributes and
+values seed with no icon at all.
 
 Attributes worth having on day one, with their slots:
 
@@ -842,7 +871,7 @@ Attributes worth having on day one, with their slots:
 Colors and sizes are shared lists in spirit but separate nodes in fact — an
 attribute's values are its children, and there is no value reuse across
 attributes. That is a real cost in seed verbosity and the right trade: a shared
-value table would mean a colour edit for jackets silently changing skis.
+value table would mean a color edit for jackets silently changing skis.
 
 Model lists ship thin — the well-known dozen per manufacturer — and grow
 through the promotion path (§8.4), which is the mechanism designed to fill them
@@ -852,9 +881,16 @@ from what sellers actually bring.
 
 - **The CSV importers.** `legacy-ticket.service.ts` and the proxy-seller
   importer keep mapping a column to `name`, and items they create carry a null
-  `categoryId` (D11). Structured import needs a column-to-attribute mapping UI,
+  `categoryId` (D12). Structured import needs a column-to-attribute mapping UI,
   which is its own plan. Items imported this way are complete and sellable;
   they simply have no attributes to report on.
+- **The native staff-iPad app.** `patrolkit_ios` builds its own item form,
+  renders its own labels from `item.name`, and queues creates offline through
+  `SkiSwapSyncEngine`. It needs the taxonomy endpoint, a picker of its own, and
+  a migration of its queued-payload shape — a plan of its own, and the reason
+  the web work is worth finishing first: it settles the contract the native
+  client will be written against. Until then staff check-in happens on the web
+  surface.
 - **Retro-classification.** No screen offers to decompose an existing free-text
   name into attributes. If one is ever wanted, it is a separate tool over the
   same write path.
@@ -862,23 +898,28 @@ from what sellers actually bring.
   category, price history by manufacturer and model, and "what did a Head Kore
   112 go for last year" are what the data is *for*, and none of them are built
   here.
-- **Colour swatches.** Colour values render as labels like every other value.
-  A swatch is the obviously better control, but it wants a hex column and a
-  contrast-checked chip rather than an entry in the icon registry, and adding
-  it is a small plan of its own. Seeding colour icons in the meantime would
-  make that change harder, so §9 leaves them null.
-- **Uploaded icons.** No node may carry an image. §4.4 says why, and the
-  answer does not change for a well-behaved org with a good logo.
+- **Color swatches.** Color values render as labels like every other value. A
+  swatch is the better control, but it wants a hex column and a
+  contrast-checked chip rather than an entry in the icon registry. Seeding
+  color icons in the meantime would make that change harder, so §9 leaves them
+  null.
+- **Animated or multi-size icons.** One 128×128 PNG per node: no stored SVG, no
+  per-theme variant, no srcset. A mark that only reads on a dark ground is the
+  uploader's problem.
 - **Square categories.** Items still land in the swap's single Square category
   (`swap.squareCategoryId`). Mapping taxonomy categories onto Square ones is
   possible now and deliberately deferred.
 
 ## 11. Phases
 
+All three are `apps/api` and `apps/web`.
+
 **Phase 1 — the tree exists.** `TaxonomyNode`, the icon registry and its
-contract-side key list (§4.4), the seed, the resolved-tree endpoint with
-versioning and deferred branches, and the platform admin editor (§6.4). Nothing about items changes; the tree can be browsed and curated before
-anything depends on it.
+contract-side key list, the upload/serve/delete routes and their `sharp` step
+(§4.4), the seed, the resolved-tree endpoint with versioning and deferred
+branches, and the platform admin editor (§6.4). Nothing
+about items changes; the tree can be browsed and curated before anything
+depends on it.
 
 **Phase 2 — items are described by it.** `SwapItemAttribute`, `categoryId` on
 `SwapItem`, `deriveName`, the contract changes in §7.3, and the picker

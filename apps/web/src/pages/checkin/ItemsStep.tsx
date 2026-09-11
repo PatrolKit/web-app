@@ -8,6 +8,9 @@ import {
   faSpinner as faSpinnerDuo,
 } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
+import ItemDescriber, {
+  emptyDescriber, toAttributeInputs, type DescriberState,
+} from '../../components/ItemDescriber';
 import { downscaleImage } from '../../lib/downscaleImage';
 import {
   CheckinShell, contextLine, ErrorNote, formatCents, inputClass,
@@ -27,15 +30,25 @@ function idempotencyKey(): string {
   return `k-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** Survives a reload, a backgrounded tab, and Safari discarding the page. */
+/**
+ * Survives a reload, a backgrounded tab, and Safari discarding the page.
+ *
+ * `v2` because the shape changed when the typed name became a described one
+ * (Plan 19): a v1 draft parsed as v2 would restore a name field that no longer
+ * exists and no category, which reads as a half-filled form nobody can finish.
+ * A bumped key discards it instead.
+ */
 function draftKey(swapId: string) {
-  return `patrolkit:checkin:draft:${swapId}`;
+  return `patrolkit:checkin:draft:v2:${swapId}`;
 }
 
 interface Draft {
-  name: string;
+  describer: DescriberState;
   price: string;
+  notes: string;
 }
+
+const emptyDraft: Draft = { describer: emptyDescriber, price: '', notes: '' };
 
 /**
  * Entering items, one at a time.
@@ -72,9 +85,17 @@ export default function ItemsStep({
   const [draft, setDraft] = useState<Draft>(() => {
     try {
       const raw = localStorage.getItem(draftKey(context.swapId));
-      return raw ? (JSON.parse(raw) as Draft) : { name: '', price: '' };
+      if (!raw) return emptyDraft;
+      const parsed = JSON.parse(raw) as Partial<Draft>;
+      // Defended field by field: a draft written by an older build, or one a
+      // browser truncated, must not leave the form in a state with no category.
+      return {
+        describer: parsed.describer?.answers ? parsed.describer : emptyDescriber,
+        price: parsed.price ?? '',
+        notes: parsed.notes ?? '',
+      };
     } catch {
-      return { name: '', price: '' };
+      return emptyDraft;
     }
   });
   const [photo, setPhoto] = useState<{ file: File; preview: string } | null>(null);
@@ -82,7 +103,7 @@ export default function ItemsStep({
   const [error, setError] = useState('');
   const [finishing, setFinishing] = useState(false);
   const [reprinting, setReprinting] = useState<string | null>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
+  const priceRef = useRef<HTMLInputElement>(null);
 
   // A half-typed item survives a reload. Sellers put phones down mid-check-in,
   // and Safari discards backgrounded tabs without asking.
@@ -91,7 +112,9 @@ export default function ItemsStep({
   }, [draft, context.swapId]);
 
   const priceCents = parsePriceCents(draft.price);
-  const canAdd = draft.name.trim().length > 0 && priceCents !== null;
+  // A category and a price, and nothing else (Plan 19 D6). "Skis — $45" is a
+  // valid item, and it is less typing than the old free-text field was.
+  const canAdd = draft.describer.categoryId !== null && priceCents !== null;
 
   async function addItem() {
     if (!canAdd) return;
@@ -105,7 +128,9 @@ export default function ItemsStep({
         context.orgId,
         {
           swapId: context.swapId,
-          name: draft.name.trim(),
+          categoryId: draft.describer.categoryId!,
+          attributes: toAttributeInputs(draft.describer),
+          ...(draft.notes.trim() ? { description: draft.notes.trim() } : {}),
           priceCents: priceCents!,
           quantity: 1,
           stationId: context.stationId,
@@ -123,9 +148,12 @@ export default function ItemsStep({
         setPhoto(null);
       }
 
-      setDraft({ name: '', price: '' });
+      setDraft(emptyDraft);
       await qc.invalidateQueries({ queryKey: summaryKey });
-      nameRef.current?.focus();
+      // A value the seller just typed is now a pending node the tree does not
+      // offer, so the next item's picker has to refetch rather than show a list
+      // that is one value out of date.
+      await qc.invalidateQueries({ queryKey: ['taxonomy', context.orgId] });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save that item');
     } finally {
@@ -167,15 +195,28 @@ export default function ItemsStep({
       logoUrl={context.orgLogoUrl}
     >
       <div className="space-y-3 bg-surface-50 border border-gray-800 rounded-xl p-4">
-        <input
-          ref={nameRef}
-          className={inputClass}
-          placeholder="What is it? e.g. Volkl Kendo skis, 177cm"
-          value={draft.name}
-          onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-          autoFocus
+        <ItemDescriber
+          orgId={context.orgId}
+          value={draft.describer}
+          onChange={(describer) => setDraft((d) => ({ ...d, describer }))}
+          layout="stacked"
+          /**
+           * The feedback loop that makes the form make sense: it is what shows a
+           * seller that answering one more question improves their listing.
+           * Rendered here rather than inside the describer so it sits directly
+           * above the price, where the eye already is.
+           */
+          renderPreview={(name) =>
+            name ? (
+              <p className="text-sm text-white bg-surface-100 rounded-lg px-3 py-2 border border-gray-800">
+                {name}
+              </p>
+            ) : null
+          }
         />
+
         <input
+          ref={priceRef}
           className={inputClass}
           // Decimal, not numeric: the price has a decimal point in it, and the
           // numeric keypad on iOS does not offer one.
@@ -183,6 +224,15 @@ export default function ItemsStep({
           placeholder="Price, e.g. 45.00"
           value={draft.price}
           onChange={(e) => setDraft((d) => ({ ...d, price: e.target.value }))}
+        />
+
+        {/* Free text did not disappear; it moved here, where it belongs. Never
+            part of the name, and shown on the seller's own listing. */}
+        <input
+          className={inputClass}
+          placeholder="Notes (optional) — a scratch, a missing strap"
+          value={draft.notes}
+          onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
         />
 
         {photo ? (

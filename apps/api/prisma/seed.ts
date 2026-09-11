@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
+import { seedTaxonomy } from './seed-taxonomy';
 
 const prisma = new PrismaClient();
 
@@ -94,6 +95,11 @@ async function main() {
     create: { key: 'signage', name: 'Signage', description: 'Manage smart displays in patrol rooms for distributing notifications and messages.', isCore: false },
   });
   console.log('✓ modules seeded');
+
+  // 2a. The shared item-description tree (Plan 19). Platform-scoped like the
+  // module catalogue above, and idempotent on `dedupeKey` so a re-seed never
+  // reverts what a platform admin has since curated.
+  await seedTaxonomy(prisma);
 
   // 2b. Device bootstrap: where the fleet installs from, and what each role runs.
   //
