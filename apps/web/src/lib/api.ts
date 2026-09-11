@@ -453,6 +453,32 @@ export const api = {
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items${qs ? `?${qs}` : ''}`
       );
     },
+    /** Who staff may upload a file for: everyone holding tickets in this swap. */
+    listTicketSellers: (orgId: string, swapId: string) =>
+      request<import('./api.types').TicketSeller[]>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/ticket-sellers`,
+      ),
+    /**
+     * A shop's inventory, uploaded by staff on their behalf.
+     *
+     * Returns the per-row verdict rather than throwing, the same as the shop's
+     * own upload — a rejected file is a list of things to fix, not an error.
+     */
+    importItemsForSeller: async (orgId: string, swapId: string, sellerId: string, file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('sellerId', sellerId);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      const res = await fetch(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/import`, {
+        method: 'POST', credentials: 'include', headers, body: form,
+      });
+      return (await res.json()) as {
+        success: boolean;
+        data?: import('./api.types').TicketImportRow[];
+        error?: string;
+      };
+    },
     /** One item by the number on its tag, exactly — what a scanner needs. */
     findItemBySku: (orgId: string, swapId: string, sku: string) =>
       request<import('./api.types').ItemResponse>(
@@ -588,7 +614,12 @@ export const api = {
     },
 
     // Business sellers (admin)
-    inviteBusinessSeller: (orgId: string, data: { businessName: string; email: string }) =>
+    inviteBusinessSeller: (
+      orgId: string,
+      // The email is optional and sending is explicit: a shop whose inventory
+      // staff upload may never sign in.
+      data: { businessName: string; email?: string; sendInvite?: boolean },
+    ) =>
       request<import('./api.types').BusinessSellerMember>(`/orgs/${orgId}/ski-swap/business-sellers`, {
         method: 'POST', body: JSON.stringify(data),
       }),

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
@@ -64,6 +64,8 @@ export interface SwapItemsPanelProps {
   sellers?: SellerResponse[];
   emptyMessage?: string;
   labelsPerItem?: number;
+  /** Rendered beside Add item. The staff page uses it for the seller import. */
+  toolbarExtra?: ReactNode;
 }
 
 // ─── Form state ───────────────────────────────────────────────────────────────
@@ -91,7 +93,7 @@ function describeRanges(ranges: { startNumber: number; endNumber: number }[]): s
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi,
   showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
-  tickets,
+  tickets, toolbarExtra,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
@@ -244,6 +246,8 @@ export default function SwapItemsPanel({
             <option value="printed">Printed</option>
           </select>
         </div>
+        <div className="flex gap-2 items-center">
+        {toolbarExtra}
         {canManage && (
           <button
             onClick={() => {
@@ -262,6 +266,7 @@ export default function SwapItemsPanel({
             + Add Item
           </button>
         )}
+        </div>
       </div>
 
       {/* Items table */}

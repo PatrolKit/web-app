@@ -52,9 +52,8 @@ export class SellerSelfController {
     @UploadedFile() file: Express.Multer.File,
     @Body('swapId') swapId: string,
   ) {
-    const seller = await this.sellerSelfService.getSellerRecord(orgId, user.userId);
     const { rows } = this.tickets.parseItemCsv(file.buffer);
-    return this.tickets.importItems(orgId, swapId, seller.id, rows);
+    return this.sellerSelfService.importItems(orgId, user.userId, swapId, rows);
   }
 
   /**

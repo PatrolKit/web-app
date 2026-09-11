@@ -91,6 +91,22 @@ export class SellerSelfService {
   }
 
   /**
+   * The signed-in seller's own inventory, from a file they uploaded.
+   *
+   * Thin on purpose: the rules are `LegacyTicketService`'s and the writes are
+   * `ItemService`'s, and this only says whose items they are.
+   */
+  async importItems(
+    orgId: string,
+    userId: string,
+    swapId: string,
+    rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+  ) {
+    const seller = await this.getSellerRecord(orgId, userId);
+    return this.itemService.importTicketItems(orgId, swapId, seller.id, rows);
+  }
+
+  /**
    * Saves an item for the signed-in seller.
    *
    * The station half — which counter's code namespaces the SKU, whether a tag is

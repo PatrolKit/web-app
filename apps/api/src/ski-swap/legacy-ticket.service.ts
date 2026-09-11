@@ -3,7 +3,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../prisma/prisma.service';
 import { parse as parseCsv } from 'csv-parse/sync';
 import { displayName } from '../common/util/person';
-import type { LegacyTicketRangeResponse } from '../contracts/ski-swap.contracts';
+import type { LegacyTicketRangeResponse, TicketSeller } from '../contracts/ski-swap.contracts';
 
 /** A bare ticket number: digits and nothing else. */
 const TICKET_NUMBER = /^\d+$/;
@@ -91,6 +91,40 @@ export class LegacyTicketService {
       orderBy: { startNumber: 'asc' },
       select: { startNumber: true, endNumber: true },
     });
+  }
+
+  /**
+   * Everyone in this swap who holds tickets, with how much of them is spent.
+   *
+   * What the staff import picker offers. Ordered by name because it is read as
+   * a list of shops rather than of ranges.
+   */
+  async sellersWithRanges(orgId: string, swapId: string): Promise<TicketSeller[]> {
+    const rows = await this.prisma.legacyTicketRange.findMany({
+      where: { orgId, swapId, seller: { deletedAt: null } },
+      orderBy: { startNumber: 'asc' },
+      include: { seller: { include: { membership: { include: { user: true } } } } },
+    });
+    if (!rows.length) return [];
+
+    const used = await this.usedNumbers(swapId);
+    const bySeller = new Map<string, TicketSeller>();
+
+    for (const r of rows) {
+      const entry = bySeller.get(r.sellerId) ?? {
+        sellerId: r.sellerId,
+        displayName: displayName(r.seller.membership.user, r.seller.businessName),
+        ranges: [],
+        ticketCount: 0,
+        usedCount: 0,
+      };
+      entry.ranges.push({ startNumber: r.startNumber, endNumber: r.endNumber });
+      entry.ticketCount += r.endNumber - r.startNumber + 1;
+      for (let n = r.startNumber; n <= r.endNumber; n++) if (used.has(n)) entry.usedCount++;
+      bySeller.set(r.sellerId, entry);
+    }
+
+    return [...bySeller.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
   }
 
   /** What the Sellers page shows: the blocks, and how much of each is spent. */
@@ -366,8 +400,28 @@ export class LegacyTicketService {
    * the file entirely. Aliases follow the seller import's approach so that
    * `price`, `Price`, `amount` and `cost` all land on the same field.
    */
-  parseItemCsv(buffer: Buffer): { rows: { sku: string; name?: string; priceCents: number }[] } {
-    const records: string[][] = parseCsv(buffer, { skip_empty_lines: true, trim: true });
+  parseItemCsv(
+    buffer: Buffer,
+  ): { rows: { sku: string; name?: string; description?: string; priceCents: number }[] } {
+    /**
+     * Strict about column counts on purpose, but not about how it says so.
+     *
+     * A description with a comma in it — "170cm, edges good" — is three fields
+     * unless the file quotes it, which spreadsheets do and hand-typed files do
+     * not. The parser's own complaint is "Invalid Record Length: expect 3, got
+     * 4 on line 7", which reached staff as a 500. Relaxing the count instead
+     * would silently file the tail of a description as a price.
+     */
+    let records: string[][];
+    try {
+      records = parseCsv(buffer, { skip_empty_lines: true, trim: true });
+    } catch (err) {
+      const line = /on line (\d+)/.exec(err instanceof Error ? err.message : '')?.[1];
+      throw new BadRequestException(
+        `Line ${line ?? '?'} has more columns than the header. ` +
+          'A name or description containing a comma has to be in quotes: "170cm, edges good".',
+      );
+    }
     if (!records.length) return { rows: [] };
 
     const [rawHeaders, ...dataRows] = records;
@@ -375,7 +429,11 @@ export class LegacyTicketService {
     const indexOf = (aliases: string[]) => headers.findIndex((h) => aliases.includes(h));
 
     const skuAt = indexOf(['sku', 'ticket', 'ticket number', 'number', 'tag']);
-    const nameAt = indexOf(['name', 'item', 'description', 'title']);
+    const nameAt = indexOf(['name', 'item', 'title']);
+    // Its own column, not a name any more. Square shows a description to
+    // buyers, and a shop writing "177cm, small topsheet scratch" means it as
+    // the detail under the title rather than as the title.
+    const descAt = indexOf(['description', 'details', 'notes']);
     const priceAt = indexOf(['price', 'amount', 'cost', 'value']);
 
     if (skuAt === -1) throw new BadRequestException('The file needs a "sku" column.');
@@ -384,6 +442,7 @@ export class LegacyTicketService {
     const rows = dataRows.map((row) => ({
       sku: (row[skuAt] ?? '').trim(),
       name: nameAt === -1 ? undefined : (row[nameAt] ?? '').trim() || undefined,
+      description: descAt === -1 ? undefined : (row[descAt] ?? '').trim() || undefined,
       // "$250.00" and "250" both mean the same thing to whoever typed it.
       priceCents: Math.round(parseFloat((row[priceAt] ?? '').replace(/[^0-9.]/g, '')) * 100),
     }));
@@ -391,20 +450,25 @@ export class LegacyTicketService {
   }
 
   /**
-   * Checks a whole file, then writes it, or writes nothing.
+   * Checks a whole file and says whether it may be written.
    *
-   * Nothing lands until every row has passed: a half-imported inventory is
-   * worse than a rejected one, because the seller cannot tell which half.
+   * Every row is judged before any of them lands: a half-imported inventory is
+   * worse than a rejected one, because the seller cannot tell which half. A
+   * result carrying any `error` means nothing should be written at all.
    *
    * Rows may skip numbers and go backwards. The high-water mark decides what
    * the *form* suggests and has no say here — a shop entering a pad they
    * worked through out of order is exactly the file this exists to accept.
+   *
+   * Checking and writing are deliberately separate. The write has to go through
+   * `ItemService.create`, which is what knows about consignment and Square, and
+   * that service already depends on this one — so the rules stay here and the
+   * writing happens on the side that can reach both.
    */
-  async importItems(
-    orgId: string,
+  async checkImportRows(
     swapId: string,
     sellerId: string,
-    rows: { sku: string; name?: string; priceCents: number }[],
+    rows: { sku: string; name?: string; description?: string; priceCents: number }[],
   ): Promise<ImportRowResult[]> {
     const ranges = await this.listForSeller(swapId, sellerId);
     if (ranges.length === 0) {
@@ -438,29 +502,6 @@ export class LegacyTicketService {
       results.push({ line, sku, outcome: 'ok' });
     });
 
-    if (results.some((r) => r.outcome === 'error')) return results;
-
-    // Every row passed, so the writes can go ahead.
-    const fallback = await this.fallbackName(sellerId, '');
-    for (let i = 0; i < rows.length; i++) {
-      const sku = rows[i].sku.trim();
-      const name = rows[i].name?.trim() || `${fallback.trim()} ${sku}`;
-      await this.prisma.swapItem.create({
-        data: {
-          id: createId(),
-          swapId,
-          orgId,
-          sellerId,
-          name,
-          priceCents: rows[i].priceCents,
-          sku,
-          originalQuantity: 1,
-          // The ticket is already on the goods (D8).
-          hasPrintedTag: true,
-        },
-      });
-      results[i] = { ...results[i], outcome: 'created' };
-    }
     return results;
   }
 

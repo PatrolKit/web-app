@@ -354,6 +354,15 @@ export interface TicketImportRow {
   error?: string;
 }
 
+/** A seller staff can upload a file for: one holding tickets in this swap. */
+export interface TicketSeller {
+  sellerId: string;
+  displayName: string;
+  ranges: { startNumber: number; endNumber: number }[];
+  ticketCount: number;
+  usedCount: number;
+}
+
 export interface SwapStats {
   totalItems: number;
   totalSellers: number;

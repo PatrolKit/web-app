@@ -280,8 +280,25 @@ export const PublicSellerItemSchema = z.object({
 // ─── Business seller invite (admin) ──────────────────────────────────────────
 
 export const InviteBusinessSellerSchema = z
-  .object({ businessName: z.string().trim().min(1).max(100), email: z.string().trim().toLowerCase().email() })
-  .strict();
+  .object({
+    businessName: z.string().trim().min(1).max(100),
+    /**
+     * Optional: a shop whose inventory staff upload for them may never sign in,
+     * and an address worth keeping — it is where the check goes — should not
+     * cost them a mailbox they did not ask to hear from.
+     */
+    email: z.string().trim().toLowerCase().email().optional(),
+    /**
+     * Whether to actually write to that address. Off by default: adding a
+     * seller and inviting one are two different acts, and only one of them
+     * leaves the building.
+     */
+    sendInvite: z.boolean().optional().default(false),
+  })
+  .strict()
+  .refine((v) => !v.sendInvite || !!v.email, {
+    message: 'An email address is needed to send an invite.',
+  });
 
 /** Removal is soft: the profile row survives as a tombstone. */
 export const UpdateBusinessSellerStatusSchema = z
@@ -419,7 +436,23 @@ export const TicketFormStateSchema = z.object({
   exhausted: z.boolean(),
 });
 
+/**
+ * A seller staff can upload a file for: one who holds tickets in this swap.
+ *
+ * Only these are offered in the picker. A shop with no ranges could not own the
+ * numbers in any file, so letting one be chosen only produces an import where
+ * every row fails.
+ */
+export const TicketSellerSchema = z.object({
+  sellerId: z.string(),
+  displayName: z.string(),
+  ranges: z.array(z.object({ startNumber: z.number().int(), endNumber: z.number().int() })),
+  ticketCount: z.number().int(),
+  usedCount: z.number().int(),
+});
+
 export class AddTicketRangeDto extends createZodDto(AddTicketRangeSchema) {}
+export type TicketSeller = z.infer<typeof TicketSellerSchema>;
 export type LegacyTicketRangeResponse = z.infer<typeof LegacyTicketRangeResponseSchema>;
 export type TicketFormState = z.infer<typeof TicketFormStateSchema>;
 

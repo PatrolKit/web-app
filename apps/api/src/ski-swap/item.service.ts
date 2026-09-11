@@ -13,7 +13,7 @@ import { IdempotencyService } from '../common/services/idempotency.service';
 import { SkuService } from './sku.service';
 import { PrintQueueService } from './print-queue.service';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
-import { LegacyTicketService, ticketNumberOf } from './legacy-ticket.service';
+import { LegacyTicketService, ticketNumberOf, type ImportRowResult } from './legacy-ticket.service';
 import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
 import type { ItemResponse } from '../contracts/ski-swap.contracts';
@@ -396,6 +396,78 @@ export class ItemService {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId } });
     if (!swap) throw new NotFoundException('Swap not found');
     return swap;
+  }
+
+  /**
+   * A shop's whole inventory from one file, every row a ticket they hold.
+   *
+   * Checked here and written here, but the rules live on `LegacyTicketService`
+   * — which this service already depends on, and which therefore cannot call
+   * back into it. Nothing is written unless every row passes.
+   *
+   * The writes go through `create` rather than straight to Prisma, which is the
+   * whole point: an item made by hand here would carry no `consignedAt` and
+   * never reach Square, so a shop's uploaded inventory would sit unaccepted and
+   * unsellable while the same items typed in one at a time went on the floor.
+   */
+  /**
+   * The staff path: a file a shop sent in, uploaded on their behalf.
+   *
+   * Gated on the swap accepting legacy tickets, which is the switch the rest of
+   * that UI hangs off. The shop's own upload is deliberately *not* gated the
+   * same way — it is governed by holding ranges, so turning the swap setting
+   * off cannot strand a seller holding paper mid-event.
+   */
+  async importForSeller(
+    orgId: string,
+    swapId: string,
+    sellerId: string,
+    rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+  ): Promise<ImportRowResult[]> {
+    const swap = await this.findSwapOrThrow(orgId, swapId);
+    if (!swap.legacyTicketsEnabled) {
+      throw new BadRequestException('This swap does not accept legacy tickets.');
+    }
+    await this.sellerService.findOrThrow(orgId, sellerId);
+    return this.importTicketItems(orgId, swapId, sellerId, rows);
+  }
+
+  async importTicketItems(
+    orgId: string,
+    swapId: string,
+    sellerId: string,
+    rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+  ): Promise<ImportRowResult[]> {
+    const results = await this.tickets.checkImportRows(swapId, sellerId, rows);
+    if (results.some((r) => r.outcome === 'error')) return results;
+
+    const fallback = await this.tickets.fallbackName(sellerId, '');
+
+    for (let i = 0; i < rows.length; i++) {
+      const sku = rows[i].sku.trim();
+      const item = await this.create(orgId, swapId, {
+        // A blank name becomes the shop and the number: `SwapItem.name` is
+        // non-null and Square needs something to call it.
+        name: rows[i].name?.trim() || `${fallback.trim()} ${sku}`,
+        description: rows[i].description?.trim() || undefined,
+        priceCents: rows[i].priceCents,
+        quantity: 1,
+        sellerId,
+        sku,
+      });
+
+      // `create` has no `alreadyPrinted` — that belongs to the station path —
+      // so this is set after the fact. Without it the shop is offered a reprint
+      // of a ticket that came out of a box.
+      await this.prisma.swapItem.update({
+        where: { id: item.id },
+        data: { hasPrintedTag: true },
+      });
+
+      results[i] = { ...results[i], outcome: 'created' };
+    }
+
+    return results;
   }
 
   // ─── Consignment ───────────────────────────────────────────────────────────

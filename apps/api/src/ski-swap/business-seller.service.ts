@@ -75,14 +75,21 @@ export class BusinessSellerService {
     return out;
   }
 
+  /**
+   * Adds a business seller, and writes to them only if asked to.
+   *
+   * The name is the only thing required. A shop that will never sign in — one
+   * whose file staff upload on their behalf — is recorded and left alone;
+   * `sendInvite` is how the old always-notify behaviour is asked for.
+   */
   async invite(
     orgId: string,
     inviterUserId: string,
-    data: { businessName: string; email: string },
+    data: { businessName: string; email?: string; sendInvite?: boolean },
   ): Promise<BusinessSellerMemberResponse> {
     void inviterUserId;
 
-    const existingUser = await this.people.resolve({ email: data.email });
+    const existingUser = data.email ? await this.people.resolve({ email: data.email }) : null;
     if (existingUser) {
       const existingProfile = await this.prisma.sellerProfile.findFirst({
         where: { membership: { orgId, userId: existingUser.id } },
@@ -109,14 +116,16 @@ export class BusinessSellerService {
       select: { name: true },
     });
 
-    // Business sellers are always notified. Delivery is suppressed globally
-    // while OUTBOUND_NOTIFICATIONS is off.
-    if (created) {
-      await this.authService
-        .createInviteChallenge(user.id, data.email, org.name)
-        .catch(() => {});
-    } else {
-      this.mailService.sendSellerAddedNotification(data.email, org.name).catch(() => {});
+    // Only when asked, and only when there is somewhere to write to. Delivery is
+    // suppressed globally anyway while OUTBOUND_NOTIFICATIONS is off.
+    if (data.sendInvite && data.email) {
+      if (created) {
+        await this.authService
+          .createInviteChallenge(user.id, data.email, org.name)
+          .catch(() => {});
+      } else {
+        this.mailService.sendSellerAddedNotification(data.email, org.name).catch(() => {});
+      }
     }
 
     return toResponse(await this.findProfileOrThrow(profile.id));

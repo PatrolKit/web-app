@@ -20,12 +20,17 @@ interface SellerForm {
   /** Payouts target a verified contact rather than a free-text identifier. */
   payoutTarget: '' | 'EMAIL' | 'PHONE' | 'PAYPAL_ID' | 'VENMO_ID';
   payoutHandle: string;
+  /** Business sellers only: whether adding them also writes to them. */
+  sendInvite: boolean;
 }
 
 const emptyForm: SellerForm = {
   type: '', businessName: '', firstName: '', lastName: '', phone: '', email: '',
   street: '', city: '', state: '', zip: '',
   payoutMethod: 'CHECK', payoutTarget: '', payoutHandle: '',
+  // Off. Adding a shop and inviting one are different acts, and a shop whose
+  // items staff upload for them has no reason to hear from us.
+  sendInvite: false,
 };
 
 /** Sort keys the table exposes — all derived, so they are named explicitly. */
@@ -83,7 +88,8 @@ export default function SellersPage() {
   const inviteMutation = useMutation({
     mutationFn: () => api.skiSwap.inviteBusinessSeller(orgId, {
       businessName: form.businessName,
-      email: form.email,
+      email: form.email.trim() || undefined,
+      sendInvite: form.sendInvite,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] });
@@ -175,6 +181,8 @@ export default function SellersPage() {
       phone: s.phone ?? '', email: s.email ?? '',
       street: s.street ?? '', city: s.city ?? '', state: s.state ?? '', zip: s.zip ?? '',
       payoutMethod: s.payoutMethod ?? '', payoutTarget: s.payoutTarget ?? '', payoutHandle: s.payoutHandle ?? '',
+      // Editing never sends; the checkbox only exists while adding.
+      sendInvite: false,
     });
   }
 
@@ -467,10 +475,30 @@ export default function SellersPage() {
                   <input required value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })}
                     placeholder="Business name *"
                     className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
-                  <input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    placeholder="Email address *"
+                  <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    placeholder="Email address"
                     className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
-                  <p className="text-xs text-gray-500">A magic-link onboarding email will be sent to this address.</p>
+
+                  {/* Off by default. Recording where to send a shop's money is
+                      not a reason to write to them, and the shops on legacy
+                      tickets have their inventory entered for them. */}
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.sendInvite}
+                      disabled={!form.email.trim()}
+                      onChange={(e) => setForm({ ...form, sendInvite: e.target.checked })}
+                      className="mt-0.5 disabled:opacity-40"
+                    />
+                    <span>
+                      <span className="block text-sm text-gray-200">Send them a sign-in link</span>
+                      <span className="block text-xs text-gray-500 mt-0.5">
+                        {form.email.trim()
+                          ? 'They can add their own items and track sales. Leave this off if you are entering their inventory for them.'
+                          : 'Add an email address first.'}
+                      </span>
+                    </span>
+                  </label>
                 </>
               )}
             </div>
@@ -480,7 +508,7 @@ export default function SellersPage() {
               <div className="flex gap-2 px-5 py-4 border-t border-gray-700 items-center shrink-0">
                 <button type="submit" disabled={createMutation.isPending || patchMutation.isPending || inviteMutation.isPending}
                   className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-40">
-                  {editSeller ? 'Save' : form.type === 'business' ? 'Send Invite' : 'Create'}
+                  {editSeller ? 'Save' : form.type === 'business' ? 'Add seller' : 'Create'}
                 </button>
                 <button type="button" onClick={closeForm}
                   className="text-gray-400 hover:text-white text-sm px-3 py-2">Cancel</button>

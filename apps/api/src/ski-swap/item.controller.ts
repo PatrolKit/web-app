@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body, Controller, Delete, Get, Headers, HttpCode, Param,
   Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { ItemService } from './item.service';
+import { LegacyTicketService } from './legacy-ticket.service';
 import { CreateItemDto, PatchItemDto } from '../contracts/ski-swap.contracts';
 import type { Request } from 'express';
 
@@ -19,7 +21,10 @@ import type { Request } from 'express';
 @RequireDeviceRole('ski_swap.staff_check_in')
 @RequireModule('ski_swap')
 export class ItemController {
-  constructor(private readonly itemService: ItemService) {}
+  constructor(
+    private readonly itemService: ItemService,
+    private readonly tickets: LegacyTicketService,
+  ) {}
 
   @Get()
   @RequirePermissions('ski_swap:report')
@@ -77,6 +82,36 @@ export class ItemController {
   ) {
     const actorId = req.user?.userId ?? req.device?.deviceId ?? null;
     return this.itemService.consign(orgId, swapId, itemId, actorId);
+  }
+
+  /**
+   * A shop's inventory, uploaded by staff on their behalf.
+   *
+   * The seller is named in the body rather than taken from the caller — that is
+   * the whole feature — so the rules refuse any number outside the blocks
+   * issued to them, which is what makes picking the wrong shop a failure rather
+   * than a mess.
+   */
+  @Post('import')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:manage')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  importForSeller(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('sellerId') sellerId: string,
+  ) {
+    if (!sellerId) throw new BadRequestException('Choose which seller the file is for.');
+    const { rows } = this.tickets.parseItemCsv(file.buffer);
+    return this.itemService.importForSeller(orgId, swapId, sellerId, rows);
+  }
+
+  /** Who staff may upload a file for: everyone holding tickets in this swap. */
+  @Get('ticket-sellers')
+  @RequirePermissions('ski_swap:report')
+  ticketSellers(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    return this.tickets.sellersWithRanges(orgId, swapId);
   }
 
   @Post()
