@@ -13,6 +13,10 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    // Set here, not inherited: `baseUrl` in tsconfig.base.json resolves against
+    // that file's directory (the repo root), which made the alias below point at
+    // /api/src/contracts. It had no users, so nothing had caught it.
+    "baseUrl": ".",
     "paths": {
       "@patrolkit/contracts/*": ["../api/src/contracts/*"]
     }

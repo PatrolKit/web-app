@@ -51,7 +51,8 @@ export default function BusinessSellerPage() {
         fetchItems: (sid) => api.skiSwap.sellerListItems(orgId, sid),
         createItem: (_sid, data) => api.skiSwap.sellerCreateItem(orgId, {
           swapId: sellerSelectedSwapId!,
-          name: data.name,
+          categoryId: data.categoryId,
+          attributes: data.attributes,
           description: data.description,
           priceCents: data.priceCents,
           quantity: data.quantity,

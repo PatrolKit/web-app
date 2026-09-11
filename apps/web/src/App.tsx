@@ -16,6 +16,7 @@ import HoursReportPage from './pages/time-tracking/HoursReportPage';
 import RosterPage from './pages/time-tracking/RosterPage';
 import TimeTrackingSettingsPage from './pages/time-tracking/SettingsPage';
 import DeviceSoftwareTab from './pages/admin/DeviceSoftwareTab';
+import ItemTaxonomyTab from './pages/admin/ItemTaxonomyTab';
 import SignageLayout, { SignagePlaceholder } from './pages/signage/SignageLayout';
 import SignageDevicesPage from './pages/signage/DevicesPage';
 import SkiSwapDashboard from './pages/ski-swap/SkiSwapDashboard';
@@ -97,6 +98,7 @@ export default function App() {
             <Route index element={<OrganizationsTab />} />
             <Route path="users" element={<UsersTab />} />
             <Route path="device-software" element={<DeviceSoftwareTab />} />
+            <Route path="item-taxonomy" element={<ItemTaxonomyTab />} />
           </Route>
           {/* Modules used to be its own nav item; keep old links working. */}
           <Route path="modules" element={<Navigate to="/dashboard/org-admin/modules" replace />} />

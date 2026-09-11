@@ -18,7 +18,9 @@ function navClass({ isActive }: { isActive: boolean }): string {
  *
  * Device Software belongs here for the same reason: what a signage display
  * runs is one answer for the whole platform, not a setting an org holds an
- * opinion about.
+ * opinion about. So does Item Details: the shared tree an item is described
+ * through is one list for everyone, and a club curates its own overlay from its
+ * own Administration page rather than here.
  */
 export default function AdminLayout() {
   const { user } = useAuth();
@@ -32,6 +34,7 @@ export default function AdminLayout() {
         <NavLink to="/dashboard/admin" end className={navClass}>Organizations</NavLink>
         <NavLink to="/dashboard/admin/users" className={navClass}>Users</NavLink>
         <NavLink to="/dashboard/admin/device-software" className={navClass}>Device Software</NavLink>
+        <NavLink to="/dashboard/admin/item-taxonomy" className={navClass}>Item Details</NavLink>
       </nav>
 
       <Outlet />
