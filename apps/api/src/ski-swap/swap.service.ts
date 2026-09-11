@@ -69,7 +69,10 @@ export class SwapService {
   async patch(
     orgId: string,
     swapId: string,
-    data: { title?: string; active?: boolean; locationId?: string; legacyTicketsEnabled?: boolean },
+    data: {
+      title?: string; active?: boolean; locationId?: string;
+      legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean;
+    },
   ): Promise<SwapResponse> {
     const swap = await this.findOrThrow(orgId, swapId);
 
@@ -141,6 +144,17 @@ export class SwapService {
           ...(data.legacyTicketsEnabled !== undefined
             ? { legacyTicketsEnabled: data.legacyTicketsEnabled }
             : {}),
+          /**
+           * "Only tickets" cannot outlive accepting them. Turning acceptance
+           * off clears it here rather than leaving a stored contradiction for
+           * every client to have to remember to ignore — the iPad reads these
+           * to decide what it offers, and one of the two alone is a lie.
+           */
+          ...(data.legacyTicketsEnabled === false
+            ? { legacyTicketsOnly: false }
+            : data.legacyTicketsOnly !== undefined
+              ? { legacyTicketsOnly: data.legacyTicketsOnly }
+              : {}),
           activeSkuPrefix: willBeActive ? newSkuPrefix : null,
         },
       })
@@ -294,6 +308,7 @@ export class SwapService {
     active: boolean;
     skuPrefix: string;
     legacyTicketsEnabled: boolean;
+    legacyTicketsOnly: boolean;
     createdAt: Date;
     updatedAt: Date;
   }): SwapResponse {
@@ -306,6 +321,7 @@ export class SwapService {
       active: swap.active,
       skuPrefix: swap.skuPrefix,
       legacyTicketsEnabled: swap.legacyTicketsEnabled,
+      legacyTicketsOnly: swap.legacyTicketsOnly,
       createdAt: swap.createdAt.toISOString(),
       updatedAt: swap.updatedAt.toISOString(),
     };

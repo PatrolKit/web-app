@@ -358,6 +358,14 @@ model SkiSwap {
   /// old stock and the next entirely on printed tags — and it retires itself
   /// when the stockpile is gone. Off unless somebody asks for it.
   legacyTicketsEnabled Boolean @default(false)
+  /// Whether the stockpile is the *only* way in for this swap — no printed
+  /// tags, every item arriving on a numbered ticket.
+  ///
+  /// Meaningless without `legacyTicketsEnabled`, and cleared whenever that goes
+  /// off, so the pair can never say "only tickets" about a swap that takes
+  /// none. Nothing enforces it yet; it is read by the staff iPad to decide what
+  /// it offers.
+  legacyTicketsOnly Boolean @default(false)
   createdBy        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

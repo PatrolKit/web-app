@@ -420,7 +420,10 @@ export const api = {
     patchSwap: (
       orgId: string,
       swapId: string,
-      data: { title?: string; active?: boolean; locationId?: string; legacyTicketsEnabled?: boolean },
+      data: {
+        title?: string; active?: boolean; locationId?: string;
+        legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean;
+      },
     ) =>
       request<import('./api.types').SwapResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}`, {
         method: 'PATCH', body: JSON.stringify(data),

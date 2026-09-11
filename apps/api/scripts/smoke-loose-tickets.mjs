@@ -105,6 +105,30 @@ ok('the list the iPad syncs carries it too',
    listed.find((s) => s.id === swap.id)?.legacyTicketsEnabled === true,
    String(listed.find((s) => s.id === swap.id)?.legacyTicketsEnabled));
 
+// ─── Tickets only ────────────────────────────────────────────────────────────
+
+ok('a swap is not tickets-only by default', after.legacyTicketsOnly === false,
+   String(after.legacyTicketsOnly));
+
+await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ legacyTicketsOnly: true }) });
+const onlyOn = await fetch(swapUrl, { headers: H }).then(unwrap);
+ok('it can be set, and travels with the swap', onlyOn.legacyTicketsOnly === true,
+   String(onlyOn.legacyTicketsOnly));
+
+// The pair must never say "only tickets" about a swap that takes none.
+await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ legacyTicketsEnabled: false }) });
+const bothOff = await fetch(swapUrl, { headers: H }).then(unwrap);
+ok('turning acceptance off clears tickets-only with it',
+   bothOff.legacyTicketsEnabled === false && bothOff.legacyTicketsOnly === false,
+   `enabled=${bothOff.legacyTicketsEnabled} only=${bothOff.legacyTicketsOnly}`);
+
+// Back on for the rest of the run; the flag stays off until asked for again.
+await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ legacyTicketsEnabled: true }) });
+const backOn = await fetch(swapUrl, { headers: H }).then(unwrap);
+ok('and turning it back on does not restore tickets-only',
+   backOn.legacyTicketsEnabled === true && backOn.legacyTicketsOnly === false,
+   `enabled=${backOn.legacyTicketsEnabled} only=${backOn.legacyTicketsOnly}`);
+
 // ─── A loose ticket ──────────────────────────────────────────────────────────
 
 const loose = await scan('88001', walkin.seller.id).then(unwrap);

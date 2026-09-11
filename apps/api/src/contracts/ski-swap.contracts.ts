@@ -32,6 +32,7 @@ export const PatchSwapSchema = z
     active: z.boolean().optional(),
     locationId: z.string().min(1).optional(),
     legacyTicketsEnabled: z.boolean().optional(),
+    legacyTicketsOnly: z.boolean().optional(),
   })
   .strict()
   // Counted rather than named, so a field added above cannot be silently
@@ -57,6 +58,16 @@ export const SwapResponseSchema = z.object({
    * switch the button on by omission.
    */
   legacyTicketsEnabled: z.boolean(),
+  /**
+   * Whether the stockpile is the only way in — no printed tags, every item on
+   * a numbered ticket.
+   *
+   * Only meaningful alongside `legacyTicketsEnabled`, which the server keeps
+   * true whenever this is: turning acceptance off clears this too, so a client
+   * can never be told "tickets only" about a swap that takes no tickets.
+   * Absent reads as off.
+   */
+  legacyTicketsOnly: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

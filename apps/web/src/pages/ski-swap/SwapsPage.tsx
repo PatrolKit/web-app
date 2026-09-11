@@ -9,8 +9,15 @@ function mutationError(err: unknown): string {
   return err instanceof ApiError ? err.message : 'Something went wrong';
 }
 
-interface SwapForm { title: string; locationId: string; legacyTicketsEnabled: boolean; }
-const emptyForm: SwapForm = { title: '', locationId: '', legacyTicketsEnabled: false };
+interface SwapForm {
+  title: string;
+  locationId: string;
+  legacyTicketsEnabled: boolean;
+  legacyTicketsOnly: boolean;
+}
+const emptyForm: SwapForm = {
+  title: '', locationId: '', legacyTicketsEnabled: false, legacyTicketsOnly: false,
+};
 
 export default function SwapsPage() {
   const { orgId, perms, setSelectedSwapId } = useOutletContext<SkiSwapContext>();
@@ -57,6 +64,8 @@ export default function SwapsPage() {
       locationId: form.locationId !== s.locationId ? form.locationId : undefined,
       legacyTicketsEnabled:
         form.legacyTicketsEnabled !== s.legacyTicketsEnabled ? form.legacyTicketsEnabled : undefined,
+      legacyTicketsOnly:
+        form.legacyTicketsOnly !== s.legacyTicketsOnly ? form.legacyTicketsOnly : undefined,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] }); qc.invalidateQueries({ queryKey: ['ski-swap/swaps-all', orgId] });
@@ -84,6 +93,7 @@ export default function SwapsPage() {
       title: s.title,
       locationId: s.locationId,
       legacyTicketsEnabled: s.legacyTicketsEnabled,
+      legacyTicketsOnly: s.legacyTicketsOnly,
     });
     setShowForm(true);
   }
@@ -175,7 +185,13 @@ export default function SwapsPage() {
               <input
                 type="checkbox"
                 checked={form.legacyTicketsEnabled}
-                onChange={(e) => setForm({ ...form, legacyTicketsEnabled: e.target.checked })}
+                // Clearing the parent clears the child, the same rule the
+                // server keeps: "only tickets" cannot outlive taking them.
+                onChange={(e) => setForm({
+                  ...form,
+                  legacyTicketsEnabled: e.target.checked,
+                  legacyTicketsOnly: e.target.checked ? form.legacyTicketsOnly : false,
+                })}
                 className="mt-0.5"
               />
               <span>
@@ -185,6 +201,27 @@ export default function SwapsPage() {
                   stockpile, instead of a tag printed at check-in. Turns on issuing ticket
                   blocks to business sellers, and the staff iPad's option to scan a loose
                   one during an individual's check-in.
+                </span>
+              </span>
+            </label>
+          )}
+
+          {/* Nested, because it only means anything once tickets are taken at
+              all. It appears rather than greying out: the question "tickets
+              only?" does not exist for a swap on printed tags. */}
+          {editSwap && form.legacyTicketsEnabled && (
+            <label className="flex items-start gap-3 pl-7">
+              <input
+                type="checkbox"
+                checked={form.legacyTicketsOnly}
+                onChange={(e) => setForm({ ...form, legacyTicketsOnly: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block text-sm text-white">Legacy tickets only</span>
+                <span className="block text-gray-500 text-xs mt-0.5">
+                  Every item comes in on a numbered ticket and nothing prints a tag. The
+                  staff iPad reads this to decide what it offers.
                 </span>
               </span>
             </label>

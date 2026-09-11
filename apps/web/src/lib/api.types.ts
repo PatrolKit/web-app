@@ -239,6 +239,13 @@ export interface SwapResponse {
    * working through a block, or an individual handed a loose one at the counter.
    */
   legacyTicketsEnabled: boolean;
+  /**
+   * Whether the stockpile is the only way in — no printed tags at all.
+   *
+   * Only meaningful alongside `legacyTicketsEnabled`; the server clears this
+   * when that goes off, so the two can never contradict each other.
+   */
+  legacyTicketsOnly: boolean;
   createdAt: string;
   updatedAt: string;
 }
