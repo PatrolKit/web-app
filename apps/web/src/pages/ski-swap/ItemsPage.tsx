@@ -14,16 +14,30 @@ export default function ItemsPage() {
   const qc = useQueryClient();
   const [importing, setImporting] = useState(false);
 
-  /**
-   * Offered only when somebody could actually be uploaded for: the swap takes
-   * legacy tickets and at least one shop holds a block. A button that can only
-   * open onto an empty picker is a button staff learn to ignore.
-   */
-  const { data: ticketSellers = [] } = useQuery({
+  const legacyOn = !!selectedSwap?.legacyTicketsEnabled;
+
+  /** Who could be uploaded for. Not asked when the swap takes no tickets. */
+  const { data: ticketSellers = [], isLoading: ticketSellersLoading } = useQuery({
     queryKey: ['ski-swap/ticket-sellers', orgId, swapId],
     queryFn: () => api.skiSwap.listTicketSellers(orgId, swapId!),
-    enabled: !!swapId && canManage && !!selectedSwap?.legacyTicketsEnabled,
+    enabled: !!swapId && canManage && legacyOn,
   });
+
+  /**
+   * Why the import cannot be used, or empty when it can.
+   *
+   * The button stays put and goes grey rather than disappearing. A control that
+   * comes and going teaches staff it is unreliable and gives them nowhere to
+   * look for the reason; one that is visible and says what is missing points at
+   * the thing to go and do.
+   */
+  const importBlockedBecause = !legacyOn
+    ? 'This swap does not take tickets from the stockpile. Turn that on when you edit the swap.'
+    : ticketSellersLoading
+      ? 'Checking who holds tickets…'
+      : ticketSellers.length === 0
+        ? 'Nobody has been issued tickets for this swap yet. Issue a block from a seller’s Ticket source.'
+        : '';
 
   const { data: sellers = [] } = useQuery<SellerResponse[]>({
     queryKey: ['ski-swap/sellers', orgId],
@@ -52,13 +66,19 @@ export default function ItemsPage() {
       queryKeyPrefix="ski-swap/items"
       labelsPerItem={labelsPerItem}
       toolbarExtra={
-        ticketSellers.length > 0 ? (
-          <button
-            onClick={() => setImporting(true)}
-            className="bg-surface-100 hover:bg-surface-200 text-gray-200 px-4 py-2 rounded text-sm"
-          >
-            Import for a seller
-          </button>
+        canManage ? (
+          // The title sits on the wrapper, not the button: a disabled control
+          // takes no pointer events in some browsers, and the tooltip explaining
+          // why it is disabled is exactly the one nobody would then see.
+          <span title={importBlockedBecause || undefined}>
+            <button
+              onClick={() => setImporting(true)}
+              disabled={!!importBlockedBecause}
+              className="bg-surface-100 hover:bg-surface-200 text-gray-200 px-4 py-2 rounded text-sm disabled:opacity-40 disabled:hover:bg-surface-100"
+            >
+              Import for a seller
+            </button>
+          </span>
         ) : undefined
       }
       panelApi={{
