@@ -39,6 +39,13 @@ import { QrSheetService } from './printing/qr-sheet.service';
 import { PrintJobController } from './print-job.controller';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { SkiSwapSettingsController } from './ski-swap-settings.controller';
+import { TaxonomyService } from './taxonomy/taxonomy.service';
+import { TaxonomyIconService } from './taxonomy/taxonomy-icon.service';
+import { TaxonomyController } from './taxonomy/taxonomy.controller';
+import {
+  TaxonomyAdminController,
+  TaxonomyAdminIconController,
+} from './taxonomy/taxonomy-admin.controller';
 import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { IdentityModule } from '../common/identity/identity.module';
@@ -61,6 +68,9 @@ import { IdentityModule } from '../common/identity/identity.module';
     CheckinController,
     PublicCheckinController,
     PrintJobController,
+    TaxonomyController,
+    TaxonomyAdminController,
+    TaxonomyAdminIconController,
   ],
   providers: [
     IdempotencyService,
@@ -88,6 +98,8 @@ import { IdentityModule } from '../common/identity/identity.module';
     CheckinService,
     PrintQueueService,
     QrSheetService,
+    TaxonomyService,
+    TaxonomyIconService,
   ],
   exports: [SquareCryptoService, SquareClientService],
 })

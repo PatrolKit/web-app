@@ -6,6 +6,7 @@ import { SellerService } from './seller.service';
 import { PrintQueueService } from './print-queue.service';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { LegacyTicketService } from './legacy-ticket.service';
+import type { ItemAttributeInput } from './taxonomy/taxonomy.service';
 
 @Injectable()
 export class SellerSelfService {
@@ -118,7 +119,8 @@ export class SellerSelfService {
     userId: string,
     data: {
       swapId: string;
-      name?: string;
+      categoryId?: string;
+      attributes?: ItemAttributeInput[];
       description?: string;
       priceCents: number;
       quantity: number;
@@ -141,7 +143,10 @@ export class SellerSelfService {
       throw new BadRequestException('This seller does not use issued tickets.');
     }
 
-    let name = data.name?.trim();
+    // Described through the tree is the ordinary path now (Plan 19). A ticket
+    // seller may still list something it says nothing about, and then the
+    // number and the shop's name stand in — `SwapItem.name` is non-null.
+    let fallbackName: string | undefined;
     let sku: string | undefined;
 
     if (onTickets) {
@@ -161,9 +166,9 @@ export class SellerSelfService {
         sku = String(suggested);
         await this.tickets.assertUsable(data.swapId, seller.id, sku);
       }
-      if (!name) name = await this.tickets.fallbackName(seller.id, sku);
-    } else if (!name) {
-      throw new BadRequestException('An item needs a name.');
+      if (!data.categoryId) fallbackName = await this.tickets.fallbackName(seller.id, sku);
+    } else if (!data.categoryId) {
+      throw new BadRequestException('Pick what the item is.');
     }
 
     return this.itemService.createAtStation(
@@ -171,8 +176,10 @@ export class SellerSelfService {
       data.swapId,
       {
         ...data,
-        name,
+        ...(fallbackName ? { fallbackName } : {}),
         sellerId: seller.id,
+        // Whoever typed a new value owns it in the approval queue.
+        actorId: userId,
         // Nobody else is in this path — a seller entering their own things.
         // Whether that means waiting for a scan is `createAtStation`'s to
         // decide; it also needs a station, and that rule lives with it rather

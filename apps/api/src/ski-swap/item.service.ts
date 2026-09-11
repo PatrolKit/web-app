@@ -14,6 +14,7 @@ import { SkuService } from './sku.service';
 import { PrintQueueService } from './print-queue.service';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { LegacyTicketService, ticketNumberOf, type ImportRowResult } from './legacy-ticket.service';
+import { TaxonomyService, type ItemAttributeInput, type ItemDescription } from './taxonomy/taxonomy.service';
 import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
 import type { ItemResponse } from '../contracts/ski-swap.contracts';
@@ -54,6 +55,7 @@ export class ItemService {
     private readonly printQueue: PrintQueueService,
     private readonly settings: SkiSwapSettingsService,
     private readonly tickets: LegacyTicketService,
+    private readonly taxonomy: TaxonomyService,
   ) {}
 
   async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string; consigned?: boolean }): Promise<{ items: ItemResponse[]; total: number }> {
@@ -82,16 +84,22 @@ export class ItemService {
       this.prisma.swapItem.findMany({ where, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } }, orderBy: { createdAt: 'desc' }, skip: opts.skip ?? 0, take: opts.take ?? 50 }),
       this.prisma.swapItem.count({ where }),
     ]);
-    const inventoryMap = await this.fetchInventoryMap(orgId, swap, items);
-    return { total, items: items.map((i) => this.toResponse(i, inventoryMap)) };
+    const [inventoryMap, descriptions] = await Promise.all([
+      this.fetchInventoryMap(orgId, swap, items),
+      this.fetchDescriptions(items),
+    ]);
+    return { total, items: items.map((i) => this.toResponse(i, inventoryMap, descriptions)) };
   }
 
   async get(orgId: string, swapId: string, itemId: string): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId }, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } } });
     if (!item) throw new NotFoundException('Item not found');
-    const inventoryMap = await this.fetchInventoryMap(orgId, swap, [item]);
-    return this.toResponse(item, inventoryMap);
+    const [inventoryMap, descriptions] = await Promise.all([
+      this.fetchInventoryMap(orgId, swap, [item]),
+      this.fetchDescriptions([item]),
+    ]);
+    return this.toResponse(item, inventoryMap, descriptions);
   }
 
   /**
@@ -106,9 +114,17 @@ export class ItemService {
     orgId: string,
     swapId: string,
     data: {
-      name: string; description?: string; priceCents: number; quantity: number;
+      /**
+       * How the item is described (Plan 19). Optional because a seller on issued
+       * tickets can still list one the tree says nothing about — the description
+       * is on the paper tag — and then `fallbackName` supplies the name.
+       */
+      categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string;
+      description?: string; priceCents: number; quantity: number;
       sellerId?: string; donateProceeds?: boolean; sku?: string;
       stationId?: string; alreadyPrinted?: boolean;
+      /** Whoever is entering this, so a value they type is attributable. */
+      actorId?: string;
       /**
        * The seller entered this themselves, with no staff present.
        *
@@ -207,7 +223,7 @@ export class ItemService {
    * finish (D17) — and an item that is not on the floor yet cannot be sold at
    * the register in the meantime.
    */
-  async create(orgId: string, swapId: string, data: { name: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
+  async create(orgId: string, swapId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(idempotencyScope(orgId, swapId), idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -223,10 +239,27 @@ export class ItemService {
       sku = await this.skuService.next(swapId, data.stationCode ?? null);
     }
 
+    /**
+     * The name is composed here, from the tree, and then frozen (Plan 19 D5).
+     *
+     * A category is the ordinary path. Without one — a ticket seller listing
+     * something the tree does not describe — the caller's fallback stands in,
+     * because `SwapItem.name` is non-null and Square requires a name.
+     */
+    const described = data.categoryId
+      ? await this.taxonomy.resolveAnswers(orgId, data.categoryId, data.attributes ?? [], data.actorId)
+      : null;
+    const name = described?.name ?? data.fallbackName?.trim();
+    if (!name) throw new BadRequestException('An item needs a category or a name');
+
     const item = await this.prisma.swapItem.create({
       data: {
         id: createId(), swapId, orgId, sellerId: data.sellerId ?? null,
-        name: data.name, description: data.description ?? null,
+        name, description: data.description ?? null,
+        categoryId: described?.categoryId ?? null,
+        ...(described && described.rows.length > 0
+          ? { attributes: { create: described.rows.map((r) => ({ id: createId(), ...r })) } }
+          : {}),
         priceCents: data.priceCents, sku, originalQuantity: data.quantity,
         donateProceeds: data.donateProceeds ?? false,
         /**
@@ -271,7 +304,8 @@ export class ItemService {
     const inventoryMap = data.deferPos
       ? new Map<string, number>()
       : await this.fetchInventoryMap(orgId, swap, [refreshed]);
-    const response = this.toResponse(refreshed, inventoryMap);
+    const descriptions = await this.fetchDescriptions([refreshed]);
+    const response = this.toResponse(refreshed, inventoryMap, descriptions);
 
     if (idempotencyKey) {
       await this.idempotency.save(
@@ -284,16 +318,40 @@ export class ItemService {
     return response;
   }
 
-  async patch(orgId: string, swapId: string, itemId: string, data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean }): Promise<ItemResponse> {
+  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; actorId?: string }): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId } });
+    const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId }, include: { attributes: true } });
     if (!existing) throw new NotFoundException('Item not found');
     if (data.sellerId) await this.sellerService.findOrThrow(orgId, data.sellerId);
+
+    /**
+     * Re-derives the name when the description changed (Plan 19 §5).
+     *
+     * Either half may arrive alone — a category with no answers clears them, a
+     * set of answers keeps the category — so the two are read from the row when
+     * not supplied. An edit that touches neither leaves the name exactly as it
+     * was, which is what makes a price change not rewrite a tag.
+     */
+    const redescribed =
+      data.categoryId !== undefined || data.attributes !== undefined
+        ? await this.redescribe(orgId, existing, data)
+        : null;
 
     const updated = await this.prisma.swapItem.update({
       where: { id: itemId },
       data: {
-        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(redescribed
+          ? {
+              name: redescribed.name,
+              categoryId: redescribed.categoryId,
+              // Replaced wholesale: a partial update would leave an answer to a
+              // question the new category does not ask.
+              attributes: {
+                deleteMany: {},
+                create: redescribed.rows.map((r) => ({ id: createId(), ...r })),
+              },
+            }
+          : {}),
         ...(data.description !== undefined ? { description: data.description } : {}),
         ...(data.priceCents !== undefined ? { priceCents: data.priceCents } : {}),
         ...(data.quantity !== undefined ? { originalQuantity: data.quantity } : {}),
@@ -311,8 +369,37 @@ export class ItemService {
       if (pos) await pos.setInventoryPhysicalCount(updated.squareVariationId, swap.locationId, data.quantity).catch(() => {});
     }
 
-    const inventoryMap = await this.fetchInventoryMap(orgId, swap, [updated]);
-    return this.toResponse(updated, inventoryMap);
+    const [inventoryMap, descriptions] = await Promise.all([
+      this.fetchInventoryMap(orgId, swap, [updated]),
+      this.fetchDescriptions([updated]),
+    ]);
+    return this.toResponse(updated, inventoryMap, descriptions);
+  }
+
+  /**
+   * What an edited item's description becomes.
+   *
+   * Refuses an item that never had a category and is being given answers
+   * without one: there would be nothing to check them against, and no head noun
+   * to end the name with.
+   */
+  private async redescribe(
+    orgId: string,
+    existing: { categoryId: string | null; attributes: { attributeId: string; valueId: string | null; numberValue: number | null }[] },
+    data: { categoryId?: string; attributes?: ItemAttributeInput[]; actorId?: string },
+  ) {
+    const categoryId = data.categoryId ?? existing.categoryId;
+    if (!categoryId) {
+      throw new BadRequestException('Pick what the item is before describing it');
+    }
+    const attributes: ItemAttributeInput[] =
+      data.attributes ??
+      existing.attributes.map((a) => ({
+        attributeId: a.attributeId,
+        ...(a.valueId !== null ? { valueId: a.valueId } : {}),
+        ...(a.numberValue !== null ? { numberValue: a.numberValue } : {}),
+      }));
+    return this.taxonomy.resolveAnswers(orgId, categoryId, attributes, data.actorId);
   }
 
   async remove(orgId: string, swapId: string, itemId: string): Promise<void> {
@@ -446,9 +533,11 @@ export class ItemService {
     for (let i = 0; i < rows.length; i++) {
       const sku = rows[i].sku.trim();
       const item = await this.create(orgId, swapId, {
-        // A blank name becomes the shop and the number: `SwapItem.name` is
-        // non-null and Square needs something to call it.
-        name: rows[i].name?.trim() || `${fallback.trim()} ${sku}`,
+        // The CSV importer has a name column and no taxonomy (Plan 19 D12), so
+        // items it creates are named, not described. A blank becomes the shop
+        // and the number: `SwapItem.name` is non-null and Square needs
+        // something to call it.
+        fallbackName: rows[i].name?.trim() || `${fallback.trim()} ${sku}`,
         description: rows[i].description?.trim() || undefined,
         priceCents: rows[i].priceCents,
         quantity: 1,
@@ -620,7 +709,18 @@ export class ItemService {
     return pos.getInventoryCounts(ids, swap.locationId).catch(() => new Map());
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>): ItemResponse {
+  /**
+   * Fetches the answers for a batch of items, keyed by item id.
+   *
+   * Beside `fetchInventoryMap`, and for the same reason: a response needs two
+   * things the item row does not carry, and both are read once per request
+   * rather than once per item.
+   */
+  private async fetchDescriptions(items: { id: string; categoryId: string | null }[]): Promise<Map<string, ItemDescription>> {
+    return this.taxonomy.describeItems(items);
+  }
+
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>, descriptions?: Map<string, ItemDescription>): ItemResponse {
     const inStock = item.squareVariationId ? (inventoryMap.get(item.squareVariationId) ?? 0) : 0;
     return {
       id: item.id, swapId: item.swapId, orgId: item.orgId,
@@ -639,6 +739,10 @@ export class ItemService {
           }
         : null,
       photos: item.photos.map((p) => ({ id: p.id, url: p.url })),
+      // Absent when the caller had no reason to fetch them — a photo upload's
+      // response, say. An empty list reads the same as an item nobody described.
+      category: descriptions?.get(item.id)?.category ?? null,
+      attributes: descriptions?.get(item.id)?.attributes ?? [],
       updatedAt: item.updatedAt.toISOString(),
     };
   }

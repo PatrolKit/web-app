@@ -11,6 +11,8 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { RequireModule } from '../common/decorators/require-module.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ItemService } from './item.service';
 import { LegacyTicketService } from './legacy-ticket.service';
 import { CreateItemDto, PatchItemDto } from '../contracts/ski-swap.contracts';
@@ -120,9 +122,18 @@ export class ItemController {
     @Param('orgId') orgId: string,
     @Param('swapId') swapId: string,
     @Body() body: CreateItemDto,
+    @CurrentUser() user: AuthenticatedUser | undefined,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.itemService.createAtStation(orgId, swapId, body, idempotencyKey);
+    // `actorId` so a value typed at the counter is attributable in the queue.
+    // Absent when a device is the caller rather than a person: this route takes
+    // `OrDeviceAuthGuard`, and a station iPad has no user id to credit.
+    return this.itemService.createAtStation(
+      orgId,
+      swapId,
+      { ...body, ...(user?.userId ? { actorId: user.userId } : {}) },
+      idempotencyKey,
+    );
   }
 
   @Get(':itemId')

@@ -200,9 +200,31 @@ export type PersonSearchResult = z.infer<typeof PersonSearchResultSchema>;
 
 // ─── Items ────────────────────────────────────────────────────────────────────
 
+/**
+ * One answered question, on the way in (Plan 19 §7.3).
+ *
+ * Exactly one of the three value fields: a listed value, a number, or a string
+ * the seller typed that mints a PENDING org value. The service refuses more
+ * than one rather than picking — a client that sends two does not know what it
+ * meant, and guessing would put the wrong thing on a tag.
+ */
+export const ItemAttributeInputSchema = z
+  .object({
+    attributeId: z.string().min(1),
+    valueId: z.string().optional(),
+    numberValue: z.number().optional(),
+    freeText: z.string().min(1).max(120).optional(),
+  })
+  .strict();
+
 export const CreateItemSchema = z
   .object({
-    name: z.string().min(1).max(200),
+    /**
+     * The CATEGORY node this item is described under. The name is derived from
+     * it and the answers below, so nothing sends a name any more.
+     */
+    categoryId: z.string().min(1),
+    attributes: z.array(ItemAttributeInputSchema).max(24).default([]),
     description: z.string().max(2000).optional(),
     priceCents: z.number().int().positive(),
     quantity: z.number().int().positive(),
@@ -229,7 +251,12 @@ export const CreateItemSchema = z
 
 export const PatchItemSchema = z
   .object({
-    name: z.string().min(1).max(200).optional(),
+    /**
+     * Changing the category re-asks every question, so `attributes` must come
+     * with it. Sending either alone re-derives the name from what is stored.
+     */
+    categoryId: z.string().min(1).optional(),
+    attributes: z.array(ItemAttributeInputSchema).max(24).optional(),
     description: z.string().max(2000).nullable().optional(),
     priceCents: z.number().int().positive().optional(),
     quantity: z.number().int().nonnegative().optional(),
@@ -261,6 +288,25 @@ export const ItemResponseSchema = z.object({
   consignedAt: z.string().datetime().nullable(),
   seller: SellerResponseSchema.pick({ id: true, displayName: true, phone: true }).nullable(),
   photos: z.array(z.object({ id: z.string(), url: z.string() })),
+  /**
+   * What this item is, as the tree reads it now (Plan 19 D3). Null for an item
+   * an importer created from a name alone.
+   *
+   * `name` above is the historic record — derived once, frozen, and what the tag
+   * and the receipt say. These are the live pointers, resolved through the tree
+   * on read, so the two are allowed to disagree after an administrator tidies a
+   * label. §2.2 of the plan says why that is the intended reading.
+   */
+  category: z.object({ id: z.string(), label: z.string() }).nullable(),
+  attributes: z.array(
+    z.object({
+      attributeId: z.string(),
+      attributeLabel: z.string(),
+      valueId: z.string().nullable(),
+      valueLabel: z.string(),
+      numberValue: z.number().nullable(),
+    }),
+  ),
   /**
    * The watermark `GET items?updatedSince=` filters on. Without it the filter
    * existed but nothing could supply a value for it.
@@ -339,11 +385,17 @@ export const SellerItemCreateSchema = z
   .object({
     swapId: z.string(),
     /**
-     * Optional only for a seller on issued tickets, where the description lives
-     * on the paper tag. Blank becomes "<seller> <number>" — the service decides,
-     * because `SwapItem.name` is non-null and Square requires a name.
+     * The CATEGORY node, and the answers under it. The name is derived from
+     * them (Plan 19 §5).
+     *
+     * Optional, unlike the staff path, because a seller on issued tickets can
+     * still list an item the tree says nothing about — the description is on the
+     * paper tag (Plan 17). Absent, the name falls back to "<seller> <number>" as
+     * it always did, because `SwapItem.name` is non-null and Square requires
+     * one.
      */
-    name: z.string().max(200).optional(),
+    categoryId: z.string().min(1).optional(),
+    attributes: z.array(ItemAttributeInputSchema).max(24).default([]),
     description: z.string().max(2000).optional(),
     priceCents: z.number().int().positive(),
     quantity: z.number().int().positive(),
@@ -396,7 +448,8 @@ export class CheckinRegisterDto extends createZodDto(CheckinRegisterSchema) {}
 
 export const SellerItemUpdateSchema = z
   .object({
-    name: z.string().min(1).max(200).optional(),
+    categoryId: z.string().min(1).optional(),
+    attributes: z.array(ItemAttributeInputSchema).max(24).optional(),
     description: z.string().max(2000).nullable().optional(),
     priceCents: z.number().int().positive().optional(),
     quantity: z.number().int().nonnegative().optional(),

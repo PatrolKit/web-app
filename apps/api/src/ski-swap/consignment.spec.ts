@@ -117,6 +117,9 @@ function harness(opts: { requireConsignmentScan?: boolean } = {}) {
     { get: async () => ({ labelsPerItem: 1, ...toggle }) } as never,
     // No ticket blocks issued in these tests, so every number is unallocated.
     { holderOf: async () => null } as never,
+    // These items are named rather than described (Plan 19), so the only
+    // taxonomy call they reach is the one that fills in a response.
+    { describeItems: async () => new Map() } as never,
   );
 
   // `syncItemToPos` is the private seam between an item and the catalogue, and
@@ -128,7 +131,7 @@ function harness(opts: { requireConsignmentScan?: boolean } = {}) {
   return { service, rows, pushed, toggle };
 }
 
-const ITEM = { name: 'Volkl Kendo 88 skis', priceCents: 24900, quantity: 1 };
+const ITEM = { fallbackName: 'Volkl Kendo 88 skis', priceCents: 24900, quantity: 1 };
 
 describe('deciding at check-in whether an item waits', () => {
   it('consigns a self check-in item at once when the org has not asked for the scan', async () => {
