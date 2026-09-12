@@ -225,6 +225,14 @@ export const CreateItemSchema = z
      */
     categoryId: z.string().min(1),
     attributes: z.array(ItemAttributeInputSchema).max(24).default([]),
+    /**
+     * The name the client already printed on the tag.
+     *
+     * Honoured only alongside `alreadyPrinted` — see there. Sent without it, it
+     * is ignored and the name is derived, because a client that has not put ink
+     * on the item has no claim the server's own derivation does not have.
+     */
+    name: z.string().min(1).max(200).optional(),
     description: z.string().max(2000).optional(),
     priceCents: z.number().int().positive(),
     quantity: z.number().int().positive(),
@@ -244,6 +252,13 @@ export const CreateItemSchema = z
      * down would print a second tag when it finally syncs, and during an outage
      * that happens for every item, discovered as a pile of orphan tags nobody
      * can place.
+     *
+     * It also decides whether `name` above is taken verbatim. The iPad prints
+     * first and queues the create, and that queue may not drain for hours; by
+     * the time it does, the name is ink on a ski in a rack. Re-deriving then
+     * would produce a record that disagrees with the physical object, and the
+     * object is the half nobody can correct. So when this says a tag exists, the
+     * client that printed it is the authority on what it says.
      */
     alreadyPrinted: z.boolean().optional(),
   })
@@ -257,6 +272,13 @@ export const PatchItemSchema = z
      */
     categoryId: z.string().min(1).optional(),
     attributes: z.array(ItemAttributeInputSchema).max(24).optional(),
+    /**
+     * Replaces the name outright, for a client correcting an item whose tag it
+     * holds. Unlike the create path this needs no flag: an item being patched
+     * already exists, so a tag for it may already exist too, and an explicit
+     * name here is a deliberate statement rather than an incidental one.
+     */
+    name: z.string().min(1).max(200).optional(),
     description: z.string().max(2000).nullable().optional(),
     priceCents: z.number().int().positive().optional(),
     quantity: z.number().int().nonnegative().optional(),

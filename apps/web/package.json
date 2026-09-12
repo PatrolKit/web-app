@@ -8,7 +8,8 @@
     "dev": "vite",
     "lint": "eslint src --ext ts,tsx",
     "preview": "vite preview",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "icons:render": "node scripts/render-taxonomy-icons.mjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.3.1",

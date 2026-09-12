@@ -8,6 +8,11 @@
         "include": "ski-swap/printing/assets/*.pdf",
         "outDir": "dist/src",
         "watchAssets": true
+      },
+      {
+        "include": "ski-swap/taxonomy/assets/*.png",
+        "outDir": "dist/src",
+        "watchAssets": true
       }
     ]
   }

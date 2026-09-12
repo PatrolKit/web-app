@@ -14,7 +14,32 @@ export type { TaxonomyIconKey } from './taxonomy-icons';
  * check the second one.
  */
 export const ResolvedIconSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('registry'), key: z.enum(TAXONOMY_ICON_KEYS) }),
+  /**
+   * A built-in mark. Carries both a key and a URL, because the two clients
+   * cannot use the same one.
+   *
+   * `key` is what the web reads: it resolves against the bundle, costs no
+   * request and inherits the surrounding text colour. `url` serves the same
+   * glyph as a 128×128 PNG, monochrome with alpha, for a native client that has
+   * no bundle to resolve against — iOS draws it as a template image, taking the
+   * shape from the alpha channel and the colour from the view, which is the same
+   * property by different means.
+   *
+   * The alternative for iOS was a hand-written map from every key to a Font
+   * Awesome codepoint in a shipped font, which goes stale the moment the
+   * registry grows and needs an App Store release to catch up — precisely the
+   * failure the uploaded-icon path exists to avoid.
+   */
+  z.object({
+    kind: z.literal('registry'),
+    key: z.enum(TAXONOMY_ICON_KEYS),
+    url: z.string(),
+  }),
+  /**
+   * An uploaded image. Drawn as it is — a club's logo is a picture, not a mark,
+   * so a native client must not tint it. That difference is why `kind` earns its
+   * place rather than collapsing into a single `url`.
+   */
   z.object({ kind: z.literal('image'), url: z.string() }),
 ]);
 

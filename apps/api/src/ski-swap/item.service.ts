@@ -120,6 +120,8 @@ export class ItemService {
        * is on the paper tag — and then `fallbackName` supplies the name.
        */
       categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string;
+      /** What the client already printed. Honoured only with `alreadyPrinted`. */
+      name?: string;
       description?: string; priceCents: number; quantity: number;
       sellerId?: string; donateProceeds?: boolean; sku?: string;
       stationId?: string; alreadyPrinted?: boolean;
@@ -178,6 +180,11 @@ export class ItemService {
       swapId,
       {
         ...data,
+        // The tag exists, so what it says is a fact rather than a preference.
+        // Without that, a name is just a client's opinion about a string the
+        // server can derive itself, and the derivation is the one both clients
+        // agree on.
+        ...(data.alreadyPrinted && data.name ? { printedName: data.name } : {}),
         stationCode: station?.code ?? null,
         // At a station the person is standing there watching; Square waits for
         // the batch at finish.
@@ -223,7 +230,7 @@ export class ItemService {
    * finish (D17) — and an item that is not on the floor yet cannot be sold at
    * the register in the meantime.
    */
-  async create(orgId: string, swapId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
+  async create(orgId: string, swapId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(idempotencyScope(orgId, swapId), idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -249,7 +256,16 @@ export class ItemService {
     const described = data.categoryId
       ? await this.taxonomy.resolveAnswers(orgId, data.categoryId, data.attributes ?? [], data.actorId)
       : null;
-    const name = described?.name ?? data.fallbackName?.trim();
+
+    /**
+     * A name the printing client supplied wins over the derivation.
+     *
+     * Only reachable when that client also said the tag is already on the item
+     * (`alreadyPrinted`), which `createAtStation` checks before passing it here.
+     * The attributes are still validated and still stored either way — this
+     * decides one column, not what the item is.
+     */
+    const name = data.printedName?.trim() || described?.name || data.fallbackName?.trim();
     if (!name) throw new BadRequestException('An item needs a category or a name');
 
     const item = await this.prisma.swapItem.create({
@@ -318,7 +334,7 @@ export class ItemService {
     return response;
   }
 
-  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; actorId?: string }): Promise<ItemResponse> {
+  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; actorId?: string }): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId }, include: { attributes: true } });
     if (!existing) throw new NotFoundException('Item not found');
@@ -340,9 +356,12 @@ export class ItemService {
     const updated = await this.prisma.swapItem.update({
       where: { id: itemId },
       data: {
+        // An explicit name replaces the derivation, and survives a redescribe in
+        // the same request: the client is stating what its tag says.
+        ...(data.name ? { name: data.name.trim() } : {}),
         ...(redescribed
           ? {
-              name: redescribed.name,
+              ...(data.name ? {} : { name: redescribed.name }),
               categoryId: redescribed.categoryId,
               // Replaced wholesale: a partial update would leave an answer to a
               // question the new category does not ask.

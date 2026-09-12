@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import sharp from 'sharp';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { S3Service } from '../s3.service';
 
@@ -20,6 +21,7 @@ export class TaxonomyIconService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly s3: S3Service,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -117,9 +119,14 @@ export class TaxonomyIconService {
    * because a shared icon is not org data.
    */
   private proxyUrlFor(orgId: string | null, nodeId: string): string {
+    // `api/v1` — the global prefix, which this was missing. Only reachable
+    // without S3, which is why no deployment had hit the 404 it produced.
+    // Absolute for the same reason the registry URLs are: a native client
+    // resolves this against a base that already carries the prefix.
+    const base = (this.config.get<string>('app.appUrl') ?? '').replace(/\/$/, '');
     return orgId
-      ? `/api/orgs/${orgId}/ski-swap/taxonomy/nodes/${nodeId}/icon`
-      : `/api/admin/taxonomy/nodes/${nodeId}/icon`;
+      ? `${base}/api/v1/orgs/${orgId}/ski-swap/taxonomy/nodes/${nodeId}/icon`
+      : `${base}/api/v1/admin/taxonomy/nodes/${nodeId}/icon`;
   }
 
   private async findOrThrow(nodeId: string, scope: { orgId: string | null }) {

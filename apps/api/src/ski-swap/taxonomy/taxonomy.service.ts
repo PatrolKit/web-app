@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, type TaxonomyNode } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -100,7 +101,15 @@ function nameAttributeOf(a: Pick<NodeRow, 'id' | 'label' | 'nameSlot' | 'unit' |
 
 @Injectable()
 export class TaxonomyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /** This deployment's public origin, for URLs that leave the building. */
+  private get publicBase(): string {
+    return (this.config.get<string>('app.appUrl') ?? '').replace(/\/$/, '');
+  }
 
   // ─── Reading ───────────────────────────────────────────────────────────────
 
@@ -127,6 +136,7 @@ export class TaxonomyService {
       this.versionFor(orgId),
     ]);
 
+    const base = this.publicBase;
     const byParent = new Map<string | null, NodeRow[]>();
     for (const n of nodes) {
       const key = n.parentId;
@@ -140,10 +150,10 @@ export class TaxonomyService {
       .map((c): ResolvedCategory => ({
         id: c.id,
         label: c.label,
-        ...(iconOf(c) ? { icon: iconOf(c)! } : {}),
+        ...(iconOf(c, orgId, base) ? { icon: iconOf(c, orgId, base)! } : {}),
         scope: c.orgId ? 'org' : 'global',
         displayOrder: c.displayOrder,
-        attributes: this.attributesUnder(c.id, byParent, { eager: true }),
+        attributes: this.attributesUnder(c.id, byParent, { eager: true, orgId, base }),
       }));
 
     return { version, categories };
@@ -160,7 +170,7 @@ export class TaxonomyService {
   private attributesUnder(
     parentId: string,
     byParent: Map<string | null, NodeRow[]>,
-    opts: { eager: boolean },
+    opts: { eager: boolean; orgId: string; base: string },
   ): ResolvedAttribute[] {
     return (byParent.get(parentId) ?? [])
       .filter((n) => n.kind === 'ATTRIBUTE')
@@ -169,7 +179,7 @@ export class TaxonomyService {
         const base: ResolvedAttribute = {
           id: a.id,
           label: a.label,
-          ...(iconOf(a) ? { icon: iconOf(a)! } : {}),
+          ...(iconOf(a, opts.orgId, opts.base) ? { icon: iconOf(a, opts.orgId, opts.base)! } : {}),
           scope: a.orgId ? 'org' : 'global',
           input,
           displayOrder: a.displayOrder,
@@ -193,21 +203,21 @@ export class TaxonomyService {
           allowFreeEntry: a.allowFreeEntry,
           ...(defer
             ? { valuesDeferred: true }
-            : { values: children.map((v) => this.valueOf(v, byParent)) }),
+            : { values: children.map((v) => this.valueOf(v, byParent, opts.orgId, opts.base)) }),
         };
       });
   }
 
   /** One value, with the questions that only its being chosen opens up. */
-  private valueOf(v: NodeRow, byParent: Map<string | null, NodeRow[]>): ResolvedValue {
+  private valueOf(v: NodeRow, byParent: Map<string | null, NodeRow[]>, orgId: string, base: string): ResolvedValue {
     return {
       id: v.id,
       label: v.label,
-      ...(iconOf(v) ? { icon: iconOf(v)! } : {}),
+      ...(iconOf(v, orgId, base) ? { icon: iconOf(v, orgId, base)! } : {}),
       scope: v.orgId ? 'org' : 'global',
       displayOrder: v.displayOrder,
       // Never eager: a value's attributes are the model lists.
-      attributes: this.attributesUnder(v.id, byParent, { eager: false }),
+      attributes: this.attributesUnder(v.id, byParent, { eager: false, orgId, base }),
     };
   }
 
@@ -230,12 +240,13 @@ export class TaxonomyService {
 
     // A second level down would need its own fetch; a value's attributes arrive
     // described but empty, exactly as in the eager document.
+    const base = this.publicBase;
     const byParent = new Map<string | null, NodeRow[]>([[nodeId, rows]]);
 
     if (node.kind === 'ATTRIBUTE') {
-      return { nodeId, values: rows.filter((r) => r.kind === 'VALUE').map((v) => this.valueOf(v, byParent)) };
+      return { nodeId, values: rows.filter((r) => r.kind === 'VALUE').map((v) => this.valueOf(v, byParent, orgId, base)) };
     }
-    return { nodeId, attributes: this.attributesUnder(nodeId, byParent, { eager: false }) };
+    return { nodeId, attributes: this.attributesUnder(nodeId, byParent, { eager: false, orgId, base }) };
   }
 
   // ─── Versioning ────────────────────────────────────────────────────────────
@@ -1128,8 +1139,36 @@ export class TaxonomyService {
  * by the Zod schema on the way in, and a key that somehow is not in the list
  * renders as no icon on the client anyway.
  */
-function iconOf(n: Pick<NodeRow, 'iconKey' | 'iconUrl'>): ResolvedIcon | null {
-  if (n.iconKey) return { kind: 'registry', key: n.iconKey as TaxonomyIconKey };
+function iconOf(
+  n: Pick<NodeRow, 'iconKey' | 'iconUrl'>,
+  orgId: string,
+  base: string,
+): ResolvedIcon | null {
+  if (n.iconKey) {
+    return {
+      kind: 'registry',
+      key: n.iconKey as TaxonomyIconKey,
+      url: registryIconUrl(orgId, n.iconKey, base),
+    };
+  }
   if (n.iconUrl) return { kind: 'image', url: n.iconUrl };
   return null;
+}
+
+/**
+ * Where the rendered glyph for a key is served.
+ *
+ * Absolute when the deployment knows its own origin. The iOS client builds every
+ * other request by appending a path to a base that already carries `/api/v1`, so
+ * handing it a root-relative path would either double the prefix or force a
+ * second kind of resolution for one field. An absolute URL is unambiguous to
+ * every client, and matches what an S3-backed uploaded icon already returns.
+ *
+ * Org-scoped rather than flat, which costs a little cache sharing and buys the
+ * thing that matters: `OrDeviceAuthGuard` authenticates a device by matching the
+ * token's org against `:orgId`, so a path without one cannot admit an iPad at
+ * all. The bytes are immutable per key, so a client caches them once.
+ */
+export function registryIconUrl(orgId: string, key: string, base = ''): string {
+  return `${base}/api/v1/orgs/${orgId}/ski-swap/taxonomy/icons/${key}.png`;
 }

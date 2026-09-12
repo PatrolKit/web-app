@@ -115,7 +115,10 @@ function makeService(rows: Row[] = tree()) {
     auditLog: { create: async () => ({}) },
   };
 
-  return { service: new TaxonomyService(prisma as never), store, created };
+  // No APP_URL in the fake: icon URLs come back root-relative, which keeps the
+  // assertions about paths rather than about a deployment's hostname.
+  const config = { get: (k: string) => (k === 'app.appUrl' ? '' : undefined) };
+  return { service: new TaxonomyService(prisma as never, config as never), store, created };
 }
 
 // ─── Keys ────────────────────────────────────────────────────────────────────
@@ -149,7 +152,13 @@ describe('resolve', () => {
     expect(out.version).toBe(7);
     expect(out.categories).toHaveLength(1);
     const skis = out.categories[0];
-    expect(skis.icon).toEqual({ kind: 'registry', key: 'skis' });
+    // Both halves: the key the web resolves against its bundle, and the URL a
+    // native client fetches because it has no bundle (handoff Ask J).
+    expect(skis.icon).toEqual({
+      kind: 'registry',
+      key: 'skis',
+      url: '/api/v1/orgs/org-1/ski-swap/taxonomy/icons/skis.png',
+    });
     expect(skis.attributes.map((a) => a.label)).toEqual(['Manufacturer', 'Length', 'Type', 'Condition']);
   });
 

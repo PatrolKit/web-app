@@ -24,8 +24,11 @@ import { RequireDeviceRole } from '../../common/decorators/require-device-role.d
 import { RequireModule } from '../../common/decorators/require-module.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/guards/jwt-auth.guard';
+import { readFile } from 'fs/promises';
+import { join } from 'path';
 import { TaxonomyService } from './taxonomy.service';
 import { TaxonomyIconService } from './taxonomy-icon.service';
+import { isTaxonomyIconKey } from '../../contracts/taxonomy-icons';
 import {
   CreateTaxonomyNodeDto,
   CreateTaxonomyValueDto,
@@ -157,6 +160,42 @@ export class TaxonomyController {
   @RequirePermissions('ski_swap:admin')
   async discard(@Param('orgId') orgId: string, @Param('nodeId') nodeId: string): Promise<void> {
     await this.taxonomy.discard(orgId, nodeId);
+  }
+
+  /**
+   * A built-in mark, rendered (iOS handoff, Ask J).
+   *
+   * 128×128 PNG, monochrome with alpha, so a native client can draw it as a
+   * template — shape from the alpha channel, colour from the view. The web does
+   * not call this: it has the glyph in its own bundle and reads `icon.key`.
+   *
+   * Read at `:report` and open to the check-in iPad, like the tree these belong
+   * to. The bytes for a key never change, so they are served immutable.
+   */
+  @Get('icons/:file')
+  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequirePermissions('ski_swap:report')
+  async getRegistryIcon(@Param('file') file: string, @Res() res: Response): Promise<void> {
+    const key = file.replace(/\.png$/i, '');
+    // Checked against the contract's list rather than the filesystem: `key`
+    // arrives from a URL, and a path built from unvalidated input is how a
+    // traversal gets in.
+    if (!isTaxonomyIconKey(key)) {
+      res.status(404).end();
+      return;
+    }
+    const path = join(__dirname, 'assets', `${key}.png`);
+    try {
+      const bytes = await readFile(path);
+      res.set('Content-Type', 'image/png');
+      res.set('Cache-Control', 'public, max-age=31536000, immutable');
+      res.send(bytes);
+    } catch {
+      // A key the contract knows but no render exists for: the generator has not
+      // been run since it was added. A 404 reads as "no icon", which the client
+      // already handles, rather than a 500.
+      res.status(404).end();
+    }
   }
 
   // ─── Icons ─────────────────────────────────────────────────────────────────
