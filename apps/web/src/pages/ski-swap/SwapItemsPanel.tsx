@@ -373,12 +373,28 @@ export default function SwapItemsPanel({
 
       {/* Add / Edit modal */}
       {isFormOpen && canManage && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          {/*
+            A capped column, not a box that grows.
+
+            Describing a bike asks ten questions, which is taller than a laptop
+            viewport — and a centred child that outgrows its container has its
+            top pushed above the top of the screen, where nothing can scroll to
+            reach it. So the height is capped and only the fields scroll.
+            `min-h-0` on that middle region is what makes the scrolling work at
+            all: a flex child defaults to min-height:auto and refuses to shrink
+            below its content, so `overflow-y-auto` never engages without it.
+
+            Keeping the buttons out of the scroll region is the other half —
+            Save should not be something you have to go looking for.
+          */}
           <form
-            className="bg-surface-200 rounded-lg p-6 w-full max-w-md space-y-4"
+            className="bg-surface-200 rounded-lg w-full max-w-md flex flex-col max-h-[calc(100vh-2rem)]"
             onSubmit={(e) => { e.preventDefault(); if (editItem) patchMutation.mutate(); else createMutation.mutate(); }}
           >
-            <h2 className="text-white font-semibold">{editItem ? 'Edit Item' : 'Add Item'}</h2>
+            <h2 className="text-white font-semibold px-6 pt-6 pb-4 shrink-0">{editItem ? 'Edit Item' : 'Add Item'}</h2>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-4 space-y-4">
 
             {tickets && !editItem && (
               <label className="block">
@@ -550,7 +566,9 @@ export default function SwapItemsPanel({
               <p className="text-xs text-red-400 pt-1">{photoError}</p>
             )}
 
-            <div className="flex gap-2 pt-2">
+            </div>
+
+            <div className="flex gap-2 px-6 py-4 shrink-0 border-t border-gray-700">
               <button
                 type="submit"
                 disabled={createMutation.isPending || patchMutation.isPending || uploadPhotoMutation.isPending}

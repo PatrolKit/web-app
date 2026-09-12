@@ -222,8 +222,11 @@ function AddNodeForm({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      {/* Capped and scrolled for the same reason as the item form: a NUMBER
+          question adds four more fields, and a centred box that outgrows the
+          viewport puts its own heading out of reach. */}
       <form
-        className="bg-surface-200 rounded-lg p-5 w-full max-w-md space-y-3"
+        className="bg-surface-200 rounded-lg p-5 w-full max-w-md space-y-3 max-h-[calc(100vh-2rem)] overflow-y-auto"
         onSubmit={(e) => { e.preventDefault(); add.mutate(); }}
       >
         <h3 className="text-white font-semibold">
