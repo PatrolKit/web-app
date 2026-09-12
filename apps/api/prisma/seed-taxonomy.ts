@@ -21,22 +21,34 @@ import { join } from 'path';
  * a bucket that may not exist — so every icon here is a registry key, and a
  * category the registry cannot cover ships without one.
  *
- * ── The workflow ───────────────────────────────────────────────────────────
+ * ── This runs once per database ────────────────────────────────────────────
  *
- *   1. Curate in Platform Admin → Item Details, on whichever server.
- *   2. `pnpm --filter api db:export-taxonomy` against that server's database.
- *   3. Review the diff, commit it.
- *   4. Deploy. The seed replays it everywhere else.
+ * `taxonomy.json` is a **bootstrap**, not a thing deployed repeatedly. The
+ * moment a database has a tree, that database is the authority on it — the
+ * shared list is curated in Platform Admin, and nothing in a git branch knows
+ * what an administrator decided there yesterday. So a run against a database
+ * that already has global nodes does nothing at all.
  *
- * Step 2 before step 4, always. Adding is safe to defer — the node simply is
- * not on other servers yet — but a **rename** is not: a renamed node no longer
- * matches its `dedupeKey`, so the seed does not recognise it and creates the old
- * one again. For a renamed category or question that means its whole subtree
- * comes back, because every descendant's key contains its parent's id. One
- * renamed category duplicated 27 nodes in testing.
+ * The direction of truth is therefore:
  *
- * Nothing here deletes, so that damage is recoverable by retiring the duplicate
- * — and `reportUnknown` prints on every seed so it is never silent.
+ *   empty database  →  taxonomy.json seeds it, once
+ *   after that      →  the database leads, and `db:export-taxonomy` writes it
+ *                      back here for source control and for the next new
+ *                      environment
+ *
+ * Which also means **editing this file does not change an existing server**.
+ * Add the category in the admin screen and export; do not edit the JSON and
+ * deploy, because the deploy will ignore it.
+ *
+ * Replaying it would not merely be pointless, it would be destructive-adjacent:
+ * a node renamed since the last export no longer matches its `dedupeKey`, so
+ * the old one gets created again, and for a renamed category or question the
+ * whole subtree comes back with it. One renamed category duplicated 27 nodes in
+ * testing. Running once is what makes that unreachable in the ordinary case.
+ *
+ * `SEED_TAXONOMY=force` overrides the guard, for re-bootstrapping a database
+ * restored without its tree. It re-opens the rename hazard above, which is why
+ * it is a deliberate environment variable and not a default.
  */
 
 /** An answer. A string is a plain value; the object form carries a branch. */
@@ -243,6 +255,20 @@ async function reportUnknown(prisma: PrismaClient): Promise<void> {
 }
 
 export async function seedTaxonomy(prisma: PrismaClient): Promise<void> {
+  const existing = await prisma.taxonomyNode.count({ where: { orgId: null } });
+  const forced = process.env.SEED_TAXONOMY === 'force';
+
+  if (existing > 0 && !forced) {
+    console.log(
+      `• Item taxonomy already present (${existing} shared nodes) — left alone.` +
+        ' This database leads; run `db:export-taxonomy` to capture changes made here.',
+    );
+    return;
+  }
+  if (existing > 0 && forced) {
+    console.warn('⚠ SEED_TAXONOMY=force: replaying taxonomy.json over an existing tree.');
+  }
+
   seen.clear();
   inserted = 0;
   let written = 0;

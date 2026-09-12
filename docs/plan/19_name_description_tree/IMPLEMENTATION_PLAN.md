@@ -837,10 +837,28 @@ image is already where a global node's image lives (§4.4).
 
 Promotion bumps `taxonomyVersion` for every org.
 
-## 9. The seed
+## 9. The seed, and the round trip
 
-Ships as a data file consumed by `prisma/seed.ts`, so the global tree is
-reproducible and reviewable in a diff rather than clicked into existence.
+Ships as a data file — `prisma/taxonomy.json`, consumed by `prisma/seed.ts` —
+so the global tree is reproducible and reviewable in a diff rather than clicked
+into existence.
+
+It seeds a database **once**. The moment a database has a tree, that database is
+the authority on it: the shared list is curated in §6.4, and nothing in a git
+branch knows what a platform admin decided there yesterday. So the direction of
+truth reverses after the first run, and `db:export-taxonomy` writes the database
+back out to the same file for source control and for the next new environment.
+
+Editing the file therefore does not change an existing server — add the category
+in the admin screen and export. Replaying it would not merely be useless: a node
+renamed since the last export no longer matches its `dedupeKey`, so the old one
+is created again, and for a renamed category or question the whole subtree comes
+back with it. Running once is what puts that out of reach.
+
+The file carries no node ids. The same logical node has a different cuid in
+every database — environments are seeded independently — so ids would make it
+portable nowhere. Identity is the label and where it sits, which is what
+`dedupeKey` already keys on.
 
 Categories to start, each with a registry `iconKey` because the category grid
 is the one screen where icons carry the navigation (§4.4): Skis, Snowboard, Ski
