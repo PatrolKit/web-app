@@ -16,6 +16,9 @@ export class SkiSwapSettingsService {
       // Off for an org that has never said otherwise: the extra step belongs to
       // organisations that asked for it.
       requireConsignmentScan: row?.requireConsignmentScan ?? false,
+      // 1 for an org with no row, matching what the taxonomy service reports —
+      // a client that has cached nothing compares against it and fetches.
+      taxonomyVersion: row?.taxonomyVersion ?? 1,
     };
   }
 
@@ -44,6 +47,7 @@ export class SkiSwapSettingsService {
     return {
       labelsPerItem: row.labelsPerItem,
       requireConsignmentScan: row.requireConsignmentScan,
+      taxonomyVersion: row.taxonomyVersion,
     };
   }
 

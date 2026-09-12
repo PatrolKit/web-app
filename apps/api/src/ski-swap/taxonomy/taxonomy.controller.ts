@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UploadedFile,
@@ -31,6 +32,7 @@ import { TaxonomyIconService } from './taxonomy-icon.service';
 import { isTaxonomyIconKey } from '../../contracts/taxonomy-icons';
 import {
   CreateTaxonomyNodeDto,
+  TaxonomyDepthQueryDto,
   CreateTaxonomyValueDto,
   MergeTaxonomyNodeDto,
   PatchTaxonomyNodeDto,
@@ -63,8 +65,10 @@ export class TaxonomyController {
   @Get()
   @RequireDeviceRole('ski_swap.staff_check_in')
   @RequirePermissions('ski_swap:report')
-  resolve(@Param('orgId') orgId: string) {
-    return this.taxonomy.resolve(orgId);
+  resolve(@Param('orgId') orgId: string, @Query() query: TaxonomyDepthQueryDto) {
+    // `?depth=full` expands every deferred branch inline, for a client that
+    // prefetches rather than loading on open. The default is unchanged.
+    return this.taxonomy.resolve(orgId, { full: query.depth === 'full' });
   }
 
   /** A deferred branch — a manufacturer's model list — fetched on open (§7.2). */

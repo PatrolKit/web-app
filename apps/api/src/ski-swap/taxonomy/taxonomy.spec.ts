@@ -172,6 +172,28 @@ describe('resolve', () => {
     expect(head.attributes[0].values).toBeUndefined();
   });
 
+  it('expands every branch inline under depth=full', async () => {
+    // What an offline-first client asks for: one request that arrives complete,
+    // because a lazily-loaded model list is a blank control at the counter.
+    const { service } = makeService();
+    const skis = (await service.resolve(ORG, { full: true })).categories[0];
+    const head = skis.attributes[0].values!.find((v) => v.label === 'Head')!;
+    const model = head.attributes[0];
+
+    expect(model.label).toBe('Model');
+    expect(model.valuesDeferred).toBeUndefined();
+    expect(model.values!.map((v) => v.label)).toEqual(['Kore']);
+  });
+
+  it('leaves the default deferred, so the browser is unaffected', async () => {
+    const { service } = makeService();
+    const a = (await service.resolve(ORG)).categories[0].attributes[0];
+    const b = (await service.resolve(ORG, { full: false })).categories[0].attributes[0];
+    for (const attrs of [a, b]) {
+      expect(attrs.values!.find((v) => v.label === 'Head')!.attributes[0].valuesDeferred).toBe(true);
+    }
+  });
+
   it('describes a number by its bounds rather than by values', async () => {
     const { service } = makeService();
     const len = (await service.resolve(ORG)).categories[0].attributes[1];

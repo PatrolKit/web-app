@@ -629,6 +629,16 @@ export const UpdateSkiSwapSettingsSchema = z
 export const SkiSwapSettingsResponseSchema = z.object({
   labelsPerItem: z.number().int(),
   requireConsignmentScan: z.boolean(),
+  /**
+   * The version of this org's item-description tree, so a client can tell
+   * whether its cached copy is stale without downloading one to find out.
+   *
+   * It rides here because this response is already fetched every inbound sync —
+   * the version arrives for free, one integer is compared, and the tree is
+   * refetched only when it differs. Its other home is the first field of the
+   * tree itself, which is no use for deciding whether to ask for the tree.
+   */
+  taxonomyVersion: z.number().int(),
 });
 
 export class UpdateSkiSwapSettingsDto extends createZodDto(UpdateSkiSwapSettingsSchema) {}

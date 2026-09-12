@@ -139,6 +139,20 @@ export type TaxonomyChildrenResponse = z.infer<typeof TaxonomyChildrenResponseSc
 
 // ─── Editing the tree ────────────────────────────────────────────────────────
 
+/**
+ * How much of the tree to send.
+ *
+ * `partial` is the default and what the browser wants: a value's model lists
+ * arrive as `valuesDeferred` stubs and are fetched when their control is opened.
+ * `full` resolves every branch inline for a client that prefetches — an iPad
+ * that syncs at the start of a shift and may not see the network again.
+ */
+export const TaxonomyDepthQuerySchema = z
+  .object({ depth: z.enum(['partial', 'full']).default('partial') })
+  .strict();
+
+export class TaxonomyDepthQueryDto extends createZodDto(TaxonomyDepthQuerySchema) {}
+
 export const TaxonomyKindSchema = z.enum(['CATEGORY', 'ATTRIBUTE', 'VALUE']);
 export const TaxonomyInputSchema = z.enum(['SELECT', 'NUMBER']);
 

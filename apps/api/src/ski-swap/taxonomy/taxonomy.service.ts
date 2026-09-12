@@ -35,6 +35,9 @@ import type {
  */
 const DEFER_VALUES_ABOVE = 60;
 
+/** How deep `?depth=full` will expand before it stops. See `attributesUnder`. */
+const MAX_EXPANSION_DEPTH = 8;
+
 /** The scope half of a dedupe key. Global rows have no org to name. */
 function scopeKey(orgId: string | null): string {
   return orgId ?? 'global';
@@ -129,8 +132,17 @@ export class TaxonomyService {
     });
   }
 
-  /** The resolved tree, as the UI generator consumes it (§4.1). */
-  async resolve(orgId: string): Promise<ResolvedTaxonomy> {
+  /**
+   * The resolved tree, as the UI generator consumes it (§4.1).
+   *
+   * `full` resolves every deferred branch inline, for a client that prefetches
+   * rather than loads on open. An iPad syncs at the start of a shift and may not
+   * see the network again for hours, and a lazily-loaded model list is a blank
+   * control at the counter — so it takes the whole thing in one request and
+   * keeps it. The browser leaves this off: it has the network and would rather
+   * not download six hundred model names nobody opens.
+   */
+  async resolve(orgId: string, opts: { full?: boolean } = {}): Promise<ResolvedTaxonomy> {
     const [nodes, version] = await Promise.all([
       this.visibleNodes(orgId, { approvedOnly: true }),
       this.versionFor(orgId),
@@ -153,7 +165,7 @@ export class TaxonomyService {
         ...(iconOf(c, orgId, base) ? { icon: iconOf(c, orgId, base)! } : {}),
         scope: c.orgId ? 'org' : 'global',
         displayOrder: c.displayOrder,
-        attributes: this.attributesUnder(c.id, byParent, { eager: true, orgId, base }),
+        attributes: this.attributesUnder(c.id, byParent, { eager: true, orgId, base, full: !!opts.full, depth: 0 }),
       }));
 
     return { version, categories };
@@ -170,8 +182,12 @@ export class TaxonomyService {
   private attributesUnder(
     parentId: string,
     byParent: Map<string | null, NodeRow[]>,
-    opts: { eager: boolean; orgId: string; base: string },
+    opts: { eager: boolean; orgId: string; base: string; full: boolean; depth: number },
   ): ResolvedAttribute[] {
+    // The alternation gives a real tree, not a cycle, so this is a bound on
+    // pathological curation rather than on recursion: four levels of question is
+    // already deeper than anything a form can usefully render.
+    if (opts.depth > MAX_EXPANSION_DEPTH) return [];
     return (byParent.get(parentId) ?? [])
       .filter((n) => n.kind === 'ATTRIBUTE')
       .map((a): ResolvedAttribute => {
@@ -197,27 +213,47 @@ export class TaxonomyService {
         }
 
         const children = (byParent.get(a.id) ?? []).filter((n) => n.kind === 'VALUE');
-        const defer = !opts.eager || children.length > DEFER_VALUES_ABOVE;
+        // `full` overrides both reasons to defer: the size threshold and the
+        // rule that a value's attributes are never eager.
+        const defer = !opts.full && (!opts.eager || children.length > DEFER_VALUES_ABOVE);
         return {
           ...base,
           allowFreeEntry: a.allowFreeEntry,
           ...(defer
             ? { valuesDeferred: true }
-            : { values: children.map((v) => this.valueOf(v, byParent, opts.orgId, opts.base)) }),
+            : {
+                values: children.map((v) =>
+                  this.valueOf(v, byParent, opts.orgId, opts.base, opts.full, opts.depth),
+                ),
+              }),
         };
       });
   }
 
   /** One value, with the questions that only its being chosen opens up. */
-  private valueOf(v: NodeRow, byParent: Map<string | null, NodeRow[]>, orgId: string, base: string): ResolvedValue {
+  private valueOf(
+    v: NodeRow,
+    byParent: Map<string | null, NodeRow[]>,
+    orgId: string,
+    base: string,
+    full = false,
+    depth = 0,
+  ): ResolvedValue {
     return {
       id: v.id,
       label: v.label,
       ...(iconOf(v, orgId, base) ? { icon: iconOf(v, orgId, base)! } : {}),
       scope: v.orgId ? 'org' : 'global',
       displayOrder: v.displayOrder,
-      // Never eager: a value's attributes are the model lists.
-      attributes: this.attributesUnder(v.id, byParent, { eager: false, orgId, base }),
+      // Never eager below a value — those are the model lists — unless the
+      // caller asked for the whole thing.
+      attributes: this.attributesUnder(v.id, byParent, {
+        eager: full,
+        orgId,
+        base,
+        full,
+        depth: depth + 1,
+      }),
     };
   }
 
@@ -244,9 +280,21 @@ export class TaxonomyService {
     const byParent = new Map<string | null, NodeRow[]>([[nodeId, rows]]);
 
     if (node.kind === 'ATTRIBUTE') {
-      return { nodeId, values: rows.filter((r) => r.kind === 'VALUE').map((v) => this.valueOf(v, byParent, orgId, base)) };
+      return {
+        nodeId,
+        values: rows.filter((r) => r.kind === 'VALUE').map((v) => this.valueOf(v, byParent, orgId, base)),
+      };
     }
-    return { nodeId, attributes: this.attributesUnder(nodeId, byParent, { eager: false, orgId, base }) };
+    return {
+      nodeId,
+      attributes: this.attributesUnder(nodeId, byParent, {
+        eager: false,
+        orgId,
+        base,
+        full: false,
+        depth: 0,
+      }),
+    };
   }
 
   // ─── Versioning ────────────────────────────────────────────────────────────

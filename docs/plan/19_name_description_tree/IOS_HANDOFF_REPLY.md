@@ -4,10 +4,11 @@
 > **To:** `patrolkit_ios`, Plan 12.
 > **Re:** [`SERVER_HANDOFF.md`](../../../../patrolkit_ios/docs/plan/12_item_description/SERVER_HANDOFF.md).
 >
-> **Both asks accepted.** Ask J as filed. Ask K in the narrower form you offered
-> — gated on `alreadyPrinted` for creates, ungated for patches.
+> **All four asks accepted.** J and M as filed; K in the narrower form you
+> offered; L as filed, with the ETag alternative declined for now.
 >
-> Shipped and deployed. Three things below you did not ask about but need.
+> Shipped and deployed. Things below you did not ask about but need — including
+> one measurement in Ask M that is wrong in your favour.
 
 ## Ask J — accepted
 
@@ -167,18 +168,88 @@ The seed now runs **once per database**. After that the database leads and
 were planning to add categories for testing by editing the file and deploying —
 that does nothing now. Add them in Platform Admin → Item Details.
 
+## Ask L — accepted as filed
+
+`taxonomyVersion` is now on the settings response:
+
+```jsonc
+{ "labelsPerItem": 1, "requireConsignmentScan": false, "taxonomyVersion": 6 }
+```
+
+Same value `TaxonomyService.versionFor` returns and the same one at the head of
+the tree document. An org with no settings row reads `1`, which is what the
+taxonomy service reports for it too — so a client that has cached nothing
+compares against 1 and fetches, rather than meeting a null.
+
+**The ETag alternative is not built.** You said the settings field is strictly
+better for you and the ETag is better if browsers benefit; the browser caches
+this through React Query on a five-minute stale time and would gain little, so
+it would have been surface with one real user and that user preferred the other
+option. If you later want `If-None-Match` it is cheap — the ETag would be
+`W/"v<taxonomyVersion>"`, decided by one indexed read without building the
+document.
+
+## Ask M — accepted as filed
+
+```
+GET /orgs/:orgId/ski-swap/taxonomy?depth=full
+```
+
+`partial` is the default and the browser's behaviour is byte-for-byte unchanged.
+`full` resolves every branch inline, overriding both reasons to defer: the rule
+that a value's attributes are never eager, and the 60-value size threshold.
+
+Measured against the live tree:
+
+| | nodes | deferred | bytes |
+|---|---|---|---|
+| default / `?depth=partial` | 988 | 37 | 126,581 |
+| `?depth=full` | **1144** | **0** | 143,693 |
+
+1144 is every shared node in the database, so the document is genuinely
+complete. It costs 17KB over the partial one — model lists are short strings,
+and the branch stubs it replaces were not free either.
+
+Expansion stops at 8 levels. The alternation makes a tree rather than a cycle,
+so that is a bound on pathological curation, not on recursion — four levels of
+question is already deeper than a form can usefully render.
+
+### One correction, in your favour
+
+> Prefetching costs **two round trips per branching manufacturer**, not one.
+
+One, not two. The eager document **already contains** each value's attributes as
+stubs — `valueOf` calls `attributesUnder(v.id, …)` unconditionally, and the map
+it reads holds every visible node, so the Model attribute and its id are in the
+first response. `GET /nodes/<value>/children` re-fetches what you already have.
+
+Counted against the live tree: 37 branching values, and all 37 of their nested
+attributes present as stubs in the default document. So the fallback path was
+1 + 37 requests, not 1 + 74.
+
+It does not change the answer — one request still beats 38, and you are right
+that an offline-first client wants the complete document — but if you have
+already built the two-hop walk, half of it can go whatever you decide about
+`depth=full`.
+
 ## What is not built
 
-Nothing you asked for. For completeness:
+Both questions left open in the first reply, you have since closed yourselves —
+no icon manifest (22 distinct keys is not the weight) and no `@2x`/`@3x`
+(128×128 is already 1.8× a 36pt chip). Agreed on both; neither is built.
 
-- **No `@2x`/`@3x` variants.** One 128×128, which is 2× a 64pt draw and 4× a
-  32pt one. Ask if you want more.
-- **No batch endpoint.** 16 categories is 16 requests on first run, then cached
-  forever. Say so if that is painful on venue wifi and a manifest is easy.
+What remains unbuilt and might matter later:
+
 - **No SVG.** You asked for raster and raster is what template rendering wants.
+- **No `If-None-Match` on the tree.** See Ask L — cheap if you want it.
+- **No cap on `?depth=full`.** It sends the whole tree, 143KB today. If the
+  shared list grows to the point where that hurts, the fix is a version-keyed
+  conditional request rather than pagination, and Ask L already put the version
+  where you can see it.
 
 ## Change log
 
 | Date | Change |
 |---|---|
 | 2026-09-12 | Created. Ask J accepted as filed; Ask K accepted gated on `alreadyPrinted`. Prefix bug, tree growth and seed-once flagged. |
+| 2026-09-12 | Asks L and M accepted as filed. ETag alternative declined. Corrected the round-trip count in M: the eager document already carries the value-level stubs. |
