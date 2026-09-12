@@ -3,7 +3,7 @@ import {
   faBabyCarriage, faBagShopping, faBicycle, faBolt, faBoot, faBoxOpen, faChild,
   faChildren, faCircle, faCloud, faCompass, faCube, faDiamond, faDroplet,
   faFire, faFlag, faGaugeHigh, faGear, faHatWinter, faHeart, faHelmetSafety,
-  faHouse, faLayerGroup, faLeaf, faLifeRing, faListUl, faLocationDot, faMap,
+  faHouse, faKayak, faLayerGroup, faLeaf, faLifeRing, faListUl, faLocationDot, faMap,
   faMasksTheater, faMitten, faMountain, faMountains, faPalette, faPerson,
   faPersonDress, faPersonSkating, faPersonSkiing, faPersonSnowboarding,
   faQuestion, faRuler, faRulerHorizontal, faRulerVertical, faScarf, faShapes,
@@ -44,6 +44,7 @@ export const TAXONOMY_ICONS: Record<TaxonomyIconKey, IconDefinition> = {
   sled: faSledding,
   skates: faPersonSkating,
   bike: faBicycle,
+  kayak: faKayak,
   // Apparel
   jacket: faShirtLongSleeve,
   vest: faVest,

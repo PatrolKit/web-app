@@ -27,6 +27,7 @@ export const TAXONOMY_ICON_KEYS = [
   'sled',
   'skates',
   'bike',
+  'kayak',
   // Apparel
   'jacket',
   'vest',

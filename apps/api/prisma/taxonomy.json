@@ -1170,6 +1170,15 @@
         ]
       },
       {
+        "label": "Type",
+        "input": "SELECT",
+        "nameSlot": 60,
+        "values": [
+          "Regular",
+          "Bib"
+        ]
+      },
+      {
         "label": "Gender",
         "input": "SELECT",
         "nameSlot": 30,
@@ -1660,6 +1669,533 @@
         "label": "Color",
         "input": "SELECT",
         "nameSlot": 30,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Bike",
+    "icon": "bike",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          {
+            "label": "Trek",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Marlin",
+                  "FX",
+                  "Domane",
+                  "Émonda",
+                  "Fuel EX",
+                  "Roscoe",
+                  "Checkpoint",
+                  "Verve"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Specialized",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Rockhopper",
+                  "Stumpjumper",
+                  "Allez",
+                  "Tarmac",
+                  "Diverge",
+                  "Sirrus",
+                  "Epic"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Giant",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Talon",
+                  "Trance",
+                  "Defy",
+                  "TCR",
+                  "Escape",
+                  "Revolt",
+                  "Stance"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Cannondale",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Trail",
+                  "Topstone",
+                  "Synapse",
+                  "CAAD",
+                  "Habit",
+                  "Quick",
+                  "Scalpel"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Santa Cruz",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Hightower",
+                  "Tallboy",
+                  "Bronson",
+                  "Chameleon",
+                  "Nomad",
+                  "Blur"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Scott",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Scale",
+                  "Spark",
+                  "Addict",
+                  "Aspect",
+                  "Genius",
+                  "Speedster"
+                ]
+              }
+            ]
+          },
+          "Salsa",
+          "Surly",
+          "Kona",
+          "Yeti",
+          "Ibis",
+          "Pivot",
+          "Norco",
+          "GT",
+          "Marin",
+          "Rocky Mountain",
+          "Orbea",
+          "Canyon",
+          "Cervélo",
+          "Bianchi",
+          "Diamondback",
+          "Raleigh",
+          "Schwinn",
+          "Co-op Cycles",
+          "Electra"
+        ]
+      },
+      {
+        "label": "Type",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Road",
+          "Mountain",
+          "Gravel",
+          "Hybrid",
+          "Commuter",
+          "Touring",
+          "Cyclocross",
+          "BMX",
+          "Kids",
+          "Fat bike",
+          "Track",
+          "E-bike"
+        ]
+      },
+      {
+        "label": "Frame size",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "icon": "size",
+        "allowFreeEntry": true,
+        "values": [
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL",
+          "XXL",
+          "13\"",
+          "15\"",
+          "17\"",
+          "19\"",
+          "21\"",
+          "48cm",
+          "50cm",
+          "52cm",
+          "54cm",
+          "56cm",
+          "58cm",
+          "60cm",
+          "62cm"
+        ]
+      },
+      {
+        "label": "Wheel size",
+        "input": "SELECT",
+        "values": [
+          "12\"",
+          "16\"",
+          "20\"",
+          "24\"",
+          "26\"",
+          "27.5\"",
+          "29\"",
+          "650b",
+          "700c"
+        ]
+      },
+      {
+        "label": "Frame material",
+        "input": "SELECT",
+        "values": [
+          "Aluminum",
+          "Carbon",
+          "Steel",
+          "Chromoly",
+          "Titanium"
+        ]
+      },
+      {
+        "label": "Suspension",
+        "input": "SELECT",
+        "values": [
+          "Rigid",
+          "Hardtail",
+          "Full suspension"
+        ]
+      },
+      {
+        "label": "Brakes",
+        "input": "SELECT",
+        "values": [
+          "Rim",
+          "Mechanical disc",
+          "Hydraulic disc",
+          "Coaster"
+        ]
+      },
+      {
+        "label": "Speeds",
+        "input": "NUMBER",
+        "min": 1,
+        "max": 33,
+        "step": 1
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Kayak",
+    "icon": "kayak",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          {
+            "label": "Wilderness Systems",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Pungo",
+                  "Tarpon",
+                  "Aspire",
+                  "Tsunami",
+                  "Radar",
+                  "Recon"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Perception",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Pescador",
+                  "Joyride",
+                  "Tribe",
+                  "Carolina",
+                  "Expression"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Old Town",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Loon",
+                  "Vapor",
+                  "Predator",
+                  "Sportsman",
+                  "Heron",
+                  "Topwater"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Dagger",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Mamba",
+                  "Axiom",
+                  "Stratos",
+                  "Rewind",
+                  "Code",
+                  "Katana"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Jackson Kayak",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Zen",
+                  "Antix",
+                  "Coosa",
+                  "Bite",
+                  "Nirvana",
+                  "Rockstar"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Pyranha",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Ripper",
+                  "Scorch",
+                  "Firecracker",
+                  "Machno"
+                ]
+              }
+            ]
+          },
+          "Eddyline",
+          "Hobie",
+          "Pelican",
+          "Ocean Kayak",
+          "Current Designs",
+          "Delta",
+          "Native Watercraft",
+          "Liquidlogic",
+          "Necky",
+          "P&H",
+          "Riot",
+          "NRS",
+          "Advanced Elements",
+          "Sea Eagle",
+          "Aquaglide",
+          "Bonafide",
+          "Vibe",
+          "Feelfree"
+        ]
+      },
+      {
+        "label": "Type",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Recreational",
+          "Touring",
+          "Sea",
+          "Whitewater",
+          "Fishing",
+          "Sit-on-top",
+          "Inflatable",
+          "Tandem",
+          "Creek",
+          "Playboat",
+          "Surf ski"
+        ]
+      },
+      {
+        "label": "Length",
+        "input": "NUMBER",
+        "nameSlot": 40,
+        "icon": "length",
+        "unit": "ft",
+        "min": 5,
+        "max": 22,
+        "step": 0.5
+      },
+      {
+        "label": "Material",
+        "input": "SELECT",
+        "values": [
+          "Polyethylene",
+          "Thermoform",
+          "Fiberglass",
+          "Carbon",
+          "Kevlar",
+          "Inflatable PVC",
+          "Wood"
+        ]
+      },
+      {
+        "label": "Seats",
+        "input": "SELECT",
+        "values": [
+          "1",
+          "2",
+          "3"
+        ]
+      },
+      {
+        "label": "Hull tracking",
+        "input": "SELECT",
+        "values": [
+          "None",
+          "Skeg",
+          "Rudder"
+        ]
+      },
+      {
+        "label": "Paddle included",
+        "input": "SELECT",
+        "values": [
+          "Yes",
+          "No"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
         "icon": "color",
         "values": [
           "Black",
