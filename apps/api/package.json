@@ -13,6 +13,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
+    "db:export-taxonomy": "ts-node --project prisma/tsconfig.seed.json prisma/export-taxonomy.ts",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate"
   },

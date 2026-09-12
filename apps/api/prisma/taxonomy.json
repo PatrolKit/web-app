@@ -1,0 +1,1739 @@
+[
+  {
+    "label": "Skis",
+    "icon": "skis",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          {
+            "label": "Head",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Kore",
+                  "Supershape",
+                  "Monster",
+                  "e-Rally"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Völkl",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Kendo",
+                  "Mantra",
+                  "Blaze",
+                  "Deacon",
+                  "Katana"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Rossignol",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Experience",
+                  "Sender",
+                  "Soul 7",
+                  "Hero"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Atomic",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Bent",
+                  "Maverick",
+                  "Redster",
+                  "Vantage"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Salomon",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "QST",
+                  "Stance",
+                  "S/Force",
+                  "Addikt"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "K2",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Mindbender",
+                  "Reckoner",
+                  "Disruption"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Blizzard",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Rustler",
+                  "Black Pearl",
+                  "Brahma",
+                  "Sheeva"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Nordica",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Enforcer",
+                  "Santa Ana",
+                  "Dobermann"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Fischer",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Ranger",
+                  "RC4",
+                  "Transalp"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Dynastar",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "M-Pro",
+                  "Speed",
+                  "E-Lite"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Elan",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Ripstick",
+                  "Wingman",
+                  "Primetime"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Line",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Blade",
+                  "Pandora",
+                  "Chronic"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Armada",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "ARV",
+                  "Declivity",
+                  "Stranger"
+                ]
+              }
+            ]
+          },
+          "Black Crows",
+          "DPS",
+          "Faction",
+          "Stöckli"
+        ]
+      },
+      {
+        "label": "Length",
+        "input": "NUMBER",
+        "nameSlot": 30,
+        "icon": "length",
+        "unit": "cm",
+        "min": 70,
+        "max": 215,
+        "step": 1
+      },
+      {
+        "label": "Type",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "values": [
+          "Powder",
+          "All-mountain",
+          "Carving",
+          "Park",
+          "Touring",
+          "Race"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Bindings included",
+        "input": "SELECT",
+        "values": [
+          "Yes",
+          "No"
+        ]
+      },
+      {
+        "label": "Waist width",
+        "input": "NUMBER",
+        "unit": "mm",
+        "min": 60,
+        "max": 140,
+        "step": 1
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Snowboard",
+    "icon": "snowboard",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          {
+            "label": "Burton",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Custom",
+                  "Process",
+                  "Name Dropper",
+                  "Hometown Hero"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Lib Tech",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Skate Banana",
+                  "Orca",
+                  "Cold Brew"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "GNU",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Riders Choice",
+                  "Ladies Choice",
+                  "Money"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Never Summer",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Proto",
+                  "Harpoon",
+                  "Swift"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Ride",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Warpig",
+                  "Algorhythm",
+                  "Shadowban"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Capita",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "DOA",
+                  "Mercury",
+                  "Mega Death"
+                ]
+              }
+            ]
+          },
+          "Arbor",
+          "Jones",
+          "Rome",
+          "Salomon",
+          "K2",
+          "Nitro"
+        ]
+      },
+      {
+        "label": "Length",
+        "input": "NUMBER",
+        "nameSlot": 30,
+        "icon": "length",
+        "unit": "cm",
+        "min": 90,
+        "max": 185,
+        "step": 1
+      },
+      {
+        "label": "Shape",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "values": [
+          "Directional",
+          "Twin",
+          "Directional twin",
+          "Swallowtail"
+        ]
+      },
+      {
+        "label": "Flex",
+        "input": "SELECT",
+        "values": [
+          "Soft",
+          "Medium",
+          "Stiff"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Bindings included",
+        "input": "SELECT",
+        "values": [
+          "Yes",
+          "No"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Ski boots",
+    "icon": "ski-boots",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          {
+            "label": "Atomic",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Hawx",
+                  "Redster"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Head",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Formula",
+                  "Edge",
+                  "Kore"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Lange",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "RX",
+                  "Shadow",
+                  "XT3"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Nordica",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Speedmachine",
+                  "Promachine",
+                  "HF"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Salomon",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "S/Pro",
+                  "Shift",
+                  "QST"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Tecnica",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Mach1",
+                  "Cochise",
+                  "Zero G"
+                ]
+              }
+            ]
+          },
+          "Dalbello",
+          "Fischer",
+          "Full Tilt",
+          "K2",
+          "Rossignol",
+          "Scarpa"
+        ]
+      },
+      {
+        "label": "Mondopoint",
+        "input": "NUMBER",
+        "nameSlot": 30,
+        "icon": "size",
+        "unit": "",
+        "min": 14,
+        "max": 34,
+        "step": 0.5
+      },
+      {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
+        "label": "Flex",
+        "input": "NUMBER",
+        "icon": "flex",
+        "min": 30,
+        "max": 140,
+        "step": 5
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Snowboard boots",
+    "icon": "snowboard-boots",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Burton",
+          "DC",
+          "K2",
+          "Nidecker",
+          "Ride",
+          "Salomon",
+          "ThirtyTwo",
+          "Vans"
+        ]
+      },
+      {
+        "label": "Size",
+        "input": "NUMBER",
+        "nameSlot": 30,
+        "icon": "size",
+        "unit": "",
+        "min": 1,
+        "max": 16,
+        "step": 0.5
+      },
+      {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
+        "label": "Lacing",
+        "input": "SELECT",
+        "values": [
+          "Traditional",
+          "Speed lace",
+          "BOA",
+          "Double BOA"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Cross-country skis",
+    "icon": "nordic",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Fischer",
+          "Rossignol",
+          "Salomon",
+          "Atomic",
+          "Madshus",
+          "Alpina"
+        ]
+      },
+      {
+        "label": "Length",
+        "input": "NUMBER",
+        "nameSlot": 30,
+        "icon": "length",
+        "unit": "cm",
+        "min": 100,
+        "max": 215,
+        "step": 5
+      },
+      {
+        "label": "Style",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "values": [
+          "Classic",
+          "Skate",
+          "Backcountry"
+        ]
+      },
+      {
+        "label": "Base",
+        "input": "SELECT",
+        "values": [
+          "Waxable",
+          "Waxless",
+          "Skin"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Poles",
+    "icon": "poles",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Leki",
+          "Swix",
+          "Scott",
+          "Black Diamond",
+          "Komperdell",
+          "Goode"
+        ]
+      },
+      {
+        "label": "Length",
+        "input": "NUMBER",
+        "nameSlot": 30,
+        "icon": "length",
+        "unit": "cm",
+        "min": 70,
+        "max": 140,
+        "step": 5
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Helmet",
+    "icon": "helmet",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Giro",
+          "Smith",
+          "POC",
+          "Salomon",
+          "Oakley",
+          "Sweet Protection",
+          "Bern",
+          "Anon"
+        ]
+      },
+      {
+        "label": "Size",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "icon": "size",
+        "values": [
+          "XXS",
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL",
+          "XXL",
+          "XXXL",
+          "Youth 2",
+          "Youth 3",
+          "Youth 4",
+          "Youth 5",
+          "Youth 6",
+          "Youth 8",
+          "Youth 10",
+          "Youth 12",
+          "Youth 14",
+          "Youth 16"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "MIPS",
+        "input": "SELECT",
+        "values": [
+          "Yes",
+          "No"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Goggles",
+    "icon": "goggles",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Oakley",
+          "Smith",
+          "Giro",
+          "Anon",
+          "POC",
+          "Dragon",
+          "Electric"
+        ]
+      },
+      {
+        "label": "Lens",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Clear",
+          "Low light",
+          "All conditions",
+          "Bright sun",
+          "Photochromic"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Jacket",
+    "icon": "jacket",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Arc’teryx",
+          "Burton",
+          "Columbia",
+          "Descente",
+          "Eddie Bauer",
+          "Flylow",
+          "Helly Hansen",
+          "Mammut",
+          "Marmot",
+          "Mountain Hardwear",
+          "Norrøna",
+          "Obermeyer",
+          "Outdoor Research",
+          "Patagonia",
+          "Picture",
+          "Spyder",
+          "The North Face",
+          "Trew",
+          "Volcom",
+          "686"
+        ]
+      },
+      {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
+        "label": "Size",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "icon": "size",
+        "values": [
+          "XXS",
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL",
+          "XXL",
+          "XXXL",
+          "Youth 2",
+          "Youth 3",
+          "Youth 4",
+          "Youth 5",
+          "Youth 6",
+          "Youth 8",
+          "Youth 10",
+          "Youth 12",
+          "Youth 14",
+          "Youth 16"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Pants",
+    "icon": "pants",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Arc’teryx",
+          "Burton",
+          "Columbia",
+          "Descente",
+          "Eddie Bauer",
+          "Flylow",
+          "Helly Hansen",
+          "Mammut",
+          "Marmot",
+          "Mountain Hardwear",
+          "Norrøna",
+          "Obermeyer",
+          "Outdoor Research",
+          "Patagonia",
+          "Picture",
+          "Spyder",
+          "The North Face",
+          "Trew",
+          "Volcom",
+          "686"
+        ]
+      },
+      {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
+        "label": "Size",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "icon": "size",
+        "values": [
+          "XXS",
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL",
+          "XXL",
+          "XXXL",
+          "Youth 2",
+          "Youth 3",
+          "Youth 4",
+          "Youth 5",
+          "Youth 6",
+          "Youth 8",
+          "Youth 10",
+          "Youth 12",
+          "Youth 14",
+          "Youth 16"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Vest",
+    "icon": "vest",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Arc’teryx",
+          "Burton",
+          "Columbia",
+          "Descente",
+          "Eddie Bauer",
+          "Flylow",
+          "Helly Hansen",
+          "Mammut",
+          "Marmot",
+          "Mountain Hardwear",
+          "Norrøna",
+          "Obermeyer",
+          "Outdoor Research",
+          "Patagonia",
+          "Picture",
+          "Spyder",
+          "The North Face",
+          "Trew",
+          "Volcom",
+          "686"
+        ]
+      },
+      {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
+        "label": "Size",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "icon": "size",
+        "values": [
+          "XXS",
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL",
+          "XXL",
+          "XXXL",
+          "Youth 2",
+          "Youth 3",
+          "Youth 4",
+          "Youth 5",
+          "Youth 6",
+          "Youth 8",
+          "Youth 10",
+          "Youth 12",
+          "Youth 14",
+          "Youth 16"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Base layer",
+    "icon": "base-layer",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Arc’teryx",
+          "Burton",
+          "Columbia",
+          "Descente",
+          "Eddie Bauer",
+          "Flylow",
+          "Helly Hansen",
+          "Mammut",
+          "Marmot",
+          "Mountain Hardwear",
+          "Norrøna",
+          "Obermeyer",
+          "Outdoor Research",
+          "Patagonia",
+          "Picture",
+          "Spyder",
+          "The North Face",
+          "Trew",
+          "Volcom",
+          "686"
+        ]
+      },
+      {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
+        "label": "Size",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "icon": "size",
+        "values": [
+          "XXS",
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL",
+          "XXL",
+          "XXXL",
+          "Youth 2",
+          "Youth 3",
+          "Youth 4",
+          "Youth 5",
+          "Youth 6",
+          "Youth 8",
+          "Youth 10",
+          "Youth 12",
+          "Youth 14",
+          "Youth 16"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Gloves",
+    "icon": "gloves",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Arc’teryx",
+          "Burton",
+          "Columbia",
+          "Descente",
+          "Eddie Bauer",
+          "Flylow",
+          "Helly Hansen",
+          "Mammut",
+          "Marmot",
+          "Mountain Hardwear",
+          "Norrøna",
+          "Obermeyer",
+          "Outdoor Research",
+          "Patagonia",
+          "Picture",
+          "Spyder",
+          "The North Face",
+          "Trew",
+          "Volcom",
+          "686"
+        ]
+      },
+      {
+        "label": "Style",
+        "input": "SELECT",
+        "nameSlot": 20,
+        "values": [
+          "Glove",
+          "Mitten"
+        ]
+      },
+      {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
+        "label": "Size",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "icon": "size",
+        "values": [
+          "XXS",
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL",
+          "XXL",
+          "XXXL",
+          "Youth 2",
+          "Youth 3",
+          "Youth 4",
+          "Youth 5",
+          "Youth 6",
+          "Youth 8",
+          "Youth 10",
+          "Youth 12",
+          "Youth 14",
+          "Youth 16"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Sled",
+    "icon": "sled",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Mad River Rocket",
+          "Hammerhead",
+          "Paricon",
+          "Flexible Flyer"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Bag",
+    "icon": "bag",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "Arc’teryx",
+          "Burton",
+          "Columbia",
+          "Descente",
+          "Eddie Bauer",
+          "Flylow",
+          "Helly Hansen",
+          "Mammut",
+          "Marmot",
+          "Mountain Hardwear",
+          "Norrøna",
+          "Obermeyer",
+          "Outdoor Research",
+          "Patagonia",
+          "Picture",
+          "Spyder",
+          "The North Face",
+          "Trew",
+          "Volcom",
+          "686"
+        ]
+      },
+      {
+        "label": "Holds",
+        "input": "SELECT",
+        "nameSlot": 20,
+        "values": [
+          "Skis",
+          "Snowboard",
+          "Boots",
+          "Everything"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Other",
+    "icon": "other",
+    "attributes": [
+      {
+        "label": "What is it?",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 20,
+        "icon": "color",
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolour"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  }
+]
