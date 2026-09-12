@@ -1,9 +1,9 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
-  faBabyCarriage, faBagShopping, faBicycle, faBolt, faBoot, faBoxOpen, faChild,
+  faBabyCarriage, faBagShopping, faBicycle, faBolt, faBoot, faBoxOpen, faCanoePerson, faChild,
   faChildren, faCircle, faCloud, faCompass, faCube, faDiamond, faDroplet,
   faFire, faFlag, faGaugeHigh, faGear, faHatWinter, faHeart, faHelmetSafety,
-  faHouse, faKayak, faLayerGroup, faLeaf, faLifeRing, faListUl, faLocationDot, faMap,
+  faHouse, faLayerGroup, faLeaf, faLifeRing, faListUl, faLocationDot, faMap,
   faMasksTheater, faMitten, faMountain, faMountains, faPalette, faPerson,
   faPersonDress, faPersonSkating, faPersonSkiing, faPersonSnowboarding,
   faQuestion, faRuler, faRulerHorizontal, faRulerVertical, faScarf, faShapes,
@@ -30,6 +30,13 @@ import { TAXONOMY_ICON_KEYS, type TaxonomyIconKey } from '@patrolkit/contracts/t
  * Several keys share a glyph — Font Awesome has no ski pole or jacket, so poles
  * borrow the lift and jacket borrows the long-sleeve shirt. A near glyph reads
  * better on a category chip than no glyph at all.
+ *
+ * Legibility at 16px is the constraint, not fidelity at 96px. `kayak` draws
+ * `faCanoePerson` rather than the literal `faKayak`, which is a thin paddle over
+ * a 40%-opacity hull and reads as a smudge in a tree row — it looked to a
+ * reviewer like the icon was missing entirely. A paddler in a boat survives the
+ * shrink, and matches what every other sport category already does: skis,
+ * snowboard, nordic, skates and sled are all a person doing the thing.
  */
 export const TAXONOMY_ICONS: Record<TaxonomyIconKey, IconDefinition> = {
   // Gear
@@ -44,7 +51,7 @@ export const TAXONOMY_ICONS: Record<TaxonomyIconKey, IconDefinition> = {
   sled: faSledding,
   skates: faPersonSkating,
   bike: faBicycle,
-  kayak: faKayak,
+  kayak: faCanoePerson,
   // Apparel
   jacket: faShirtLongSleeve,
   vest: faVest,
