@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  faArrowDown as faDownDuo,
+  faArrowUp as faUpDuo,
   faArrowUpRightFromSquare as faPromoteDuo,
   faChevronDown as faChevronDownDuo,
   faChevronRight as faChevronRightDuo,
@@ -325,16 +327,112 @@ function AddNodeForm({
   );
 }
 
-// ─── One row of the tree ─────────────────────────────────────────────────────
+// ─── Reordering ──────────────────────────────────────────────────────────────
 
-function NodeRow({
-  node, depth, onEditIcon, onAddUnder, onChanged,
+/**
+ * Moves one node within its siblings.
+ *
+ * `displayOrder` decided the order all along — the resolver, the deferred-branch
+ * fetch and the exporter all sort on it — but until now only the seed ever wrote
+ * one, and only when creating a node. So anything added through this screen
+ * landed at the bottom of its group with no way to lift it.
+ *
+ * Renumbers the whole group to 10, 20, 30… and writes back only the rows that
+ * actually changed. A plain swap of two values would be one fewer thing to think
+ * about, and would also be a no-op wherever two siblings share an order — which
+ * the seed can produce, because it numbers by array position and never revisits
+ * an existing node. Renumbering heals those as it goes, and in the ordinary case
+ * of distinct orders it still writes exactly two rows.
+ */
+async function moveWithinSiblings(
+  siblings: TaxonomyAdminNode[],
+  from: number,
+  to: number,
+): Promise<void> {
+  const reordered = [...siblings];
+  const [moved] = reordered.splice(from, 1);
+  reordered.splice(to, 0, moved);
+
+  const writes = reordered
+    .map((node, i) => ({ node, order: (i + 1) * 10 }))
+    .filter(({ node, order }) => node.displayOrder !== order);
+
+  // Sequential rather than parallel: each write bumps every org's taxonomy
+  // version, and two of those racing is a pointless way to find out whether the
+  // counter increments safely.
+  for (const { node, order } of writes) {
+    await api.taxonomyAdmin.patch(node.id, { displayOrder: order });
+  }
+}
+
+/**
+ * One level of the tree, which is also the unit reordering works in.
+ *
+ * A row cannot move itself: it has no idea what it sits beside. The list owns
+ * the sibling array, so it owns the move.
+ */
+function NodeList({
+  nodes, depth, onEditIcon, onAddUnder, onChanged, onError,
 }: {
-  node: TaxonomyAdminNode;
+  nodes: TaxonomyAdminNode[];
   depth: number;
   onEditIcon: (node: TaxonomyAdminNode) => void;
   onAddUnder: (node: TaxonomyAdminNode) => void;
   onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const [moving, setMoving] = useState(false);
+
+  async function move(from: number, to: number) {
+    if (to < 0 || to >= nodes.length || moving) return;
+    setMoving(true);
+    try {
+      await moveWithinSiblings(nodes, from, to);
+      onChanged();
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Could not reorder that');
+    } finally {
+      setMoving(false);
+    }
+  }
+
+  return (
+    <ul>
+      {nodes.map((n, i) => (
+        <NodeRow
+          key={n.id}
+          node={n}
+          depth={depth}
+          index={i}
+          count={nodes.length}
+          busy={moving}
+          onMove={(dir) => void move(i, dir === 'up' ? i - 1 : i + 1)}
+          onEditIcon={onEditIcon}
+          onAddUnder={onAddUnder}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ))}
+    </ul>
+  );
+}
+
+// ─── One row of the tree ─────────────────────────────────────────────────────
+
+function NodeRow({
+  node, depth, index, count, busy, onMove, onEditIcon, onAddUnder, onChanged, onError,
+}: {
+  node: TaxonomyAdminNode;
+  depth: number;
+  /** Where this row sits among its siblings, which is what a move is relative to. */
+  index: number;
+  count: number;
+  busy: boolean;
+  onMove: (direction: 'up' | 'down') => void;
+  onEditIcon: (node: TaxonomyAdminNode) => void;
+  onAddUnder: (node: TaxonomyAdminNode) => void;
+  onChanged: () => void;
+  onError: (message: string) => void;
 }) {
   // Categories open; everything below starts closed, because a manufacturer list
   // expanded by default buries the next category off the bottom of the screen.
@@ -409,6 +507,24 @@ function NodeRow({
         <span className="flex-1" />
 
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Disabled at the ends rather than hidden, so the control does not
+              move under the pointer as a row reaches the top or bottom. */}
+          <button
+            title="Move up"
+            disabled={busy || index === 0}
+            onClick={() => onMove('up')}
+            className="text-xs text-gray-400 hover:text-gray-200 px-1.5 py-0.5 disabled:opacity-25 disabled:hover:text-gray-400"
+          >
+            <FontAwesomeIcon icon={faUpDuo} />
+          </button>
+          <button
+            title="Move down"
+            disabled={busy || index === count - 1}
+            onClick={() => onMove('down')}
+            className="text-xs text-gray-400 hover:text-gray-200 px-1.5 py-0.5 disabled:opacity-25 disabled:hover:text-gray-400"
+          >
+            <FontAwesomeIcon icon={faDownDuo} />
+          </button>
           <button
             title="Icon"
             onClick={() => onEditIcon(node)}
@@ -438,18 +554,14 @@ function NodeRow({
       </div>
 
       {open && children.length > 0 && (
-        <ul>
-          {children.map((c) => (
-            <NodeRow
-              key={c.id}
-              node={c}
-              depth={depth + 1}
-              onEditIcon={onEditIcon}
-              onAddUnder={onAddUnder}
-              onChanged={onChanged}
-            />
-          ))}
-        </ul>
+        <NodeList
+          nodes={children}
+          depth={depth + 1}
+          onEditIcon={onEditIcon}
+          onAddUnder={onAddUnder}
+          onChanged={onChanged}
+          onError={onError}
+        />
       )}
     </li>
   );
@@ -561,18 +673,16 @@ export default function ItemTaxonomyTab() {
           </button>
         </div>
 
-        <ul className="bg-surface-50 border border-gray-800 rounded-lg py-1">
-          {(tree ?? []).map((n) => (
-            <NodeRow
-              key={n.id}
-              node={n}
-              depth={0}
-              onEditIcon={setIconFor}
-              onAddUnder={setAddUnder}
-              onChanged={changed}
-            />
-          ))}
-        </ul>
+        <div className="bg-surface-50 border border-gray-800 rounded-lg py-1">
+          <NodeList
+            nodes={tree ?? []}
+            depth={0}
+            onEditIcon={setIconFor}
+            onAddUnder={setAddUnder}
+            onChanged={changed}
+            onError={setError}
+          />
+        </div>
       </section>
 
       {iconFor && (
