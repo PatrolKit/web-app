@@ -201,6 +201,22 @@ export const PatchTaxonomyNodeSchema = z
 
 export const MergeTaxonomyNodeSchema = z.object({ targetId: z.string().min(1) }).strict();
 
+/**
+ * One group's intended order, as a list of node ids.
+ *
+ * Ids rather than id/order pairs: the caller is stating a sequence, and letting
+ * it also choose the numbers invites two clients disagreeing about the spacing.
+ * The server assigns 10, 20, 30… which is what the seed does and what keeps a
+ * later insertion cheap.
+ *
+ * One request rather than one per row, because reordering is one act. Done a row
+ * at a time, sorting thirty-seven manufacturers took fourteen seconds and bumped
+ * every org's taxonomy version thirty-seven times.
+ */
+export const ReorderTaxonomySchema = z
+  .object({ order: z.array(z.string().min(1)).min(1).max(500) })
+  .strict();
+
 /** Staff minting a value explicitly, rather than a seller typing one mid-item. */
 export const CreateTaxonomyValueSchema = z
   .object({
@@ -214,6 +230,7 @@ export const CreateTaxonomyValueSchema = z
 export class CreateTaxonomyNodeDto extends createZodDto(CreateTaxonomyNodeSchema) {}
 export class PatchTaxonomyNodeDto extends createZodDto(PatchTaxonomyNodeSchema) {}
 export class MergeTaxonomyNodeDto extends createZodDto(MergeTaxonomyNodeSchema) {}
+export class ReorderTaxonomyDto extends createZodDto(ReorderTaxonomySchema) {}
 export class CreateTaxonomyValueDto extends createZodDto(CreateTaxonomyValueSchema) {}
 
 // ─── Administration responses ────────────────────────────────────────────────

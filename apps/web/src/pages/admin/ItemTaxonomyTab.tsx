@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  faArrowDownAZ as faSortDuo,
   faArrowDown as faDownDuo,
   faArrowUp as faUpDuo,
   faArrowUpRightFromSquare as faPromoteDuo,
@@ -348,21 +349,44 @@ async function moveWithinSiblings(
   siblings: TaxonomyAdminNode[],
   from: number,
   to: number,
-): Promise<void> {
+): Promise<number> {
   const reordered = [...siblings];
   const [moved] = reordered.splice(from, 1);
   reordered.splice(to, 0, moved);
+  return applyOrder(reordered);
+}
 
-  const writes = reordered
-    .map((node, i) => ({ node, order: (i + 1) * 10 }))
-    .filter(({ node, order }) => node.displayOrder !== order);
+/**
+ * Writes an intended order back, in one request.
+ *
+ * It was one PATCH per row to begin with, which sorted thirty-seven
+ * manufacturers in fourteen seconds and bumped every org's taxonomy version
+ * thirty-seven times on the way. Reordering is one act, so it is now one call:
+ * the server assigns the numbers, writes them in a transaction, and bumps once.
+ */
+async function applyOrder(ordered: TaxonomyAdminNode[]): Promise<number> {
+  const { moved } = await api.taxonomyAdmin.reorder(ordered.map((n) => n.id));
+  return moved;
+}
 
-  // Sequential rather than parallel: each write bumps every org's taxonomy
-  // version, and two of those racing is a pointless way to find out whether the
-  // counter increments safely.
-  for (const { node, order } of writes) {
-    await api.taxonomyAdmin.patch(node.id, { displayOrder: order });
-  }
+/**
+ * Sorts one group by label, once.
+ *
+ * Deliberately a one-shot and not a property of the attribute: nothing here
+ * remembers the choice, so a value approved from the queue next week lands at
+ * the end like any other new node and the button is pressed again. That is the
+ * right trade for a list somebody curates and the wrong one for a list that
+ * grows on its own — a `sortValues` flag on the attribute is the durable answer
+ * if manufacturer lists start drifting faster than anyone wants to re-sort them.
+ *
+ * `sensitivity: 'base'` so Völkl files under V rather than after Z, matching how
+ * `dedupeKey` already folds accents; `numeric` so SS107 precedes SS127 instead
+ * of sorting as text.
+ */
+function alphabetically(nodes: TaxonomyAdminNode[]): TaxonomyAdminNode[] {
+  return [...nodes].sort((a, b) =>
+    a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }),
+  );
 }
 
 /**
@@ -438,6 +462,7 @@ function NodeRow({
   // expanded by default buries the next category off the bottom of the screen.
   const [open, setOpen] = useState(depth === 0 && node.kind === 'CATEGORY');
   const [renaming, setRenaming] = useState(false);
+  const [sorting, setSorting] = useState(false);
   const [label, setLabel] = useState(node.label);
 
   const children = node.children ?? [];
@@ -525,6 +550,32 @@ function NodeRow({
           >
             <FontAwesomeIcon icon={faDownDuo} />
           </button>
+          {/* On the parent, not the children: "sort these" is a statement about
+              a group, and the group is addressable exactly here. Hidden for a
+              single child, where it could only be a no-op. */}
+          {children.length > 1 && (
+            <button
+              title={`Sort ${children.length} items A–Z`}
+              disabled={sorting}
+              onClick={async () => {
+                if (!window.confirm(
+                  `Sort the ${children.length} items under “${node.label}” alphabetically?`,
+                )) return;
+                setSorting(true);
+                try {
+                  await applyOrder(alphabetically(children));
+                  onChanged();
+                } catch (err) {
+                  onError(err instanceof ApiError ? err.message : 'Could not sort those');
+                } finally {
+                  setSorting(false);
+                }
+              }}
+              className="text-xs text-gray-400 hover:text-gray-200 px-1.5 py-0.5 disabled:opacity-25"
+            >
+              <FontAwesomeIcon icon={faSortDuo} />
+            </button>
+          )}
           <button
             title="Icon"
             onClick={() => onEditIcon(node)}

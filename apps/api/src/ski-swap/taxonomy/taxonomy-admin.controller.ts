@@ -25,6 +25,7 @@ import {
   CreateTaxonomyNodeDto,
   MergeTaxonomyNodeDto,
   PatchTaxonomyNodeDto,
+  ReorderTaxonomyDto,
 } from '../../contracts/taxonomy.contracts';
 
 /**
@@ -69,6 +70,13 @@ export class TaxonomyAdminController {
     @Req() req: Request,
   ) {
     return this.taxonomy.patchNode(null, nodeId, body, user.userId, req.ip);
+  }
+
+  /** One group's order, in one request. See `ReorderTaxonomySchema`. */
+  @Post('reorder')
+  @HttpCode(200)
+  reorder(@Body() body: ReorderTaxonomyDto) {
+    return this.taxonomy.reorder(null, body.order);
   }
 
   @Post('nodes/:nodeId/merge')

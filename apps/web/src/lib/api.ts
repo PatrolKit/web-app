@@ -367,6 +367,11 @@ export const api = {
       request<import('./api.types').TaxonomyAdminNode>(`/admin/taxonomy/nodes/${nodeId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
+    /** One group's order, in one request rather than one per row. */
+    reorder: (order: string[]) =>
+      request<{ moved: number }>('/admin/taxonomy/reorder', {
+        method: 'POST', body: JSON.stringify({ order }),
+      }),
     promote: (nodeId: string) =>
       request<{ promoted: number; mergedInto: string | null }>(
         `/admin/taxonomy/nodes/${nodeId}/promote`, { method: 'POST' },

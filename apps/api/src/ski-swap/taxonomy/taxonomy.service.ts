@@ -912,6 +912,57 @@ export class TaxonomyService {
     return out;
   }
 
+  /**
+   * Renumbers one group of siblings, in a single transaction and a single bump.
+   *
+   * Every id must name a node with the same parent, and every sibling must be
+   * named — a partial order would leave the rest holding numbers that collide
+   * with the new ones, and silently reshuffle things the caller said nothing
+   * about.
+   */
+  async reorder(orgId: string | null, order: string[]): Promise<{ moved: number }> {
+    const nodes = await this.prisma.taxonomyNode.findMany({
+      where: {
+        id: { in: order },
+        ...(orgId === null ? { orgId: null } : { OR: [{ orgId: null }, { orgId }] }),
+      },
+      select: { id: true, parentId: true, orgId: true, displayOrder: true },
+    });
+    if (nodes.length !== order.length) {
+      throw new BadRequestException('Some of those nodes do not exist here');
+    }
+
+    const parents = new Set(nodes.map((n) => n.parentId));
+    if (parents.size > 1) throw new BadRequestException('Those nodes are not siblings');
+    const parentId = nodes[0].parentId;
+
+    const siblingCount = await this.prisma.taxonomyNode.count({
+      where: { parentId, ...(parentId === null ? { kind: 'CATEGORY' } : {}) },
+    });
+    if (siblingCount !== order.length) {
+      throw new BadRequestException('Reordering must name every sibling in the group');
+    }
+
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const writes = order
+      .map((id, i) => ({ id, order: (i + 1) * 10 }))
+      .filter((w) => byId.get(w.id)!.displayOrder !== w.order);
+
+    if (writes.length > 0) {
+      await this.prisma.$transaction(
+        writes.map((w) =>
+          this.prisma.taxonomyNode.update({
+            where: { id: w.id },
+            data: { displayOrder: w.order },
+          }),
+        ),
+      );
+      // Once for the whole move, not once per row.
+      await this.bumpFor({ orgId: nodes[0].orgId });
+    }
+    return { moved: writes.length };
+  }
+
   // ─── Promotion ─────────────────────────────────────────────────────────────
 
   /**

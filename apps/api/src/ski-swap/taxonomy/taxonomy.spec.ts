@@ -104,7 +104,12 @@ function makeService(rows: Row[] = tree()) {
         Object.assign(row, data);
         return row;
       },
+      count: async ({ where }: { where: Record<string, unknown> }) =>
+        store.filter((r) => matches(r, where ?? {})).length,
     },
+    // The reorder writes go through a transaction; here they are already
+    // promises against the same array, so awaiting them is the whole of it.
+    $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
     skiSwapSettings: {
       findUnique: async () => ({ taxonomyVersion: 7 }),
       upsert: async () => ({}),
@@ -370,6 +375,49 @@ describe('free entry', () => {
     const out = await service.resolveAnswers(ORG, 'cat', [{ attributeId: 'mfr', freeText: 'rossignol' }]);
     expect(out.rows[0].valueId).toBe('pend');
     expect(created).toHaveLength(0);
+  });
+});
+
+// ─── Reordering ──────────────────────────────────────────────────────────────
+
+describe('reorder', () => {
+  /** The four values under Skis › Manufacturer in the fixture, plus one more. */
+  function withFourBrands() {
+    const rows = tree();
+    rows.push({ id: 'atomic', kind: 'VALUE', orgId: null, parentId: 'mfr', label: 'Atomic', displayOrder: 30 });
+    return makeService(rows);
+  }
+
+  it('renumbers a whole group to 10, 20, 30…', async () => {
+    const { service, store } = withFourBrands();
+    const out = await service.reorder(null, ['atomic', 'volkl', 'head']);
+
+    const order = (id: string) => store.find((n) => n.id === id)!.displayOrder;
+    expect([order('atomic'), order('volkl'), order('head')]).toEqual([10, 20, 30]);
+    // Two, not three: reversing three items leaves the middle one on the number
+    // it already had, and a row that does not need writing is not written.
+    expect(out.moved).toBe(2);
+  });
+
+  it('writes only the rows that actually move', async () => {
+    // head=10, volkl=20, atomic=30 already. Naming them in that order is a no-op.
+    const { service } = withFourBrands();
+    expect((await service.reorder(null, ['head', 'volkl', 'atomic'])).moved).toBe(0);
+  });
+
+  it('refuses a partial order, which would collide with the rows left out', async () => {
+    const { service } = withFourBrands();
+    await expect(service.reorder(null, ['volkl', 'head'])).rejects.toThrow(/every sibling/);
+  });
+
+  it('refuses nodes that are not siblings', async () => {
+    const { service } = withFourBrands();
+    await expect(service.reorder(null, ['head', 'powder'])).rejects.toThrow(/not siblings/);
+  });
+
+  it('refuses an id that does not exist', async () => {
+    const { service } = withFourBrands();
+    await expect(service.reorder(null, ['head', 'volkl', 'nope'])).rejects.toThrow(/do not exist/);
   });
 });
 
