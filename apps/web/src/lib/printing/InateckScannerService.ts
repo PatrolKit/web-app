@@ -35,18 +35,20 @@ export const SCANNER_FACTORY_NAME_PREFIX = 'HPRT';
  * Every name a scanner of ours can be advertising, and the whole of the picker's
  * filter.
  *
- * Case-sensitive, because `namePrefix` is. Three entries because a scanner can be
- * at one of three points in its life:
+ * Case-sensitive, because `namePrefix` is. Two entries, for the two points in a
+ * scanner's life:
  *
  * - `HPRT` — straight out of the box, or factory reset, and not yet ours.
  * - `pkscan_` — provisioned here. Also covers the one failure worth covering: a
  *   rename that landed while the save did not leaves a scanner under this prefix,
  *   so it comes back in the list and the next attempt renames it afresh.
- * - `PKScan` — the older hand-assigned convention, still on units in the field
- *   (`scanner_ble.c` trims the trailing space off `"PKScan-01 "` for one of them).
- *   Dropping it would make those vanish from the list with no clue why.
+ *
+ * `PKScan` — the convention before names were minted, still on a unit or two in
+ * the field — is deliberately not here. Those are not reachable from this picker
+ * and have to be factory reset before they can be provisioned again, which is
+ * the price of the list holding only names this code can account for.
  */
-export const SCANNER_NAME_PREFIXES = [SCANNER_FACTORY_NAME_PREFIX, 'pkscan_', 'PKScan'] as const;
+export const SCANNER_NAME_PREFIXES = [SCANNER_FACTORY_NAME_PREFIX, 'pkscan_'] as const;
 
 // ─── The name we give a scanner ──────────────────────────────────────────────
 

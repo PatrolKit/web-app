@@ -106,13 +106,13 @@ describe('what the picker will show', () => {
     expect(matches(`${SCANNER_FACTORY_NAME_PREFIX}-1A2B`)).toBe(true);
   });
 
-  it('shows one named by the older hand-assigned convention', () => {
-    expect(matches('PKScan-01')).toBe(true);
-  });
-
   it('hides everything else, which is the point of filtering at all', () => {
     for (const other of ['M110', 'Q192E28B1060137', 'AirPods', 'PKSCAN_lowercase-only']) {
       expect(matches(other)).toBe(false);
     }
+  });
+
+  it('hides the pre-minting convention, which now needs a factory reset', () => {
+    expect(matches('PKScan-01')).toBe(false);
   });
 });

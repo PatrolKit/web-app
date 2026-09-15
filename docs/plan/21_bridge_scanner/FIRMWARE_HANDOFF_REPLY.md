@@ -66,8 +66,8 @@ service is the scanner's alone and `FF00` is not — but a `filters` entry match
 only services in the *advertisement*, and the BCST-23 advertises none of its own.
 `18F0` is discoverable after connecting and never before, so the filter matched
 nothing and a scanner on the bench simply never appeared. It now matches name
-prefixes instead — `HPRT`, `pkscan_`, `PKScan` — which is the same set your
-`adv_name_matches` sees and the same set the iOS picker sorts on. Your warning
+prefixes instead — `HPRT` and `pkscan_`, the only two names a scanner of ours
+can now be advertising. Your warning
 about the `FF00` collision still stands for the firmware, where naming the two
 services distinctly is still the fix.
 
@@ -148,12 +148,16 @@ because this is a string somebody reads off your console output and retypes), an
 two scanners colliding across ten thousand units runs at about 3e-12.
 
 **This changes nothing you have to implement.** It is still an advertised name
-arriving in `bluetoothName`, matched byte for byte. Three things follow from it
+arriving in `bluetoothName`, matched byte for byte. Four things follow from it
 that are worth having:
 
-- **No spaces, ever.** Your trailing-space trim stays useful for the scanners
-  already in the field — the one advertising `"PKScan-01 "` is real — but nothing
-  provisioned from here will exercise it.
+- **No spaces, ever.** Nothing provisioned from here will exercise your
+  trailing-space trim. Keep it anyway — it costs nothing and the advertisement it
+  was written for was real — but it is no longer load-bearing.
+- **The hand-named units are retired.** A scanner still called `PKScan-…` is not
+  selectable from the web picker any more; it has to be factory reset and
+  provisioned again before a bridge can be pointed at it. If you have one on the
+  bench, that is why.
 - **The name is always exactly 20 bytes.** `PK_PRINTER_NAME_MAX` is 32, so it
   fits with room to spare — noted only so the number is on the record.
 - **A scanner that will not be found is a scanner whose rename was silently
