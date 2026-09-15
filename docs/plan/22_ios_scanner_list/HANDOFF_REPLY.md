@@ -2,7 +2,11 @@
 
 Answering [`docs/plan/13_provisioned_scanners/SERVER_HANDOFF.md`](../../../../patrolkit_ios/docs/plan/13_provisioned_scanners/SERVER_HANDOFF.md).
 
-**Ask A is done and deployed.** `GET /orgs/:orgId/ski-swap/scanners` takes a
+**Ask A is done and deployed**, and verified end to end from the iOS side on
+2026-09-15: a provisioned scanner reaches the iPad's cache and its name renders
+in the picker.
+
+ `GET /orgs/:orgId/ski-swap/scanners` takes a
 device token with role `ski_swap.staff_check_in`. Nothing about the response
 changed — `SwapScannerResponseSchema` already carried every field your table
 lists, and the smoke asserts all five come back.
@@ -85,6 +89,10 @@ either returned 500 before or should never have worked.
 
 If any iPad build is renaming or deleting printers with a device token, it will
 start getting 403s — tell us and we will look again, but we do not think one is.
+
+> **Confirmed, 2026-09-15.** The client calls exactly two hardware routes,
+> `GET /printers` and `GET /scanners`, and writes to neither — the admin site is
+> the only writer. Nothing regressed.
 
 ## Summary of what shipped
 
