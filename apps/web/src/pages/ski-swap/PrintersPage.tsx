@@ -395,8 +395,6 @@ export default function PrintersPage() {
           </div>
         </div>
 
-      <ScannersSection orgId={orgId} canAdmin={canManagePrinters} />
-
       <div className="space-y-3 border-t border-gray-800 pt-6">
         <div>
           <h2 className="text-white font-medium">Print bridges</h2>
@@ -422,6 +420,8 @@ export default function PrintersPage() {
           }
         />
       </div>
+
+      <ScannersSection orgId={orgId} canAdmin={canManagePrinters} />
 
       {editingBridge && (
         <BridgeEditModal
