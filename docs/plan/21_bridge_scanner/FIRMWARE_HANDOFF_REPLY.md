@@ -60,15 +60,16 @@ name in the claim response.
 The assignment UI is **one screen** — the Ski Swap tab formerly called Printers,
 now Hardware, holding printers, scanners and bridges together.
 
-**One thing worth knowing on your side:** the web picker filters on nothing at
-all. It tried `18F0` first, on the reasoning that the barcode-data service is the
-scanner's alone and `FF00` is not — but a `filters` entry matches only services
-in the *advertisement*, and the BCST-23 advertises none of its own. `18F0` is
-discoverable after connecting and never before, so the filter matched nothing and
-a scanner on the bench simply never appeared. The picker now lists everything
-nearby, the way your scan does and the way the iOS app's `withServices: nil`
-does. Your warning about the `FF00` collision still stands for the firmware,
-where naming the two services distinctly is still the fix.
+**One thing worth knowing on your side:** the web picker filters on the name,
+not on a service. It tried `18F0` first, on the reasoning that the barcode-data
+service is the scanner's alone and `FF00` is not — but a `filters` entry matches
+only services in the *advertisement*, and the BCST-23 advertises none of its own.
+`18F0` is discoverable after connecting and never before, so the filter matched
+nothing and a scanner on the bench simply never appeared. It now matches name
+prefixes instead — `HPRT`, `pkscan_`, `PKScan` — which is the same set your
+`adv_name_matches` sees and the same set the iOS picker sorts on. Your warning
+about the `FF00` collision still stands for the firmware, where naming the two
+services distinctly is still the fix.
 
 ## §1 and §2 — built
 

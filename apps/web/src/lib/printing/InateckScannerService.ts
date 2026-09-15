@@ -26,11 +26,27 @@ const SCANNER_COMMAND_WRITE = '0000ff04-0000-1000-8000-00805f9b34fb' as Bluetoot
 /**
  * What a scanner is called before anybody has renamed it.
  *
- * Used to reassure rather than to filter — a list that hid everything else would
- * hide a scanner that had already been renamed. `BCST-23` never goes over the
- * air at all; `HPRT` is the OEM's name, not Inateck's.
+ * `HPRT` is the OEM's name, not Inateck's — `BCST-23` never goes over the air at
+ * all, which is why the model number is no use for finding one.
  */
 export const SCANNER_FACTORY_NAME_PREFIX = 'HPRT';
+
+/**
+ * Every name a scanner of ours can be advertising, and the whole of the picker's
+ * filter.
+ *
+ * Case-sensitive, because `namePrefix` is. Three entries because a scanner can be
+ * at one of three points in its life:
+ *
+ * - `HPRT` — straight out of the box, or factory reset, and not yet ours.
+ * - `pkscan_` — provisioned here. Also covers the one failure worth covering: a
+ *   rename that landed while the save did not leaves a scanner under this prefix,
+ *   so it comes back in the list and the next attempt renames it afresh.
+ * - `PKScan` — the older hand-assigned convention, still on units in the field
+ *   (`scanner_ble.c` trims the trailing space off `"PKScan-01 "` for one of them).
+ *   Dropping it would make those vanish from the list with no clue why.
+ */
+export const SCANNER_NAME_PREFIXES = [SCANNER_FACTORY_NAME_PREFIX, 'pkscan_', 'PKScan'] as const;
 
 // ─── The name we give a scanner ──────────────────────────────────────────────
 
@@ -213,17 +229,23 @@ export async function renameScanner(device: BluetoothDevice, name: string): Prom
 /**
  * Shows the BLE picker and returns what was chosen.
  *
- * **Unfiltered, and it has to be.** A `filters` entry matches only against
+ * **Filtered on the name, and only on the name.** A `filters` entry matches
  * services in the *advertisement*, and the BCST-23 advertises none of its own —
- * `18F0` exists on the peripheral but is discoverable only after connecting. A
- * service filter therefore matched nothing at all, which is why a scanner sat on
- * the bench and never appeared. The iOS app scans `withServices: nil` for the
- * same reason.
+ * `18F0` is on the peripheral but discoverable only after connecting, so a
+ * service filter matched nothing at all and a scanner on the bench never
+ * appeared. `namePrefix` is the one condition that does work, because the name
+ * is in the advertisement.
  *
- * Filtering by name was the other option and is worse: a factory-reset unit
- * advertises `HPRT`, so a scanner someone had already renamed would vanish from
- * the list with no clue why. Provisioning happens once, in a back room, so a
- * longer list is the cheaper failure.
+ * Filtering by name used to be the worse option: when a scanner could be called
+ * anything, a list that hid everything else would hide the one you wanted. That
+ * stopped being true once we started naming them — `SCANNER_NAME_PREFIXES` is
+ * now the complete set of names one of ours can have, so nothing legitimate is
+ * excluded and the operator is no longer picking our scanner out of every phone,
+ * laptop and headset in the building.
+ *
+ * What this does cost: a scanner outside those three prefixes is unreachable
+ * from here rather than merely hard to spot. That is the intended trade — a
+ * device that answers to none of these is not a scanner we can drive.
  *
  * The device itself comes back, not just its name: renaming needs the same
  * object, and sending the operator through a second picker to reach it would be
@@ -231,7 +253,7 @@ export async function renameScanner(device: BluetoothDevice, name: string): Prom
  */
 export async function scanForScanner(): Promise<{ device: BluetoothDevice; bluetoothName: string }> {
   const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
+    filters: SCANNER_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
     optionalServices: [
       SCANNER_DATA_SERVICE,
       SCANNER_BATTERY_SERVICE,

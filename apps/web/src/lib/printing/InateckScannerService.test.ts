@@ -3,8 +3,10 @@ import {
   AUTH_FRAME,
   buildSetName,
   mintScannerName,
+  SCANNER_FACTORY_NAME_PREFIX,
   SCANNER_NAME_MAX_BYTES,
   SCANNER_NAME_PREFIX,
+  SCANNER_NAME_PREFIXES,
 } from './InateckScannerService';
 
 /**
@@ -88,5 +90,29 @@ describe('minting a name', () => {
   it('does not repeat, which is the only job it has', () => {
     const seen = new Set(Array.from({ length: 5000 }, mintScannerName));
     expect(seen.size).toBe(5000);
+  });
+});
+
+describe('what the picker will show', () => {
+  // The picker filters on these prefixes, so a name they do not match is a
+  // scanner nobody can select — including, after a rename, one we just made.
+  const matches = (name: string) => SCANNER_NAME_PREFIXES.some((p) => name.startsWith(p));
+
+  it('shows a scanner we just named, which is what makes a failed save recoverable', () => {
+    expect(matches(mintScannerName())).toBe(true);
+  });
+
+  it('shows one straight out of the box', () => {
+    expect(matches(`${SCANNER_FACTORY_NAME_PREFIX}-1A2B`)).toBe(true);
+  });
+
+  it('shows one named by the older hand-assigned convention', () => {
+    expect(matches('PKScan-01')).toBe(true);
+  });
+
+  it('hides everything else, which is the point of filtering at all', () => {
+    for (const other of ['M110', 'Q192E28B1060137', 'AirPods', 'PKSCAN_lowercase-only']) {
+      expect(matches(other)).toBe(false);
+    }
   });
 });

@@ -7,6 +7,7 @@ import {
   renameScanner,
   scanForScanner,
   SCANNER_FACTORY_NAME_PREFIX,
+  SCANNER_NAME_PREFIX,
 } from '../../lib/printing/InateckScannerService';
 import type { SwapScanner } from '../../lib/api.types';
 
@@ -176,15 +177,20 @@ export default function ScannersSection({
                 Scan…
               </button>
             </div>
-            {/* The list is everything nearby, not just scanners: the BCST-23
-                advertises none of its services, so there is nothing to filter
-                on. Saying what to look for is the next best thing. */}
+            {/* The picker matches on the name, because the BCST-23 advertises
+                none of its services and there is nothing else to match on.
+                Saying which names count is what makes an empty list readable. */}
             <p className="mt-1 text-gray-500 text-xs">
-              Wake the scanner first — it has to be advertising to appear. Every nearby
-              Bluetooth device is listed, because a scanner does not announce what it is;
-              one straight out of the box calls itself{' '}
-              <span className="font-mono text-gray-400">{SCANNER_FACTORY_NAME_PREFIX}…</span>.
-              Adding it renames it, so keep it close and awake until this finishes.
+              Wake the scanner first — it has to be advertising to appear. The list holds
+              scanners only: a new one calls itself{' '}
+              <span className="font-mono text-gray-400">{SCANNER_FACTORY_NAME_PREFIX}…</span>,
+              and one already set up here calls itself{' '}
+              <span className="font-mono text-gray-400">{SCANNER_NAME_PREFIX}…</span>. An
+              empty list means nothing is awake and in range, not that nothing is there.
+            </p>
+            <p className="mt-1 text-gray-500 text-xs">
+              Adding a scanner renames it, so keep it awake and close to this computer until
+              that finishes.
             </p>
           </label>
 
