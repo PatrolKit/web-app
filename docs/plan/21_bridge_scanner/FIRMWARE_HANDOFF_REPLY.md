@@ -123,6 +123,67 @@ Your fix settles it: a dedicated endpoint at 125 ms is quick enough for feedback
 to reach the operator, and none of the coupling is worth buying. §3 is built as
 its own endpoint, unchanged.
 
+## Renaming a scanner — the opcode is `0x40`
+
+Not part of your handoff, but you own the only code that can send it, and it was
+the one thing blocking provisioning from giving a scanner a name of ours.
+
+`inateck_scanner_cmd_set_name` is in the official header beside `set_bee` and
+`set_led`, and the frame came out of the same `libinateck_scanner_cmd.dylib`
+yours did — the `aarch64-apple-darwin` build from
+`github.com/Inateck-Technology-Inc/scanner_lib`, called through `ctypes`:
+
+```
+set_name("Tom")        F3 05 7F 40 54 6F 6D E7
+set_name("PKScan-01")  F3 0B 7F 40 50 4B 53 63 61 6E 2D 30 31 6B
+set_name("A")          F3 03 7F 40 41 F6
+set_name("")           F3 02 7F 40 B4
+```
+
+**The method was checked against your two known answers first**, because a
+reading that cannot reproduce them is worth nothing:
+
+```
+set_bee(2,2,3)     F3 05 7F 5C 02 02 03 DA      opcode 0x5C, as your header says
+set_led(2,2,2,2)   F3 06 7F 5B 02 02 02 02 DB   opcode 0x5B, as your header says
+```
+
+So, for `scanner_cmd.h`:
+
+```c
+#define SCANNER_CMD_SET_NAME 0x40
+
+static inline size_t scanner_build_set_name(const char *name, uint8_t *out, size_t cap)
+{
+    return scanner_build_set(SCANNER_CMD_SET_NAME, (const uint8_t *)name, strlen(name), out, cap);
+}
+```
+
+`scanner_build_set` already emits exactly these bytes — compiled verbatim from
+your header and fed `0x40`, it reproduces all four frames above byte for byte.
+Nothing else needs to change: same `FF04`, same write-without-response, same
+auth frame first, reply on `FF01` parsed the way you parse the others.
+
+Three things the encoder will not tell you:
+
+- **The name is raw bytes.** No length prefix, no null terminator — the
+  characters go straight in after the opcode.
+- **The 20-byte limit is yours to enforce.** The library happily encoded a
+  21-byte name and produced a valid checksum for it. The documented ceiling is
+  20; the encoder does not hold you to it, so the scanner decides what happens
+  and we would rather not find out.
+- **Renaming breaks existing pairings.** Inateck's manual is explicit that the
+  host must drop the connection and delete its pairing record before the new
+  name appears. Whatever renames a scanner has to expect it to vanish and come
+  back under another name.
+
+The barcode route exists too — *Enter Setup → Set Bluetooth Name → one character
+barcode per letter → Exit and Save* — but the manual prints those barcodes as
+images and never publishes what they encode. They are Code 128 by their
+structure; at roughly 2.4 pixels per module in the PDF, no decode of ours passed
+its own checksum, so we are not guessing at them. The BLE command is documented
+and exact, which is why it is the one above.
+
 ## Unchanged
 
 Everything you listed: device token exchange, the raster format and its 11,200
