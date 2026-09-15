@@ -6,7 +6,9 @@ import {
   scanForScanner,
   SCANNER_FACTORY_NAME_PREFIX,
 } from '../../lib/printing/InateckScannerService';
-import type { SwapScanner } from '../../lib/api.types';
+import type { DeviceItem, DeviceRole, SwapScanner } from '../../lib/api.types';
+
+const BRIDGE_ROLE: DeviceRole = 'ski_swap.print_bridge';
 
 /**
  * The barcode scanners this org owns.
@@ -21,6 +23,13 @@ import type { SwapScanner } from '../../lib/api.types';
  *
  * The browser never talks to a scanner. Picking one here only reads its name;
  * the bridge is what holds the link.
+ *
+ * Binding one to a bridge is a plain server-side assignment, chosen on the row
+ * and saved at once — deliberately unlike a printer, whose binding is written
+ * into a board's flash over Bluetooth and so lives inside `BridgeEditModal`
+ * behind a reset. A bridge learns which scanner it holds from its next claim and
+ * retargets without anybody touching it, which `smoke-bridge-scans` asserts. So
+ * there is nothing here to send, and nothing to reset.
  */
 export default function ScannersSection({
   orgId,
@@ -35,6 +44,7 @@ export default function ScannersSection({
   const [device, setDevice] = useState<BluetoothDevice | null>(null);
   const [airName, setAirName] = useState('');
   const [error, setError] = useState('');
+  const [bindError, setBindError] = useState('');
 
   const scannersKey = ['ski-swap/scanners', orgId];
   const { data: scanners = [] } = useQuery({
@@ -50,6 +60,30 @@ export default function ScannersSection({
       closeForm();
     },
     onError: (e: Error) => setError(e instanceof ApiError ? e.message : 'Could not add that scanner'),
+  });
+
+  // Every bridge in the org, to choose from. A bridge is set up on the Print
+  // bridges section above, where the Bluetooth handshake lives; here it is only
+  // picked.
+  const { data: devices = [] } = useQuery({
+    queryKey: ['devices', orgId],
+    queryFn: () => api.devices.list(orgId),
+    enabled: !!orgId,
+  });
+  const bridges = devices.filter((d: DeviceItem) => d.role === BRIDGE_ROLE);
+
+  const bindMutation = useMutation({
+    mutationFn: ({ scannerId, bridgeDeviceId }: { scannerId: string; bridgeDeviceId: string | null }) =>
+      api.skiSwap.patchScanner(orgId, scannerId, { bridgeDeviceId }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: scannersKey });
+      // A bridge's row shows what it drives, so a binding changes that too.
+      void qc.invalidateQueries({ queryKey: ['devices', orgId] });
+      setBindError('');
+    },
+    // The server refuses a bridge that already drives another scanner, and names
+    // it. That message is better than anything this could write.
+    onError: (e: Error) => setBindError(e instanceof ApiError ? e.message : 'Could not bind that scanner'),
   });
 
   const deleteMutation = useMutation({
@@ -85,13 +119,19 @@ export default function ScannersSection({
 
   const busy = createMutation.isPending;
 
+  /** Bridges already driving a scanner, so the pickers do not offer them twice. */
+  const takenBridgeIds = new Set(
+    scanners.map((s: SwapScanner) => s.bridgeDeviceId).filter((id): id is string => !!id),
+  );
+
   return (
     <div className="space-y-3 border-t border-gray-800 pt-6">
       <div>
         <h2 className="text-white font-medium">Scanners</h2>
         <p className="text-xs text-gray-500">
-          The barcode scanners this org owns. A scanner is reached through a bridge, the
-          same way a printer is — bind it to one below, on the bridge.
+          The barcode scanners this org owns. A scanner is reached through a bridge —
+          pick which one on the scanner itself, below. The bridge picks the change up on
+          its next check-in, so there is nothing to reset and nothing to send.
         </p>
       </div>
 
@@ -187,6 +227,8 @@ export default function ScannersSection({
         </form>
       )}
 
+      {bindError && <p className="text-red-400 text-sm">{bindError}</p>}
+
       {scanners.length === 0 ? (
         <p className="text-gray-400 text-sm">No scanners yet.</p>
       ) : (
@@ -196,19 +238,42 @@ export default function ScannersSection({
               key={s.id}
               className="bg-surface-50 border border-gray-700 rounded-lg p-3 flex items-start justify-between gap-3"
             >
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-white">{s.name}</p>
                 {/* Back on the row rather than a tooltip: now that this is the
                     name the hardware chose, it is how somebody matches a scanner
                     in their hand to a line on this screen. */}
                 <p className="text-xs text-gray-500 font-mono">{s.bluetoothName}</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {s.bridgeDeviceId
-                    ? s.stationName
-                      ? `On a bridge at ${s.stationName}`
-                      : 'On a bridge that serves no station yet'
-                    : 'Not bound to a bridge'}
-                </p>
+
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-gray-400">Bridge</span>
+                  <select
+                    disabled={!canAdmin || bindMutation.isPending}
+                    value={s.bridgeDeviceId ?? ''}
+                    onChange={(e) =>
+                      bindMutation.mutate({ scannerId: s.id, bridgeDeviceId: e.target.value || null })
+                    }
+                    className="bg-surface-100 border border-gray-700 rounded px-2 py-1 text-sm text-white disabled:opacity-50 max-w-[16rem]"
+                  >
+                    <option value="">— none —</option>
+                    {bridges
+                      // A bridge drives one scanner. Hiding the taken ones keeps
+                      // the list to what can actually be picked; the server still
+                      // refuses the race, and says which scanner is in the way.
+                      .filter((b: DeviceItem) => b.id === s.bridgeDeviceId || !takenBridgeIds.has(b.id))
+                      .map((b: DeviceItem) => (
+                        <option key={b.id} value={b.id}>{describeBridge(b)}</option>
+                      ))}
+                  </select>
+                </div>
+
+                {/* Bound, but nothing routes work to that bridge yet — a separate
+                    problem with a separate fix, on a separate page. */}
+                {s.bridgeDeviceId && !s.stationName && (
+                  <p className="text-xs text-amber-500/80 mt-1">
+                    That bridge serves no station — bind it to one on the Check-in stations page.
+                  </p>
+                )}
               </div>
               {canAdmin && (
                 <button
@@ -229,4 +294,17 @@ export default function ScannersSection({
       )}
     </div>
   );
+}
+
+/**
+ * A bridge, named by what a person would recognise it by.
+ *
+ * Where it stands first: that is what someone walking the floor is matching
+ * against. Its printer next, which is what the bridge is named after elsewhere,
+ * and only then the device's own name.
+ */
+function describeBridge(b: DeviceItem): string {
+  if (b.stationName) return `At ${b.stationName}`;
+  if (b.printerName) return `${b.printerName} (no station)`;
+  return `${b.name} (no station)`;
 }

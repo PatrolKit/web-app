@@ -102,6 +102,31 @@ ok('a bridge can hold a printer and a scanner at once',
 const released = await patch(created.id, { bridgeDeviceId: null }).then(unwrap);
 ok('a scanner can be released', released.bridgeDeviceId === null, String(released.bridgeDeviceId));
 
+// ─── Moving one, in a single patch ───────────────────────────────────────────
+// What the picker on the Hardware page does. It does not release first, the way
+// the printer modal has to — the foreign key is on the scanner, so re-pointing
+// it is the whole move. Worth asserting rather than reasoning about: the unique
+// index is on bridgeDeviceId, and a move that tripped it would look like a
+// binding that silently did not take.
+
+await patch(created.id, { bridgeDeviceId: bridge.id });
+const moved = await patch(created.id, { bridgeDeviceId: otherBridge.id });
+ok('a bound scanner cannot be moved onto a bridge that holds another',
+   moved.status === 409, String(moved.status));
+
+await patch(second.id, { bridgeDeviceId: null });
+const movedFree = await patch(created.id, { bridgeDeviceId: otherBridge.id }).then(unwrap);
+ok('but it moves to a free bridge in one call, with no release first',
+   movedFree.bridgeDeviceId === otherBridge.id, String(movedFree.bridgeDeviceId));
+
+const oldBridge = await prisma.device.findUnique({
+  where: { id: bridge.id }, include: { bridgedScanner: true },
+});
+ok('and the bridge it left is free again',
+   oldBridge.bridgedScanner === null, String(oldBridge.bridgedScanner?.name));
+
+await patch(created.id, { bridgeDeviceId: null });
+
 // ─── Renaming and removal ────────────────────────────────────────────────────
 
 const renamed = await patch(created.id, { name: 'Front counter (spare)' }).then(unwrap);
