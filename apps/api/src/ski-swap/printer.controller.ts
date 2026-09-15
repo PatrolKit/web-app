@@ -20,9 +20,22 @@ import {
   RenderLabelDto,
 } from '../contracts/ski-swap.contracts';
 
+/**
+ * Reading is open to the check-in iPad. Writing is not.
+ *
+ * `@RequireDeviceRole` sits on the list handler, and that placement is the whole
+ * of the access rule. `PermissionsGuard` checks a device against its role
+ * *instead of* against permission keys, so a device that clears a class-level
+ * role decorator is through every route in the controller and the
+ * `ski_swap:admin` on create, patch and delete is never consulted for it.
+ *
+ * It was on the class, and a check-in iPad could rename and delete printers —
+ * `DELETE` returned 204 and the row was gone. The write routes that take
+ * `@CurrentUser` hid the rest of it by dereferencing an undefined user and
+ * failing as a 500, which reads as a bug rather than as an open door.
+ */
 @Controller('orgs/:orgId/ski-swap/printers')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('ski_swap.staff_check_in')
 @RequireModule('ski_swap')
 export class PrinterController {
   constructor(
@@ -32,6 +45,7 @@ export class PrinterController {
 
   @Get()
   @RequirePermissions('ski_swap:manage')
+  @RequireDeviceRole('ski_swap.staff_check_in')
   list(@Param('orgId') orgId: string, @CurrentUser() user?: AuthenticatedUser) {
     return this.printerService.list(orgId, user?.userId);
   }
