@@ -60,6 +60,18 @@ const station = await prisma.checkinStation.create({
   data: { orgId: org.id, name: 'Smoke station', code: 'Q', bridgeDeviceId: device.id },
 });
 
+// An item's name comes from a category now (Plan 19), and a seller who is not on
+// tickets has to pick one. The tree is not what this script is about, so one
+// node stands in for it.
+await prisma.taxonomyNode.deleteMany({ where: { orgId: org.id, label: 'Checkin smoke category' } });
+const category = await prisma.taxonomyNode.create({
+  data: {
+    kind: 'CATEGORY', orgId: org.id, label: 'Checkin smoke category',
+    // `<org|global>:<parent|root>:<label folded>`, the shape the service writes.
+    dedupeKey: `${org.id}:root:checkin smoke category`,
+  },
+});
+
 // ─── The seller's walk ───────────────────────────────────────────────────────
 
 const ctx = await fetch(`${BASE}/public/checkin/${swap.id}?station=${station.id}`).then(unwrap);
@@ -124,11 +136,15 @@ ok('the name reaches the seller record',
 
 // ─── Items ───────────────────────────────────────────────────────────────────
 
-const addItem = (name, priceCents, key) =>
+// No `name`: Plan 19 derives it from a category, and the schema is strict, so
+// sending one is a 400. Nothing below asserts on a name.
+const addItem = (_label, priceCents, key) =>
   fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items`, {
     method: 'POST',
     headers: { ...H, ...(key ? { 'idempotency-key': key } : {}) },
-    body: JSON.stringify({ swapId: swap.id, name, priceCents, quantity: 1, stationId: station.id }),
+    body: JSON.stringify({
+      swapId: swap.id, categoryId: category.id, priceCents, quantity: 1, stationId: station.id,
+    }),
   }).then(unwrap);
 
 // Fresh per run: keys are scoped to the swap, and this script makes a new swap
@@ -175,7 +191,7 @@ const alreadyPrinted = await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap
   method: 'POST',
   headers: SH,
   body: JSON.stringify({
-    name: 'Printed over Bluetooth', priceCents: 1500, quantity: 1,
+    categoryId: category.id, priceCents: 1500, quantity: 1,
     sellerId: joined.sellerId, stationId: station.id, alreadyPrinted: true,
   }),
 }).then(unwrap);
@@ -366,6 +382,7 @@ ok('and is still absent from the staff list', !live.some((x) => x.id === dana.id
 await prisma.printJob.deleteMany({ where: { stationId: station.id } });
 await prisma.swapItem.deleteMany({ where: { swapId: swap.id } });
 await prisma.swapSkuCounter.deleteMany({ where: { swapId: swap.id } });
+await prisma.taxonomyNode.deleteMany({ where: { orgId: org.id, label: 'Checkin smoke category' } });
 await prisma.skiSwap.delete({ where: { id: swap.id } });
 await prisma.checkinStation.delete({ where: { id: station.id } });
 await prisma.swapPrinter.delete({ where: { id: printer.id } });

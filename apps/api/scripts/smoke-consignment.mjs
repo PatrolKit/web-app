@@ -56,6 +56,19 @@ const seller = await prisma.sellerProfile.create({
   data: { id: createId(), membershipId: membership.id },
 });
 
+// Plan 19 derives an item's name from a category rather than taking a typed
+// one, and a seller who is not on tickets has to pick one. The tree itself is
+// not what these assertions are about, so one node is enough.
+await prisma.taxonomyNode.deleteMany({ where: { orgId: org.id, label: 'Consign smoke category' } });
+const category = await prisma.taxonomyNode.create({
+  data: {
+    id: createId(), kind: 'CATEGORY', orgId: org.id, label: 'Consign smoke category',
+    // `<org|global>:<parent|root>:<label folded>`, the shape the service writes.
+    dedupeKey: `${org.id}:root:consign smoke category`,
+    updatedAt: new Date(),
+  },
+});
+
 const { user: staff } = await smokeStaff(prisma, org, ['ski_swap:admin', 'ski_swap:manage', 'ski_swap:report']);
 const staffToken = await smokeSession(prisma, BASE, staff, unwrap);
 const SH = { authorization: `Bearer ${staffToken}`, 'content-type': 'application/json' };
@@ -70,10 +83,16 @@ const swapItemsUrl = `${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}/items`;
 const setToggle = (on) =>
   fetch(settingsUrl, { method: 'PATCH', headers: SH, body: JSON.stringify({ requireConsignmentScan: on }) });
 
-const addItem = (name, stationId) =>
+const addItem = (_label, stationId) =>
   fetch(itemsUrl, {
     method: 'POST', headers: H,
-    body: JSON.stringify({ swapId: swap.id, name, priceCents: 5000, quantity: 1, ...(stationId ? { stationId } : {}) }),
+    // No `name`: Plan 19 derives it from the category tree, and the schema is
+    // strict, so sending one is a 400. These assertions are about consignment,
+    // so the item takes its fallback name and nothing here changes meaning.
+    body: JSON.stringify({
+      swapId: swap.id, categoryId: category.id, priceCents: 5000, quantity: 1,
+      ...(stationId ? { stationId } : {}),
+    }),
   }).then(unwrap);
 
 // ─── The default: nothing waits ──────────────────────────────────────────────
@@ -111,10 +130,14 @@ ok('an item entered away from a station does not wait',
 // Staff entering an item is already a person handling it.
 const byStaff = await fetch(swapItemsUrl, {
   method: 'POST', headers: SH,
-  body: JSON.stringify({ name: 'Staff-entered', priceCents: 1000, quantity: 1, sellerId: seller.id }),
+  body: JSON.stringify({
+    categoryId: category.id, priceCents: 1000, quantity: 1, sellerId: seller.id,
+  }),
 }).then(unwrap);
+// `!== null` alone passes on `undefined`, which is what a failed create returns
+// — so this checks the field is actually a date.
 ok('an item a staff member entered does not wait',
-   byStaff.consignedAt !== null, String(byStaff.consignedAt));
+   typeof byStaff.consignedAt === 'string', JSON.stringify(byStaff));
 
 // ─── Finishing does not put a waiting item on sale ───────────────────────────
 
@@ -192,6 +215,7 @@ await prisma.skiSwapSettings.updateMany({ where: { orgId: org.id }, data: { requ
 await prisma.printJob.deleteMany({ where: { stationId: station.id } });
 await prisma.swapItem.deleteMany({ where: { swapId: swap.id } });
 await prisma.swapSkuCounter.deleteMany({ where: { swapId: swap.id } });
+await prisma.taxonomyNode.delete({ where: { id: category.id } });
 await prisma.skiSwap.delete({ where: { id: swap.id } });
 await prisma.checkinStation.delete({ where: { id: station.id } });
 await prisma.user.delete({ where: { id: user.id } });
