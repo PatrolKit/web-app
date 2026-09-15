@@ -95,6 +95,7 @@ model Organization {
   skiSwaps        SkiSwap[]
   swapItems       SwapItem[]
   swapPrinters    SwapPrinter[]
+  swapScanners    SwapScanner[]
   ticketRanges    LegacyTicketRange[]
   skiSwapSettings SkiSwapSettings?
   taxonomyNodes   TaxonomyNode[]
@@ -271,6 +272,7 @@ model Device {
   bridgedStation  CheckinStation? @relation("StationBridge")
   /// The printer this bridge drives. Only a bridge ever has one.
   bridgedPrinter  SwapPrinter?    @relation("BridgedPrinter")
+  bridgedScanner  SwapScanner?    @relation("BridgedScanner")
 
   /// What an image-based device last told us about itself, from the headers on
   /// its bootstrap check-in. Meaningful only for devices running the PatrolKit
@@ -527,6 +529,37 @@ model SwapPrinter {
 
   @@index([orgId])
   @@index([assignedSellerId])
+}
+
+/// A barcode scanner a bridge drives, for reading tags off gear at a counter.
+///
+/// Deliberately its own table rather than a row in `SwapPrinter` with a kind:
+/// everything that makes a printer a printer — paper size, four margins, the
+/// business seller who holds it — means nothing here, and a scanner is never
+/// handed to a seller. What the two share is a name, a BLE name, and a bridge,
+/// which is three columns rather than a shared abstraction.
+model SwapScanner {
+  id            String @id @default(cuid())
+  orgId         String
+  name          String
+  /// The advertised BLE name, exactly as the scanner gives it — `BCST-23-XXXX`
+  /// for the Inateck, with nothing added. It is what the bridge is told to
+  /// connect to, so it has to match the air verbatim.
+  bluetoothName String
+
+  /// The bridge that drives this scanner. Unique for the same reason a
+  /// printer's is: a scanner is a single BLE peripheral, whoever holds the link
+  /// owns it, and two bridges pointed at one would fight over it.
+  bridgeDeviceId String? @unique
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  bridge Device?      @relation("BridgedScanner", fields: [bridgeDeviceId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
 }
 
 /// A place a seller checks themselves in: a QR code and a printer, with a bridge

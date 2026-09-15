@@ -607,6 +607,38 @@ export class PatchPrinterDto extends createZodDto(PatchPrinterSchema) {}
 export class PatchPrinterPaperSizeDto extends createZodDto(PatchPrinterPaperSizeSchema) {}
 export type SwapPrinterResponse = z.infer<typeof SwapPrinterResponseSchema>;
 
+// ─── Scanners ─────────────────────────────────────────────────────────────────
+
+export const CreateScannerSchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    bluetoothName: z.string().min(1).max(100),
+  })
+  .strict();
+
+export const PatchScannerSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    bluetoothName: z.string().min(1).max(100).optional(),
+    /** Null releases the scanner from whichever bridge holds it. */
+    bridgeDeviceId: z.string().nullable().optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one field must be provided' });
+
+export const SwapScannerResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  bluetoothName: z.string(),
+  /** The bridge that drives this scanner, and the station that bridge serves. */
+  bridgeDeviceId: z.string().nullable(),
+  stationName: z.string().nullable(),
+});
+
+export class CreateScannerDto extends createZodDto(CreateScannerSchema) {}
+export class PatchScannerDto extends createZodDto(PatchScannerSchema) {}
+export type SwapScannerResponse = z.infer<typeof SwapScannerResponseSchema>;
+
 // ─── Ski Swap Settings ────────────────────────────────────────────────────────
 
 /**

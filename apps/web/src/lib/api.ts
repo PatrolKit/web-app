@@ -924,6 +924,24 @@ export const api = {
     clearStationQueue: (orgId: string, stationId: string) =>
       request<{ cleared: number }>(`/orgs/${orgId}/ski-swap/stations/${stationId}/queue`, { method: 'DELETE' }),
 
+    // Scanners — the same shape as printers, minus everything about paper.
+    listScanners: (orgId: string) =>
+      request<import('./api.types').SwapScanner[]>(`/orgs/${orgId}/ski-swap/scanners`),
+    createScanner: (orgId: string, data: { name: string; bluetoothName: string }) =>
+      request<import('./api.types').SwapScanner>(`/orgs/${orgId}/ski-swap/scanners`, {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    patchScanner: (
+      orgId: string,
+      scannerId: string,
+      data: { name?: string; bluetoothName?: string; bridgeDeviceId?: string | null },
+    ) =>
+      request<import('./api.types').SwapScanner>(`/orgs/${orgId}/ski-swap/scanners/${scannerId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    deleteScanner: (orgId: string, scannerId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/scanners/${scannerId}`, { method: 'DELETE' }),
+
     // Settings
     getSettings: (orgId: string) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`),
@@ -974,6 +992,24 @@ export const api = {
       request<{ queued: true }>(`/orgs/${orgId}/ski-swap/stations/${stationId}/test`, { method: 'POST' }),
     clearStationQueue: (orgId: string, stationId: string) =>
       request<{ cleared: number }>(`/orgs/${orgId}/ski-swap/stations/${stationId}/queue`, { method: 'DELETE' }),
+
+    // Scanners — the same shape as printers, minus everything about paper.
+    listScanners: (orgId: string) =>
+      request<import('./api.types').SwapScanner[]>(`/orgs/${orgId}/ski-swap/scanners`),
+    createScanner: (orgId: string, data: { name: string; bluetoothName: string }) =>
+      request<import('./api.types').SwapScanner>(`/orgs/${orgId}/ski-swap/scanners`, {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    patchScanner: (
+      orgId: string,
+      scannerId: string,
+      data: { name?: string; bluetoothName?: string; bridgeDeviceId?: string | null },
+    ) =>
+      request<import('./api.types').SwapScanner>(`/orgs/${orgId}/ski-swap/scanners/${scannerId}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    deleteScanner: (orgId: string, scannerId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/scanners/${scannerId}`, { method: 'DELETE' }),
 
     // Settings
     getSettings: (orgId: string) =>

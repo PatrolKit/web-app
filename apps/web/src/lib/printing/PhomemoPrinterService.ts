@@ -162,6 +162,34 @@ export async function connectPrinter(bluetoothName: string): Promise<ConnectedM1
   return connectDevice(device);
 }
 
+/**
+ * The Inateck BCST-23's barcode-data service — what the picker filters on.
+ *
+ * Deliberately not `FF00`, which the scanner also advertises for its beep and
+ * LED commands and which is *the same short UUID as the Phomemo's print
+ * service*. Filtering on that would offer every printer in the room as a
+ * scanner and every scanner as a printer. `18F0` is the scanner's alone.
+ */
+export const SCANNER_DATA_SERVICE = '000018f0-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID;
+
+/** The battery service, read on connect by the bridge rather than here. */
+export const SCANNER_BATTERY_SERVICE = '0000180f-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID;
+
+/**
+ * Shows the BLE picker filtered to barcode scanners and returns what was picked.
+ *
+ * Only the advertised name is wanted: the browser never talks to a scanner —
+ * the bridge does — so this is a name-capture step, not a connection. Requires
+ * a user gesture, like every `requestDevice`.
+ */
+export async function scanForScanner(): Promise<{ bluetoothName: string }> {
+  const device = await navigator.bluetooth.requestDevice({
+    filters: [{ services: [SCANNER_DATA_SERVICE] }],
+    optionalServices: [SCANNER_DATA_SERVICE, SCANNER_BATTERY_SERVICE],
+  });
+  return { bluetoothName: device.name ?? '' };
+}
+
 /** Attempt silent reconnect to a previously-permitted device (no user gesture required). */
 export async function reconnectPrinter(bluetoothName: string): Promise<ConnectedM110 | null> {
   if (!('getDevices' in navigator.bluetooth)) return null;

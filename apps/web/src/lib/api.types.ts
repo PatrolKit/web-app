@@ -507,6 +507,16 @@ export interface StationQueueStatus {
   attendantLastSeenAt: string | null;
 }
 
+/** A barcode scanner an org owns, and the bridge that drives it. */
+export interface SwapScanner {
+  id: string;
+  name: string;
+  bluetoothName: string;
+  bridgeDeviceId: string | null;
+  /** The station the driving bridge serves, when it serves one. */
+  stationName: string | null;
+}
+
 export interface SkiSwapSettings {
   labelsPerItem: number;
   /**

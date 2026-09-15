@@ -30,6 +30,7 @@ import {
 import type { HardwareStatus } from '../devices/hardwareStatus';
 import type { DeviceItem, DeviceRole, SwapPrinterRecord } from '../../lib/api.types';
 import BridgeEditModal from './BridgeEditModal';
+import ScannersSection from './ScannersSection';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
 /** A bridge is the printer's network adapter, so it is managed alongside them. */
@@ -393,6 +394,8 @@ export default function PrintersPage() {
             {printers.length === 0 && <p className="text-gray-500 text-sm">No printers provisioned yet.</p>}
           </div>
         </div>
+
+      <ScannersSection orgId={orgId} canAdmin={canManagePrinters} />
 
       <div className="space-y-3 border-t border-gray-800 pt-6">
         <div>

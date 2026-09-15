@@ -181,8 +181,11 @@ export default function SkiSwapLayout() {
           {perms.has('ski_swap:report') && (
             <NavLink to="check-in" className={navClass}>Check-in</NavLink>
           )}
+          {/* The route stays /printers: the page has held bridges as well as
+              printers for a while, and now scanners too, so only the label was
+              ever wrong. Renaming the path would break saved links for nothing. */}
           {perms.has('ski_swap:admin') && (
-            <NavLink to="printers" className={navClass}>Printers</NavLink>
+            <NavLink to="printers" className={navClass}>Hardware</NavLink>
           )}
           {perms.has('ski_swap:admin') && (
             <NavLink to="config" className={navClass}>

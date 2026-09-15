@@ -29,6 +29,8 @@ import { SellerSelfController } from './seller-self.controller';
 import { BusinessSellerService } from './business-seller.service';
 import { BusinessSellerController } from './business-seller.controller';
 import { PrinterService } from './printer.service';
+import { ScannerService } from './scanner.service';
+import { ScannerController } from './scanner.controller';
 import { PrinterController } from './printer.controller';
 import { CheckinService } from './checkin.service';
 import { CheckinController, PublicCheckinController } from './checkin.controller';
@@ -53,6 +55,7 @@ import { IdentityModule } from '../common/identity/identity.module';
 @Module({
   imports: [AuthModule, PermissionsModule, IdentityModule],
   controllers: [
+    ScannerController,
     SquareConfigController,
     SwapController,
     SellerController,
@@ -93,6 +96,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     LegacyTicketService,
     BusinessSellerService,
     PrinterService,
+    ScannerService,
     SkiSwapSettingsService,
     StationService,
     CheckinService,
