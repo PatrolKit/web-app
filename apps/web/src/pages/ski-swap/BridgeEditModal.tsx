@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import {
   BridgeLockedError,
@@ -9,44 +8,39 @@ import {
   provisionBridge,
   type BridgeStatus,
 } from '../../lib/printing/BridgeProvisioningService';
-import { MutationError, useServerConfirmation } from '../devices/DeviceCredentials';
-import type { DeviceItem, SwapPrinterRecord } from '../../lib/api.types';
+import { useServerConfirmation } from '../devices/DeviceCredentials';
+import type { DeviceItem } from '../../lib/api.types';
 
 /**
- * Sets a bridge up: which printer it drives, which Wi-Fi it joins, and its own
- * server credentials — written to the board in one go, because the firmware
- * accepts them no other way.
+ * Gets a bridge onto the network: the Wi-Fi it joins and its own server
+ * credentials, written to the board together because the firmware accepts them
+ * no other way.
  *
- * There is no save-then-apply here. All three live in the board's flash, and
- * provisioning latches shut for good once the server accepts the credentials,
- * so every change is the same physical job: reset the board, write all three.
- * Sending mints a fresh secret as part of that, which is why the board has to
- * be reset first — the old one stops working either way.
+ * There is no save-then-apply here. Both live in the board's flash, and
+ * provisioning latches shut for good once the server accepts the credentials, so
+ * every change is the same physical job: reset the board, write both. Sending
+ * mints a fresh secret as part of that, which is why the board has to be reset
+ * first — the old one stops working either way.
  *
- * The printer binding is recorded only once the board has taken the config. A
- * bridge connects to a Phomemo by Bluetooth name and never asks the server for
- * a new one, so a binding stored ahead of the write is a claim that is not true
- * yet: the server would render for one printer while the board printed on
- * another.
+ * **Which peripherals a bridge drives is no longer set here.** It used to be,
+ * because a bridge connected to a Phomemo by Bluetooth name and never asked the
+ * server for a new one, so the binding could not be recorded until the board had
+ * taken the config. The firmware now reads its assignments from the claim, so
+ * they are picked on the bridge's row and reach the board on its next poll —
+ * which means reassigning a printer no longer costs a board reset.
  */
 export default function BridgeEditModal({
   orgId,
   bridge: initialBridge,
-  printers,
-  boundPrinter,
   justProvisioned,
   onClose,
 }: {
   orgId: string;
   bridge: DeviceItem;
-  printers: SwapPrinterRecord[];
-  boundPrinter: SwapPrinterRecord | undefined;
   /** Opened straight off provisioning, so the board has never latched. */
   justProvisioned?: boolean;
   onClose: () => void;
 }) {
-  const qc = useQueryClient();
-  const [printerId, setPrinterId] = useState(boundPrinter?.id ?? '');
   const [ssid, setSsid] = useState('');
   const [psk, setPsk] = useState('');
 
@@ -64,7 +58,6 @@ export default function BridgeEditModal({
   const baseUrl = currentBaseUrl();
   const httpsOk = isProvisionableOrigin(baseUrl);
   const supported = isWebBluetoothSupported();
-  const printer = printers.find((p) => p.id === printerId) ?? null;
 
   // A bridge that is going to reach the server does so within a couple of
   // seconds of joining Wi-Fi. Waiting longer and still hearing nothing is the
@@ -74,21 +67,6 @@ export default function BridgeEditModal({
     const t = setTimeout(() => setServerOverdue(true), 20_000);
     return () => clearTimeout(t);
   }, [boardOnline, confirmed]);
-
-  const bindMutation = useMutation({
-    mutationFn: async () => {
-      // The foreign key is on the printer, so a move is a release then a bind.
-      if (boundPrinter && boundPrinter.id !== printerId) {
-        await api.skiSwap.patchPrinter(orgId, boundPrinter.id, { bridgeDeviceId: null });
-      }
-      if (printerId) await api.skiSwap.patchPrinter(orgId, printerId, { bridgeDeviceId: bridge.id });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] });
-      // The bridge is named after its printer, so binding renames it too.
-      qc.invalidateQueries({ queryKey: ['devices', orgId] });
-    },
-  });
 
   async function send() {
     setAskingToSend(false);
@@ -104,13 +82,11 @@ export default function BridgeEditModal({
         {
           ssid: ssid.trim(),
           psk,
-          printerBluetoothName: printer!.bluetoothName,
           baseUrl,
           clientId: bridge.clientId,
           clientSecret,
         },
         setStatus,
-        { onCommitted: () => bindMutation.mutate() },
       );
       setStatus(final);
       setBoardOnline(true);
@@ -129,7 +105,7 @@ export default function BridgeEditModal({
     }
   }
 
-  const canSend = supported && httpsOk && !!printer && !!ssid.trim() && !busy && !boardOnline;
+  const canSend = supported && httpsOk && !!ssid.trim() && !busy && !boardOnline;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -170,22 +146,6 @@ export default function BridgeEditModal({
           </div>
         ) : (
           <>
-            <label className="block">
-              <span className="block text-xs text-gray-400 mb-1">Printer this bridge drives</span>
-              <select
-                value={printerId}
-                onChange={(e) => setPrinterId(e.target.value)}
-                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-              >
-                <option value="" disabled>Pick a printer</option>
-                {printers
-                  .filter((p) => p.id === boundPrinter?.id || (!p.bridgeDeviceId && !p.assignedSellerId))
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.bluetoothName})</option>
-                  ))}
-              </select>
-            </label>
-
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className="block text-xs text-gray-400 mb-1">Wi-Fi network</span>
@@ -226,7 +186,6 @@ export default function BridgeEditModal({
               <p className="text-xs text-gray-400">{describeBridgeState(status)}</p>
             ) : null}
             {error && <p className="text-red-400 text-xs">{error}</p>}
-            <MutationError error={bindMutation.error} />
 
             <button
               onClick={() => setAskingToSend(true)}

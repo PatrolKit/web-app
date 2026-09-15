@@ -4,8 +4,14 @@
 // UUIDs and payloads are the firmware's, not ours — change them there first.
 //
 // Writes are staged on the board and applied atomically at commit, and staging
-// is seeded from stored config on connect, so a partial re-provision (a new
-// printer, say) keeps the fields it did not write.
+// is seeded from stored config on connect, so a partial re-provision keeps the
+// fields it did not write.
+//
+// Provisioning no longer carries which printer a bridge drives. The board learns
+// its peripherals from the claim — `apply_assignments` in the firmware's
+// net_client.c sets the printer name and retargets the radio — so an assignment
+// is a server-side fact that reaches the board within one poll, with nobody
+// standing next to it. See PLACEHOLDER_PRINTER_NAME for the one loose end.
 
 const BASE = '-4b3d-4f6e-9c21-5d8e3f0a7b12';
 
@@ -18,6 +24,22 @@ const COMMIT = `7a1c0005${BASE}`;
 const STATUS = `7a1c0006${BASE}`;
 
 const COMMIT_APPLY = 0x01;
+
+/**
+ * Written when no printer is being sent, which is now every time.
+ *
+ * The firmware's `pk_config_commit` still rejects an empty `printer_name`
+ * (pk_config.c:117) even though nothing needs the value any more — the first
+ * claim overwrites it through `apply_assignments`, including with the empty
+ * string when the bridge drives no printer. Sending nothing would therefore make
+ * commit fail with ESP_ERR_INVALID_ARG and provisioning break outright.
+ *
+ * So we send something non-empty and obviously not a printer. It survives only
+ * until the first claim, and it is legible in the board's own status JSON while
+ * it lasts. **Delete this once the firmware drops that line** — there is nothing
+ * else keeping it.
+ */
+const PLACEHOLDER_PRINTER_NAME = '(unassigned)';
 
 /** What the board reports about itself, readable in every state including locked. */
 export interface BridgeStatus {
@@ -38,8 +60,14 @@ export interface BridgeProvisioningInput {
   ssid: string;
   /** Empty for an open network. */
   psk: string;
-  /** The Phomemo's advertised BLE name — the printer this bridge will drive. */
-  printerBluetoothName: string;
+  /**
+   * Optional, and normally absent.
+   *
+   * Assignments come from the claim now; this exists only for the placeholder
+   * described below, and for a caller that genuinely wants the board to start on
+   * a known printer before its first poll.
+   */
+  printerBluetoothName?: string;
   /** Origin only. The firmware appends /api/v1 itself, and rejects non-https. */
   baseUrl: string;
   clientId: string;
@@ -143,7 +171,7 @@ export async function provisionBridge(
     try {
       await write(WIFI_SSID, enc.encode(input.ssid));
       await write(WIFI_PSK, enc.encode(input.psk));
-      await write(PRINTER_NAME, enc.encode(input.printerBluetoothName));
+      await write(PRINTER_NAME, enc.encode(input.printerBluetoothName || PLACEHOLDER_PRINTER_NAME));
       await write(SERVER_CONFIG, enc.encode(JSON.stringify({
         baseUrl: input.baseUrl,
         clientId: input.clientId,

@@ -30,6 +30,7 @@ import {
 import type { HardwareStatus } from '../devices/hardwareStatus';
 import type { DeviceItem, DeviceRole, SwapPrinterRecord } from '../../lib/api.types';
 import BridgeEditModal from './BridgeEditModal';
+import BridgePeripherals from './BridgePeripherals';
 import ScannersSection from './ScannersSection';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
@@ -139,6 +140,13 @@ export default function PrintersPage() {
     }
   }
 
+  // Shared query key with ScannersSection, so react-query fetches this once.
+  const { data: scanners = [] } = useQuery({
+    queryKey: ['ski-swap/scanners', orgId],
+    queryFn: () => api.skiSwap.listScanners(orgId),
+    enabled: !!orgId,
+  });
+
   const patchPrinterMutation = useMutation({
     mutationFn: (data: { name?: string; assignedSellerId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }) =>
       api.skiSwap.patchPrinter(orgId, editingPrinter!.id, data),
@@ -158,6 +166,13 @@ export default function PrintersPage() {
             Not serving a station — bind it to one on the Check-in page.
           </p>
         )}
+        <BridgePeripherals
+          orgId={orgId}
+          bridge={bridge}
+          printers={printers}
+          scanners={scanners}
+          canAdmin={canManagePrinters}
+        />
       </>
     );
   }
@@ -399,8 +414,9 @@ export default function PrintersPage() {
         <div>
           <h2 className="text-white font-medium">Print bridges</h2>
           <p className="text-xs text-gray-500">
-            A bridge puts one printer on the network so a check-in station can print to it.
-            Bind the bridge to its printer here, then bind the bridge to a station on the
+            A bridge puts a printer and a scanner on the network so a check-in station can
+            reach them. Pick what each one drives below; the board is told on its next
+            check-in, so nothing needs resetting. Bind the bridge itself to a station on the
             Check-in stations page.
           </p>
         </div>
@@ -427,8 +443,6 @@ export default function PrintersPage() {
         <BridgeEditModal
           orgId={orgId}
           bridge={editingBridge}
-          printers={printers}
-          boundPrinter={printers.find((p: SwapPrinterRecord) => p.bridgeDeviceId === editingBridge.id)}
           justProvisioned={bridgeIsNew}
           onClose={() => { setEditingBridge(null); setBridgeIsNew(false); }}
         />

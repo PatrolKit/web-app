@@ -229,6 +229,39 @@ structure; at roughly 2.4 pixels per module in the PDF, no decode of ours passed
 its own checksum, so we are not guessing at them. The BLE command is documented
 and exact, which is why it is the one above.
 
+## One line is blocking provisioning from dropping `printer_name`
+
+`apply_assignments` works. Both peripherals are now chosen on the bridge in the
+web UI, saved server-side, and picked up on the next claim — no board reset, no
+Bluetooth, no standing next to the hardware. That is the whole point of §1 and it
+landed.
+
+**But `printer_name` cannot actually leave provisioning yet**, because
+`pk_config_commit` still refuses a commit without one:
+
+```c
+// pk_config.c:117
+if (staged->printer_name[0] == '\0')    return ESP_ERR_INVALID_ARG;
+```
+
+Nothing needs that value any more. The first claim overwrites it — including
+with `""` when the bridge drives no printer, which `apply_assignments` does
+happily. So the check now rejects a configuration the firmware itself creates
+thirty seconds later.
+
+Until it goes, the web provisioning flow writes the literal string
+`(unassigned)` to `7a1c0003` so commit succeeds. It survives until the first
+claim and shows up in `status` as `"printer":"(unassigned)"` while it lasts. It
+is a placeholder to work around one `if`, and it is marked as such in
+`BridgeProvisioningService.ts`.
+
+**Please delete that line.** Then `printer_name` can go from the provisioning
+write entirely and a bridge is set up with Wi-Fi and credentials alone — which is
+what a board that learns its peripherals over HTTP should need. Worth deciding at
+the same time whether `7a1c0003` stays as a characteristic at all; we would stop
+writing it either way, and leaving it costs you nothing but is one more thing
+that reads as required.
+
 ## Unchanged
 
 Everything you listed: device token exchange, the raster format and its 11,200
