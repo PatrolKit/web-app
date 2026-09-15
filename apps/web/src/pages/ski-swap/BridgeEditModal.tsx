@@ -96,6 +96,7 @@ export default function BridgeEditModal({
       setError(
         err instanceof BridgeLockedError
           ? 'This board is still locked. Hold RESET for 5 seconds to clear it, then send again.'
+          // Everything else, CommitRejectedError included, carries its own words.
           : err instanceof Error
             ? err.message
             : 'Sending failed',

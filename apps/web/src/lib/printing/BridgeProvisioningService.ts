@@ -7,39 +7,26 @@
 // is seeded from stored config on connect, so a partial re-provision keeps the
 // fields it did not write.
 //
-// Provisioning no longer carries which printer a bridge drives. The board learns
-// its peripherals from the claim — `apply_assignments` in the firmware's
-// net_client.c sets the printer name and retargets the radio — so an assignment
-// is a server-side fact that reaches the board within one poll, with nobody
-// standing next to it. See PLACEHOLDER_PRINTER_NAME for the one loose end.
+// Provisioning does not carry which peripherals a bridge drives. The board learns
+// them from the claim — `apply_assignments` in the firmware's net_client.c sets
+// the printer name and retargets both radios — so an assignment is a server-side
+// fact that reaches the board within one poll, with nobody standing next to it.
+// A bridge needs Wi-Fi and credentials from this flow and nothing else.
+//
+// The `7a1c0003` printer_name characteristic still exists on the board. Nothing
+// here writes it. See CommitRejectedError for what that costs until the firmware
+// catches up.
 
 const BASE = '-4b3d-4f6e-9c21-5d8e3f0a7b12';
 
 export const BRIDGE_SERVICE = `7a1c0000${BASE}`;
 const WIFI_SSID = `7a1c0001${BASE}`;
 const WIFI_PSK = `7a1c0002${BASE}`;
-const PRINTER_NAME = `7a1c0003${BASE}`;
 const SERVER_CONFIG = `7a1c0004${BASE}`;
 const COMMIT = `7a1c0005${BASE}`;
 const STATUS = `7a1c0006${BASE}`;
 
 const COMMIT_APPLY = 0x01;
-
-/**
- * Written when no printer is being sent, which is now every time.
- *
- * The firmware's `pk_config_commit` still rejects an empty `printer_name`
- * (pk_config.c:117) even though nothing needs the value any more — the first
- * claim overwrites it through `apply_assignments`, including with the empty
- * string when the bridge drives no printer. Sending nothing would therefore make
- * commit fail with ESP_ERR_INVALID_ARG and provisioning break outright.
- *
- * So we send something non-empty and obviously not a printer. It survives only
- * until the first claim, and it is legible in the board's own status JSON while
- * it lasts. **Delete this once the firmware drops that line** — there is nothing
- * else keeping it.
- */
-const PLACEHOLDER_PRINTER_NAME = '(unassigned)';
 
 /** What the board reports about itself, readable in every state including locked. */
 export interface BridgeStatus {
@@ -60,18 +47,36 @@ export interface BridgeProvisioningInput {
   ssid: string;
   /** Empty for an open network. */
   psk: string;
-  /**
-   * Optional, and normally absent.
-   *
-   * Assignments come from the claim now; this exists only for the placeholder
-   * described below, and for a caller that genuinely wants the board to start on
-   * a known printer before its first poll.
-   */
-  printerBluetoothName?: string;
   /** Origin only. The firmware appends /api/v1 itself, and rejects non-https. */
   baseUrl: string;
   clientId: string;
   clientSecret: string;
+}
+
+/**
+ * Raised when the board accepts every value and then refuses the commit.
+ *
+ * Firmware older than the change that drops `printer_name` will do exactly this:
+ * `pk_config_commit` (pk_config.c:117) rejects a commit whose staged printer name
+ * is empty, and this flow no longer sends one, because assignments arrive on the
+ * claim. `apply_commit` turns that into a write error on the commit
+ * characteristic alone — every earlier write having succeeded — which is a
+ * distinctive enough shape to name.
+ *
+ * It cannot be told apart with certainty from any other commit refusal, so the
+ * message says what is most likely rather than what is certain. Delete this class
+ * when no board in the field predates that firmware change.
+ */
+export class CommitRejectedError extends Error {
+  constructor(public cause?: unknown) {
+    super(
+      'The bridge took its settings and then refused to save them. This is what an ' +
+        'older board does when it is asked to commit without a printer name — the ' +
+        'assignment now comes from the server instead, and firmware built before that ' +
+        'change still insists on one at setup. Flash the board with current firmware.',
+    );
+    this.name = 'CommitRejectedError';
+  }
 }
 
 /**
@@ -171,15 +176,25 @@ export async function provisionBridge(
     try {
       await write(WIFI_SSID, enc.encode(input.ssid));
       await write(WIFI_PSK, enc.encode(input.psk));
-      await write(PRINTER_NAME, enc.encode(input.printerBluetoothName || PLACEHOLDER_PRINTER_NAME));
       await write(SERVER_CONFIG, enc.encode(JSON.stringify({
         baseUrl: input.baseUrl,
         clientId: input.clientId,
         clientSecret: input.clientSecret,
       })));
-      await write(COMMIT, Uint8Array.of(COMMIT_APPLY));
+      // Its own catch: a refusal here, with every value already accepted, says
+      // something different from a refusal part-way through.
+      try {
+        await write(COMMIT, Uint8Array.of(COMMIT_APPLY));
+      } catch (err) {
+        // A locked board refuses everything, so rule that out before blaming the
+        // commit itself.
+        const now = await readStatus(status).catch(() => null);
+        if (now?.locked) throw new BridgeLockedError(now);
+        throw new CommitRejectedError(err);
+      }
       onCommitted?.();
     } catch (err) {
+      if (err instanceof BridgeLockedError || err instanceof CommitRejectedError) throw err;
       // A refused write on a board that looks fine is almost always the lock.
       const now = await readStatus(status).catch(() => null);
       if (now?.locked) throw new BridgeLockedError(now);
