@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
-import { isWebBluetoothSupported, scanForScanner } from '../../lib/printing/PhomemoPrinterService';
+import {
+  isWebBluetoothSupported,
+  scanForScanner,
+  SCANNER_FACTORY_NAME_PREFIX,
+} from '../../lib/printing/PhomemoPrinterService';
 import type { SwapScanner } from '../../lib/api.types';
 
 /**
@@ -119,10 +123,16 @@ export default function ScannersSection({
                 Scan…
               </button>
             </div>
+            {/* The list is everything nearby, not just scanners: the BCST-23
+                advertises none of its services, so there is nothing to filter
+                on. Saying what to look for is the next best thing. */}
             <p className="mt-1 text-gray-500 text-xs">
-              Wake the scanner first — it has to be advertising to appear. The name is
-              stored exactly as it comes off the air, because that is what the bridge
-              connects to.
+              Wake the scanner first — it has to be advertising to appear. Every nearby
+              Bluetooth device is listed, because a scanner does not announce what it is;
+              a factory-reset one calls itself{' '}
+              <span className="font-mono text-gray-400">{SCANNER_FACTORY_NAME_PREFIX}…</span>.
+              The name is stored exactly as it comes off the air, because that is what the
+              bridge connects to.
             </p>
           </label>
 
