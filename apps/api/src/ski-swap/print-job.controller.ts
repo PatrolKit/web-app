@@ -48,6 +48,11 @@ export class PrintJobController {
       device.deviceId,
       n,
       body?.printerLink,
+      {
+        link: body?.scannerLink,
+        battery: body?.scannerBattery,
+        queueDepth: body?.scanQueueDepth,
+      },
       res,
       Number.isFinite(held) ? held : undefined,
     );

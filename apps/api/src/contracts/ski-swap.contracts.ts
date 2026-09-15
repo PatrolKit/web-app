@@ -795,7 +795,19 @@ export const NackJobSchema = z.object({ error: z.string().max(500).optional() })
  * bridge look identical from here, and those need different people to fix them.
  */
 export const ClaimJobsSchema = z
-  .object({ printerLink: z.enum(['ready', 'down']).optional() })
+  .object({
+    printerLink: z.enum(['ready', 'down']).optional(),
+    /**
+     * The same, for a scanner. Omitted entirely when no scanner is assigned —
+     * and omitting it leaves the last report standing rather than clearing it,
+     * the same rule `printerLink` already follows.
+     */
+    scannerLink: z.enum(['ready', 'down']).optional(),
+    /** Percent. Read on connect, so it is "last known" rather than current. */
+    scannerBattery: z.number().int().min(0).max(100).optional(),
+    /** Scans taken but not yet accepted here. */
+    scanQueueDepth: z.number().int().min(0).optional(),
+  })
   .strict();
 
 export class ClaimJobsDto extends createZodDto(ClaimJobsSchema) {}
@@ -808,11 +820,37 @@ export const ClaimedJobSchema = z.object({
   payload: z.string(),
 });
 
+/** A peripheral this bridge should be holding, by the name it advertises. */
+export const ClaimPeripheralSchema = z.object({ bluetoothName: z.string() });
+
 export const ClaimResponseSchema = z.object({
   stationId: z.string(),
   backoffMs: z.number().int(),
   jobs: z.array(ClaimedJobSchema),
+  /**
+   * What this bridge should be connected to, sent on every claim so that
+   * changing an assignment no longer means walking to the board and
+   * re-provisioning it over BLE.
+   *
+   * `null` means "nothing is assigned, drop what you are holding". *Absent*
+   * means a server that does not send assignments at all — which this one now
+   * always does, so a field here is never missing. The distinction matters to
+   * an older board talking to us, not to us.
+   */
+  printer: ClaimPeripheralSchema.nullable(),
+  scanner: ClaimPeripheralSchema.nullable(),
 });
+
+/**
+ * A barcode a bridge read off a tag.
+ *
+ * No symbology: both QR forms this system prints are URLs by construction, and
+ * neither item form can be one, so the payload separates them on its own. The
+ * firmware strips the scanner's code id before sending.
+ */
+export const SubmitScanSchema = z.object({ sku: z.string().min(1).max(64) }).strict();
+
+export class SubmitScanDto extends createZodDto(SubmitScanSchema) {}
 
 export class NackJobDto extends createZodDto(NackJobSchema) {}
 export type ClaimedJob = z.infer<typeof ClaimedJobSchema>;

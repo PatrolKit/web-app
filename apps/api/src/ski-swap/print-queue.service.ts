@@ -232,6 +232,16 @@ export class PrintQueueService {
     limit = 4,
     printerLink?: 'ready' | 'down',
     /**
+     * What the bridge says about its scanner, if it has one. Travels with the
+     * printer report for the same reason that one does: it costs no extra
+     * request on venue wifi.
+     */
+    scanner?: {
+      link?: 'ready' | 'down';
+      battery?: number;
+      queueDepth?: number;
+    },
+    /**
      * The live response, so an empty claim can be held open until work arrives
      * and dropped the moment the bridge hangs up. Absent in tests and scripts,
      * where answering immediately is what is wanted.
@@ -252,6 +262,8 @@ export class PrintQueueService {
     stationId: string;
     backoffMs: number;
     jobs: ClaimedJob[];
+    printer: { bluetoothName: string } | null;
+    scanner: { bluetoothName: string } | null;
   }> {
     // Before the station lookup, because a bridge that is calling in is alive
     // and telling us about its printer whether or not anything routes work to
@@ -265,14 +277,34 @@ export class PrintQueueService {
         // Only when reported. A bridge that says nothing leaves the previous
         // answer standing, and its age is what makes it readable.
         ...(printerLink ? { printerLink, printerLinkAt: new Date() } : {}),
+        ...(scanner?.link ? { scannerLink: scanner.link, scannerLinkAt: new Date() } : {}),
+        ...(scanner?.battery !== undefined ? { scannerBattery: scanner.battery } : {}),
+        ...(scanner?.queueDepth !== undefined ? { scanQueueDepth: scanner.queueDepth } : {}),
       },
     });
 
     const station = await this.prisma.checkinStation.findFirst({
       where: { bridgeDeviceId: deviceId, deletedAt: null },
-      include: { bridge: { include: { bridgedPrinter: true } } },
+      include: { bridge: { include: { bridgedPrinter: true, bridgedScanner: true } } },
     });
     if (!station) throw new NotFoundException('This device is not bound to a station');
+
+    /**
+     * What this bridge should be holding, on every claim.
+     *
+     * The server has always known this and never said it, so changing which
+     * printer a bridge drives meant walking to the board and re-provisioning it
+     * over BLE. Null is a real answer — "drop what you are holding" — which is
+     * why these are always present rather than omitted when empty.
+     */
+    const peripherals = {
+      printer: station.bridge?.bridgedPrinter
+        ? { bluetoothName: station.bridge.bridgedPrinter.bluetoothName }
+        : null,
+      scanner: station.bridge?.bridgedScanner
+        ? { bluetoothName: station.bridge.bridgedScanner.bluetoothName }
+        : null,
+    };
 
     // Give up on expired claims that have already had their attempts.
     //
@@ -394,6 +426,7 @@ export class PrintQueueService {
       stationId: station.id,
       backoffMs: jobs.length ? BACKOFF_ACTIVE : BACKOFF_IDLE,
       jobs,
+      ...peripherals,
     };
   }
 

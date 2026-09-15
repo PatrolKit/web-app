@@ -254,6 +254,24 @@ model Device {
   /// have lost power holding it — so the age is as load-bearing as the value.
   printerLinkAt DateTime?
 
+  /// The same three for the scanner a bridge drives. Omitted on a claim leaves
+  /// the last report standing, exactly like `printerLink` — a bridge that says
+  /// nothing has not said "down".
+  ///
+  /// A dead printer is noticed within one label. A dead scanner is noticed when
+  /// somebody realises nothing has been scanned for twenty minutes, which is
+  /// why these are worth carrying at all.
+  scannerLink    String?   @db.VarChar(16)
+  scannerLinkAt  DateTime?
+  /// Percent, read from the scanner's own `180F`/`2A19` on connect — so it is
+  /// stale between reconnects and means "last known", the way a `ready` that
+  /// arrived an hour ago does.
+  scannerBattery Int?
+  /// Scans taken but not yet accepted by us. The one number that says scanning
+  /// is happening and going nowhere: a `ready` link with a depth climbing off
+  /// zero is an operator working normally whose work is not landing.
+  scanQueueDepth Int?
+
   /// The resort this terminal clocks people in at. Meaningful only for
   /// `time_clock.terminal`, the way `printerLink` is meaningful only for a
   /// bridge.

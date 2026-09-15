@@ -2,8 +2,8 @@
 
 Answering [`docs/plans/1_server_side_assignment/server-handoff.md`](../../../../webprinter_esp32/docs/plans/1_server_side_assignment/server-handoff.md).
 
-Two of your questions are settled. The rest is not built yet, and §4 needs a
-decision from you before §3 is worth writing.
+All of it is built and deployed. Nothing in the contract changed from what you
+specified; the notes below are what you would only find out by reading the code.
 
 ## §3 — do not add the symbology field
 
@@ -66,31 +66,62 @@ with the Phomemo's print service is right, and `18F0` is the scanner's alone —
 the collision stays contained to the firmware, where naming them distinctly is
 still the fix.
 
-## §1 and §2 — not built
+## §1 and §2 — built
 
-No `printer`/`scanner` on the claim response, and no `scannerLink`,
-`scannerBattery` or `scanQueueDepth` on the claim body. Both are understood and
-neither is contentious; they are queued behind the decision below.
+The claim response carries `printer` and `scanner` on every call, each either
+`{ bluetoothName }` or `null`. They are always present now, so a missing field
+only ever means a server older than this. `null` means release what you are
+holding, as you specified.
 
-Your `null` versus absent distinction is noted and will be honoured: absent means
-this server does not send assignments, `null` means release what you are holding.
+The claim body takes `scannerLink`, `scannerBattery` and `scanQueueDepth`. Same
+rule as `printerLink`: recorded with a timestamp, and omitting one leaves the
+last report standing rather than clearing it — a bridge that says nothing about
+its scanner has not said the scanner is down.
 
-## §4 — your call, and it changes §3
+**One thing to know about §1.** The claim still 404s when a bridge is not bound
+to a station, and a 404 carries no assignment. So a bridge holding a printer but
+serving no station cannot learn about a reassignment. That predates this work —
+it is how the endpoint has always behaved — but it is the one case where "no BLE
+provisioning" does not yet hold. Say if it matters and it can be lifted.
 
-You floated carrying scans **on the claim request** rather than their own
-endpoint, to avoid a second TLS handshake on a board where a round trip is about
-6.7 seconds.
+## §3 — built
 
-That is the more interesting half of your document and we would rather decide it
-before building §3, not after. Carrying scans on the claim means the claim body
-takes a `scans` array and the response returns a per-scan verdict — more
-coupling, and the claim stops being a read. Against that: a dedicated endpoint is
-a seven-second round trip today, which makes any per-scan feedback on the scanner
-fire long after the operator has moved on.
+`POST /devices/me/scans`, `{ "sku": "..." }`, exactly the shape you proposed.
 
-Tell us which you want and §3 gets built that shape. If it is the claim, say what
-you would want the per-scan verdict to look like, since that is the part with no
-precedent in the existing contract.
+**What a scan does: it accepts the item onto the floor** — the same act as a
+staff member tapping it on the iPad, through the same code, so there is one place
+where an item becomes sellable.
+
+| Response | Meaning |
+|---|---|
+| `200` | Accepted. The item is consigned, or already was. |
+| `404` | No item in a running swap carries that tag. |
+| `409` | That tag is on items in two running swaps at once. |
+
+Every refusal is a 4xx deliberately, so your rule holds: dequeue and count,
+because retrying cannot help. Anything you should retry is a 5xx.
+
+**Idempotent, as you asked.** A repeat returns `200` and does not move the time
+the item was accepted. Your retry-on-lost-response can be as eager as you like.
+
+There is a body — the item id, the tag, and when it was accepted — but it is for
+a person reading a log. You are right that the status is enough.
+
+Two things worth knowing about what gets accepted:
+
+- **Only tags in a *running* swap.** A station is not tied to a swap, so the tag
+  is looked up across the organisation's active swaps. Last season's tag is a
+  404.
+- **Scanning an item that never had to wait is a no-op**, and still `200`. At an
+  organisation that does not require the acceptance scan, everything is consigned
+  when it is checked in, so a scan finds nothing to do. That is the honest
+  answer, and it means you need no knowledge of the setting.
+
+## §4 — agreed, and thank you for the numbers
+
+Your fix settles it: a dedicated endpoint at 125 ms is quick enough for feedback
+to reach the operator, and none of the coupling is worth buying. §3 is built as
+its own endpoint, unchanged.
 
 ## Unchanged
 

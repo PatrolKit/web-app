@@ -30,6 +30,8 @@ import { BusinessSellerService } from './business-seller.service';
 import { BusinessSellerController } from './business-seller.controller';
 import { PrinterService } from './printer.service';
 import { ScannerService } from './scanner.service';
+import { ScanService } from './scan.service';
+import { ScanController } from './scan.controller';
 import { ScannerController } from './scanner.controller';
 import { PrinterController } from './printer.controller';
 import { CheckinService } from './checkin.service';
@@ -56,6 +58,7 @@ import { IdentityModule } from '../common/identity/identity.module';
   imports: [AuthModule, PermissionsModule, IdentityModule],
   controllers: [
     ScannerController,
+    ScanController,
     SquareConfigController,
     SwapController,
     SellerController,
@@ -97,6 +100,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     BusinessSellerService,
     PrinterService,
     ScannerService,
+    ScanService,
     SkiSwapSettingsService,
     StationService,
     CheckinService,
