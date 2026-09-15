@@ -3,26 +3,24 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
 import { isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
 import {
-  mintScannerName,
-  renameScanner,
   scanForScanner,
   SCANNER_FACTORY_NAME_PREFIX,
-  SCANNER_NAME_PREFIX,
 } from '../../lib/printing/InateckScannerService';
 import type { SwapScanner } from '../../lib/api.types';
 
 /**
  * The barcode scanners this org owns.
  *
- * The same shape as the printer list above it, with one difference that matters:
- * provisioning a scanner *writes* to it. A printer is recorded under whatever
- * name it already advertises; a scanner is given one of ours, because the
- * advertised name is the only handle the bridge has — it re-scans for its target
- * by name on every reconnect — and the name a scanner ships with is `HPRT` on
- * every unit in the box.
+ * The same shape as the printer list above it, and provisioned the same way:
+ * pick the peripheral out of the BLE picker to capture the name it advertises,
+ * give it a name a person would use, and bind it to a bridge.
  *
- * That name is minted, not typed. Nobody sees it if things are working; the
- * name below it on screen is the one a person chose.
+ * Renaming the hardware to something of ours was tried and does not work — see
+ * the banner in InateckScannerService. So the advertised name is what is stored,
+ * and two scanners are distinguishable only if the hardware makes them so.
+ *
+ * The browser never talks to a scanner. Picking one here only reads its name;
+ * the bridge is what holds the link.
  */
 export default function ScannersSection({
   orgId,
@@ -36,7 +34,6 @@ export default function ScannersSection({
   const [name, setName] = useState('');
   const [device, setDevice] = useState<BluetoothDevice | null>(null);
   const [airName, setAirName] = useState('');
-  const [step, setStep] = useState<'idle' | 'renaming' | 'saving'>('idle');
   const [error, setError] = useState('');
 
   const scannersKey = ['ski-swap/scanners', orgId];
@@ -46,55 +43,13 @@ export default function ScannersSection({
     enabled: !!orgId,
   });
 
-  /**
-   * Rename the hardware, then record it.
-   *
-   * This order, and not the reverse. If the rename lands and the save does not,
-   * the scanner carries a name nothing knows about — which is harmless, because
-   * nothing can be looking for it and the next attempt mints a fresh one. Saving
-   * first would instead leave a row claiming a name the hardware never took, and
-   * a bridge would hunt for it forever.
-   *
-   * Either failure clears the picked device on purpose. A scanner that has been
-   * renamed is no longer the device the operator chose, so the honest next step
-   * is to pick it again and provision it from the top.
-   */
-  const provisionMutation = useMutation({
-    mutationFn: async () => {
-      if (!device) throw new Error('Pick the scanner first.');
-      const bluetoothName = mintScannerName();
-
-      setStep('renaming');
-      try {
-        await renameScanner(device, bluetoothName);
-      } catch (e) {
-        throw new Error(
-          `Could not rename the scanner: ${(e as Error)?.message ?? 'the connection failed'}. ` +
-          'Nothing was saved. Wake it, keep it close to this computer, and pick it again.',
-        );
-      }
-
-      setStep('saving');
-      try {
-        return await api.skiSwap.createScanner(orgId, { name, bluetoothName });
-      } catch (e) {
-        const why = e instanceof ApiError ? e.message : 'the server could not be reached';
-        throw new Error(
-          `The scanner was renamed, but not saved: ${why}. ` +
-          'Pick it again to provision it from the top — it will be given a fresh name.',
-        );
-      }
-    },
+  const createMutation = useMutation({
+    mutationFn: () => api.skiSwap.createScanner(orgId, { name, bluetoothName: airName }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: scannersKey });
       closeForm();
     },
-    onError: (e: Error) => {
-      setStep('idle');
-      setDevice(null);
-      setAirName('');
-      setError(e.message);
-    },
+    onError: (e: Error) => setError(e instanceof ApiError ? e.message : 'Could not add that scanner'),
   });
 
   const deleteMutation = useMutation({
@@ -107,7 +62,6 @@ export default function ScannersSection({
     setName('');
     setDevice(null);
     setAirName('');
-    setStep('idle');
     setError('');
   }
 
@@ -129,7 +83,7 @@ export default function ScannersSection({
     }
   }
 
-  const busy = provisionMutation.isPending;
+  const busy = createMutation.isPending;
 
   return (
     <div className="space-y-3 border-t border-gray-800 pt-6">
@@ -154,7 +108,7 @@ export default function ScannersSection({
 
       {showForm && (
         <form
-          onSubmit={(e) => { e.preventDefault(); provisionMutation.mutate(); }}
+          onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }}
           className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3"
         >
           <h3 className="text-white font-medium">New scanner</h3>
@@ -165,7 +119,7 @@ export default function ScannersSection({
               <input
                 readOnly
                 value={airName}
-                placeholder="Pick the scanner to provision"
+                placeholder="Pick the scanner to read its name"
                 className="flex-1 bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono"
               />
               <button
@@ -179,18 +133,19 @@ export default function ScannersSection({
             </div>
             {/* The picker matches on the name, because the BCST-23 advertises
                 none of its services and there is nothing else to match on.
-                Saying which names count is what makes an empty list readable. */}
+                Saying what counts as a scanner is what makes an empty list readable. */}
             <p className="mt-1 text-gray-500 text-xs">
               Wake the scanner first — it has to be advertising to appear. The list holds
-              scanners only: a new one calls itself{' '}
-              <span className="font-mono text-gray-400">{SCANNER_FACTORY_NAME_PREFIX}…</span>,
-              and one already set up here calls itself{' '}
-              <span className="font-mono text-gray-400">{SCANNER_NAME_PREFIX}…</span>. An
-              empty list means nothing is awake and in range, not that nothing is there.
+              scanners only, which call themselves{' '}
+              <span className="font-mono text-gray-400">{SCANNER_FACTORY_NAME_PREFIX}…</span>;
+              an empty list means nothing is awake and in range, not that nothing is there.
+              The name is stored exactly as it comes off the air, because that is what the
+              bridge connects to.
             </p>
             <p className="mt-1 text-gray-500 text-xs">
-              Adding a scanner renames it, so keep it awake and close to this computer until
-              that finishes.
+              If two scanners advertise the same name, only the first can be added — there
+              is nothing else to tell them apart by. Add them one at a time so you know
+              which one you are holding.
             </p>
           </label>
 
@@ -218,9 +173,7 @@ export default function ScannersSection({
               disabled={!name || !device || busy}
               className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
             >
-              {step === 'renaming' ? 'Renaming the scanner…'
-                : step === 'saving' ? 'Saving…'
-                : 'Add scanner'}
+              {busy ? 'Adding…' : 'Add scanner'}
             </button>
             <button
               type="button"
@@ -244,10 +197,11 @@ export default function ScannersSection({
               className="bg-surface-50 border border-gray-700 rounded-lg p-3 flex items-start justify-between gap-3"
             >
               <div>
-                {/* The minted name is on the tooltip rather than the row: it is
-                    what a bridge log prints, so it has to be reachable, but it
-                    means nothing to the person reading this list. */}
-                <p className="text-sm text-white" title={s.bluetoothName}>{s.name}</p>
+                <p className="text-sm text-white">{s.name}</p>
+                {/* Back on the row rather than a tooltip: now that this is the
+                    name the hardware chose, it is how somebody matches a scanner
+                    in their hand to a line on this screen. */}
+                <p className="text-xs text-gray-500 font-mono">{s.bluetoothName}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {s.bridgeDeviceId
                     ? s.stationName

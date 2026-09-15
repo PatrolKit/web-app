@@ -5,9 +5,14 @@
 // on one peripheral and the scanner's command service on another — and nothing
 // else. Keeping them together only invited that collision to be read as kinship.
 //
-// The browser talks to a scanner exactly once, while provisioning it, to give it
-// a name of ours. Every scan after that goes scanner → bridge → server, and the
-// web UI is nowhere in that path.
+// **The browser does not talk to a scanner.** It shows a picker and reads the
+// advertised name; the bridge holds the link, and every scan goes scanner →
+// bridge → server with the web UI nowhere in that path.
+//
+// It was supposed to do one more thing — rename the scanner at provisioning, so
+// the name was ours rather than whatever it shipped with. That did not work on
+// hardware. The attempt is parked at the bottom of this file rather than deleted,
+// because the frame format underneath it is verified and someone will want it.
 
 // ─── GATT ────────────────────────────────────────────────────────────────────
 
@@ -23,54 +28,102 @@ export const SCANNER_COMMAND_SERVICE = '0000ff00-0000-1000-8000-00805f9b34fb' as
 /** Where command frames go. Write-without-response only — there is no long write. */
 const SCANNER_COMMAND_WRITE = '0000ff04-0000-1000-8000-00805f9b34fb' as BluetoothCharacteristicUUID;
 
+// ─── The names a scanner can have ────────────────────────────────────────────
+
 /**
- * What a scanner is called before anybody has renamed it.
+ * What a scanner calls itself, and — for now — what we record it under.
  *
- * `HPRT` is the OEM's name, not Inateck's — `BCST-23` never goes over the air at
+ * `HPRT` is the OEM's name, not Inateck's: `BCST-23` never goes over the air at
  * all, which is why the model number is no use for finding one.
+ *
+ * Whether this is unique per unit is the question the whole provisioning story
+ * turns on, and it is the hardware's answer to give, not ours. If two scanners
+ * advertise the same thing, the second one cannot be added — the server refuses
+ * a duplicate `bluetoothName` and names the row already holding it.
  */
 export const SCANNER_FACTORY_NAME_PREFIX = 'HPRT';
 
 /**
- * Every name a scanner of ours can be advertising, and the whole of the picker's
- * filter.
+ * The prefix a scanner would carry if we named it ourselves.
  *
- * Case-sensitive, because `namePrefix` is. Two entries, for the two points in a
- * scanner's life:
- *
- * - `HPRT` — straight out of the box, or factory reset, and not yet ours.
- * - `pkscan_` — provisioned here. Also covers the one failure worth covering: a
- *   rename that landed while the save did not leaves a scanner under this prefix,
- *   so it comes back in the list and the next attempt renames it afresh.
- *
- * `PKScan` — the convention before names were minted, still on a unit or two in
- * the field — is deliberately not here. Those are not reachable from this picker
- * and have to be factory reset before they can be provisioned again, which is
- * the price of the list holding only names this code can account for.
- */
-export const SCANNER_NAME_PREFIXES = [SCANNER_FACTORY_NAME_PREFIX, 'pkscan_'] as const;
-
-// ─── The name we give a scanner ──────────────────────────────────────────────
-
-/**
- * Minted at provisioning, written to the hardware, and never derived from
- * anything a person typed.
- *
- * It has to be this way. The only field both sides of provisioning can see is
- * the advertised name: the browser deliberately never exposes a MAC address —
- * `BluetoothDevice.id` is an opaque per-origin, per-profile token, so the same
- * scanner provisioned from a second laptop is a different `id` — and the bridge
- * has no other handle either. Unlike the printer, which caches an address after
- * resolving a name once, `scanner_ble.c` re-scans for its target by advertised
- * name on every reconnect. The name is the identity, permanently.
- *
- * So it carries as much randomness as the 20-byte ceiling allows and nothing
- * else. A literal UUIDv4 is 122 bits and does not fit in 20 printable bytes
- * under any encoding; 13 characters of base32 carry 64, which puts a collision
- * across ten thousand scanners at roughly 3e-12. The server's unique constraint
- * on `bluetoothName` is what actually decides it.
+ * Nothing wears this today — see "Renaming a scanner" at the foot of this file.
+ * It stays in the filter so that a scanner named by hand, or by some later
+ * provisioning step that does work, is selectable the day it exists rather than
+ * needing this shipped first.
  */
 export const SCANNER_NAME_PREFIX = 'pkscan_';
+
+/**
+ * Every name a scanner of ours can be advertising, and the whole of the picker's
+ * filter. Case-sensitive, because `namePrefix` is.
+ */
+export const SCANNER_NAME_PREFIXES = [SCANNER_FACTORY_NAME_PREFIX, SCANNER_NAME_PREFIX] as const;
+
+// ─── The picker ──────────────────────────────────────────────────────────────
+
+/**
+ * Shows the BLE picker and returns what was chosen.
+ *
+ * **Filtered on the name, and only on the name.** A `filters` entry matches
+ * services in the *advertisement*, and the BCST-23 advertises none of its own —
+ * `18F0` is on the peripheral but discoverable only after connecting, so a
+ * service filter matched nothing at all and a scanner on the bench never
+ * appeared. `namePrefix` is the one condition that does work, because the name
+ * is in the advertisement.
+ *
+ * What this costs: a scanner outside those prefixes is unreachable from here
+ * rather than merely hard to spot. That is the trade — a device answering to
+ * neither name is not one this code can account for.
+ *
+ * The device itself comes back, not just its name. Nothing uses it today, but a
+ * caller that wants to talk to the scanner needs the same object the picker
+ * granted permission for, and sending the operator through a second picker to
+ * reach it would be a second chance to choose the wrong device.
+ */
+export async function scanForScanner(): Promise<{ device: BluetoothDevice; bluetoothName: string }> {
+  const device = await navigator.bluetooth.requestDevice({
+    filters: SCANNER_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
+    optionalServices: [
+      SCANNER_DATA_SERVICE,
+      SCANNER_BATTERY_SERVICE,
+      SCANNER_COMMAND_SERVICE,
+    ],
+  });
+  return { device, bluetoothName: device.name ?? '' };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Renaming a scanner — parked, and not wired to anything
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// None of what follows runs. It was built to give a scanner a name of ours at
+// provisioning, on the reasoning that the advertised name is the only handle a
+// bridge has: the browser never exposes a MAC — `BluetoothDevice.id` is an
+// opaque per-origin token — and `scanner_ble.c` re-scans for its target by
+// advertised name on every reconnect.
+//
+// **It was tried on hardware and the scanner did not take the name.** The writes
+// were accepted and nothing came back to say otherwise, which is the failure
+// mode the code below already warned about: FF04 takes no response, FF01's reply
+// format is unpublished, and Chrome has not shipped advertisement scanning, so
+// there is no way from a browser to read the new name back.
+//
+// What is still worth something here, and why this is parked rather than deleted:
+//
+//   - `buildSetName` reproduces four frames Inateck's own encoder emitted, byte
+//     for byte, and the tests hold it to them. The frame format is not in doubt.
+//   - `AUTH_FRAME` carries across from the firmware's `SCANNER_AUTH_FRAME` and
+//     verifies against its own checksum.
+//
+// So the encoding is not where this failed. Candidates for where it did, none of
+// them established: the auth frame being rejected rather than merely unanswered;
+// 20-byte chunks arriving too fast, or too slowly, for the scanner's reassembly;
+// a commit or save step the library performs that we did not capture; or the
+// rename simply not being reachable over BLE on this firmware, with the
+// programming barcodes in the manual being the only route. The firmware team has
+// the same frames and a wired console, which is a better place to find out.
+
+// ─── Minting a name ──────────────────────────────────────────────────────────
 
 /** Inateck documents 20; the encoder does not enforce it, so we do. */
 export const SCANNER_NAME_MAX_BYTES = 20;
@@ -80,6 +133,13 @@ const RANDOM_CHARS = SCANNER_NAME_MAX_BYTES - SCANNER_NAME_PREFIX.length;
 /** Crockford's alphabet: no `i`, `l`, `o` or `u`, because this gets read off a console log. */
 const ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
 
+/**
+ * As much randomness as the 20-byte ceiling allows, and nothing else.
+ *
+ * A literal UUIDv4 is 122 bits and does not fit in 20 printable bytes under any
+ * encoding; 13 characters of base32 carry 64, which puts a collision across ten
+ * thousand scanners at roughly 3e-12.
+ */
 export function mintScannerName(): string {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
@@ -188,20 +248,10 @@ async function writeFrame(chr: BluetoothRemoteGATTCharacteristic, frame: Uint8Ar
 }
 
 /**
- * Give a scanner the name it will answer to for the rest of its life.
+ * Give a scanner a name of ours. Does not work — see the banner above.
  *
- * **This cannot be verified from here, and that is worth knowing.** A write
- * that the scanner ignores looks exactly like one it accepted: FF04 takes no
- * response, replies arrive on FF01 in a format nobody has published, and the
- * browser cannot watch advertisements to read the new name back — Chrome still
- * lists advertisement scanning as unshipped. What this function detects is a
- * GATT failure. What it cannot detect is a silent refusal, which surfaces later
- * as a bridge reporting `scannerLink: down` because it is scanning for a name
- * nothing is advertising. The answer to that is to provision the scanner again.
- *
- * Renaming also drops any existing pairing: Inateck's manual requires the host
- * to delete its pairing record before the new name appears. So the link is torn
- * down here deliberately rather than left for the caller to trip over.
+ * Kept callable so the next attempt starts from something that has been read,
+ * built and type-checked rather than from a description of it.
  */
 export async function renameScanner(device: BluetoothDevice, name: string): Promise<void> {
   const width = new TextEncoder().encode(name).length;
@@ -222,45 +272,8 @@ export async function renameScanner(device: BluetoothDevice, name: string): Prom
     await writeFrame(write, buildSetName(name));
     await sleep(CHUNK_GAP_MS * 4); // and commit it before the link goes away
   } finally {
+    // Renaming was supposed to drop the pairing, so the link is torn down here
+    // deliberately rather than left for a caller to trip over.
     if (device.gatt?.connected) device.gatt.disconnect();
   }
-}
-
-// ─── The picker ──────────────────────────────────────────────────────────────
-
-/**
- * Shows the BLE picker and returns what was chosen.
- *
- * **Filtered on the name, and only on the name.** A `filters` entry matches
- * services in the *advertisement*, and the BCST-23 advertises none of its own —
- * `18F0` is on the peripheral but discoverable only after connecting, so a
- * service filter matched nothing at all and a scanner on the bench never
- * appeared. `namePrefix` is the one condition that does work, because the name
- * is in the advertisement.
- *
- * Filtering by name used to be the worse option: when a scanner could be called
- * anything, a list that hid everything else would hide the one you wanted. That
- * stopped being true once we started naming them — `SCANNER_NAME_PREFIXES` is
- * now the complete set of names one of ours can have, so nothing legitimate is
- * excluded and the operator is no longer picking our scanner out of every phone,
- * laptop and headset in the building.
- *
- * What this does cost: a scanner outside those three prefixes is unreachable
- * from here rather than merely hard to spot. That is the intended trade — a
- * device that answers to none of these is not a scanner we can drive.
- *
- * The device itself comes back, not just its name: renaming needs the same
- * object, and sending the operator through a second picker to reach it would be
- * a second chance to choose the wrong device.
- */
-export async function scanForScanner(): Promise<{ device: BluetoothDevice; bluetoothName: string }> {
-  const device = await navigator.bluetooth.requestDevice({
-    filters: SCANNER_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
-    optionalServices: [
-      SCANNER_DATA_SERVICE,
-      SCANNER_BATTERY_SERVICE,
-      SCANNER_COMMAND_SERVICE,
-    ],
-  });
-  return { device, bluetoothName: device.name ?? '' };
 }

@@ -10,15 +10,21 @@ import {
 } from './InateckScannerService';
 
 /**
- * The scanner's command format was read off the manufacturer's encoder
+ * Most of what is tested here is parked: renaming a scanner from the browser was
+ * built, tried on hardware, and did not take. These stay because they are what
+ * separates "the encoding is wrong" from "the encoding is right and something
+ * else is", and the next person to try will want that line already drawn.
+ *
+ * The command format was read off the manufacturer's encoder
  * (`libinateck_scanner_cmd.dylib`), not out of a specification — so the only
- * grounds for believing this file are the frames that encoder produced. They are
- * the test vectors below, and they are also what `webprinter_esp32`'s
+ * grounds for believing any of it are the frames that encoder produced. They are
+ * the vectors below, and they are also what `webprinter_esp32`'s
  * `scanner_cmd.h` reproduces, which makes them the contract between the two
  * implementations rather than a fixture of ours.
  *
- * None of this can prove a scanner accepts the frame. It proves we send the same
- * bytes the vendor's own library does.
+ * None of this ever could prove a scanner accepts the frame. It proves we send
+ * the same bytes the vendor's own library does — and we now know that is not
+ * sufficient.
  */
 
 const hex = (b: Uint8Array) =>
@@ -98,12 +104,14 @@ describe('what the picker will show', () => {
   // scanner nobody can select — including, after a rename, one we just made.
   const matches = (name: string) => SCANNER_NAME_PREFIXES.some((p) => name.startsWith(p));
 
-  it('shows a scanner we just named, which is what makes a failed save recoverable', () => {
-    expect(matches(mintScannerName())).toBe(true);
+  it('shows one straight out of the box, which is every scanner today', () => {
+    expect(matches(`${SCANNER_FACTORY_NAME_PREFIX}-1A2B`)).toBe(true);
   });
 
-  it('shows one straight out of the box', () => {
-    expect(matches(`${SCANNER_FACTORY_NAME_PREFIX}-1A2B`)).toBe(true);
+  // Nothing wears this name yet. The filter carries it so that a scanner named
+  // by some later provisioning step is selectable the day it exists.
+  it('would show one we had named ourselves', () => {
+    expect(matches(mintScannerName())).toBe(true);
   });
 
   it('hides everything else, which is the point of filtering at all', () => {
@@ -112,7 +120,7 @@ describe('what the picker will show', () => {
     }
   });
 
-  it('hides the pre-minting convention, which now needs a factory reset', () => {
+  it('hides the hand-named convention, which was retired rather than carried', () => {
     expect(matches('PKScan-01')).toBe(false);
   });
 });

@@ -66,8 +66,8 @@ service is the scanner's alone and `FF00` is not — but a `filters` entry match
 only services in the *advertisement*, and the BCST-23 advertises none of its own.
 `18F0` is discoverable after connecting and never before, so the filter matched
 nothing and a scanner on the bench simply never appeared. It now matches name
-prefixes instead — `HPRT` and `pkscan_`, the only two names a scanner of ours
-can now be advertising. Your warning
+prefixes instead: `HPRT`, which is every scanner today, and `pkscan_`, which
+nothing wears yet and is there for whenever renaming starts working. Your warning
 about the `FF00` collision still stands for the firmware, where naming the two
 services distinctly is still the fix.
 
@@ -128,50 +128,50 @@ Your fix settles it: a dedicated endpoint at 125 ms is quick enough for feedback
 to reach the operator, and none of the coupling is worth buying. §3 is built as
 its own endpoint, unchanged.
 
-## What we name a scanner, and why it matters to you
+## We tried to rename a scanner from the browser. It did not work.
 
 `adv_name_matches` in `scanner_ble.c` is the only thing that finds a scanner, so
-the name is not cosmetic on your side — it is the identity. Provisioning now
-mints one and writes it to the hardware over `0x40` before the scanner is
-recorded at all:
+the name is the identity, not decoration. The plan was to mint one at
+provisioning and write it over `0x40` before recording the scanner at all, so
+that a shelf of factory-reset units stopped being a shelf of identical `HPRT`s.
 
-```
-pkscan_3f7k92mqx0b5t
-^^^^^^^                 fixed prefix
-       ^^^^^^^^^^^^^    13 characters of base32, 64 bits from a CSPRNG
-```
+**It was built, run against a real scanner, and the name did not change.** The
+writes were accepted. Nothing came back to say otherwise — which is exactly the
+hole: `FF04` takes no response, `FF01`'s reply format is unpublished, and Chrome
+has never shipped advertisement scanning, so a browser cannot read the new name
+back to check. Success and silent refusal look identical from up here.
 
-Twenty bytes exactly — the documented ceiling, spent in full. No part of it comes
-from anything a person typed, so there is no truncation rule to agree on and no
-collision case to handle: the alphabet is Crockford's (no `i`, `l`, `o`, `u`,
-because this is a string somebody reads off your console output and retypes), and
-two scanners colliding across ten thousand units runs at about 3e-12.
+So provisioning now stores whatever the scanner advertises, and that is what
+arrives in `bluetoothName`. **Nothing changes for you** — same field, same byte
+comparison. Two things do follow:
 
-**This changes nothing you have to implement.** It is still an advertised name
-arriving in `bluetoothName`, matched byte for byte. Four things follow from it
-that are worth having:
+- **Your trailing-space trim stays load-bearing.** We are recording OEM names
+  again, including the `"PKScan-01 "` your comment calls out. Good thing it is
+  there.
+- **Uniqueness is now the hardware's problem, not ours.** If two units advertise
+  the same name, the second cannot be added at all — the server refuses a
+  duplicate `bluetoothName`. Whether that bites depends on whether `HPRT…`
+  carries a per-unit suffix, which is a question the hardware answers.
 
-- **No spaces, ever.** Nothing provisioned from here will exercise your
-  trailing-space trim. Keep it anyway — it costs nothing and the advertisement it
-  was written for was real — but it is no longer load-bearing.
-- **The hand-named units are retired.** A scanner still called `PKScan-…` is not
-  selectable from the web picker any more; it has to be factory reset and
-  provisioned again before a bridge can be pointed at it. If you have one on the
-  bench, that is why.
-- **The name is always exactly 20 bytes.** `PK_PRINTER_NAME_MAX` is 32, so it
-  fits with room to spare — noted only so the number is on the record.
-- **A scanner that will not be found is a scanner whose rename was silently
-  refused.** The browser cannot detect that: `FF04` takes no response, `FF01`'s
-  reply format is unpublished, and Chrome has not shipped advertisement scanning,
-  so there is no way to read the new name back. The symptom lands on you first,
-  as a bridge scanning forever for a name nothing advertises. If you ever report
-  `scannerLink: down` with a target that has never once been seen, that is the
-  case, and re-provisioning the scanner is the fix.
+**What would help.** The encoding is not where this failed — `buildSetName`
+reproduces the vendor encoder's frames byte for byte, and our copy of your
+`SCANNER_AUTH_FRAME` verifies against its own checksum. Everything below is still
+good. What we cannot do from a browser is see what the scanner made of it. You
+can: you have the same frames, a wired console, and `FF01` already subscribed and
+logging. If `scanner auth` followed by a `0x40` set-name over your link does
+change the name, then the gap is something about how Chrome puts those bytes on
+the air — 20-byte chunks, their pacing, or a commit step we did not capture — and
+the rename belongs on the bridge rather than in the browser anyway. If it does
+not change the name over your link either, then the BLE route is a dead end on
+this firmware and the programming barcodes in the manual are the only way in.
 
-## Renaming a scanner — the opcode is `0x40`
+Either answer is worth more than what we have, which is one negative result and
+no way to see past it. No rush — the web UI works without it.
 
-Not part of your handoff, but you own the only code that can send it, and it was
-the one thing blocking provisioning from giving a scanner a name of ours.
+## The opcode is `0x40` — everything you need to try it
+
+Not part of your handoff, but you own the only code that can watch what happens
+when it is sent.
 
 `inateck_scanner_cmd_set_name` is in the official header beside `set_bee` and
 `set_led`, and the frame came out of the same `libinateck_scanner_cmd.dylib`
