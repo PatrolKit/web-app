@@ -60,11 +60,15 @@ name in the claim response.
 The assignment UI is **one screen** — the Ski Swap tab formerly called Printers,
 now Hardware, holding printers, scanners and bridges together.
 
-**One thing worth knowing on your side:** the web picker filters on `18F0`, the
-BCST-23's barcode-data service, not `FF00`. Your warning about `FF00` colliding
-with the Phomemo's print service is right, and `18F0` is the scanner's alone — so
-the collision stays contained to the firmware, where naming them distinctly is
-still the fix.
+**One thing worth knowing on your side:** the web picker filters on nothing at
+all. It tried `18F0` first, on the reasoning that the barcode-data service is the
+scanner's alone and `FF00` is not — but a `filters` entry matches only services
+in the *advertisement*, and the BCST-23 advertises none of its own. `18F0` is
+discoverable after connecting and never before, so the filter matched nothing and
+a scanner on the bench simply never appeared. The picker now lists everything
+nearby, the way your scan does and the way the iOS app's `withServices: nil`
+does. Your warning about the `FF00` collision still stands for the firmware,
+where naming the two services distinctly is still the fix.
 
 ## §1 and §2 — built
 
@@ -122,6 +126,42 @@ Two things worth knowing about what gets accepted:
 Your fix settles it: a dedicated endpoint at 125 ms is quick enough for feedback
 to reach the operator, and none of the coupling is worth buying. §3 is built as
 its own endpoint, unchanged.
+
+## What we name a scanner, and why it matters to you
+
+`adv_name_matches` in `scanner_ble.c` is the only thing that finds a scanner, so
+the name is not cosmetic on your side — it is the identity. Provisioning now
+mints one and writes it to the hardware over `0x40` before the scanner is
+recorded at all:
+
+```
+pkscan_3f7k92mqx0b5t
+^^^^^^^                 fixed prefix
+       ^^^^^^^^^^^^^    13 characters of base32, 64 bits from a CSPRNG
+```
+
+Twenty bytes exactly — the documented ceiling, spent in full. No part of it comes
+from anything a person typed, so there is no truncation rule to agree on and no
+collision case to handle: the alphabet is Crockford's (no `i`, `l`, `o`, `u`,
+because this is a string somebody reads off your console output and retypes), and
+two scanners colliding across ten thousand units runs at about 3e-12.
+
+**This changes nothing you have to implement.** It is still an advertised name
+arriving in `bluetoothName`, matched byte for byte. Three things follow from it
+that are worth having:
+
+- **No spaces, ever.** Your trailing-space trim stays useful for the scanners
+  already in the field — the one advertising `"PKScan-01 "` is real — but nothing
+  provisioned from here will exercise it.
+- **The name is always exactly 20 bytes.** `PK_PRINTER_NAME_MAX` is 32, so it
+  fits with room to spare — noted only so the number is on the record.
+- **A scanner that will not be found is a scanner whose rename was silently
+  refused.** The browser cannot detect that: `FF04` takes no response, `FF01`'s
+  reply format is unpublished, and Chrome has not shipped advertisement scanning,
+  so there is no way to read the new name back. The symptom lands on you first,
+  as a bridge scanning forever for a name nothing advertises. If you ever report
+  `scannerLink: down` with a target that has never once been seen, that is the
+  case, and re-provisioning the scanner is the fix.
 
 ## Renaming a scanner — the opcode is `0x40`
 

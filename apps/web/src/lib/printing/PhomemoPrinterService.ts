@@ -162,56 +162,6 @@ export async function connectPrinter(bluetoothName: string): Promise<ConnectedM1
   return connectDevice(device);
 }
 
-/** Barcode data. On the scanner's GATT, but *not* in its advertisement. */
-export const SCANNER_DATA_SERVICE = '000018f0-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID;
-
-/** Battery, read on connect by the bridge rather than here. */
-export const SCANNER_BATTERY_SERVICE = '0000180f-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID;
-
-/** Beep, LED and settings. Shares its short UUID with the Phomemo print service. */
-export const SCANNER_COMMAND_SERVICE = '0000ff00-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID;
-
-/**
- * Shows the BLE picker and returns what was chosen.
- *
- * **Unfiltered, and it has to be.** A `filters` entry matches only against
- * services in the *advertisement*, and the BCST-23 advertises none of its own —
- * `18F0` exists on the peripheral but is discoverable only after connecting. A
- * service filter therefore matched nothing at all, which is why a scanner sat
- * on the bench and never appeared. The iOS app scans `withServices: nil` for
- * the same reason.
- *
- * Filtering by name was the other option and is worse: a factory-reset unit
- * advertises `HPRT` — the OEM's name, not Inateck's — so `BCST-23` never goes
- * over the air at all, and a scanner someone had already renamed would vanish
- * from the list with no clue why. Provisioning happens once, in a back room,
- * so a longer list is the cheaper failure.
- *
- * Only the advertised name is wanted here: the browser never talks to a scanner
- * — the bridge holds that link — so this is a name-capture step, not a
- * connection. `optionalServices` is declared anyway, so that a future step which
- * does need to talk to it is not blocked by the permission it was granted here.
- */
-export async function scanForScanner(): Promise<{ bluetoothName: string }> {
-  const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: [
-      SCANNER_DATA_SERVICE,
-      SCANNER_BATTERY_SERVICE,
-      SCANNER_COMMAND_SERVICE,
-    ],
-  });
-  return { bluetoothName: device.name ?? '' };
-}
-
-/**
- * What a scanner is called before anybody has renamed it.
- *
- * Used to reassure rather than to filter — a list that hid everything else
- * would hide a scanner that had already been renamed.
- */
-export const SCANNER_FACTORY_NAME_PREFIX = 'HPRT';
-
 /** Attempt silent reconnect to a previously-permitted device (no user gesture required). */
 export async function reconnectPrinter(bluetoothName: string): Promise<ConnectedM110 | null> {
   if (!('getDevices' in navigator.bluetooth)) return null;

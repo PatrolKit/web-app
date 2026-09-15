@@ -1,24 +1,27 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
+import { isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
 import {
-  isWebBluetoothSupported,
+  mintScannerName,
+  renameScanner,
   scanForScanner,
   SCANNER_FACTORY_NAME_PREFIX,
-} from '../../lib/printing/PhomemoPrinterService';
+} from '../../lib/printing/InateckScannerService';
 import type { SwapScanner } from '../../lib/api.types';
 
 /**
  * The barcode scanners this org owns.
  *
- * The same shape as the printer list above it, because they are provisioned the
- * same way: pick the peripheral out of the BLE picker to capture its advertised
- * name, give it a name a person would use, and bind it to a bridge. What a
- * scanner does not have is paper, margins, or an owner — a printer can belong to
- * a business seller, a scanner is always staff kit.
+ * The same shape as the printer list above it, with one difference that matters:
+ * provisioning a scanner *writes* to it. A printer is recorded under whatever
+ * name it already advertises; a scanner is given one of ours, because the
+ * advertised name is the only handle the bridge has — it re-scans for its target
+ * by name on every reconnect — and the name a scanner ships with is `HPRT` on
+ * every unit in the box.
  *
- * The browser never talks to a scanner. Picking one here only reads its name;
- * the bridge is what holds the link.
+ * That name is minted, not typed. Nobody sees it if things are working; the
+ * name below it on screen is the one a person chose.
  */
 export default function ScannersSection({
   orgId,
@@ -30,7 +33,9 @@ export default function ScannersSection({
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
-  const [btName, setBtName] = useState('');
+  const [device, setDevice] = useState<BluetoothDevice | null>(null);
+  const [airName, setAirName] = useState('');
+  const [step, setStep] = useState<'idle' | 'renaming' | 'saving'>('idle');
   const [error, setError] = useState('');
 
   const scannersKey = ['ski-swap/scanners', orgId];
@@ -40,13 +45,55 @@ export default function ScannersSection({
     enabled: !!orgId,
   });
 
-  const createMutation = useMutation({
-    mutationFn: () => api.skiSwap.createScanner(orgId, { name, bluetoothName: btName }),
+  /**
+   * Rename the hardware, then record it.
+   *
+   * This order, and not the reverse. If the rename lands and the save does not,
+   * the scanner carries a name nothing knows about — which is harmless, because
+   * nothing can be looking for it and the next attempt mints a fresh one. Saving
+   * first would instead leave a row claiming a name the hardware never took, and
+   * a bridge would hunt for it forever.
+   *
+   * Either failure clears the picked device on purpose. A scanner that has been
+   * renamed is no longer the device the operator chose, so the honest next step
+   * is to pick it again and provision it from the top.
+   */
+  const provisionMutation = useMutation({
+    mutationFn: async () => {
+      if (!device) throw new Error('Pick the scanner first.');
+      const bluetoothName = mintScannerName();
+
+      setStep('renaming');
+      try {
+        await renameScanner(device, bluetoothName);
+      } catch (e) {
+        throw new Error(
+          `Could not rename the scanner: ${(e as Error)?.message ?? 'the connection failed'}. ` +
+          'Nothing was saved. Wake it, keep it close to this computer, and pick it again.',
+        );
+      }
+
+      setStep('saving');
+      try {
+        return await api.skiSwap.createScanner(orgId, { name, bluetoothName });
+      } catch (e) {
+        const why = e instanceof ApiError ? e.message : 'the server could not be reached';
+        throw new Error(
+          `The scanner was renamed, but not saved: ${why}. ` +
+          'Pick it again to provision it from the top — it will be given a fresh name.',
+        );
+      }
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: scannersKey });
       closeForm();
     },
-    onError: (e: Error) => setError(e instanceof ApiError ? e.message : 'Could not add that scanner'),
+    onError: (e: Error) => {
+      setStep('idle');
+      setDevice(null);
+      setAirName('');
+      setError(e.message);
+    },
   });
 
   const deleteMutation = useMutation({
@@ -57,7 +104,9 @@ export default function ScannersSection({
   function closeForm() {
     setShowForm(false);
     setName('');
-    setBtName('');
+    setDevice(null);
+    setAirName('');
+    setStep('idle');
     setError('');
   }
 
@@ -67,8 +116,9 @@ export default function ScannersSection({
       return;
     }
     try {
-      const { bluetoothName } = await scanForScanner();
-      setBtName(bluetoothName);
+      const picked = await scanForScanner();
+      setDevice(picked.device);
+      setAirName(picked.bluetoothName);
       setError('');
     } catch (err: unknown) {
       // Closing the picker without choosing is not a failure worth reporting.
@@ -77,6 +127,8 @@ export default function ScannersSection({
       }
     }
   }
+
+  const busy = provisionMutation.isPending;
 
   return (
     <div className="space-y-3 border-t border-gray-800 pt-6">
@@ -101,7 +153,7 @@ export default function ScannersSection({
 
       {showForm && (
         <form
-          onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }}
+          onSubmit={(e) => { e.preventDefault(); provisionMutation.mutate(); }}
           className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3"
         >
           <h3 className="text-white font-medium">New scanner</h3>
@@ -111,14 +163,15 @@ export default function ScannersSection({
             <div className="mt-1 flex gap-2">
               <input
                 readOnly
-                value={btName}
-                placeholder="Pick the scanner to read its name"
+                value={airName}
+                placeholder="Pick the scanner to provision"
                 className="flex-1 bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono"
               />
               <button
                 type="button"
                 onClick={pick}
-                className="bg-surface-100 hover:bg-surface-200 text-gray-200 px-3 py-2 rounded text-sm whitespace-nowrap"
+                disabled={busy}
+                className="bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-gray-200 px-3 py-2 rounded text-sm whitespace-nowrap"
               >
                 Scan…
               </button>
@@ -129,10 +182,9 @@ export default function ScannersSection({
             <p className="mt-1 text-gray-500 text-xs">
               Wake the scanner first — it has to be advertising to appear. Every nearby
               Bluetooth device is listed, because a scanner does not announce what it is;
-              a factory-reset one calls itself{' '}
+              one straight out of the box calls itself{' '}
               <span className="font-mono text-gray-400">{SCANNER_FACTORY_NAME_PREFIX}…</span>.
-              The name is stored exactly as it comes off the air, because that is what the
-              bridge connects to.
+              Adding it renames it, so keep it close and awake until this finishes.
             </p>
           </label>
 
@@ -143,8 +195,13 @@ export default function ScannersSection({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder='e.g. "Front counter scanner"'
-              className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+              disabled={busy}
+              className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white disabled:opacity-60"
             />
+            <p className="mt-1 text-gray-500 text-xs">
+              What people here call it. Name it for where it lives, not what it is — every
+              one of these is a scanner.
+            </p>
           </label>
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -152,15 +209,18 @@ export default function ScannersSection({
           <div className="flex gap-2">
             <button
               type="submit"
-              disabled={!name || !btName || createMutation.isPending}
+              disabled={!name || !device || busy}
               className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
             >
-              {createMutation.isPending ? 'Adding…' : 'Add scanner'}
+              {step === 'renaming' ? 'Renaming the scanner…'
+                : step === 'saving' ? 'Saving…'
+                : 'Add scanner'}
             </button>
             <button
               type="button"
               onClick={closeForm}
-              className="text-gray-400 hover:text-white text-sm px-3 py-2"
+              disabled={busy}
+              className="text-gray-400 hover:text-white disabled:opacity-40 text-sm px-3 py-2"
             >
               Cancel
             </button>
@@ -178,8 +238,10 @@ export default function ScannersSection({
               className="bg-surface-50 border border-gray-700 rounded-lg p-3 flex items-start justify-between gap-3"
             >
               <div>
-                <p className="text-sm text-white">{s.name}</p>
-                <p className="text-xs text-gray-500 font-mono">{s.bluetoothName}</p>
+                {/* The minted name is on the tooltip rather than the row: it is
+                    what a bridge log prints, so it has to be reachable, but it
+                    means nothing to the person reading this list. */}
+                <p className="text-sm text-white" title={s.bluetoothName}>{s.name}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {s.bridgeDeviceId
                     ? s.stationName
