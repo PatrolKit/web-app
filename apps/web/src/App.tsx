@@ -27,6 +27,8 @@ import SwapsPage from './pages/ski-swap/SwapsPage';
 import ItemsPage from './pages/ski-swap/ItemsPage';
 import SellersPage from './pages/ski-swap/SellersPage';
 import AdministrationPage from './pages/ski-swap/AdministrationPage';
+import AdministrationLayout from './pages/ski-swap/AdministrationLayout';
+import ItemDetailsPage from './pages/ski-swap/ItemDetailsPage';
 import BusinessSellerPage from './pages/ski-swap/BusinessSellerPage';
 import SellerProfilePage from './pages/ski-swap/SellerProfilePage';
 import SellerStatusPage from './pages/public/SellerStatusPage';
@@ -114,7 +116,10 @@ export default function App() {
             <Route path="sellers" element={<SellersPage />} />
             <Route path="check-in" element={<CheckinStationsPage />} />
             <Route path="printers" element={<PrintersPage />} />
-            <Route path="config" element={<AdministrationPage />} />
+            <Route path="config" element={<AdministrationLayout />}>
+              <Route index element={<AdministrationPage />} />
+              <Route path="item-details" element={<ItemDetailsPage />} />
+            </Route>
             <Route path="my-items" element={<BusinessSellerPage />} />
             <Route path="seller-profile" element={<SellerProfilePage />} />
           </Route>

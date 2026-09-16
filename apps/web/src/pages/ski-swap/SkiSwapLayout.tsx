@@ -72,7 +72,10 @@ export default function SkiSwapLayout() {
   useEffect(() => {
     if (isAdmin && squareConfigured === false) {
       const base = location.pathname.replace(/\/ski-swap.*$/, '/ski-swap');
-      if (!location.pathname.endsWith('/config')) {
+      // Anywhere under config counts as already there — Administration has
+      // subtabs now, and matching only the exact path bounced a person off
+      // Item details and back to Settings.
+      if (!/\/config(\/|$)/.test(location.pathname)) {
         navigate(`${base}/config`, { replace: true });
       }
     }
@@ -134,8 +137,13 @@ export default function SkiSwapLayout() {
 
   const disabledTabClass = 'text-sm px-3 py-1.5 rounded text-gray-600 cursor-not-allowed';
 
-  // Swap-scoped routes show the picker; org-scoped routes don't
-  const isSwapScopedTab = !location.pathname.match(/\/(sellers|swaps|config|my-items|seller-profile)$/);
+  // Swap-scoped routes show the picker; org-scoped routes don't. Config matches
+  // its subtabs too — Item details is the org's taxonomy, the same tree whichever
+  // swap is selected, so offering a swap to pick would be offering a choice that
+  // changes nothing.
+  const isSwapScopedTab = !location.pathname.match(
+    /\/(sellers|swaps|my-items|seller-profile)$|\/config(\/|$)/,
+  );
 
   return (
     <div className="space-y-6">
