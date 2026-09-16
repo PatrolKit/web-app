@@ -7,9 +7,38 @@
 
 // ─── BLE constants ────────────────────────────────────────────────────────────
 
+/**
+ * Where printing happens: write to FF02, per-chunk acknowledgements on FF03.
+ *
+ * Both printers expose this once connected — it is what `connectDevice` opens
+ * and what the M221 prints through. What differs is whether they *advertise* it.
+ */
 const PHOMEMO_SERVICE = '0000ff00-0000-1000-8000-00805f9b34fb';
 const WRITE_CHAR      = '0000ff02-0000-1000-8000-00805f9b34fb';
 const ACK_CHAR        = '0000ff03-0000-1000-8000-00805f9b34fb'; // per-chunk ACK notifications
+
+/**
+ * What an M221 puts in its advertisement, where an M110 puts `FF00`.
+ *
+ * Read off the hardware with LightBlue: an M221 advertises `AF30` and `1812` and
+ * not `FF00` — so a picker filtered on the service it prints through never
+ * listed it, and the printer looked absent rather than unmatched. It still has
+ * `FF00`; it just does not announce it.
+ *
+ * `1812` is standard HID and is deliberately not here — every keyboard and mouse
+ * in the room advertises it, so filtering on it is barely a filter. `AF30` is
+ * vendor-specific and selective.
+ *
+ * Nothing reads or writes this service. It exists to be advertised, which is all
+ * a picker needs.
+ */
+const PHOMEMO_ADVERTISED_ALT = '0000af30-0000-1000-8000-00805f9b34fb';
+
+/** Filters that list a printer of either kind, by whatever each one announces. */
+export const PRINTER_ADVERTISED_FILTERS: BluetoothLEScanFilter[] = [
+  { services: [PHOMEMO_SERVICE as BluetoothServiceUUID] },
+  { services: [PHOMEMO_ADVERTISED_ALT as BluetoothServiceUUID] },
+];
 
 /** Bytes per BLE write. The printer's buffer, not ours. */
 const CHUNK_SIZE = 182;
@@ -181,9 +210,9 @@ export async function connectFromDevice(device: BluetoothDevice): Promise<Connec
 
 /** Show BLE picker filtered to specific printer BT names; falls back to service UUID if list is empty. */
 export async function connectFromPool(allowedBtNames: string[]): Promise<ConnectedM110> {
-  const filters = allowedBtNames.length > 0
+  const filters: BluetoothLEScanFilter[] = allowedBtNames.length > 0
     ? allowedBtNames.map((name) => ({ name }))
-    : [{ services: [PHOMEMO_SERVICE] as BluetoothServiceUUID[] }];
+    : PRINTER_ADVERTISED_FILTERS;
 
   const device = await navigator.bluetooth.requestDevice({
     filters,

@@ -17,6 +17,7 @@ import {
   DEFAULT_PRINTER_MARGINS,
   isWebBluetoothSupported,
   PAPER_SIZE_LABELS,
+  PRINTER_ADVERTISED_FILTERS,
   paperSizesFor,
   PRINTER_MODEL_LABELS,
   PRINTER_MODELS,
@@ -198,11 +199,15 @@ export default function PrintersPage() {
    * A model that does not advertise it never appears at all, and an empty picker
    * looks like a flat battery rather than a filter.
    *
+   * The narrow list matches on what each printer announces — `FF00` for an M110,
+   * `AF30` for an M221, which was read off the hardware after one went missing
+   * from a list filtered on `FF00` alone. The wide list stays as the escape
+   * hatch for the next printer that announces something else again.
+   *
    * Name prefixes are not a fix here, whatever they were for scanners. Both
    * printers we own advertise an opaque serial — `Q192E28B1060137` is an M110,
-   * `Q454E62S2530017` an M221 — so a name says nothing about what a device is.
-   * The escape hatch is everything in range, and the model is a dropdown against
-   * the label on the hardware.
+   * `Q454E62S2530017` an M221 — so a name says nothing about what a device is,
+   * and the model is a dropdown against the label on the hardware.
    */
   async function scanAnyPrinter(showAll = false) {
     if (!isWebBluetoothSupported()) { alert('Printing requires Chrome or Edge.'); return; }
@@ -211,7 +216,7 @@ export default function PrintersPage() {
       const device = await navigator.bluetooth.requestDevice(
         showAll
           ? { acceptAllDevices: true, optionalServices: [PHOMEMO] }
-          : { filters: [{ services: [PHOMEMO] }], optionalServices: [PHOMEMO] },
+          : { filters: PRINTER_ADVERTISED_FILTERS, optionalServices: [PHOMEMO] },
       );
       setPrinterBtName(device.name ?? '');
       scannedDeviceRef.current = device; // keep alive for first print — no disconnect
