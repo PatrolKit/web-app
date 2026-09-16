@@ -220,12 +220,40 @@ function PrinterStatusBar() {
   const { preferredPrinter, isPreferredConnected, connectPreferred, disconnectPreferred, setPaperSize, previewMode, setPreviewMode, isSupported } = usePrinter();
   const [isConnecting, setIsConnecting] = useState(false);
   const [showPopover, setShowPopover] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   if (!isSupported || !preferredPrinter) return null;
 
+  /**
+   * Reconnects, and says so when it does not.
+   *
+   * Every failure here used to be swallowed as "user cancelled", which is only
+   * sometimes true. A picker filtered to one Bluetooth name shows an empty list
+   * when nothing is advertising that name, and dismissing an empty list raises
+   * the same `NotFoundError` as changing your mind — so a printer that was
+   * asleep, out of range, or holding a connection to something else looked
+   * exactly like a printer nobody had tried to connect to. The button span, and
+   * nothing else happened.
+   */
   async function handleConnect() {
     setIsConnecting(true);
-    try { await connectPreferred(); } catch { /* user cancelled */ } finally { setIsConnecting(false); }
+    setConnectError(null);
+    try {
+      await connectPreferred();
+    } catch (err: unknown) {
+      const name = (err as { name?: string })?.name;
+      if (name === 'NotFoundError') {
+        // Cancelled, or an empty list — indistinguishable, so say both.
+        setConnectError(
+          'No printer picked. If the list was empty, the printer is asleep, out of range, ' +
+          'or still connected to something else.',
+        );
+      } else {
+        setConnectError((err as Error)?.message ?? 'Could not connect to the printer.');
+      }
+    } finally {
+      setIsConnecting(false);
+    }
   }
 
   async function handlePaperSize(size: PaperSize) {
@@ -286,13 +314,18 @@ function PrinterStatusBar() {
                 </button>
               </>
             ) : (
-              <button
-                onClick={() => { handleConnect(); setShowPopover(false); }}
-                disabled={isConnecting}
-                className="w-full text-left px-3 py-2 text-gray-300 hover:bg-surface-200 disabled:opacity-40"
-              >
-                Reconnect
-              </button>
+              <>
+                <button
+                  onClick={() => { void handleConnect(); }}
+                  disabled={isConnecting}
+                  className="w-full text-left px-3 py-2 text-gray-300 hover:bg-surface-200 disabled:opacity-40"
+                >
+                  {isConnecting ? 'Connecting…' : 'Reconnect'}
+                </button>
+                {connectError && (
+                  <p className="px-3 pb-2 text-amber-400 text-xs">{connectError}</p>
+                )}
+              </>
             )}
           </div>
         </>
