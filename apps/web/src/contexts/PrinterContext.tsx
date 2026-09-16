@@ -17,9 +17,9 @@ interface PrinterContextValue {
   isPreferredConnected: boolean;
   setPreferredPrinter(printer: SwapPrinterRecord | null): void;
   setPaperSize(paperSize: PaperSize): Promise<void>;
-  connectPreferred(): Promise<void>;
+  connectPreferred(opts?: { anyDevice?: boolean }): Promise<void>;
   disconnectPreferred(): void;
-  connectPrinterById(printer: SwapPrinterRecord): Promise<ConnectedM110>;
+  connectPrinterById(printer: SwapPrinterRecord, opts?: { anyDevice?: boolean }): Promise<ConnectedM110>;
   registerConnection(printer: SwapPrinterRecord, conn: ConnectedM110): void;
   printItem(item: ItemResponse): Promise<void>;
   printQrLabel(sellerId: string): Promise<void>;
@@ -148,8 +148,13 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const connectPrinterById = useCallback(async (printer: SwapPrinterRecord): Promise<ConnectedM110> => {
-    const conn = (await reconnectPrinter(printer.bluetoothName)) ?? await connectPrinter(printer.bluetoothName);
+  const connectPrinterById = useCallback(async (
+    printer: SwapPrinterRecord, opts: { anyDevice?: boolean } = {},
+  ): Promise<ConnectedM110> => {
+    // A silent reconnect cannot work for a device the page has not been granted,
+    // and is skipped entirely when the operator has asked for the wide list.
+    const conn = (opts.anyDevice ? null : await reconnectPrinter(printer.bluetoothName))
+      ?? await connectPrinter(printer.bluetoothName, opts);
     updateConnections((prev) => new Map(prev).set(printer.id, conn));
     attachDisconnectHandler(printer.id, conn);
     persistPreferred(printer.id);
@@ -157,13 +162,21 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
-  const connectPreferred = useCallback(async (): Promise<void> => {
+  const connectPreferred = useCallback(async (opts: { anyDevice?: boolean } = {}): Promise<void> => {
     if (!isSupported) return;
     const pool = printersRef.current;
     const pref = pool.find((p) => p.id === preferredPrinterIdRef.current);
 
     if (pref) {
-      await connectPrinterById(pref);
+      const conn = await connectPrinterById(pref, opts);
+      // Picked off the wide list and it answers to something else: the stored
+      // name is stale, and the bridge would still be hunting for the old one.
+      if (conn.bluetoothName && conn.bluetoothName !== pref.bluetoothName) {
+        throw new Error(
+          `Connected, but this printer advertises "${conn.bluetoothName}" and is recorded as ` +
+          `"${pref.bluetoothName}". Update it on the Hardware page — a bridge looks for the recorded name.`,
+        );
+      }
     } else {
       const conn = await connectFromPool(pool.map((p) => p.bluetoothName));
       const matched = printersRef.current.find((p) => p.bluetoothName === conn.bluetoothName);
