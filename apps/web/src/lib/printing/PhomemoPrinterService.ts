@@ -70,16 +70,14 @@ export function paperSizesFor(model: PrinterModelId): PaperSize[] {
 }
 
 /**
- * Which printer an advertised name belongs to, or null when it says nothing.
+ * Phomemos do not say what they are.
  *
- * Phomemos name themselves after the model — `M110-A1B2` — so provisioning can
- * usually settle this without asking, the way the scanner picker reads `HPRT`.
- * A name that matches nothing is not an error: ask, and store the answer.
+ * Both printers we own advertise an opaque serial — `Q192E28B1060137` is an
+ * M110 and `Q454E62S2530017` is an M221 — so there was a
+ * `modelFromBluetoothName` here that never once fired. The model is asked for
+ * instead, which is a dropdown against the label on the hardware and honest
+ * about the fact that nothing else knows.
  */
-export function modelFromBluetoothName(name: string): PrinterModelId | null {
-  const upper = name.toUpperCase();
-  return PRINTER_MODELS.find((m) => upper.includes(m.toUpperCase())) ?? null;
-}
 
 // ─── Browser support guard ────────────────────────────────────────────────────
 

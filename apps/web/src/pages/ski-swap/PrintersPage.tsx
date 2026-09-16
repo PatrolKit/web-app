@@ -16,7 +16,6 @@ import {
   connectFromDevice,
   DEFAULT_PRINTER_MARGINS,
   isWebBluetoothSupported,
-  modelFromBluetoothName,
   PAPER_SIZE_LABELS,
   paperSizesFor,
   PRINTER_MODEL_LABELS,
@@ -199,10 +198,11 @@ export default function PrintersPage() {
    * A model that does not advertise it never appears at all, and an empty picker
    * looks like a flat battery rather than a filter.
    *
-   * Name prefixes are not a fix here, whatever they were for scanners: one of
-   * our own M110s calls itself `Q192E28B1060137`, which says nothing about the
-   * model. So the escape hatch is everything, and the operator reads the label
-   * on the hardware.
+   * Name prefixes are not a fix here, whatever they were for scanners. Both
+   * printers we own advertise an opaque serial — `Q192E28B1060137` is an M110,
+   * `Q454E62S2530017` an M221 — so a name says nothing about what a device is.
+   * The escape hatch is everything in range, and the model is a dropdown against
+   * the label on the hardware.
    */
   async function scanAnyPrinter(showAll = false) {
     if (!isWebBluetoothSupported()) { alert('Printing requires Chrome or Edge.'); return; }
@@ -213,16 +213,7 @@ export default function PrintersPage() {
           ? { acceptAllDevices: true, optionalServices: [PHOMEMO] }
           : { filters: [{ services: [PHOMEMO] }], optionalServices: [PHOMEMO] },
       );
-      const name = device.name ?? '';
-      setPrinterBtName(name);
-      // Phomemos usually name themselves after the model, which settles this
-      // without asking. When the name says nothing, the field is left for a
-      // person rather than guessed at.
-      const guessed = modelFromBluetoothName(name);
-      setPrinterModel(guessed ?? '');
-      // Sizes depend on the model, so a guess that changes it invalidates any
-      // size already chosen rather than silently keeping an impossible pair.
-      setPrinterPaperSize(guessed && paperSizesFor(guessed).length === 1 ? paperSizesFor(guessed)[0] : '');
+      setPrinterBtName(device.name ?? '');
       scannedDeviceRef.current = device; // keep alive for first print — no disconnect
     } catch (err: unknown) {
       if ((err as { name?: string })?.name !== 'NotFoundError') alert(`Scan failed: ${(err as Error)?.message ?? err}`);
@@ -295,8 +286,9 @@ export default function PrintersPage() {
                 >
                   show every Bluetooth device
                 </button>{' '}
-                — some models do not advertise what they are, and you will have to pick the
-                model below yourself.
+                — some models do not announce what they are. Either way, pick the model
+                below from the label on the printer: its Bluetooth name is a serial number
+                and says nothing about which one it is.
               </p>
               <select
                 value={printerModel}

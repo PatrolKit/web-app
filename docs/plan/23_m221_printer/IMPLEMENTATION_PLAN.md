@@ -19,7 +19,7 @@ will need.
 | | |
 |---|---|
 | **Media alignment** | The M221 physically centres narrower stock under the head. Confirmed on the hardware, not inferred from a driver. |
-| **Head width** | Not yet known. §2 — measurable with one label, and forgiving if slightly wrong. |
+| **Head width** | **600 dots (75 mm).** Measured — §2. |
 | **Tag orientation** | Price and name share an orientation, and both are rotated. Forced: the name column is ~22 mm wide, and no useful text runs across 22 mm. |
 | **What "description" is** | The frozen `SwapItem.name`, already what `ItemLabelData` receives. Nothing new to thread through. |
 | **Sizes** | 40 × 30 is dropped. 50 × 30 and 62 × 100 remain, and adding more is the point of §3. |
@@ -27,40 +27,29 @@ will need.
 
 ---
 
-## 2. The head width
+## 2. The head width — 600 dots
 
 The M221 is a 3-inch printer at **203 DPI** with a **20–75 mm** print width
 ([Phomemo](https://phomemo.com/products/m221-label-maker),
 [manual](https://manuals.plus/phomemo/m221-label-maker-printer-manual)). 203 DPI
 is 7.992 dots/mm, so the existing 8 dots/mm assumption holds to within a dot over
-100 mm and needs no change.
+100 mm and needed no change.
 
-The head width in dots is not reliably published. Sources contradict each other
-across the whole family: [one community
-driver](https://github.com/c08306605-crypto/Momir-Jamie-Dave/pull/4) says 384 for
-the M110 and 576 for the M220/M221;
-[vivier/phomemo-tools](https://github.com/vivier/phomemo-tools) says 344 for both.
-Our own M110 prints correctly at 400, which rules out 344 and confirms nothing
-else — `marginRight` is 28, so nothing has ever been drawn past dot 372, and a
-384-dot head is indistinguishable from a 400-dot one in everything we have
-printed.
+Published head widths contradicted each other — [one community
+driver](https://github.com/c08306605-crypto/Momir-Jamie-Dave/pull/4) says 576 for
+the M220 class, [vivier/phomemo-tools](https://github.com/vivier/phomemo-tools)
+says 344 — so it was set to 576 and measured with a calibration label.
 
-**Centring makes the number forgiving.** With media physically centred and
-content drawn centred, an error in the assumed head width does not misalign
-content against the media; it shifts it by half the error.
+**It is 600.** The label says so three ways. Its diagonals span the whole head, so
+the row where they meet the media's left edge measures how much head sits outside
+the media: about 8 mm down, where 576 predicts 6.8 mm and 600 predicts 8.5. The
+diagonals cross on the label's centreline, confirming the centring. And the margin
+box sat slightly left of centre — exactly what too small a head does once content
+is drawn centred. 600 dots is also 75 mm, the quoted maximum print width.
 
-```
-content centre = assumed / 2      (head dot)
-media centre   = true / 2         (head dot)
-shift          = (assumed − true) / 2
-```
-
-Assume 600 against a true 576 and content sits 12 dots — 1.5 mm — off centre,
-with nothing clipped: centred 496-dot content on an assumed 600 reaches dot 548,
-inside 576.
-
-**One calibration label settles it.** Its corner-to-corner diagonals cross at the
-head's true centre, and its full-width box is clipped at the head's real edges.
+Being wrong by 24 dots cost a 1.5 mm shift and nothing else, which is the
+property centring buys: content is drawn centred, so an error moves it by half
+itself rather than pushing it off the label.
 
 ---
 
@@ -217,22 +206,19 @@ waits on `FF03` notifications for a per-chunk acknowledgement, three chunks
 in flight at a time. The bridge does the same thing independently —
 `printer_ble.c` finds a printer by advertised name and uses the same three UUIDs.
 
-**Three things about the M221 are unknown, and each breaks something different.**
+**All three BLE unknowns are settled, by provisioning one and printing on it.**
 
-| Unknown | What breaks if it differs |
+| Question | Answer |
 |---|---|
-| Does it advertise `FF00`? | It never appears in the picker at all. The filter has to widen — a name-prefix fallback is what the scanner work settled on for exactly this. |
-| `FF02` write, `FF03` acknowledgements? | The browser's windowed write stalls waiting for an ACK that never arrives. |
-| Chunk size | `CHUNK_SIZE = 182` is commented "the printer's buffer, not ours". A smaller buffer on the M221 means dropped bytes rather than an error. |
+| Does it advertise `FF00`? | **No.** It never appeared in the picker, which filtered on that service. The picker now offers an unfiltered list as a fallback. |
+| `FF02` write, `FF03` acknowledgements? | **Yes** — printing works unchanged. |
+| Chunk size | `CHUNK_SIZE = 182` holds. |
 
-All three are answered by connecting once and reading the GATT table. Do it in
-the same sitting as the calibration label.
-
-**The model has to be captured, and can probably be inferred.** Printers
-advertise identifiable names — the M110s in the fixtures are `M110-A1B2` and
-`Q192E28B1060137` — so a prefix match should settle the model without asking, the
-way `HPRT` does for scanners. Ask only when nothing matches, and store the answer:
-`SwapPrinter.model` is what the whole of §3 keys off.
+**The model has to be asked for.** The guess was that printers name themselves
+identifiably, the way `HPRT` does for scanners. They do not: both we own advertise
+an opaque serial — `Q192E28B1060137` is an M110, `Q454E62S2530017` an M221 — so
+the inference never fired and was removed. It is a dropdown against the label on
+the hardware, and `SwapPrinter.model` is what the whole of §3 keys off.
 
 **That constrains the form.** The size list is filtered by model (`LabelSize.models`),
 so the model must be known before sizes can be offered. Pick the device first,

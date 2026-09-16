@@ -57,16 +57,29 @@ export const PRINTER_MODEL: Record<PrinterModelId, PrinterModel> = {
   m221: {
     id: 'm221',
     label: 'Phomemo M221',
-    // PROVISIONAL — 72 bytes, the figure the community CUPS work reports for the
-    // M220 class, and consistent with a 3-inch 203 dpi head. Published sources
-    // disagree across this family, so measure it with a calibration label and
-    // correct this one number.
-    //
-    // Being wrong here is survivable rather than ruinous: the M221 centres its
-    // media, and content is drawn centred, so an error shifts content by half
-    // the error rather than misaligning it against the label.
-    headWidthDots: 576,
-    // Confirmed on the hardware: there is a physical guide that centres stock.
+    /*
+     * 75 mm — the manufacturer's quoted maximum print width, and what a
+     * calibration label on the hardware agrees with.
+     *
+     * Community drivers report 72 bytes (576) for the M220 class and this was
+     * set there first, which put the media 12 dots left of where it belonged.
+     * The label said otherwise three ways: its diagonals span the whole head, so
+     * the row where they meet the media's left edge measures how much head sits
+     * outside it — about 8 mm down, where 576 predicts 6.8 and 600 predicts 8.5.
+     * The diagonals crossed on the label's centreline, and the margin box sat
+     * slightly left of centre, which is exactly what too small a head does once
+     * content is drawn centred.
+     */
+    headWidthDots: 600,
+    /*
+     * Confirmed twice: there is a physical guide that centres stock, and the
+     * calibration diagonals cross on the label's centreline rather than off to
+     * one side.
+     *
+     * Centring is also what makes this forgiving. Content is drawn centred, so
+     * an error in the head width shifts it by half the error instead of pushing
+     * it off the label — which is why 576 printed acceptably while being wrong.
+     */
     mediaAlignment: 'centre',
   },
 };
