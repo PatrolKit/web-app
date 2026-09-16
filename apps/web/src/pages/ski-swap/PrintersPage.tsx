@@ -16,8 +16,15 @@ import {
   connectFromDevice,
   DEFAULT_PRINTER_MARGINS,
   isWebBluetoothSupported,
+  modelFromBluetoothName,
+  PAPER_SIZE_LABELS,
+  paperSizesFor,
+  PRINTER_MODEL_LABELS,
+  PRINTER_MODELS,
 } from '../../lib/printing/PhomemoPrinterService';
-import type { PrinterMargins } from '../../lib/printing/PhomemoPrinterService';
+import type {
+  PaperSize, PrinterMargins, PrinterModelId,
+} from '../../lib/printing/PhomemoPrinterService';
 import { usePrinter } from '../../contexts/PrinterContext';
 import { DeviceCredentialList, MutationError } from '../devices/DeviceCredentials';
 import {
@@ -70,7 +77,8 @@ export default function PrintersPage() {
   // ─── Printers state ───────────────────────────────────────────────────────
   const [printerName, setPrinterName] = useState('');
   const [printerBtName, setPrinterBtName] = useState('');
-  const [printerPaperSize, setPrinterPaperSize] = useState<'40x30' | '50x30' | ''>('');
+  const [printerModel, setPrinterModel] = useState<PrinterModelId | ''>('');
+  const [printerPaperSize, setPrinterPaperSize] = useState<PaperSize | ''>('');
   // Holds the BluetoothDevice from the scan so the first print needs no picker
   const scannedDeviceRef = useRef<BluetoothDevice | null>(null);
   const [showPrinterForm, setShowPrinterForm] = useState(false);
@@ -86,7 +94,7 @@ export default function PrintersPage() {
   });
 
   const createPrinterMutation = useMutation({
-    mutationFn: () => api.skiSwap.createPrinter(orgId, { name: printerName, bluetoothName: printerBtName, paperSize: printerPaperSize }),
+    mutationFn: () => api.skiSwap.createPrinter(orgId, { name: printerName, bluetoothName: printerBtName, model: printerModel as PrinterModelId, paperSize: printerPaperSize as PaperSize }),
     onSuccess: async (created) => {
       qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] });
       setShowPrinterForm(false);
@@ -189,7 +197,15 @@ export default function PrintersPage() {
         filters: [{ services: ['0000ff00-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID] }],
         optionalServices: ['0000ff00-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID],
       });
-      setPrinterBtName(device.name ?? '');
+      const name = device.name ?? '';
+      setPrinterBtName(name);
+      // Phomemos name themselves after the model, so this usually settles it
+      // without asking. When it does not, the field below is left for a person.
+      const guessed = modelFromBluetoothName(name);
+      setPrinterModel(guessed ?? '');
+      // Sizes depend on the model, so a guess that changes it invalidates any
+      // size already chosen rather than silently keeping an impossible pair.
+      setPrinterPaperSize(guessed && paperSizesFor(guessed).length === 1 ? paperSizesFor(guessed)[0] : '');
       scannedDeviceRef.current = device; // keep alive for first print — no disconnect
     } catch (err: unknown) {
       if ((err as { name?: string })?.name !== 'NotFoundError') alert(`Scan failed: ${(err as Error)?.message ?? err}`);
@@ -213,7 +229,7 @@ export default function PrintersPage() {
           </div>
           <div className="flex justify-end">
             <button
-              onClick={() => { setShowPrinterForm(true); setPrinterName(''); setPrinterBtName(''); setPrinterPaperSize(''); setPrinterFormError(null); }}
+              onClick={() => { setShowPrinterForm(true); setPrinterName(''); setPrinterBtName(''); setPrinterModel(''); setPrinterPaperSize(''); setPrinterFormError(null); }}
               className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
             >
               + Provision Printer
@@ -253,21 +269,43 @@ export default function PrintersPage() {
                 </button>
               </div>
               <select
-                value={printerPaperSize}
-                onChange={(e) => setPrinterPaperSize(e.target.value as '40x30' | '50x30')}
+                value={printerModel}
+                onChange={(e) => {
+                  const m = e.target.value as PrinterModelId;
+                  setPrinterModel(m);
+                  const sizes = paperSizesFor(m);
+                  setPrinterPaperSize(sizes.length === 1 ? sizes[0] : '');
+                }}
                 required
                 className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
               >
-                <option value="" disabled>Paper size (required)</option>
-                <option value="40x30">40 × 30 mm</option>
-                <option value="50x30">50 × 30 mm</option>
+                <option value="" disabled>Printer model (required)</option>
+                {PRINTER_MODELS.map((m) => (
+                  <option key={m} value={m}>{PRINTER_MODEL_LABELS[m]}</option>
+                ))}
+              </select>
+              {/* Stock wider than the head is unprintable, so the sizes on offer
+                  depend on the model — which is why it has to be settled first. */}
+              <select
+                value={printerPaperSize}
+                onChange={(e) => setPrinterPaperSize(e.target.value as PaperSize)}
+                required
+                disabled={!printerModel}
+                className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white disabled:opacity-40"
+              >
+                <option value="" disabled>
+                  {printerModel ? 'Paper size (required)' : 'Pick the model first'}
+                </option>
+                {printerModel && paperSizesFor(printerModel).map((size) => (
+                  <option key={size} value={size}>{PAPER_SIZE_LABELS[size]}</option>
+                ))}
               </select>
               {printerFormError && <p className="text-red-400 text-xs">{printerFormError}</p>}
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={() => { setShowPrinterForm(false); scannedDeviceRef.current = null; setPrinterFormError(null); }} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
                 <button
                   type="submit"
-                  disabled={createPrinterMutation.isPending || !printerName || !printerBtName || !printerPaperSize}
+                  disabled={createPrinterMutation.isPending || !printerName || !printerBtName || !printerModel || !printerPaperSize}
                   className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm disabled:opacity-40"
                 >
                   {createPrinterMutation.isPending ? 'Provisioning…' : 'Provision'}
@@ -320,11 +358,12 @@ export default function PrintersPage() {
                   <label className="text-xs text-gray-400 block mb-1">Paper size</label>
                   <select
                     value={editingPrinter.paperSize}
-                    onChange={(e) => patchPrinterMutation.mutate({ paperSize: e.target.value as '40x30' | '50x30' })}
+                    onChange={(e) => patchPrinterMutation.mutate({ paperSize: e.target.value as PaperSize })}
                     className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
                   >
-                    <option value="40x30">40 × 30 mm</option>
-                    <option value="50x30">50 × 30 mm</option>
+                    {paperSizesFor(editingPrinter.model).map((size) => (
+                      <option key={size} value={size}>{PAPER_SIZE_LABELS[size]}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -360,7 +399,7 @@ export default function PrintersPage() {
                   <p className="text-white font-medium">{p.name}</p>
                   <p className="text-xs text-gray-500 font-mono">{p.bluetoothName}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {p.assignedSellerName ? `Assigned to: ${p.assignedSellerName}` : 'Org pool'}{' · '}{p.paperSize === '40x30' ? '40×30 mm' : '50×30 mm'}
+                    {p.assignedSellerName ? `Assigned to: ${p.assignedSellerName}` : 'Org pool'}{' · '}{PRINTER_MODEL_LABELS[p.model]}{' · '}{PAPER_SIZE_LABELS[p.paperSize]}
                   </p>
                   <p className="text-xs text-gray-600 font-mono mt-0.5">
                     T:{p.marginTop} B:{p.marginBottom} L:{p.marginLeft} R:{p.marginRight}

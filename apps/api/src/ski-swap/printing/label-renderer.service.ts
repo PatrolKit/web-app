@@ -5,9 +5,8 @@ import { buildPrintJob } from './escpos.util';
 import {
   BRANDING_STRIP_W,
   CONTENT_BRANDING_GAP,
-  DEFAULT_PRINTER_MARGINS,
-  HEAD_WIDTH_DOTS,
-  PAPER_SIZE_HEIGHT_DOTS,
+  DEFAULT_TARGET,
+  geometryOf,
   type PrintTarget,
 } from './geometry';
 import {
@@ -23,11 +22,6 @@ import {
 } from './label-templates';
 
 type DrawFn = (ctx: SKRSContext2D, w: number, h: number) => void | Promise<void>;
-
-const DEFAULT_TARGET: PrintTarget = {
-  paperSize: '50x30',
-  margins: DEFAULT_PRINTER_MARGINS,
-};
 
 /**
  * Renders labels to the 1-bit rasters the printer consumes.
@@ -92,7 +86,7 @@ export class LabelRendererService {
   }
 
   calibration(target: PrintTarget = DEFAULT_TARGET): boolean[][] {
-    return calibrationPattern(target.paperSize, target.margins);
+    return calibrationPattern(target);
   }
 
   /**
@@ -152,25 +146,48 @@ export class LabelRendererService {
    * Templates receive only the content box, so none of them has to know about
    * margins or the branding strip.
    */
+  /**
+   * Draws a template into three nested boxes and returns the head-width raster.
+   *
+   *   the head          — what the printer burns, `headWidthDots` across
+   *     the media       — the label itself, at `mediaOffsetDots` under the head
+   *       the content   — the media inset by the safety margins
+   *
+   * The middle box is the one that used to be missing. Without it, stock
+   * narrower than the head could only be kept on the label by someone typing
+   * margins until it looked right, which is why `40x30` was a size in name only.
+   */
   private async compose(draw: DrawFn, target: PrintTarget): Promise<boolean[][]> {
-    const { margins, paperSize } = target;
-    const fullW = HEAD_WIDTH_DOTS;
-    const fullH = PAPER_SIZE_HEIGHT_DOTS[paperSize];
-    const innerH = fullH - margins.marginTop - margins.marginBottom;
-    const brandingLeft = fullW - margins.marginRight - BRANDING_STRIP_W;
-    const contentW = brandingLeft - CONTENT_BRANDING_GAP - margins.marginLeft;
+    const { margins } = target;
+    const { headWidthDots, mediaWidthDots, mediaOffsetDots, canvasHeightDots, tier } =
+      geometryOf(target);
+
+    const innerH = canvasHeightDots - margins.marginTop - margins.marginBottom;
+
+    // The compact tier parks a rotated branding strip against the right inset
+    // and hands the template what is left. The tall tier places its own, so it
+    // gets the whole content box.
+    const contentW =
+      tier === 'compact'
+        ? mediaWidthDots - margins.marginRight - BRANDING_STRIP_W - CONTENT_BRANDING_GAP - margins.marginLeft
+        : mediaWidthDots - margins.marginLeft - margins.marginRight;
 
     const inner = createCanvas(contentW, innerH);
     await draw(inner.getContext('2d'), contentW, innerH);
 
-    const full = createCanvas(fullW, fullH);
+    const full = createCanvas(headWidthDots, canvasHeightDots);
     const ctx = full.getContext('2d');
     ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, fullW, fullH);
-    ctx.drawImage(inner, margins.marginLeft, margins.marginTop);
-    await drawRotatedBranding(ctx, fullW, fullH, margins);
+    ctx.fillRect(0, 0, headWidthDots, canvasHeightDots);
+    ctx.drawImage(inner, mediaOffsetDots + margins.marginLeft, margins.marginTop);
 
-    return rasterise(ctx, fullW, fullH);
+    if (tier === 'compact') {
+      await drawRotatedBranding(
+        ctx, mediaOffsetDots + mediaWidthDots, canvasHeightDots, margins,
+      );
+    }
+
+    return rasterise(ctx, headWidthDots, canvasHeightDots);
   }
 }
 

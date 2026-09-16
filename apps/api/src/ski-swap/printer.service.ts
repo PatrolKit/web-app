@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { createId } from '@paralleldrive/cuid2';
+import { LABEL_SIZE, type PaperSize } from './printing/geometry';
 import type { SwapPrinterResponse } from '../contracts/ski-swap.contracts';
 import { SELLER_NAME_INCLUDE, sellerDisplayName, type SellerNameRow } from './seller.service';
 import { LegacyTicketService } from './legacy-ticket.service';
@@ -43,12 +44,20 @@ export class PrinterService {
     return printers.map((p) => this.toResponse(p));
   }
 
-  async create(orgId: string, userId: string, data: { name: string; bluetoothName: string; paperSize: string }): Promise<SwapPrinterResponse> {
+  async create(orgId: string, userId: string, data: { name: string; bluetoothName: string; model: string; paperSize: string }): Promise<SwapPrinterResponse> {
     const duplicate = await this.prisma.swapPrinter.findFirst({ where: { orgId, bluetoothName: data.bluetoothName } });
     if (duplicate) throw new ConflictException(`"${data.bluetoothName}" is already provisioned as "${duplicate.name}"`);
 
     const printer = await this.prisma.swapPrinter.create({
-      data: { id: createId(), orgId, name: data.name, bluetoothName: data.bluetoothName, paperSize: data.paperSize, createdBy: userId },
+      data: {
+        id: createId(), orgId, name: data.name, bluetoothName: data.bluetoothName,
+        model: data.model, paperSize: data.paperSize,
+        // The safety inset starts from the stock, not from a global default: 4
+        // dots is a sensible fraction of a 30 mm label and nearly nothing on a
+        // 100 mm one.
+        ...LABEL_SIZE[data.paperSize as PaperSize].defaultMargins,
+        createdBy: userId,
+      },
       include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
     });
     return this.toResponse(printer);
@@ -78,7 +87,7 @@ export class PrinterService {
     }
   }
 
-  async patch(orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; bridgeDeviceId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }): Promise<SwapPrinterResponse> {
+  async patch(orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; bridgeDeviceId?: string | null; model?: string; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }): Promise<SwapPrinterResponse> {
     const existing = await this.prisma.swapPrinter.findFirst({
       where: { id: printerId, orgId },
       include: { bridge: { include: { bridgedStation: true } } },
@@ -123,7 +132,12 @@ export class PrinterService {
         ...(data.bluetoothName !== undefined ? { bluetoothName: data.bluetoothName } : {}),
         ...(data.assignedSellerId !== undefined ? { assignedSellerId: data.assignedSellerId } : {}),
         ...(data.bridgeDeviceId !== undefined ? { bridgeDeviceId: data.bridgeDeviceId } : {}),
-        ...(data.paperSize !== undefined ? { paperSize: data.paperSize } : {}),
+        ...(data.model !== undefined ? { model: data.model } : {}),
+        // A size change resets the inset: the old numbers were chosen against a
+        // different label, and on a bigger one they are no longer a margin.
+        ...(data.paperSize !== undefined
+          ? { paperSize: data.paperSize, ...LABEL_SIZE[data.paperSize as PaperSize].defaultMargins }
+          : {}),
         ...(data.marginTop !== undefined ? { marginTop: data.marginTop } : {}),
         ...(data.marginBottom !== undefined ? { marginBottom: data.marginBottom } : {}),
         ...(data.marginLeft !== undefined ? { marginLeft: data.marginLeft } : {}),
@@ -176,17 +190,18 @@ export class PrinterService {
 
     const updated = await this.prisma.swapPrinter.update({
       where: { id: printerId },
-      data: { paperSize },
+      data: { paperSize, ...LABEL_SIZE[paperSize as PaperSize].defaultMargins },
       include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
     });
     return this.toResponse(updated);
   }
 
-  private toResponse(p: { id: string; name: string; bluetoothName: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number; assignedSellerId: string | null; seller: SellerNameRow | null; bridgeDeviceId?: string | null; bridge?: { bridgedStation?: { name: string; deletedAt: Date | null } | null } | null }): SwapPrinterResponse {
+  private toResponse(p: { id: string; name: string; bluetoothName: string; model: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number; assignedSellerId: string | null; seller: SellerNameRow | null; bridgeDeviceId?: string | null; bridge?: { bridgedStation?: { name: string; deletedAt: Date | null } | null } | null }): SwapPrinterResponse {
     return {
       id: p.id,
       name: p.name,
       bluetoothName: p.bluetoothName,
+      model: p.model as SwapPrinterResponse['model'],
       paperSize: p.paperSize as SwapPrinterResponse['paperSize'],
       marginTop: p.marginTop,
       marginBottom: p.marginBottom,

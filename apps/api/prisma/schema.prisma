@@ -525,11 +525,17 @@ model SwapPrinter {
   orgId            String
   name             String
   bluetoothName    String
-  paperSize        String   @default("40x30") // "40x30" | "50x30"
+  /// Which printer this is. Decides the head width and where narrower stock
+  /// sits under it — see printing/geometry.ts. "m110" | "m221"
+  model            String   @default("m110")
+  paperSize        String   @default("50x30") // "50x30" | "62x100"
+  /// Safety inset in dots. Labels do not always sit square in the printer, and
+  /// anything drawn to the exact edge is the first thing lost. Defaults come
+  /// from the label size, not from here — these are only the overrides.
   marginTop        Int      @default(4)
   marginBottom     Int      @default(4)
-  marginLeft       Int      @default(8)
-  marginRight      Int      @default(16)
+  marginLeft       Int      @default(0)
+  marginRight      Int      @default(28)
   /// Set ⇒ this printer belongs to one business seller, and cannot also be
   /// driven by a bridge. A printer serves exactly one thing.
   assignedSellerId String?

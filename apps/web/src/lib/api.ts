@@ -825,7 +825,7 @@ export const api = {
     // Printers
     listPrinters: (orgId: string) =>
       request<import('./api.types').SwapPrinterRecord[]>(`/orgs/${orgId}/ski-swap/printers`),
-    createPrinter: (orgId: string, data: { name: string; bluetoothName: string; paperSize: string }) =>
+    createPrinter: (orgId: string, data: { name: string; bluetoothName: string; model: string; paperSize: string }) =>
       request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers`, {
         method: 'POST', body: JSON.stringify(data),
       }),
@@ -862,7 +862,7 @@ export const api = {
       }
       return res.blob();
     },
-    patchPrinter: (orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; bridgeDeviceId?: string | null; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }) =>
+    patchPrinter: (orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; bridgeDeviceId?: string | null; model?: string; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }) =>
       request<import('./api.types').SwapPrinterRecord>(`/orgs/${orgId}/ski-swap/printers/${printerId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),

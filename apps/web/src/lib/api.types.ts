@@ -425,7 +425,8 @@ export interface SwapPrinterRecord {
   id: string;
   name: string;
   bluetoothName: string;
-  paperSize: '40x30' | '50x30';
+  model: import('./printing/PhomemoPrinterService').PrinterModelId;
+  paperSize: import('./printing/PhomemoPrinterService').PaperSize;
   marginTop:    number;
   marginBottom: number;
   marginLeft:   number;

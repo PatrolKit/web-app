@@ -7,6 +7,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { PrinterProvider, usePrinter } from '../contexts/PrinterContext';
 import { api } from '../lib/api';
 import type { OrgRole } from '../lib/api.types';
+import {
+  PAPER_SIZE_LABELS,
+  paperSizesFor,
+  type PaperSize,
+} from '../lib/printing/PhomemoPrinterService';
 
 /**
  * What every page under the shell receives.
@@ -223,12 +228,11 @@ function PrinterStatusBar() {
     try { await connectPreferred(); } catch { /* user cancelled */ } finally { setIsConnecting(false); }
   }
 
-  async function handlePaperSize(size: '40x30' | '50x30') {
+  async function handlePaperSize(size: PaperSize) {
     setShowPopover(false);
     await setPaperSize(size);
   }
 
-  const PAPER_LABELS: Record<'40x30' | '50x30', string> = { '40x30': '40 × 30 mm', '50x30': '50 × 30 mm' };
 
   return (
     <div className="relative mb-2 pb-2 border-b border-gray-800">
@@ -256,13 +260,13 @@ function PrinterStatusBar() {
             {isPreferredConnected ? (
               <>
                 <p className="px-3 pt-2 pb-1 text-gray-500 text-xs">Paper size</p>
-                {(['40x30', '50x30'] as const).map((size) => (
+                {paperSizesFor(preferredPrinter.model).map((size) => (
                   <button
                     key={size}
                     onClick={() => handlePaperSize(size)}
                     className={`w-full text-left px-3 py-1.5 hover:bg-surface-200 ${preferredPrinter.paperSize === size ? 'text-brand-400' : 'text-gray-300'}`}
                   >
-                    {PAPER_LABELS[size]}{preferredPrinter.paperSize === size && ' ✓'}
+                    {PAPER_SIZE_LABELS[size]}{preferredPrinter.paperSize === size && ' ✓'}
                   </button>
                 ))}
                 <div className="border-t border-gray-800 mt-1" />

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { LabelRendererService, packRaster } from './label-renderer.service';
-import { DEFAULT_PRINTER_MARGINS, HEAD_WIDTH_DOTS, type PrintTarget } from './geometry';
+import { geometryOf, printTarget, type PrintTarget } from './geometry';
 
 /**
  * Golden-image tests.
@@ -41,23 +41,42 @@ function expectGolden(name: string, rows: boolean[][]): void {
 }
 
 const TARGETS: Record<string, PrintTarget> = {
-  '50x30': { paperSize: '50x30', margins: DEFAULT_PRINTER_MARGINS },
-  '40x30': { paperSize: '40x30', margins: DEFAULT_PRINTER_MARGINS },
+  '50x30': printTarget('m110', '50x30'),
+  '62x100': printTarget('m221', '62x100'),
 };
 
 describe('LabelRendererService', () => {
   const renderer = new LabelRendererService();
 
   describe('geometry', () => {
-    it('renders at the full head width on both media sizes', async () => {
+    it('renders at its own head width and canvas height for every target', async () => {
       for (const target of Object.values(TARGETS)) {
+        const { headWidthDots, canvasHeightDots } = geometryOf(target);
         const rows = await renderer.itemTag(
           { name: 'Skis', priceCents: 1000, sku: 'SS26-A-0001' },
           target,
         );
-        expect(rows[0]).toHaveLength(HEAD_WIDTH_DOTS);
-        expect(rows).toHaveLength(224);
+        expect(rows[0]).toHaveLength(headWidthDots);
+        expect(rows).toHaveLength(canvasHeightDots);
       }
+    });
+
+    // The assertion whose absence let `40x30` be a size in name only: it shared
+    // every number with `50x30`, so nothing could tell them apart.
+    it('centres narrower media under the head, and leaves full-width media alone', () => {
+      expect(geometryOf(TARGETS['50x30'])).toMatchObject({
+        headWidthDots: 400, mediaWidthDots: 400, mediaOffsetDots: 0, canvasHeightDots: 224,
+      });
+      expect(geometryOf(TARGETS['62x100'])).toMatchObject({
+        headWidthDots: 576, mediaWidthDots: 496, mediaOffsetDots: 40, canvasHeightDots: 784,
+      });
+    });
+
+    it('declares the raster width it actually rendered, not a constant', () => {
+      const job = renderer.toPrintJob(renderer.calibration(TARGETS['62x100']));
+      const gs = job.indexOf(0x1d);
+      // 72-byte head, and 800 rows with the feed — little-endian, so 0x0320.
+      expect(Array.from(job.slice(gs, gs + 8))).toEqual([0x1d, 0x76, 0x30, 0x00, 72, 0, 0x20, 0x03]);
     });
 
     it('produces an ESC/POS job with the GS v 0 raster header', () => {
@@ -134,7 +153,7 @@ describe('LabelRendererService', () => {
       }));
       const pages = await renderer.receiptItems(items, TARGETS['50x30']);
       expect(pages.length).toBeGreaterThan(1);
-      pages.forEach((p) => expect(p[0]).toHaveLength(HEAD_WIDTH_DOTS));
+      pages.forEach((p) => expect(p[0]).toHaveLength(geometryOf(TARGETS['50x30']).headWidthDots));
     });
 
     it('returns a single label for a short list', async () => {

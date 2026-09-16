@@ -32,13 +32,54 @@ export interface PrinterMargins {
   marginRight:  number;
 }
 
-export const PAPER_SIZES = ['40x30', '50x30'] as const;
+/**
+ * The printers and stock the server knows how to render for.
+ *
+ * Mirrors `apps/api/src/ski-swap/printing/geometry.ts` — the two cannot import
+ * from each other, so this is the one place the web restates it. Everything else
+ * in the app derives from here rather than writing the union out again, which is
+ * what let a size be declared in eight places and updated in seven.
+ *
+ * `models` decides which sizes a printer may be offered: stock wider than the
+ * head is unprintable, so a 62 × 100 roll is not an option on an M110.
+ */
+export const PRINTER_MODELS = ['m110', 'm221'] as const;
+export type PrinterModelId = typeof PRINTER_MODELS[number];
+
+export const PRINTER_MODEL_LABELS: Record<PrinterModelId, string> = {
+  m110: 'Phomemo M110',
+  m221: 'Phomemo M221',
+};
+
+export const PAPER_SIZES = ['50x30', '62x100'] as const;
 export type PaperSize = typeof PAPER_SIZES[number];
 
 export const PAPER_SIZE_LABELS: Record<PaperSize, string> = {
-  '40x30': '40 × 30 mm',
   '50x30': '50 × 30 mm',
+  '62x100': '62 × 100 mm',
 };
+
+const PAPER_SIZE_MODELS: Record<PaperSize, readonly PrinterModelId[]> = {
+  '50x30': ['m110'],
+  '62x100': ['m221'],
+};
+
+/** The stock this model can take, in declaration order. */
+export function paperSizesFor(model: PrinterModelId): PaperSize[] {
+  return PAPER_SIZES.filter((s) => PAPER_SIZE_MODELS[s].includes(model));
+}
+
+/**
+ * Which printer an advertised name belongs to, or null when it says nothing.
+ *
+ * Phomemos name themselves after the model — `M110-A1B2` — so provisioning can
+ * usually settle this without asking, the way the scanner picker reads `HPRT`.
+ * A name that matches nothing is not an error: ask, and store the answer.
+ */
+export function modelFromBluetoothName(name: string): PrinterModelId | null {
+  const upper = name.toUpperCase();
+  return PRINTER_MODELS.find((m) => upper.includes(m.toUpperCase())) ?? null;
+}
 
 // ─── Browser support guard ────────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LabelRendererService } from './label-renderer.service';
-import { DEFAULT_PRINTER_MARGINS, isPaperSize, type PrintTarget } from './geometry';
+import { DEFAULT_TARGET, printTarget, type PrintTarget } from './geometry';
 import { displayName } from '../../common/util/person';
 
 export type PrintRecipeKind =
@@ -153,9 +153,10 @@ export class PrintRecipeService {
   }
 }
 
-/** A printer's own paper size and margins, falling back to the defaults. */
+/** A printer's own model, stock and margins, falling back to the defaults. */
 export function printTargetFor(
   printer: {
+    model: string;
     paperSize: string;
     marginTop: number;
     marginBottom: number;
@@ -163,14 +164,11 @@ export function printTargetFor(
     marginRight: number;
   } | null,
 ): PrintTarget {
-  if (!printer) return { paperSize: '50x30', margins: DEFAULT_PRINTER_MARGINS };
-  return {
-    paperSize: isPaperSize(printer.paperSize) ? printer.paperSize : '50x30',
-    margins: {
-      marginTop: printer.marginTop,
-      marginBottom: printer.marginBottom,
-      marginLeft: printer.marginLeft,
-      marginRight: printer.marginRight,
-    },
-  };
+  if (!printer) return DEFAULT_TARGET;
+  return printTarget(printer.model, printer.paperSize, {
+    marginTop: printer.marginTop,
+    marginBottom: printer.marginBottom,
+    marginLeft: printer.marginLeft,
+    marginRight: printer.marginRight,
+  });
 }

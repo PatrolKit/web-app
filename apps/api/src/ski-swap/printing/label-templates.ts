@@ -5,9 +5,8 @@ import { labelFont } from './fonts';
 import { BRAND_MARK_PNG } from './brand-mark';
 import {
   BRANDING_STRIP_W,
-  HEAD_WIDTH_DOTS,
-  PAPER_SIZE_HEIGHT_DOTS,
-  type PaperSize,
+  geometryOf,
+  type PrintTarget,
   type PrinterMargins,
 } from './geometry';
 
@@ -405,14 +404,19 @@ export async function drawRotatedBranding(
  * Alignment pattern: full-canvas diagonals, the margin box, and a crosshair.
  * Built as a raster directly — there is no text, so no canvas is needed.
  */
-export function calibrationPattern(paperSize: PaperSize, margins: PrinterMargins): boolean[][] {
-  const W = HEAD_WIDTH_DOTS;
-  const H = PAPER_SIZE_HEIGHT_DOTS[paperSize];
+export function calibrationPattern(target: PrintTarget): boolean[][] {
+  const { margins } = target;
+  const { headWidthDots: W, mediaWidthDots, mediaOffsetDots, canvasHeightDots: H } =
+    geometryOf(target);
   const rows: boolean[][] = Array.from({ length: H }, () => new Array<boolean>(W).fill(false));
   const D = 2;
 
-  const L = margins.marginLeft;
-  const R = W - margins.marginRight;
+  // The margin rectangle is drawn on the media, not on the head — that is the
+  // whole point of printing one. Where the diagonals cross is the head's centre,
+  // and where the full-width box is clipped is the head's real edge, so a single
+  // label answers both "how wide is the head" and "do the margins hold".
+  const L = mediaOffsetDots + margins.marginLeft;
+  const R = mediaOffsetDots + mediaWidthDots - margins.marginRight;
   const T = margins.marginTop;
   const B = H - margins.marginBottom;
   const CX = Math.round((L + R - D) / 2);

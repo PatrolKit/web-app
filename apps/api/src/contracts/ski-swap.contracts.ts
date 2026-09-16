@@ -554,14 +554,25 @@ export type TicketFormState = z.infer<typeof TicketFormStateSchema>;
 
 // ─── Printers ─────────────────────────────────────────────────────────────────
 
-export const PAPER_SIZES = ['40x30', '50x30'] as const;
-export type PaperSize = typeof PAPER_SIZES[number];
+/**
+ * Re-exported from the renderer's geometry rather than declared again.
+ *
+ * These lists used to be written out in three files and hand-typed as inline
+ * unions in five more, so adding a size meant finding eight places with no help
+ * from the compiler. There is one source now, and it is the one the renderer
+ * actually draws from.
+ */
+export { PAPER_SIZES, PRINTER_MODELS } from '../ski-swap/printing/geometry';
+export type { PaperSize, PrinterModelId } from '../ski-swap/printing/geometry';
+
+import { PAPER_SIZES as SIZES, PRINTER_MODELS as MODELS } from '../ski-swap/printing/geometry';
 
 export const CreatePrinterSchema = z
   .object({
     name: z.string().min(1).max(100),
     bluetoothName: z.string().min(1).max(100),
-    paperSize: z.enum(PAPER_SIZES),
+    model: z.enum(MODELS),
+    paperSize: z.enum(SIZES),
   })
   .strict();
 
@@ -579,7 +590,8 @@ export const PatchPrinterSchema = z
     assignedSellerId: z.string().nullable().optional(),
     /** The bridge that drives this printer. Mutually exclusive with a seller. */
     bridgeDeviceId: z.string().nullable().optional(),
-    paperSize: z.enum(PAPER_SIZES).optional(),
+    model: z.enum(MODELS).optional(),
+    paperSize: z.enum(SIZES).optional(),
     ...Object.fromEntries(Object.entries(MarginFields).map(([k, v]) => [k, v.optional()])),
   })
   .strict()
@@ -588,14 +600,15 @@ export const PatchPrinterSchema = z
   });
 
 export const PatchPrinterPaperSizeSchema = z
-  .object({ paperSize: z.enum(PAPER_SIZES) })
+  .object({ paperSize: z.enum(SIZES) })
   .strict();
 
 export const SwapPrinterResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
   bluetoothName: z.string(),
-  paperSize: z.enum(PAPER_SIZES),
+  model: z.enum(MODELS),
+  paperSize: z.enum(SIZES),
   marginTop:    z.number().int(),
   marginBottom: z.number().int(),
   marginLeft:   z.number().int(),
