@@ -235,21 +235,18 @@ function PrinterStatusBar() {
    * exactly like a printer nobody had tried to connect to. The button span, and
    * nothing else happened.
    */
-  async function handleConnect(anyDevice = false) {
+  async function handleConnect() {
     setIsConnecting(true);
     setConnectError(null);
     try {
-      await connectPreferred({ anyDevice });
+      await connectPreferred();
     } catch (err: unknown) {
       const name = (err as { name?: string })?.name;
       if (name === 'NotFoundError') {
-        // Cancelled, or an empty list — indistinguishable, so say both.
+        // Cancelled and an empty list raise the same error, so say both.
         setConnectError(
-          anyDevice
-            ? 'No printer picked. If nothing was listed, the printer is asleep, out of range, ' +
-              'or still holding a connection — switch it off and on and try again.'
-            : `No printer picked. The list only shows a device advertising "${preferredPrinter!.bluetoothName}", ` +
-              'so an empty one means either that or a name that has changed. Try every device below.',
+          'No printer picked. If nothing was listed, the printer is asleep, out of range, ' +
+          'or still holding a connection — switch it off and on and try again.',
         );
       } else {
         setConnectError((err as Error)?.message ?? 'Could not connect to the printer.');
@@ -324,16 +321,6 @@ function PrinterStatusBar() {
                   className="w-full text-left px-3 py-2 text-gray-300 hover:bg-surface-200 disabled:opacity-40"
                 >
                   {isConnecting ? 'Connecting…' : 'Reconnect'}
-                </button>
-                {/* The narrow list is one Bluetooth name. This one is everything
-                    in range, which is the only way to reach a printer whose name
-                    has drifted from what was recorded. */}
-                <button
-                  onClick={() => { void handleConnect(true); }}
-                  disabled={isConnecting}
-                  className="w-full text-left px-3 py-2 text-gray-400 hover:bg-surface-200 disabled:opacity-40 text-xs"
-                >
-                  Reconnect — show every device
                 </button>
                 {connectError && (
                   <p className="px-3 pb-2 text-amber-400 text-xs">{connectError}</p>

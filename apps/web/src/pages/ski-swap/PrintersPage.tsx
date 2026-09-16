@@ -193,31 +193,24 @@ export default function PrintersPage() {
   /**
    * Shows the BLE picker and captures what was chosen.
    *
-   * `showAll` widens it to every Bluetooth device in range. The narrow list
-   * filters on the advertised service `FF00`, which is how Phomemos have always
-   * been found — but that is a claim about the M110, not about every printer.
-   * A model that does not advertise it never appears at all, and an empty picker
-   * looks like a flat battery rather than a filter.
+   * Filtered on what each printer announces: `FF00` for an M110, `AF30` for an
+   * M221. That second one was read off the hardware after an M221 never appeared
+   * in a list filtered on `FF00` alone — `FF00` is what both print through, and
+   * the M221 simply does not advertise it.
    *
-   * The narrow list matches on what each printer announces — `FF00` for an M110,
-   * `AF30` for an M221, which was read off the hardware after one went missing
-   * from a list filtered on `FF00` alone. The wide list stays as the escape
-   * hatch for the next printer that announces something else again.
-   *
-   * Name prefixes are not a fix here, whatever they were for scanners. Both
-   * printers we own advertise an opaque serial — `Q192E28B1060137` is an M110,
+   * Name prefixes would not help, whatever they did for scanners. Both printers
+   * we own advertise an opaque serial — `Q192E28B1060137` is an M110,
    * `Q454E62S2530017` an M221 — so a name says nothing about what a device is,
    * and the model is a dropdown against the label on the hardware.
    */
-  async function scanAnyPrinter(showAll = false) {
+  async function scanAnyPrinter() {
     if (!isWebBluetoothSupported()) { alert('Printing requires Chrome or Edge.'); return; }
     const PHOMEMO = '0000ff00-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID;
     try {
-      const device = await navigator.bluetooth.requestDevice(
-        showAll
-          ? { acceptAllDevices: true, optionalServices: [PHOMEMO] }
-          : { filters: PRINTER_ADVERTISED_FILTERS, optionalServices: [PHOMEMO] },
-      );
+      const device = await navigator.bluetooth.requestDevice({
+        filters: PRINTER_ADVERTISED_FILTERS,
+        optionalServices: [PHOMEMO],
+      });
       setPrinterBtName(device.name ?? '');
       scannedDeviceRef.current = device; // keep alive for first print — no disconnect
     } catch (err: unknown) {
@@ -275,25 +268,16 @@ export default function PrintersPage() {
                 />
                 <button
                   type="button"
-                  onClick={() => scanAnyPrinter()}
+                  onClick={scanAnyPrinter}
                   className="bg-surface-100 hover:bg-surface-200 text-gray-300 px-3 py-2 rounded text-sm flex items-center gap-1"
                 >
                   <FontAwesomeIcon icon={faBluetooth} /> Scan
                 </button>
               </div>
               <p className="text-xs text-gray-500">
-                The list holds printers that announce themselves as one. If yours is awake
-                and still not there,{' '}
-                <button
-                  type="button"
-                  onClick={() => scanAnyPrinter(true)}
-                  className="text-brand-500 hover:underline"
-                >
-                  show every Bluetooth device
-                </button>{' '}
-                — some models do not announce what they are. Either way, pick the model
-                below from the label on the printer: its Bluetooth name is a serial number
-                and says nothing about which one it is.
+                Wake the printer first — it has to be advertising to appear. Pick the model
+                below from the label on the hardware: a printer's Bluetooth name is a serial
+                number and says nothing about which one it is.
               </p>
               <select
                 value={printerModel}

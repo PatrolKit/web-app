@@ -222,25 +222,12 @@ export async function connectFromPool(allowedBtNames: string[]): Promise<Connect
 }
 
 /** Show the native BLE picker and connect. Requires a user gesture. */
-/**
- * Shows the BLE picker and connects. Requires a user gesture.
- *
- * `anyDevice` drops the name filter. The filtered picker only ever lists a
- * device advertising exactly the stored name, so it comes up empty both when the
- * printer is asleep and when the name it advertises has stopped matching what we
- * recorded — and an empty list is indistinguishable from a cancelled one. The
- * wide list separates those: if the printer is there under another name, the
- * name is wrong; if it is not there at all, the radio is.
- */
-export async function connectPrinter(
-  bluetoothName: string,
-  { anyDevice = false }: { anyDevice?: boolean } = {},
-): Promise<ConnectedM110> {
-  const device = await navigator.bluetooth.requestDevice(
-    anyDevice
-      ? { acceptAllDevices: true, optionalServices: [PHOMEMO_SERVICE] }
-      : { filters: [{ name: bluetoothName }], optionalServices: [PHOMEMO_SERVICE] },
-  );
+/** Show the native BLE picker, filtered to this printer, and connect. */
+export async function connectPrinter(bluetoothName: string): Promise<ConnectedM110> {
+  const device = await navigator.bluetooth.requestDevice({
+    filters: [{ name: bluetoothName }],
+    optionalServices: [PHOMEMO_SERVICE],
+  });
   return connectDevice(device);
 }
 

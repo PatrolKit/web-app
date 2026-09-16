@@ -17,9 +17,9 @@ interface PrinterContextValue {
   isPreferredConnected: boolean;
   setPreferredPrinter(printer: SwapPrinterRecord | null): void;
   setPaperSize(paperSize: PaperSize): Promise<void>;
-  connectPreferred(opts?: { anyDevice?: boolean }): Promise<void>;
+  connectPreferred(): Promise<void>;
   disconnectPreferred(): void;
-  connectPrinterById(printer: SwapPrinterRecord, opts?: { anyDevice?: boolean }): Promise<ConnectedM110>;
+  connectPrinterById(printer: SwapPrinterRecord): Promise<ConnectedM110>;
   registerConnection(printer: SwapPrinterRecord, conn: ConnectedM110): void;
   printItem(item: ItemResponse): Promise<void>;
   printQrLabel(sellerId: string): Promise<void>;
@@ -56,34 +56,6 @@ interface Props {
 export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }: Props) {
   const isSupported = isWebBluetoothSupported();
   const storageKey = `patrolkit:${userId}:${orgId}:preferredPrinter`;
-  /**
-   * Printers the filtered picker cannot find.
-   *
-   * `requestDevice` with a name filter only lists a device whose advertisement
-   * carries that name. Some printers advertise almost nothing — the M221 does not
-   * announce its `FF00` service either — and put their name in the scan response,
-   * where the filter does not look. Those come up empty every time while showing
-   * fine in an unfiltered list.
-   *
-   * So the first failure is remembered and the wide list becomes this printer's
-   * normal path. Per browser, because it is a fact about what Chrome can see, not
-   * about the printer as the org records it — and it is only ever a wider list,
-   * never a different device, because the name is still checked after the pick.
-   */
-  const wideKey = `patrolkit:${userId}:${orgId}:printersNeedingWideScan`;
-
-  function needsWideScan(id: string): boolean {
-    try { return (JSON.parse(localStorage.getItem(wideKey) ?? '[]') as string[]).includes(id); }
-    catch { return false; }
-  }
-
-  function rememberNeedsWideScan(id: string) {
-    try {
-      const ids = new Set(JSON.parse(localStorage.getItem(wideKey) ?? '[]') as string[]);
-      ids.add(id);
-      localStorage.setItem(wideKey, JSON.stringify([...ids]));
-    } catch { /* private window, or storage off — it just asks again next time */ }
-  }
   const previewStorageKey = `patrolkit:preferredPreview`; // global flag, not per-org
   const queryClient = useQueryClient();
   const printerQueryKey = isSeller ? ['ski-swap/seller-printers', orgId] : ['ski-swap/printers', orgId];
@@ -176,14 +148,8 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const connectPrinterById = useCallback(async (
-    printer: SwapPrinterRecord, opts: { anyDevice?: boolean } = {},
-  ): Promise<ConnectedM110> => {
-    const anyDevice = opts.anyDevice || needsWideScan(printer.id);
-    // A silent reconnect cannot work for a device the page has not been granted,
-    // and is skipped entirely when the wide list is in play.
-    const conn = (anyDevice ? null : await reconnectPrinter(printer.bluetoothName))
-      ?? await connectPrinter(printer.bluetoothName, { anyDevice });
+  const connectPrinterById = useCallback(async (printer: SwapPrinterRecord): Promise<ConnectedM110> => {
+    const conn = (await reconnectPrinter(printer.bluetoothName)) ?? await connectPrinter(printer.bluetoothName);
     updateConnections((prev) => new Map(prev).set(printer.id, conn));
     attachDisconnectHandler(printer.id, conn);
     persistPreferred(printer.id);
@@ -191,32 +157,13 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
-  const connectPreferred = useCallback(async (opts: { anyDevice?: boolean } = {}): Promise<void> => {
+  const connectPreferred = useCallback(async (): Promise<void> => {
     if (!isSupported) return;
     const pool = printersRef.current;
     const pref = pool.find((p) => p.id === preferredPrinterIdRef.current);
 
     if (pref) {
-      let conn: ConnectedM110;
-      try {
-        conn = await connectPrinterById(pref, opts);
-      } catch (err: unknown) {
-        // An empty filtered list and a dismissed one raise the same error, so
-        // this cannot tell them apart — but the remedy is the same either way,
-        // and remembering it costs a wider list rather than a wrong device.
-        if (!opts.anyDevice && (err as { name?: string })?.name === 'NotFoundError') {
-          rememberNeedsWideScan(pref.id);
-        }
-        throw err;
-      }
-      // Picked off the wide list and it answers to something else: the stored
-      // name is stale, and the bridge would still be hunting for the old one.
-      if (conn.bluetoothName && conn.bluetoothName !== pref.bluetoothName) {
-        throw new Error(
-          `Connected, but this printer advertises "${conn.bluetoothName}" and is recorded as ` +
-          `"${pref.bluetoothName}". Update it on the Hardware page — a bridge looks for the recorded name.`,
-        );
-      }
+      await connectPrinterById(pref);
     } else {
       const conn = await connectFromPool(pool.map((p) => p.bluetoothName));
       const matched = printersRef.current.find((p) => p.bluetoothName === conn.bluetoothName);
