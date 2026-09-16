@@ -299,12 +299,27 @@ export async function drawLargeItemTag(
   // ── Proportions ───────────────────────────────────────────────────────────
   // Fractions rather than dots, so a second size in this tier costs nothing.
   const GAP = Math.round(W * 0.03);
-  const footH = Math.round(H * 0.30);
-  const upperH = H - footH - GAP;
   const nameColW = Math.round(W * 0.26);
   const priceColW = W - nameColW - GAP;
   const brandColW = Math.round(W * 0.20);
   const barcodeW = W - brandColW - GAP;
+  const SKU_SIZE = Math.round(W * 0.05);
+
+  // The bars are sized from their own width, not from whatever the foot has
+  // left over. A Code 128 symbol wants a height of roughly 15% of its length —
+  // this allows double that, which is generous for a handheld scanner reading a
+  // swinging tag, and floors at the 64 rows the compact tag uses so a short SKU
+  // never produces a stripe too shallow to aim at. Sized the other way round it
+  // came out 59% and ate a third of the label.
+  const modules = code128BModules(item.sku);
+  const moduleW = Math.max(1, Math.min(3, Math.floor(barcodeW / modules.length)));
+  const barsW = modules.length * moduleW;
+  const barsH = Math.max(64, Math.round(barsW * 0.30));
+
+  // The foot is as tall as the bars and their number, and the label's remaining
+  // height is the price's.
+  const footH = barsH + GAP + lineHeight(SKU_SIZE);
+  const upperH = H - footH - GAP;
 
   // ── Price, rotated up its column ──────────────────────────────────────────
   const price = `$${(item.priceCents / 100).toFixed(2)}`;
@@ -337,17 +352,10 @@ export async function drawLargeItemTag(
   ctx.restore();
 
   // ── Barcode ───────────────────────────────────────────────────────────────
+  // Bars up to 3 dots wide, against the compact tag's 2 — the point of the
+  // bigger label — but never wider than the column, so a long SKU narrows
+  // rather than running off the edge.
   const footTop = upperH + GAP;
-  const SKU_SIZE = Math.round(W * 0.05);
-  const skuBand = lineHeight(SKU_SIZE) + GAP;
-  const barsH = footH - skuBand;
-
-  const modules = code128BModules(item.sku);
-  // Wider bars than the compact tag's 2, which is the point of the bigger label
-  // — but never wider than the column, so a long SKU narrows rather than runs
-  // off the edge.
-  const moduleW = Math.max(1, Math.min(3, Math.floor(barcodeW / modules.length)));
-  const barsW = modules.length * moduleW;
   let col = Math.round((barcodeW - barsW) / 2);
   for (const black of modules) {
     if (black) ctx.fillRect(col, footTop, moduleW, barsH);
@@ -375,8 +383,21 @@ export async function drawLargeItemTag(
 async function drawBrandingIn(
   ctx: SKRSContext2D, x: number, y: number, w: number, h: number,
 ): Promise<void> {
-  const LOGO = Math.round(w * 0.42), TEXT = Math.round(w * 0.30), PB = Math.round(w * 0.24);
+  const PB = Math.round(w * 0.24);
   const GAP = Math.max(2, Math.round(w * 0.08));
+
+  // The mark and the words run along the box's *length*, so they are bounded by
+  // `h` rather than by `w`. Fitted rather than assumed: the foot is now only as
+  // tall as the barcode needs, so this box is short, and a fixed size ran the
+  // words out the end of it.
+  let LOGO = Math.round(w * 0.42);
+  let TEXT = Math.round(w * 0.30);
+  ctx.font = labelFont(TEXT, 'bold');
+  while (TEXT > 7 && LOGO + GAP + ctx.measureText('PatrolKit').width > h) {
+    TEXT -= 1;
+    LOGO = Math.min(LOGO, Math.round(TEXT * 1.4));
+    ctx.font = labelFont(TEXT, 'bold');
+  }
 
   ctx.save();
   ctx.translate(x + w / 2, y + h / 2);
