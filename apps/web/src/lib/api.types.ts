@@ -313,6 +313,12 @@ export interface ItemResponse {
   donateProceeds: boolean;
   hasPrintedTag: boolean;
   /**
+   * This item's tag came out of a box rather than a printer, so there is no
+   * making another. `hasPrintedTag` says a tag exists; this says we cannot
+   * produce one.
+   */
+  legacyTicket: boolean;
+  /**
    * What this item is, as the tree reads it now. Null for one an importer
    * created from a name alone.
    *

@@ -749,6 +749,10 @@ export class ItemService {
       squareSynced: !!item.squareItemId,
       donateProceeds: item.donateProceeds,
       hasPrintedTag: item.hasPrintedTag,
+      // `ticketNumberOf` is the same parse the scan lookup uses, so there is one
+      // definition of what a ticket number looks like rather than a second regex
+      // here and a third in the web client.
+      legacyTicket: ticketNumberOf(item.sku) !== null,
       consignedAt: item.consignedAt?.toISOString() ?? null,
       seller: item.seller
         ? {

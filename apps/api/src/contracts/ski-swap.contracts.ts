@@ -303,6 +303,16 @@ export const ItemResponseSchema = z.object({
   donateProceeds: z.boolean(),
   hasPrintedTag: z.boolean(),
   /**
+   * This item's tag came out of a box rather than a printer.
+   *
+   * Derived from the SKU, which is the only thing that carries it: a tag we
+   * minted is a prefix, a station letter and a sequence, and a pre-printed
+   * ticket is bare digits. Both check-in paths for one already set
+   * `hasPrintedTag`, so the two are easy to confuse — that one says a tag
+   * exists, this one says we cannot make another.
+   */
+  legacyTicket: z.boolean(),
+  /**
    * When a staff member accepted this item onto the floor, or null while it is
    * still waiting to be looked at. An item is in Square exactly when this is
    * set — null means it cannot be sold, because it is not in the catalogue.

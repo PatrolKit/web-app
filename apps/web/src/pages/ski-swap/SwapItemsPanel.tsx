@@ -341,10 +341,15 @@ export default function SwapItemsPanel({
                       onClick={() => { if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id); }}
                       className="text-xs text-red-500 hover:underline"
                     >Delete</button>
-                    {/* Hidden for a seller on issued tickets: the tag is
-                        already on the goods, and there is no printer to send
-                        one to. */}
-                    {tickets ? null : item.hasPrintedTag ? (
+                    {/* Hidden two ways, for the same reason twice over.
+                        `tickets` is a seller working off an issued stack, and
+                        `legacyTicket` is a single item checked in against a
+                        pre-printed one: either way the tag is already on the
+                        goods and came out of a box, so there is nothing a
+                        printer could produce. Both check-in paths mark these
+                        `hasPrintedTag`, which is what used to leave a Reprint
+                        button offering to reproduce something we never made. */}
+                    {tickets || item.legacyTicket ? null : item.hasPrintedTag ? (
                       <button
                         onClick={() => handlePrint(item)}
                         disabled={printingItem}
