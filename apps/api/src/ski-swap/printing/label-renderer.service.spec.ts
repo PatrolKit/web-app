@@ -109,6 +109,73 @@ describe('LabelRendererService', () => {
       );
     });
 
+    // ── The tall tier ────────────────────────────────────────────────────────
+
+    it('tall item tag', async () => {
+      expectGolden(
+        'item-tag-62x100',
+        await renderer.itemTag(
+          { name: 'Rossignol Experience 88 Ti Skis', priceCents: 24500, sku: 'SS26-A-0042' },
+          TARGETS['62x100'],
+        ),
+      );
+    });
+
+    it('tall item tag at the 13-character SKU ceiling', async () => {
+      const sku = 'ABSS26-A-0042';
+      expect(sku).toHaveLength(13);
+      expectGolden(
+        'item-tag-62x100-max-sku',
+        await renderer.itemTag({ name: 'Poles', priceCents: 500, sku }, TARGETS['62x100']),
+      );
+    });
+
+    /**
+     * The failure mode only this tier has.
+     *
+     * The compact tag shrinks a long name until it fits one line; the tall tag
+     * wraps it up a 22 mm column and has to decide what to do when it runs out
+     * of lines. Nothing else in the renderer wraps, so this is the one case with
+     * no precedent to lean on.
+     */
+    it('tall item tag wraps a long name, and ellipsises what will not fit', async () => {
+      expectGolden(
+        'item-tag-62x100-wrapped',
+        await renderer.itemTag(
+          {
+            name: 'Salomon QST 106 All Mountain Freeride Skis 2024 With Bindings And A Description Nobody Would Ever Type But Somebody Will',
+            priceCents: 129900,
+            sku: 'SS26-K-9999',
+          },
+          TARGETS['62x100'],
+        ),
+      );
+    });
+
+    // A word with no spaces cannot be broken between words, and breaking it
+    // wrongly is an infinite loop rather than an ugly label.
+    it('tall item tag survives a name with nothing to break on', async () => {
+      expectGolden(
+        'item-tag-62x100-unbreakable',
+        await renderer.itemTag(
+          { name: 'Supercalifragilisticexpialidociousskisandbindingsandpoles', priceCents: 5000, sku: 'SS26-A-0007' },
+          TARGETS['62x100'],
+        ),
+      );
+    });
+
+    // Legacy tickets are bare digits, and Code 128-B encodes those the same —
+    // but they are a live path, so the tag they produce is pinned.
+    it('tall item tag with a legacy ticket number', async () => {
+      expectGolden(
+        'item-tag-62x100-legacy',
+        await renderer.itemTag(
+          { name: 'Burton Custom Snowboard', priceCents: 8000, sku: '67421' },
+          TARGETS['62x100'],
+        ),
+      );
+    });
+
     it('item tag truncates a name too wide for the label', async () => {
       expectGolden(
         'item-tag-long-name',

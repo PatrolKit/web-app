@@ -108,6 +108,59 @@ function commonFitSize(
 }
 
 /**
+ * Breaks `text` into at most `maxLines` lines that each fit `maxWidth`.
+ *
+ * New for the tall tag, which is the first layout with a column too narrow to
+ * hold a name on one line. The two existing strategies do not apply: `fit`
+ * truncates, which loses most of a long name rather than a couple of characters,
+ * and `fitted` shrinks, which on a 22 mm column reaches the floor while still
+ * overflowing.
+ *
+ * Breaks on spaces, and falls back to breaking inside a word only when a single
+ * word does not fit — a ski model number with no spaces in it would otherwise
+ * produce an empty line and loop. The last line is ellipsised if anything is
+ * left over, so the overflow is visible rather than silent.
+ */
+function wrap(ctx: SKRSContext2D, text: string, maxWidth: number, maxLines: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = '';
+
+  const flush = () => { if (line) { lines.push(line); line = ''; } };
+
+  for (let i = 0; i < words.length && lines.length < maxLines; i++) {
+    const word = words[i];
+    const candidate = line ? `${line} ${word}` : word;
+
+    if (ctx.measureText(candidate).width <= maxWidth) { line = candidate; continue; }
+
+    flush();
+    if (lines.length >= maxLines) break;
+
+    // A word wider than the column on its own: cut it rather than loop.
+    if (ctx.measureText(word).width > maxWidth) {
+      let head = word;
+      while (head.length > 1 && ctx.measureText(head).width > maxWidth) head = head.slice(0, -1);
+      lines.push(head);
+      words[i] = word.slice(head.length);
+      i--; // the remainder goes on the next line
+    } else {
+      line = word;
+    }
+  }
+  flush();
+
+  // Anything left unplaced is said rather than dropped.
+  const placed = lines.join(' ').replace(/\s+/g, ' ').trim();
+  const wanted = text.replace(/\s+/g, ' ').trim();
+  if (lines.length === maxLines && placed.length < wanted.length) {
+    const last = lines[maxLines - 1];
+    lines[maxLines - 1] = fit(ctx, `${last}…`, maxWidth);
+  }
+  return lines;
+}
+
+/**
  * Draws a QR code as filled squares rather than compositing a second canvas.
  * `qrcode` gives the module matrix directly, which avoids a canvas-to-canvas
  * blit and keeps every module aligned to a whole dot — a half-dot QR module on
@@ -190,6 +243,130 @@ export function drawItemTag(ctx: SKRSContext2D, W: number, H: number, item: Item
   // and 15 — the size this used to be fixed at — is the floor, so nothing gets
   // smaller than it was, only bigger when there is room.
   ctx.fillText(fitted(ctx, item.name, 24, 15, W), CX, halfH + 90);
+}
+
+/**
+ * The 62 × 100 mm tag: price and name rotated up the label, barcode and SKU
+ * across the foot, branding beside the barcode.
+ *
+ * A different composition from `drawItemTag` rather than the same one enlarged.
+ * Price and name are rotated because the name column is about 22 mm wide and no
+ * useful text runs across 22 mm — and once one is rotated the other has to be,
+ * or the tag reads as two unrelated halves.
+ *
+ * Branding is drawn here rather than by the compositor. On the compact tier it
+ * is a strip parked against the right inset; here it belongs in the foot beside
+ * the barcode, so `compose` hands this template the whole content box.
+ */
+export async function drawLargeItemTag(
+  ctx: SKRSContext2D, W: number, H: number, item: ItemLabelData,
+): Promise<void> {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+
+  // ── Proportions ───────────────────────────────────────────────────────────
+  // Fractions rather than dots, so a second size in this tier costs nothing.
+  const GAP = Math.round(W * 0.03);
+  const footH = Math.round(H * 0.30);
+  const upperH = H - footH - GAP;
+  const nameColW = Math.round(W * 0.26);
+  const priceColW = W - nameColW - GAP;
+  const brandColW = Math.round(W * 0.20);
+  const barcodeW = W - brandColW - GAP;
+
+  // ── Price, rotated up its column ──────────────────────────────────────────
+  const price = `$${(item.priceCents / 100).toFixed(2)}`;
+  ctx.save();
+  ctx.translate(priceColW / 2, upperH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // Rotated, so the price reads along the column's *height* and is limited by
+  // its width. Ceiling is far above the compact tag's 44 — that tag was bounded
+  // by a 30 mm label, and this one is not.
+  ctx.font = labelFont(fitSize(ctx, price, 150, 40, upperH - GAP), 'bold');
+  ctx.fillText(price, 0, 0);
+  ctx.restore();
+
+  // ── Name, rotated up the narrow column ────────────────────────────────────
+  const NAME_SIZE = Math.round(W * 0.055);
+  const NAME_LINES = 3;
+  ctx.font = labelFont(NAME_SIZE, 'bold');
+  const nameLines = wrap(ctx, item.name, upperH - GAP, NAME_LINES);
+
+  ctx.save();
+  ctx.translate(priceColW + GAP + nameColW / 2, upperH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const nameLead = lineHeight(NAME_SIZE);
+  const nameTop = -((nameLines.length - 1) * nameLead) / 2;
+  nameLines.forEach((line, i) => ctx.fillText(line, 0, nameTop + i * nameLead));
+  ctx.restore();
+
+  // ── Barcode ───────────────────────────────────────────────────────────────
+  const footTop = upperH + GAP;
+  const SKU_SIZE = Math.round(W * 0.05);
+  const skuBand = lineHeight(SKU_SIZE) + GAP;
+  const barsH = footH - skuBand;
+
+  const modules = code128BModules(item.sku);
+  // Wider bars than the compact tag's 2, which is the point of the bigger label
+  // — but never wider than the column, so a long SKU narrows rather than runs
+  // off the edge.
+  const moduleW = Math.max(1, Math.min(3, Math.floor(barcodeW / modules.length)));
+  const barsW = modules.length * moduleW;
+  let col = Math.round((barcodeW - barsW) / 2);
+  for (const black of modules) {
+    if (black) ctx.fillRect(col, footTop, moduleW, barsH);
+    col += moduleW;
+  }
+
+  // ── SKU, human-readable under the bars ────────────────────────────────────
+  ctx.font = labelFont(SKU_SIZE, 'bold');
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(item.sku, barcodeW / 2, footTop + barsH + GAP);
+
+  // ── Branding, rotated in the foot's right column ──────────────────────────
+  await drawBrandingIn(ctx, barcodeW + GAP, footTop, brandColW, footH);
+}
+
+/**
+ * "Powered by PatrolKit" rotated inside an explicit box.
+ *
+ * `drawRotatedBranding` derives its position from the right margin, which is
+ * right for the compact tier — the strip sits on the inset boundary and moves
+ * inward with it. The tall tag puts branding in the foot instead, so it needs to
+ * be told where to go.
+ */
+async function drawBrandingIn(
+  ctx: SKRSContext2D, x: number, y: number, w: number, h: number,
+): Promise<void> {
+  const LOGO = Math.round(w * 0.42), TEXT = Math.round(w * 0.30), PB = Math.round(w * 0.24);
+  const GAP = Math.max(2, Math.round(w * 0.08));
+
+  ctx.save();
+  ctx.translate(x + w / 2, y + h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.font = labelFont(PB, 'bold');
+  ctx.fillStyle = '#555';
+  ctx.fillText('Powered by', 0, -w / 2 + PB);
+
+  ctx.font = labelFont(TEXT, 'bold');
+  ctx.fillStyle = '#000';
+  const blockW = LOGO + GAP + ctx.measureText('PatrolKit').width;
+  const left = -blockW / 2;
+  const logoY = -w / 2 + PB + GAP + LOGO / 2;
+
+  ctx.drawImage(await getBrandMark(), left, logoY - LOGO / 2, LOGO, LOGO);
+  ctx.textAlign = 'left';
+  ctx.fillText('PatrolKit', left + LOGO + GAP, logoY);
+  ctx.restore();
 }
 
 /** Sticks on the printer itself so staff can tell one from another. */

@@ -12,6 +12,7 @@ import {
 import {
   calibrationPattern,
   drawItemTag,
+  drawLargeItemTag,
   drawPrinterLabel,
   drawQrLabel,
   drawReceiptHeader,
@@ -39,8 +40,17 @@ export class LabelRendererService {
 
   // ─── Public templates ───────────────────────────────────────────────────────
 
+  /**
+   * Picks the composition by tier rather than by size, so a third stock in an
+   * existing tier needs a row in the size table and nothing here.
+   */
   itemTag(item: ItemLabelData, target: PrintTarget = DEFAULT_TARGET): Promise<boolean[][]> {
-    return this.compose((ctx, w, h) => drawItemTag(ctx, w, h, item), target);
+    return this.compose(
+      target.size.tier === 'tall'
+        ? (ctx, w, h) => drawLargeItemTag(ctx, w, h, item)
+        : (ctx, w, h) => drawItemTag(ctx, w, h, item),
+      target,
+    );
   }
 
   printerLabel(
