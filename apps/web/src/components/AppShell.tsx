@@ -217,10 +217,15 @@ function PrintPreviewModal() {
 }
 
 function PrinterStatusBar() {
-  const { preferredPrinter, isPreferredConnected, connectPreferred, disconnectPreferred, setPaperSize, previewMode, setPreviewMode, isSupported } = usePrinter();
+  const {
+    preferredPrinter, isPreferredConnected, connectPreferred, disconnectPreferred,
+    setPaperSize, previewMode, setPreviewMode, isSupported,
+    printCalibration, printPrinterIdLabel,
+  } = usePrinter();
   const [isConnecting, setIsConnecting] = useState(false);
   const [showPopover, setShowPopover] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<'calibration' | 'id' | null>(null);
 
   if (!isSupported || !preferredPrinter) return null;
 
@@ -261,6 +266,29 @@ function PrinterStatusBar() {
     await setPaperSize(size);
   }
 
+  /**
+   * The two labels a printer prints about itself.
+   *
+   * They live here rather than on the Hardware page because both need a live
+   * Bluetooth link, and this menu is the only place that has one — a row on a
+   * list of every printer the org owns could offer them for a printer nobody is
+   * connected to, and usually did.
+   */
+  async function handleSelfPrint(kind: 'calibration' | 'id') {
+    setBusyAction(kind);
+    setConnectError(null);
+    try {
+      if (kind === 'calibration') await printCalibration(preferredPrinter!);
+      else await printPrinterIdLabel(preferredPrinter!);
+      setShowPopover(false);
+    } catch (err: unknown) {
+      if ((err as { name?: string })?.name === 'NotFoundError') return; // picker dismissed
+      setConnectError((err as Error)?.message ?? 'Could not print.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
 
   return (
     <div className="relative mb-2 pb-2 border-b border-gray-800">
@@ -297,6 +325,27 @@ function PrinterStatusBar() {
                     {PAPER_SIZE_LABELS[size]}{preferredPrinter.paperSize === size && ' ✓'}
                   </button>
                 ))}
+                <div className="border-t border-gray-800 mt-1" />
+                <p className="px-3 pt-2 pb-1 text-gray-500 text-xs">Print a test</p>
+                <button
+                  onClick={() => { void handleSelfPrint('calibration'); }}
+                  disabled={!!busyAction}
+                  className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-surface-200 disabled:opacity-40"
+                  title="A grid and diagonals, for checking margins and alignment"
+                >
+                  {busyAction === 'calibration' ? 'Printing…' : 'Calibration pattern'}
+                </button>
+                <button
+                  onClick={() => { void handleSelfPrint('id'); }}
+                  disabled={!!busyAction}
+                  className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-surface-200 disabled:opacity-40"
+                  title="Sticks on the printer so staff can tell one from another"
+                >
+                  {busyAction === 'id' ? 'Printing…' : 'Identification label'}
+                </button>
+                {connectError && (
+                  <p className="px-3 pb-2 text-amber-400 text-xs">{connectError}</p>
+                )}
                 <div className="border-t border-gray-800 mt-1" />
                 <button
                   onClick={() => { setPreviewMode(!previewMode); setShowPopover(false); }}

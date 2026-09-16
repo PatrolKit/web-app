@@ -55,7 +55,7 @@ const BRIDGE_ROLE: DeviceRole = 'ski_swap.print_bridge';
 export default function PrintersPage() {
   const { orgId, perms } = useOutletContext<SkiSwapContext>();
   const qc = useQueryClient();
-  const { registerConnection, printPrinterIdLabel, printCalibration } = usePrinter();
+  const { registerConnection, printPrinterIdLabel } = usePrinter();
   const canManagePrinters = perms.has('ski_swap:admin');
   const [pendingTestPrint, setPendingTestPrint] = useState<SwapPrinterRecord | null>(null);
   const [isPrintingId, setIsPrintingId] = useState<string | null>(null);
@@ -127,19 +127,6 @@ export default function PrintersPage() {
         registerConnection(printer, conn);
       }
       await printPrinterIdLabel(printer);
-    } catch (err: unknown) {
-      if ((err as { name?: string })?.name !== 'NotFoundError')
-        alert(`Print failed: ${(err as Error)?.message ?? String(err)}`);
-    } finally {
-      setIsPrintingId(null);
-    }
-  }
-
-  async function handleCalibrationPrint(printer: SwapPrinterRecord) {
-    if (!isWebBluetoothSupported()) { alert('Printing requires Chrome or Edge.'); return; }
-    setIsPrintingId(`cal-${printer.id}`);
-    try {
-      await printCalibration(printer);
     } catch (err: unknown) {
       if ((err as { name?: string })?.name !== 'NotFoundError')
         alert(`Print failed: ${(err as Error)?.message ?? String(err)}`);
@@ -425,23 +412,12 @@ export default function PrintersPage() {
                       : 'No bridge — prints over Bluetooth'}
                   </p>
                 </div>
+                {/* No Calibrate or Print label here. Both need a live Bluetooth
+                    link, and this is a list of every printer the org owns —
+                    including ones driven by a bridge, and ones nobody at this
+                    machine is connected to. They live in the printer menu in the
+                    nav bar, which is where the connection is. */}
                 <div className="flex gap-2 items-center">
-                  <button
-                    onClick={() => handleCalibrationPrint(p)}
-                    disabled={!!isPrintingId}
-                    className="text-xs text-gray-500 hover:text-white flex items-center gap-1 disabled:opacity-40"
-                    title="Print calibration pattern"
-                  >
-                    Calibrate
-                  </button>
-                  <button
-                    onClick={() => handleTestPrint(p)}
-                    disabled={!!isPrintingId}
-                    className="text-xs text-gray-400 hover:text-white flex items-center gap-1 disabled:opacity-40"
-                    title="Print identification label"
-                  >
-                    <FontAwesomeIcon icon={faPrintDuo} />{isPrintingId === p.id ? ' Printing…' : ' Print label'}
-                  </button>
                   <button
                     onClick={() => {
                       setEditingPrinter(p); setEditPrinterName(p.name);
