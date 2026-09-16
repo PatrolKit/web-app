@@ -264,7 +264,20 @@ export function drawItemTag(ctx: SKRSContext2D, W: number, H: number, item: Item
 }
 
 /**
- * The 62 × 100 mm tag: price and name rotated up the label, barcode and SKU
+ * Quarter turn clockwise, so rotated text reads top-to-bottom.
+ *
+ * Every rotated element on this tag shares it, which is the point: composing a
+ * block in the rotated frame and flipping this sign turns that whole block 180°
+ * about its own centre, so the three of them cannot drift out of agreement.
+ *
+ * The compact tier reads the other way (`drawRotatedBranding`) and stays that
+ * way — its strip runs up the side of a 30 mm label, where there is no tag to
+ * hold and nothing to be upside-down relative to.
+ */
+const ROTATION = Math.PI / 2;
+
+/**
+ * The 62 × 100 mm tag: price and name rotated down the label, barcode and SKU
  * across the foot, branding beside the barcode.
  *
  * A different composition from `drawItemTag` rather than the same one enlarged.
@@ -297,7 +310,7 @@ export async function drawLargeItemTag(
   const price = `$${(item.priceCents / 100).toFixed(2)}`;
   ctx.save();
   ctx.translate(priceColW / 2, upperH / 2);
-  ctx.rotate(-Math.PI / 2);
+  ctx.rotate(ROTATION);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   // Rotated, so the price reads along the column's *height* and is limited by
@@ -315,7 +328,7 @@ export async function drawLargeItemTag(
 
   ctx.save();
   ctx.translate(priceColW + GAP + nameColW / 2, upperH / 2);
-  ctx.rotate(-Math.PI / 2);
+  ctx.rotate(ROTATION);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const nameLead = lineHeight(NAME_SIZE);
@@ -367,7 +380,7 @@ async function drawBrandingIn(
 
   ctx.save();
   ctx.translate(x + w / 2, y + h / 2);
-  ctx.rotate(-Math.PI / 2);
+  ctx.rotate(ROTATION);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
