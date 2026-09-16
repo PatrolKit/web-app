@@ -190,17 +190,34 @@ export default function PrintersPage() {
     onSettled: () => qc.invalidateQueries({ queryKey: ['ski-swap/printers', orgId] }),
   });
 
-  async function scanAnyPrinter() {
+  /**
+   * Shows the BLE picker and captures what was chosen.
+   *
+   * `showAll` widens it to every Bluetooth device in range. The narrow list
+   * filters on the advertised service `FF00`, which is how Phomemos have always
+   * been found — but that is a claim about the M110, not about every printer.
+   * A model that does not advertise it never appears at all, and an empty picker
+   * looks like a flat battery rather than a filter.
+   *
+   * Name prefixes are not a fix here, whatever they were for scanners: one of
+   * our own M110s calls itself `Q192E28B1060137`, which says nothing about the
+   * model. So the escape hatch is everything, and the operator reads the label
+   * on the hardware.
+   */
+  async function scanAnyPrinter(showAll = false) {
     if (!isWebBluetoothSupported()) { alert('Printing requires Chrome or Edge.'); return; }
+    const PHOMEMO = '0000ff00-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID;
     try {
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: ['0000ff00-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID] }],
-        optionalServices: ['0000ff00-0000-1000-8000-00805f9b34fb' as BluetoothServiceUUID],
-      });
+      const device = await navigator.bluetooth.requestDevice(
+        showAll
+          ? { acceptAllDevices: true, optionalServices: [PHOMEMO] }
+          : { filters: [{ services: [PHOMEMO] }], optionalServices: [PHOMEMO] },
+      );
       const name = device.name ?? '';
       setPrinterBtName(name);
-      // Phomemos name themselves after the model, so this usually settles it
-      // without asking. When it does not, the field below is left for a person.
+      // Phomemos usually name themselves after the model, which settles this
+      // without asking. When the name says nothing, the field is left for a
+      // person rather than guessed at.
       const guessed = modelFromBluetoothName(name);
       setPrinterModel(guessed ?? '');
       // Sizes depend on the model, so a guess that changes it invalidates any
@@ -262,12 +279,25 @@ export default function PrintersPage() {
                 />
                 <button
                   type="button"
-                  onClick={scanAnyPrinter}
+                  onClick={() => scanAnyPrinter()}
                   className="bg-surface-100 hover:bg-surface-200 text-gray-300 px-3 py-2 rounded text-sm flex items-center gap-1"
                 >
                   <FontAwesomeIcon icon={faBluetooth} /> Scan
                 </button>
               </div>
+              <p className="text-xs text-gray-500">
+                The list holds printers that announce themselves as one. If yours is awake
+                and still not there,{' '}
+                <button
+                  type="button"
+                  onClick={() => scanAnyPrinter(true)}
+                  className="text-brand-500 hover:underline"
+                >
+                  show every Bluetooth device
+                </button>{' '}
+                — some models do not advertise what they are, and you will have to pick the
+                model below yourself.
+              </p>
               <select
                 value={printerModel}
                 onChange={(e) => {
