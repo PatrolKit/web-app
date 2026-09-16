@@ -53,6 +53,20 @@ async function makeSeller(email, businessName) {
 const { user: shopUser, seller: shop } = await makeSeller('ticket-shop@patrolkit.invalid', 'Alpine Sports');
 const { seller: other } = await makeSeller('ticket-other@patrolkit.invalid', 'Nordic Sports');
 
+// Plan 19 derives an item's name from a category rather than taking a typed
+// one, and the seller schema is strict — so a `name` in the body is a 400, not
+// an ignored field. One node is enough; the tree is not what this script is
+// about.
+await prisma.taxonomyNode.deleteMany({ where: { orgId: org.id, label: 'Ticket smoke category' } });
+const category = await prisma.taxonomyNode.create({
+  data: {
+    id: createId(), kind: 'CATEGORY', orgId: org.id, label: 'Ticket smoke category',
+    // `<org|global>:<parent|root>:<label folded>`, the shape the service writes.
+    dedupeKey: `${org.id}:root:ticket smoke category`,
+    updatedAt: new Date(),
+  },
+});
+
 const { user: staff } = await smokeStaff(prisma, org, ['ski_swap:admin', 'ski_swap:manage', 'ski_swap:report']);
 const staffToken = await smokeSession(prisma, BASE, staff, unwrap);
 const SH = { authorization: `Bearer ${staffToken}`, 'content-type': 'application/json' };
@@ -98,9 +112,9 @@ ok('and does not think the seller is out', state.exhausted === false, String(sta
 
 const first = await fetch(itemsUrl, {
   method: 'POST', headers: H,
-  body: JSON.stringify({ swapId: swap.id, name: 'Volkl Kendo skis', priceCents: 25000, quantity: 1 }),
+  body: JSON.stringify({ swapId: swap.id, categoryId: category.id, priceCents: 25000, quantity: 1 }),
 }).then(unwrap);
-ok('an item with no number takes the suggestion', first.sku === '67000', first.sku);
+ok('an item with no number takes the suggestion', first.sku === '67000', first.sku ?? JSON.stringify(first));
 
 state = await fetch(stateUrl, { headers: H }).then(unwrap);
 ok('the suggestion advances', state.suggested === 67001, String(state.suggested));
@@ -108,7 +122,7 @@ ok('the suggestion advances', state.suggested === 67001, String(state.suggested)
 // Skip 67001 — binned — and use 67002 instead.
 const skipped = await fetch(itemsUrl, {
   method: 'POST', headers: H,
-  body: JSON.stringify({ swapId: swap.id, name: 'Smith helmet', priceCents: 6500, quantity: 1, sku: '67002' }),
+  body: JSON.stringify({ swapId: swap.id, categoryId: category.id, priceCents: 6500, quantity: 1, sku: '67002' }),
 }).then(unwrap);
 ok('a typed number out of order is accepted', skipped.sku === '67002', skipped.sku);
 
@@ -116,7 +130,8 @@ state = await fetch(stateUrl, { headers: H }).then(unwrap);
 ok('and the suggestion carries on past the gap rather than offering it back',
    state.suggested === 67003, String(state.suggested));
 
-// A blank name becomes the seller and the number (D12).
+// No category either, which is the point: a seller on tickets may list
+// something the tree says nothing about, and the name falls back (D12).
 const unnamed = await fetch(itemsUrl, {
   method: 'POST', headers: H,
   body: JSON.stringify({ swapId: swap.id, priceCents: 4000, quantity: 1, sku: '67003' }),
@@ -134,19 +149,22 @@ ok('and queued no tag', jobs === 0, `${jobs} jobs`);
 
 const twice = await fetch(itemsUrl, {
   method: 'POST', headers: H,
-  body: JSON.stringify({ swapId: swap.id, name: 'Duplicate', priceCents: 1000, quantity: 1, sku: '67000' }),
+  body: JSON.stringify({ swapId: swap.id, categoryId: category.id, priceCents: 1000, quantity: 1, sku: '67000' }),
 });
 ok('a number already on an item is refused', twice.status === 409, String(twice.status));
 
 const outside = await fetch(itemsUrl, {
   method: 'POST', headers: H,
-  body: JSON.stringify({ swapId: swap.id, name: 'Outside', priceCents: 1000, quantity: 1, sku: '99999' }),
+  body: JSON.stringify({ swapId: swap.id, categoryId: category.id, priceCents: 1000, quantity: 1, sku: '99999' }),
 });
+// This and the next assert a 400, which a body the schema rejects also returns
+// — so until these stopped sending a `name` Plan 19 had removed, they passed
+// without ever reaching the rule they name.
 ok('a number outside their block is refused', outside.status === 400, String(outside.status));
 
 const notDigits = await fetch(itemsUrl, {
   method: 'POST', headers: H,
-  body: JSON.stringify({ swapId: swap.id, name: 'Letters', priceCents: 1000, quantity: 1, sku: 'ABC12' }),
+  body: JSON.stringify({ swapId: swap.id, categoryId: category.id, priceCents: 1000, quantity: 1, sku: 'ABC12' }),
 });
 ok('a number that is not digits is refused', notDigits.status === 400, String(notDigits.status));
 
@@ -154,7 +172,7 @@ ok('a number that is not digits is refused', notDigits.status === 400, String(no
 
 await fetch(itemsUrl, {
   method: 'POST', headers: H,
-  body: JSON.stringify({ swapId: swap.id, name: 'Poles', priceCents: 2000, quantity: 1, sku: '67004' }),
+  body: JSON.stringify({ swapId: swap.id, categoryId: category.id, priceCents: 2000, quantity: 1, sku: '67004' }),
 });
 
 state = await fetch(stateUrl, { headers: H }).then(unwrap);
@@ -166,7 +184,7 @@ ok('but the seller is not out while a skipped ticket is unused',
 
 const found = await fetch(itemsUrl, {
   method: 'POST', headers: H,
-  body: JSON.stringify({ swapId: swap.id, name: 'The one that turned up', priceCents: 3000, quantity: 1, sku: '67001' }),
+  body: JSON.stringify({ swapId: swap.id, categoryId: category.id, priceCents: 3000, quantity: 1, sku: '67001' }),
 }).then(unwrap);
 ok('a skipped ticket found later is still accepted', found.sku === '67001', found.sku);
 
@@ -175,7 +193,7 @@ ok('and only now is the seller out', state.exhausted === true, String(state.exha
 
 const noneLeft = await fetch(itemsUrl, {
   method: 'POST', headers: H,
-  body: JSON.stringify({ swapId: swap.id, name: 'One too many', priceCents: 1000, quantity: 1 }),
+  body: JSON.stringify({ swapId: swap.id, categoryId: category.id, priceCents: 1000, quantity: 1 }),
 });
 ok('an item with nothing left is refused', noneLeft.status === 409, String(noneLeft.status));
 
@@ -283,7 +301,7 @@ const ordinaryToken = await smokeSession(prisma, BASE, shopUser, unwrap);
 const plain = await fetch(itemsUrl, {
   method: 'POST',
   headers: { authorization: `Bearer ${ordinaryToken}`, 'content-type': 'application/json' },
-  body: JSON.stringify({ swapId: swap.id, name: 'Minted', priceCents: 1000, quantity: 1, sku: '12345' }),
+  body: JSON.stringify({ swapId: swap.id, categoryId: category.id, priceCents: 1000, quantity: 1, sku: '12345' }),
 });
 ok('a seller with no ranges cannot supply a SKU', plain.status === 400, String(plain.status));
 
@@ -292,6 +310,7 @@ await prisma.legacyTicketRange.deleteMany({ where: { swapId: swap.id } });
 await prisma.swapItem.deleteMany({ where: { swapId: swap.id } });
 await prisma.swapSkuCounter.deleteMany({ where: { swapId: swap.id } });
 await prisma.swapPrinter.delete({ where: { id: printer.id } });
+await prisma.taxonomyNode.delete({ where: { id: category.id } });
 await prisma.skiSwap.delete({ where: { id: swap.id } });
 for (const email of ['ticket-shop@patrolkit.invalid', 'ticket-other@patrolkit.invalid']) {
   const u = await prisma.user.findFirst({ where: { email } });
