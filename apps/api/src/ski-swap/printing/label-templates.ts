@@ -108,6 +108,24 @@ function commonFitSize(
 }
 
 /**
+ * How much larger type should be on this canvas than on a compact tag.
+ *
+ * The receipt, the printer sticker and the seller QR are the same composition
+ * whatever they are printed on — unlike the item tag, nothing has specified a
+ * different arrangement for a bigger label — so they scale rather than getting a
+ * tier of their own. Only the type sizes were fixed in dots; the layouts were
+ * already fractions of the canvas.
+ *
+ * Referenced to the compact content box, and floored at 1, so a 50 × 30 label
+ * comes out byte-for-byte as before and only a larger one changes.
+ */
+const COMPACT_CONTENT_W = 339;
+
+function typeScale(W: number): number {
+  return Math.max(1, W / COMPACT_CONTENT_W);
+}
+
+/**
  * Breaks `text` into at most `maxLines` lines that each fit `maxWidth`.
  *
  * New for the tall tag, which is the first layout with a column too narrow to
@@ -375,6 +393,8 @@ export function drawPrinterLabel(
 ): void {
   const CX = W / 2;
   const y = (frac: number) => Math.floor(H * frac);
+  const k = typeScale(W);
+  const CAPTION = Math.round(20 * k);
 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
@@ -385,13 +405,13 @@ export function drawPrinterLabel(
   const yPrinterName = y(0.16);
   const yOrgName = y(0.6);
 
-  ctx.font = labelFont(20);
-  ctx.fillText('Hi! My name is:', CX, yPrinterName - 20);
-  ctx.font = labelFont(38, 'bold');
+  ctx.font = labelFont(CAPTION);
+  ctx.fillText('Hi! My name is:', CX, yPrinterName - CAPTION);
+  ctx.font = labelFont(Math.round(38 * k), 'bold');
   ctx.fillText(fit(ctx, printerName, W), CX, yPrinterName);
-  ctx.font = labelFont(20);
-  ctx.fillText('I belong to:', CX, yOrgName - 20);
-  ctx.font = labelFont(28, 'bold');
+  ctx.font = labelFont(CAPTION);
+  ctx.fillText('I belong to:', CX, yOrgName - CAPTION);
+  ctx.font = labelFont(Math.round(28 * k), 'bold');
   ctx.fillText(fit(ctx, orgName, W), CX, yOrgName);
 }
 
@@ -406,7 +426,8 @@ export async function drawReceiptHeader(
   ctx.fillStyle = '#000';
   ctx.textBaseline = 'top';
 
-  const LOGO_SIZE = 64;
+  const k = typeScale(W);
+  const LOGO_SIZE = Math.round(64 * k);
   if (data.orgLogoUrl) {
     try {
       const logo = await loadImage(data.orgLogoUrl);
@@ -422,11 +443,11 @@ export async function drawReceiptHeader(
     }
   }
 
-  const DATE_H = 20, PHONE_H = 20, LINE_GAP = 2;
+  const DATE_H = Math.round(20 * k), PHONE_H = Math.round(20 * k), LINE_GAP = 2;
   // The block sits to the right of the logo, so that is the width the name has
   // to live in. Bounded rather than given the full column: at 26 a long name
   // set across the whole width would run over the org's mark.
-  const NAME_H = fitSize(ctx, data.sellerName, 26, 12, W - (LOGO_SIZE + 8));
+  const NAME_H = fitSize(ctx, data.sellerName, Math.round(26 * k), 12, W - (LOGO_SIZE + 8));
 
   const blockH = lineHeight(DATE_H) + lineHeight(NAME_H) + lineHeight(PHONE_H) + LINE_GAP * 2;
   let ty = Math.floor((halfH - blockH) / 2);
@@ -443,7 +464,9 @@ export async function drawReceiptHeader(
   ctx.fillRect(0, halfH, W, 1);
 
   const bottomAvail = H - halfH - 1;
-  const QR_SIZE = Math.min(96, bottomAvail - 8);
+  // Bounded by the space below the rule, so a taller label gets a bigger code
+  // rather than the same one adrift in white.
+  const QR_SIZE = Math.min(Math.round(96 * k), bottomAvail - 8);
   const QR_X = W - QR_SIZE - 8;
   drawQr(ctx, data.qrUrl, QR_X, halfH + 1 + Math.floor((bottomAvail - QR_SIZE) / 2), QR_SIZE);
 
@@ -475,7 +498,9 @@ export function drawReceiptItems(
   ctx.fillStyle = '#000';
   ctx.textBaseline = 'top';
 
-  const NAME_H = 24, SKU_H = 18, HEADER_H = 20, LINE_GAP = 2, ITEM_GAP = 4;
+  const k = typeScale(W);
+  const NAME_H = Math.round(24 * k), SKU_H = Math.round(18 * k);
+  const HEADER_H = Math.round(20 * k), LINE_GAP = 2, ITEM_GAP = 4;
   const itemH = lineHeight(NAME_H) + LINE_GAP + lineHeight(SKU_H);
   let y = 0;
 
@@ -528,16 +553,17 @@ export function drawQrLabel(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
-  ctx.font = labelFont(14, 'bold');
+  const k = typeScale(W);
+  ctx.font = labelFont(Math.round(14 * k), 'bold');
   ctx.fillText('Scan this code to track', CX, y(0), W);
   ctx.fillText('the status of your items:', CX, y(0.065), W);
 
-  const QR_SIZE = Math.min(144, W);
+  const QR_SIZE = Math.min(Math.round(144 * k), W);
   const QR_TOP = y(0.155);
   drawQr(ctx, url, Math.round(CX - QR_SIZE / 2), QR_TOP, QR_SIZE);
 
   ctx.fillStyle = '#000';
-  ctx.font = labelFont(13, 'bold');
+  ctx.font = labelFont(Math.round(13 * k), 'bold');
   ctx.fillText(fit(ctx, sellerName, W), CX, QR_TOP + QR_SIZE + 4, W);
 }
 
