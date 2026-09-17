@@ -100,6 +100,11 @@ const finish = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/finish`, {
   method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
 });
 ok('check-in finishes on a 62 × 100 station', finish.ok, String(finish.status));
+const finished = await finish.json().then((b) => b.data ?? b);
+// `receiptPages` counts labels queued. On this tier there is no masthead label,
+// so a `+ 1` here would promise one the bridge never receives.
+ok('it reports the labels it actually queued', finished.receiptPages === 1,
+   JSON.stringify(finished));
 
 const jobs = await prisma.printJob.findMany({
   where: { swapId: swap.id, kind: { in: ['receipt_header', 'receipt_items'] } },

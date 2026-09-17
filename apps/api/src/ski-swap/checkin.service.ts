@@ -256,7 +256,10 @@ export class CheckinService {
 
     return {
       itemCount: items.length,
-      receiptPages: pageCount + 1,
+      // Labels queued, which is the item pages plus a masthead only where the
+      // tier prints one. The tall tier folds its masthead into page one, so
+      // `+ 1` there reported a label nobody enqueued.
+      receiptPages: pageCount + (target.size.tier !== 'tall' ? 1 : 0),
       /**
        * Reported, not thrown. The items exist and their tags are printed; staff
        * can re-push from the items table, and failing the finish would strand a
