@@ -321,9 +321,14 @@ function ValueSheet({
           </button>
         </div>
 
+        {/* Not autofocused. The sheet opens on a tap that meant "show me the
+            list", and focusing the box answers with a keyboard over the top of
+            it — three quarters of the makes hidden behind the thing you would
+            only need if none of them fitted. Search is for the seller who looks
+            and does not see theirs. 16px like the rest of check-in, so that when
+            they do tap it iOS does not zoom (see `inputClass`). */}
         <input
-          autoFocus
-          className="bg-surface-100 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-brand-600 focus:outline-none"
+          className="bg-surface-100 border border-gray-700 rounded-lg px-3 py-2.5 text-base text-white placeholder:text-gray-500 focus:border-brand-600 focus:outline-none"
           placeholder={
             attribute.allowFreeEntry
               ? `Search ${values.length}, or type a new one`
@@ -580,7 +585,7 @@ function AttributeField({
       ) : attribute.input === 'number' ? (
         <div className="flex items-center gap-2">
           <input
-            className="w-28 bg-surface-100 border border-gray-700 rounded-lg px-2.5 py-2 text-sm text-white placeholder:text-gray-500 focus:border-brand-600 focus:outline-none"
+            className="w-28 bg-surface-100 border border-gray-700 rounded-lg px-2.5 py-2 text-base text-white placeholder:text-gray-500 focus:border-brand-600 focus:outline-none"
             inputMode="decimal"
             placeholder={attribute.min !== undefined ? `${attribute.min}–${attribute.max ?? ''}` : ''}
             value={answer.numberValue ?? ''}
