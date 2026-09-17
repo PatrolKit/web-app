@@ -326,7 +326,12 @@ export async function drawLargeItemTag(
   // ── Proportions ───────────────────────────────────────────────────────────
   // Fractions rather than dots, so a second size in this tier costs nothing.
   const GAP = Math.round(W * 0.03);
-  const nameColW = Math.round(W * 0.26);
+  // The name column is wide enough to be the thing that stops the name growing,
+  // and no wider. Rotated, its width caps the type — two lines at 1.2 leading —
+  // so 0.26 held the name to 50 while the price column kept 329 dots for a line
+  // box of about 180. That slack was doing nothing; moved here it buys 69, and
+  // the price still has room for far more than its 150 ceiling.
+  const nameColW = Math.round(W * 0.36);
   const priceColW = W - nameColW - GAP;
   const brandColW = Math.round(W * 0.20);
   const barcodeW = W - brandColW - GAP;
