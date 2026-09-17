@@ -195,7 +195,17 @@ export class ContactChallengeService {
     const { challengeId, channel, target, rawCode, purpose, orgName, context } = params;
 
     if (channel === 'phone') {
-      await this.sms.send(target, `Your PatrolKit code is: ${rawCode}. It expires in 15 minutes.`);
+      // Fire-and-forget, for the same reason as the mail call below: a delivery
+      // failure must never surface as an auth error, which would leak whether
+      // the account exists. `SmsService` used to absorb this itself, which made
+      // the policy every later caller's problem — so it is stated here, where it
+      // is actually wanted.
+      const outcome = await this.sms.send(
+        target, `Your PatrolKit code is: ${rawCode}. It expires in 15 minutes.`,
+      );
+      if (outcome.status === 'failed') {
+        this.logger.error({ error: outcome.error }, 'Challenge SMS delivery failed');
+      }
       return;
     }
 

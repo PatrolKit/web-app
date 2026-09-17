@@ -26,8 +26,15 @@ describe('ContactChallengeService — devCode exposure', () => {
       },
     } as unknown as ConfigService;
 
-    const mail = { sendMagicLink: jest.fn().mockResolvedValue(undefined) } as unknown as MailService;
-    const sms = { send: jest.fn().mockResolvedValue(undefined) } as unknown as SmsService;
+    // Both services report a `SendOutcome` now. The stubs say `suppressed`
+    // because that is what they model here — notifications are off in three of
+    // the four cases below, and a stub that resolved `undefined` would only be
+    // describing a signature neither service has.
+    const suppressed = { status: 'suppressed' as const };
+    const mail = {
+      sendMagicLink: jest.fn().mockResolvedValue(suppressed),
+    } as unknown as MailService;
+    const sms = { send: jest.fn().mockResolvedValue(suppressed) } as unknown as SmsService;
 
     return new ContactChallengeService(prisma, mail, sms, config);
   }

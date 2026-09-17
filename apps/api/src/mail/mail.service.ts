@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer from 'nodemailer';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import type { SendOutcome } from '../common/messaging/send-outcome';
 
 function magicLinkTemplate(magicLinkUrl: string): string {
   return `<!DOCTYPE html>
@@ -83,61 +84,72 @@ export class MailService {
 
   constructor(private readonly config: ConfigService) {}
 
-  async sendMagicLink(to: string, magicLinkUrl: string): Promise<void> {
+  async sendMagicLink(to: string, magicLinkUrl: string): Promise<SendOutcome> {
     const subject = 'Your sign-in link for PatrolKit';
     const html = magicLinkTemplate(magicLinkUrl);
-    await this.send(to, subject, html);
+    return this.send(to, subject, html);
   }
 
-  async sendSellerInvite(to: string, inviteUrl: string, orgName: string): Promise<void> {
+  async sendSellerInvite(to: string, inviteUrl: string, orgName: string): Promise<SendOutcome> {
     const subject = `You've been invited to participate in a ski swap on PatrolKit`;
     const html = sellerInviteTemplate(inviteUrl, orgName);
-    await this.send(to, subject, html);
+    return this.send(to, subject, html);
   }
 
-  async sendVerificationEmail(to: string, verifyUrl: string): Promise<void> {
+  async sendVerificationEmail(to: string, verifyUrl: string): Promise<SendOutcome> {
     const subject = 'Verify your email address — PatrolKit';
     const html = sellerVerificationTemplate(verifyUrl);
-    await this.send(to, subject, html);
+    return this.send(to, subject, html);
   }
 
-  async sendSellerAddedNotification(to: string, orgName: string): Promise<void> {
+  async sendSellerAddedNotification(to: string, orgName: string): Promise<SendOutcome> {
     const appUrl = this.config.get<string>('app.appUrl', 'http://localhost:3000');
     const signInUrl = `${appUrl}/app/auth/login`;
     const subject = `You've been added to ${orgName} on PatrolKit`;
     const html = sellerAddedTemplate(signInUrl, orgName);
-    await this.send(to, subject, html);
+    return this.send(to, subject, html);
   }
 
-  private async send(to: string, subject: string, html: string): Promise<void> {
+  /**
+   * Reports rather than only throwing.
+   *
+   * Still throws, because every caller that predates receipts was written
+   * against that and an auth path in particular treats a throw as its signal to
+   * log and carry on. The outcome is for callers that have to write down what
+   * happened — a suppressed send and a real one are indistinguishable otherwise
+   * (see `SendOutcome`), and `failed` is returned as well as thrown so a caller
+   * that catches still has the message.
+   */
+  private async send(to: string, subject: string, html: string): Promise<SendOutcome> {
     if (!this.config.get<boolean>('app.outboundNotifications', false)) {
       this.logger.log({ to, subject }, '[mail suppressed] OUTBOUND_NOTIFICATIONS is off');
-      return;
+      return { status: 'suppressed' };
     }
     const from = this.config.get<string>('app.emailFrom', 'noreply@patrolkit.io');
     const transport = this.config.get<string>('app.mailTransport', 'smtp');
     try {
-      if (transport === 'ses') {
-        await this.sendViaSes(from, to, subject, html);
-      } else {
-        await this.sendViaSmtp(from, to, subject, html);
-      }
-      this.logger.log({ to, subject }, 'Email sent');
+      const providerRef =
+        transport === 'ses'
+          ? await this.sendViaSes(from, to, subject, html)
+          : await this.sendViaSmtp(from, to, subject, html);
+      this.logger.log({ to, subject, providerRef }, 'Email sent');
+      return providerRef ? { status: 'sent', providerRef } : { status: 'sent' };
     } catch (err) {
       this.logger.error({ err, to }, 'Failed to send email');
       throw err;
     }
   }
 
+  /** Returns the provider's id for the message, so a delivery row can name it. */
   private async sendViaSes(
     from: string,
     to: string,
     subject: string,
     html: string,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const region = this.config.get<string>('app.sesRegion', 'us-east-2');
     const ses = new SESClient({ region });
-    await ses.send(
+    const res = await ses.send(
       new SendEmailCommand({
         Source: from,
         Destination: { ToAddresses: [to] },
@@ -147,6 +159,7 @@ export class MailService {
         },
       }),
     );
+    return res.MessageId;
   }
 
   private async sendViaSmtp(
@@ -154,12 +167,13 @@ export class MailService {
     to: string,
     subject: string,
     html: string,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const transporter = nodemailer.createTransport({
       host: this.config.get<string>('app.smtpHost', 'localhost'),
       port: this.config.get<number>('app.smtpPort', 1025),
       secure: false,
     });
-    await transporter.sendMail({ from, to, subject, html });
+    const info = await transporter.sendMail({ from, to, subject, html });
+    return info.messageId;
   }
 }
