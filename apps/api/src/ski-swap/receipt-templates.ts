@@ -17,70 +17,150 @@ function whenText(d: Date): string {
 /**
  * The receipt, in the body.
  *
- * The link is for keeping, not for reading — somebody opening this on a phone
- * at the swap should not have to follow it to find out what they dropped off.
- * House style from `mail.service.ts`: dark card, brand-red heading, one action.
+ * ## Light base, dark override
+ *
+ * Mail clients are split. Apple Mail, iOS Mail and Outlook for Mac honor
+ * `prefers-color-scheme`; Gmail and Outlook for Windows ignore it entirely and
+ * render whatever the base styles say. So the base has to be one or the other,
+ * and it is light: that is what the clients which ignore the query will show,
+ * it prints, and it survives being forwarded into a quoted thread.
+ *
+ * The dark rules live in a `<style>` block, which several clients strip — hence
+ * every element also carrying inline styles for the light case. Where a color
+ * has to change in dark mode it gets a class as well, so the inline value is
+ * the light default and the class is the override. `color-scheme` tells a
+ * client not to invert anything itself on top of that.
+ *
+ * ## Why no "view receipt" button
+ *
+ * The receipt is right here. A button to go and read it somewhere else is an
+ * instruction to leave the thing you are already looking at. The link is still
+ * at the foot for keeping and forwarding; the one button that earns its place
+ * goes somewhere the email cannot: the seller's live page.
  */
 export function receiptEmail(view: ReceiptView): string {
   const rows = view.lines
     .map(
       (l) => `
       <tr>
-        <td style="padding: 8px 0; border-bottom: 1px solid #333;">
-          <span style="color: #fff; font-size: 14px;">${esc(l.name)}</span><br>
-          <span style="color: #6b7280; font-size: 12px;">${esc(l.sku)}</span>
+        <td class="line" style="padding: 10px 0; border-bottom: 1px solid #e5e7eb;">
+          <span class="ink" style="color: #111827; font-size: 15px;">${esc(l.name)}</span><br>
+          <span class="muted" style="color: #6b7280; font-size: 12px;">${esc(l.sku)}</span>
         </td>
-        <td style="padding: 8px 0; border-bottom: 1px solid #333; text-align: right; vertical-align: top; white-space: nowrap;">
-          <span style="color: #fff; font-size: 14px; font-weight: 600;">${money(l.priceCents)}</span>
+        <td class="line" style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; text-align: right; vertical-align: top; white-space: nowrap;">
+          <span class="ink" style="color: #111827; font-size: 15px; font-weight: 600;">${money(l.priceCents)}</span>
         </td>
       </tr>`,
     )
     .join('');
 
   const empty = `
-      <tr><td colspan="2" style="padding: 12px 0; color: #9ca3af; font-size: 14px;">
+      <tr><td colspan="2" class="muted" style="padding: 12px 0; color: #6b7280; font-size: 14px;">
         No items were checked in.
       </td></tr>`;
 
+  /*
+   * The payout is the answer to "when do I get my money", so it is a panel
+   * rather than a line of small print under the total. Left border and a fill,
+   * because a mail client that drops the background still leaves the rule.
+   */
   const payout = view.payoutLabel
-    ? `<p style="color: #9ca3af; font-size: 13px; margin: 24px 0 0;">
-         Payment goes to: <strong style="color: #e5e7eb;">${esc(view.payoutLabel)}</strong>
-       </p>`
+    ? `
+    <table role="presentation" width="100%" style="border-collapse: collapse; margin: 24px 0 0;">
+      <tr>
+        <td class="panel" style="background: #f3f4f6; border-left: 4px solid #dc2626; border-radius: 4px; padding: 14px 16px;">
+          <div class="muted" style="color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;">Payment goes to</div>
+          <div class="ink" style="color: #111827; font-size: 17px; font-weight: 700; margin-top: 4px;">${esc(view.payoutLabel)}</div>
+        </td>
+      </tr>
+    </table>`
+    : '';
+
+  const logo = view.logoImageUrl
+    ? `<img src="${view.logoImageUrl}" alt="" width="48" height="48" style="display: block; width: 48px; height: 48px; object-fit: contain; border: 0;">`
     : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Your ${esc(view.swapTitle)} receipt</title></head>
-<body style="font-family: Inter, 'Plus Jakarta Sans', sans-serif; background: #1a1a1a; color: #fff; margin: 0; padding: 40px 20px;">
-  <div style="max-width: 520px; margin: 0 auto; background: #252525; border-radius: 8px; padding: 40px;">
-    <h1 style="color: #dc2626; font-size: 24px; margin: 0 0 8px;">${esc(view.orgName)}</h1>
-    <p style="color: #9ca3af; margin: 0 0 4px; font-size: 14px;">${esc(view.swapTitle)}</p>
-    <p style="color: #6b7280; margin: 0 0 28px; font-size: 13px;">
-      Checked in ${esc(whenText(view.createdAt))} · ${esc(view.sellerName)}
-    </p>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title>Your ${esc(view.swapTitle)} receipt</title>
+  <style>
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    @media (prefers-color-scheme: dark) {
+      .page   { background: #1a1a1a !important; }
+      .card   { background: #252525 !important; }
+      .ink    { color: #f9fafb !important; }
+      .muted  { color: #9ca3af !important; }
+      .line   { border-bottom-color: #374151 !important; }
+      .rule   { border-top-color: #374151 !important; }
+      .panel  { background: #31241f !important; }
+      .total  { border-top-color: #4b5563 !important; }
+    }
+  </style>
+</head>
+<body class="page" style="margin: 0; padding: 0; background: #f6f7f9;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="page" style="background: #f6f7f9; margin: 0; padding: 0;">
+    <tr>
+      <td align="center" style="padding: 32px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="card" style="max-width: 560px; background: #ffffff; border-radius: 10px; padding: 32px; font-family: Inter, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+          <tr>
+            <td>
 
-    <table style="width: 100%; border-collapse: collapse;">
-      ${view.lines.length ? rows : empty}
-      <tr>
-        <td style="padding: 14px 0 0; color: #9ca3af; font-size: 14px;">
-          ${view.itemCount} item${view.itemCount === 1 ? '' : 's'}
-        </td>
-        <td style="padding: 14px 0 0; text-align: right;">
-          <span style="color: #fff; font-size: 18px; font-weight: 700;">${money(view.totalCents)}</span>
-        </td>
-      </tr>
-    </table>
+              <table role="presentation" width="100%" style="border-collapse: collapse;">
+                <tr>
+                  ${logo ? `<td width="48" style="padding-right: 12px; vertical-align: top;">${logo}</td>` : ''}
+                  <td style="vertical-align: top;">
+                    <div class="ink" style="color: #111827; font-size: 20px; font-weight: 700;">${esc(view.orgName)}</div>
+                    <div class="muted" style="color: #6b7280; font-size: 14px; margin-top: 2px;">${esc(view.swapTitle)}</div>
+                  </td>
+                </tr>
+              </table>
 
-    <p style="margin: 32px 0 0;">
-      <a href="${view.url}" style="display: inline-block; background: #dc2626; color: #fff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">View this receipt</a>
-    </p>
-    <p style="color: #6b7280; font-size: 13px; margin: 16px 0 0;">
-      Keep that link — it also shows what has sold.
-    </p>
-    ${payout}
-    <hr style="border: none; border-top: 1px solid #333; margin: 24px 0;">
-    <p style="color: #4b5563; font-size: 12px; margin: 0;">Or copy this link: <span style="word-break: break-all; color: #9ca3af;">${view.url}</span></p>
-  </div>
+              <p class="muted" style="color: #6b7280; font-size: 13px; margin: 16px 0 0;">
+                Checked in ${esc(whenText(view.createdAt))} · ${esc(view.sellerName)}
+              </p>
+
+              <table role="presentation" width="100%" style="border-collapse: collapse; margin-top: 20px;">
+                ${view.lines.length ? rows : empty}
+                <tr>
+                  <td class="total" style="padding: 14px 0 0; border-top: 2px solid #d1d5db;">
+                    <span class="muted" style="color: #6b7280; font-size: 14px;">${view.itemCount} item${view.itemCount === 1 ? '' : 's'}</span>
+                  </td>
+                  <td class="total" style="padding: 14px 0 0; border-top: 2px solid #d1d5db; text-align: right;">
+                    <span class="ink" style="color: #111827; font-size: 20px; font-weight: 700;">${money(view.totalCents)}</span>
+                  </td>
+                </tr>
+              </table>
+
+              ${payout}
+
+              <table role="presentation" width="100%" style="border-collapse: collapse; margin: 28px 0 0;">
+                <tr>
+                  <td align="center" bgcolor="#dc2626" style="border-radius: 6px;">
+                    <a href="${view.trackUrl}" style="display: inline-block; padding: 13px 30px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px;">Track your items</a>
+                  </td>
+                </tr>
+              </table>
+              <p class="muted" style="color: #6b7280; font-size: 13px; margin: 12px 0 0; text-align: center;">
+                See what has sold and what is still on the floor.
+              </p>
+
+              <hr class="rule" style="border: none; border-top: 1px solid #e5e7eb; margin: 28px 0 16px;">
+              <p class="muted" style="color: #9ca3af; font-size: 12px; margin: 0;">
+                A copy of this receipt lives at
+                <a href="${view.url}" class="muted" style="color: #9ca3af; word-break: break-all;">${view.url}</a>
+              </p>
+
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`;
 }

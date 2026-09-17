@@ -148,6 +148,15 @@ const pubBody = await unwrap(pub.clone());
 ok('the token opens the receipt with no auth', pub.ok && pubBody.lines.length === 3,
    `${pub.status}`);
 ok('and it is frozen, not live', pubBody.totalCents === snap.totalCents, `${pubBody.totalCents}`);
+// The receipt cannot say what has sold since, so it carries a way to the page
+// that can — the seller's whole page, not a filter of these items.
+ok('it carries a link to the seller\'s live page',
+   pubBody.trackUrl === `${(process.env.SELLER_SITE_URL ?? 'http://localhost:3000').replace(/\/$/, '')}/s/${mailer.sellerId}`,
+   pubBody.trackUrl);
+// A `data:` logo is stripped by mail clients; only an http(s) one is offered.
+ok('the email logo is a URL or nothing, never a data: URI',
+   pubBody.logoImageUrl === null || /^https?:\/\//.test(pubBody.logoImageUrl),
+   String(pubBody.logoImageUrl));
 
 // An edit after the fact must not reach back into what somebody was handed.
 const oneItem = await prisma.swapItem.findFirst({ where: { swapId: swap.id, sellerId: mailer.sellerId } });

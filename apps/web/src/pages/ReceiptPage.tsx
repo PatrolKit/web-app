@@ -98,7 +98,16 @@ export default function ReceiptPage() {
         </p>
       )}
 
-      <p className="text-xs text-gray-500 mt-6 pt-4 border-t border-gray-800">
+      {/* The receipt is frozen, so the question it cannot answer — what has
+          happened since — gets a way out to the page that can. */}
+      <a
+        href={data.trackUrl}
+        className="block text-center bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg py-3 mt-6"
+      >
+        Track your items
+      </a>
+
+      <p className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-800">
         This is a record of what you dropped off. It does not change as items sell.
       </p>
     </Frame>

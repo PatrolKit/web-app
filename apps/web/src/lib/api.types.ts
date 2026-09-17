@@ -826,13 +826,18 @@ export interface PublicReceiptResponse {
   token: string;
   orgName: string;
   orgLogoUrl: string | null;
+  /** The logo as a URL a mail client could fetch, or null. Email only. */
+  logoImageUrl: string | null;
   swapTitle: string;
   sellerName: string;
   payoutLabel: string | null;
   totalCents: number;
   itemCount: number;
   createdAt: string;
+  /** This receipt, frozen. */
   url: string;
+  /** The seller's live page: everything they have, not only what is on here. */
+  trackUrl: string;
   lines: PublicReceiptLine[];
 }
 

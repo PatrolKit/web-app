@@ -6,6 +6,7 @@ const view = (over: Partial<ReceiptView> = {}): ReceiptView => ({
   token: 'Xk3abcdefghijklmnopqrstuvwxyz012',
   orgName: 'Stowe Patrol',
   orgLogoUrl: null,
+  logoImageUrl: null,
   swapTitle: 'Fall Swap',
   sellerName: 'Dana Reyes',
   payoutLabel: 'Check',
@@ -13,6 +14,7 @@ const view = (over: Partial<ReceiptView> = {}): ReceiptView => ({
   itemCount: 2,
   createdAt: new Date('2026-09-17T13:42:00Z'),
   url: 'https://skiswap.patrolkit.io/r/Xk3abcdefghijklmnopqrstuvwxyz012',
+  trackUrl: 'https://skiswap.patrolkit.io/s/seller123',
   lines: [
     { name: 'Rossignol 172cm Red Skis', sku: 'ETR-E-0001', priceCents: 4500 },
     { name: 'Snowboard', sku: 'ETR-E-0002', priceCents: 9000 },
@@ -84,5 +86,95 @@ describe('receiptEmail', () => {
     const html = receiptEmail(view({ sellerName: 'A & B "quoted"', orgName: '<b>Club</b>' }));
     expect(html).toContain('A &amp; B &quot;quoted&quot;');
     expect(html).not.toContain('<b>Club</b>');
+  });
+
+  /**
+   * Light is what Gmail and Outlook for Windows will show, because they ignore
+   * the media query entirely — so the base has to be the light one and the dark
+   * rules have to be the override, not the other way round.
+   */
+  describe('theme', () => {
+    it('declares both schemes so a client does not invert it itself', () => {
+      const html = receiptEmail(view());
+      expect(html).toContain('name="color-scheme" content="light dark"');
+      expect(html).toContain('name="supported-color-schemes" content="light dark"');
+    });
+
+    it('is light in the base styles and dark only under the query', () => {
+      const html = receiptEmail(view());
+      const query = html.indexOf('@media (prefers-color-scheme: dark)');
+      expect(query).toBeGreaterThan(-1);
+      // The page's own background is the light one, stated inline where no
+      // client can strip it.
+      expect(html).toContain('<body class="page" style="margin: 0; padding: 0; background: #f6f7f9;">');
+      expect(html.slice(query)).toContain('#1a1a1a');
+    });
+
+    /**
+     * Several clients drop a <style> block. Every color therefore has to be
+     * inline as well, or those clients render unstyled text on white.
+     */
+    it('carries the light colors inline, not only in the style block', () => {
+      const html = receiptEmail(view());
+      const body = html.slice(html.indexOf('<body'));
+      expect(body).toContain('color: #111827');
+      expect(body).toContain('background: #ffffff');
+    });
+  });
+
+  describe('logo', () => {
+    it('shows the org mark when there is a fetchable URL', () => {
+      const html = receiptEmail(view({ logoImageUrl: 'https://skiswap.patrolkit.io/api/v1/public/orgs/o1/logo' }));
+      expect(html).toContain('<img src="https://skiswap.patrolkit.io/api/v1/public/orgs/o1/logo"');
+    });
+
+    /**
+     * `orgLogoUrl` is a `data:` URI, which mail clients strip. Rendering it
+     * would produce a broken-image icon beside the club's name, which is worse
+     * than no logo.
+     */
+    it('never falls back to the stored data: URI', () => {
+      const html = receiptEmail(view({ orgLogoUrl: 'data:image/png;base64,AAAA', logoImageUrl: null }));
+      expect(html).not.toContain('data:image');
+      expect(html).not.toContain('<img');
+    });
+  });
+
+  describe('actions', () => {
+    /** The receipt is already in the body; a button to go and read it is noise. */
+    it('has no button back to the receipt it already is', () => {
+      const html = receiptEmail(view());
+      expect(html).not.toContain('View this receipt');
+      expect(html).not.toContain('View receipt');
+    });
+
+    it('keeps the link at the foot for forwarding and keeping', () => {
+      expect(receiptEmail(view())).toContain(view().url);
+    });
+
+    /** The one thing the email cannot do itself: say what has happened since. */
+    it('sends the button to the seller\'s live page, not to this receipt', () => {
+      const html = receiptEmail(view());
+      expect(html).toContain('>Track your items</a>');
+      const button = html.slice(html.indexOf('Track your items') - 400, html.indexOf('Track your items'));
+      expect(button).toContain('https://skiswap.patrolkit.io/s/seller123');
+    });
+  });
+
+  describe('payout', () => {
+    it('is a panel rather than a line of small print', () => {
+      const html = receiptEmail(view({ payoutLabel: 'Venmo — @dana' }));
+      expect(html).toContain('Payment goes to');
+      expect(html).toContain('Venmo — @dana');
+      // Sized and weighted to be found, with a rule that survives a client
+      // dropping the background fill.
+      const panel = html.slice(html.indexOf('Payment goes to') - 300, html.indexOf('Payment goes to') + 300);
+      expect(panel).toContain('border-left: 4px solid #dc2626');
+      expect(panel).toContain('font-weight: 700');
+    });
+
+    it('is absent, not empty, when the seller never chose one', () => {
+      expect(receiptEmail(view({ payoutLabel: null }))).not.toContain('Payment goes to');
+    });
   });
 });

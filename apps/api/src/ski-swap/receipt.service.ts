@@ -15,14 +15,35 @@ export interface ReceiptView {
   id: string;
   token: string;
   orgName: string;
+  /**
+   * The stored value, which is a `data:` URI. Fine in a browser, useless in an
+   * email — see `logoImageUrl`.
+   */
   orgLogoUrl: string | null;
+  /**
+   * The same logo, but only when a mail client could actually fetch it.
+   *
+   * `orgLogoUrl` is an ordinary public URL wherever S3 is configured, which is
+   * how the seller site renders it today. Without S3 the upload falls back to a
+   * `data:` URI, which mail clients strip — and which in any case does not fit
+   * the column, so no such logo exists. Null either way, rather than an `<img>`
+   * that resolves to a broken-image icon beside the club's name.
+   */
+  logoImageUrl: string | null;
   swapTitle: string;
   sellerName: string;
   payoutLabel: string | null;
   totalCents: number;
   itemCount: number;
   createdAt: Date;
+  /** This receipt, frozen. */
   url: string;
+  /**
+   * The seller's live page: everything they have at this org, not only what is
+   * on this receipt. The receipt says what they dropped off; this says what has
+   * happened to it since.
+   */
+  trackUrl: string;
   lines: { name: string; sku: string; priceCents: number }[];
 }
 
@@ -307,6 +328,7 @@ export class ReceiptService {
       token: receipt.token,
       orgName: receipt.orgName,
       orgLogoUrl: receipt.orgLogoUrl,
+      logoImageUrl: emailableLogo(receipt.orgLogoUrl),
       swapTitle: receipt.swapTitle,
       sellerName: receipt.sellerName,
       payoutLabel: receipt.payoutLabel,
@@ -314,6 +336,7 @@ export class ReceiptService {
       itemCount: receipt.itemCount,
       createdAt: receipt.createdAt,
       url: this.urlFor(receipt.token),
+      trackUrl: this.sellerSite(`/s/${receipt.sellerId}`),
       lines,
     };
   }
@@ -325,9 +348,25 @@ export class ReceiptService {
    * useless and an origin taken from whoever made the request is a guess.
    */
   private urlFor(token: string): string {
-    const base = this.config.get<string>('app.sellerSiteUrl', 'http://localhost:3000');
-    return `${base.replace(/\/$/, '')}/r/${token}`;
+    return this.sellerSite(`/r/${token}`);
   }
+
+  private sellerSite(path: string): string {
+    const base = this.config.get<string>('app.sellerSiteUrl', 'http://localhost:3000');
+    return `${base.replace(/\/$/, '')}${path}`;
+  }
+
+
+}
+
+/**
+ * A logo a mail client can fetch, or nothing.
+ *
+ * Only absolute http(s): a `data:` URI is stripped by Gmail and Outlook, and a
+ * relative path in an email means nothing at all. See `ReceiptView`.
+ */
+function emailableLogo(logoUrl: string | null): string | null {
+  return logoUrl && /^https?:\/\//i.test(logoUrl) ? logoUrl : null;
 }
 
 /**
