@@ -222,13 +222,20 @@ export default function PayoutStep({
                 </span>
               </label>
             ) : (
-              <p className="text-sm text-gray-400 text-center">
-                Sending to{' '}
-                <span className="text-white">
+              // The same card the cheque address gets, and for the same reason:
+              // it is the destination, and it is the one thing on this screen
+              // worth reading twice. As a bare line it was the lightest element
+              // between the tabs above and the button below — and since payout
+              // now opens here, it is what most sellers see.
+              <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-1">
+                <p className="text-xs text-gray-400">Sending your payment to</p>
+                <p className="text-sm text-white break-all">
                   {target === 'EMAIL' ? profile.verifiedEmail : profile.verifiedPhone}
-                </span>
-                <span className="text-green-400"> ✓ verified</span>
-              </p>
+                </p>
+                <p className="text-xs text-green-400">
+                  ✓ Verified — this is the {target === 'EMAIL' ? 'email' : 'number'} you signed in with
+                </p>
+              </div>
             )}
           </>
         )}
