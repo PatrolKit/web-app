@@ -11,8 +11,20 @@ import type { CheckinContext } from '../../lib/api.types';
  * nothing at all. A seller reading the same line on every screen can stop
  * reading it; one that changes shape has to be re-read each time.
  */
-export function contextLine(context: CheckinContext): string {
-  return [context.orgName, context.swapTitle, context.stationName].join(' · ');
+/**
+ * Where you are, on two lines: who is running this, then which swap and counter.
+ *
+ * It was one string joined with separators, and on a phone three names run to
+ * about sixty characters — so it wrapped wherever it happened to run out, often
+ * mid-name or leaving a dangling middot at the end of a line. Splitting it
+ * deliberately means each line only wraps if that line is genuinely too long,
+ * and the break lands where the meaning does.
+ */
+export function contextLine(context: CheckinContext): string[] {
+  return [
+    context.orgName,
+    [context.swapTitle, context.stationName].filter(Boolean).join(' · '),
+  ].filter(Boolean);
 }
 
 /**
@@ -30,7 +42,8 @@ export function CheckinShell({
   footer,
 }: {
   title: string;
-  subtitle?: string;
+  /** A string, or lines to set one under another. See `contextLine`. */
+  subtitle?: string | string[];
   logoUrl?: string | null;
   children: ReactNode;
   footer?: ReactNode;
@@ -44,7 +57,17 @@ export function CheckinShell({
               puts what to do next here; anything explaining the step goes in
               the body under it. */}
           <h1 className="text-2xl font-bold">{title}</h1>
-          {subtitle && <p className="text-sm text-gray-400">{subtitle}</p>}
+          {subtitle && (
+            // Tighter than the header's own rhythm: these are one thought split
+            // across two lines, not two separate things.
+            <div className="space-y-0.5">
+              {(Array.isArray(subtitle) ? subtitle : [subtitle]).map((line, i) => (
+                <p key={line} className={i === 0 ? 'text-sm text-gray-400' : 'text-xs text-gray-500'}>
+                  {line}
+                </p>
+              ))}
+            </div>
+          )}
         </header>
         {children}
         {footer && <div className="pt-2">{footer}</div>}
