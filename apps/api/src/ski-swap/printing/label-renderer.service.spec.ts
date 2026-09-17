@@ -68,15 +68,17 @@ describe('LabelRendererService', () => {
         headWidthDots: 400, mediaWidthDots: 400, mediaOffsetDots: 0, canvasHeightDots: 224,
       });
       expect(geometryOf(TARGETS['62x100'])).toMatchObject({
-        headWidthDots: 600, mediaWidthDots: 496, mediaOffsetDots: 52, canvasHeightDots: 784,
+        headWidthDots: 576, mediaWidthDots: 496, mediaOffsetDots: 40, canvasHeightDots: 784,
       });
     });
 
     it('declares the raster width it actually rendered, not a constant', () => {
       const job = renderer.toPrintJob(renderer.calibration(TARGETS['62x100']));
       const gs = job.indexOf(0x1d);
-      // 75-byte head, and 800 rows with the feed — little-endian, so 0x0320.
-      expect(Array.from(job.slice(gs, gs + 8))).toEqual([0x1d, 0x76, 0x30, 0x00, 75, 0, 0x20, 0x03]);
+      // 72-byte head, and 800 rows with the feed — little-endian, so 0x0320.
+      // The byte count is what the printer rejects if it is too large, so it is
+      // worth an assertion of its own rather than only living in a fixture.
+      expect(Array.from(job.slice(gs, gs + 8))).toEqual([0x1d, 0x76, 0x30, 0x00, 72, 0, 0x20, 0x03]);
     });
 
     it('produces an ESC/POS job with the GS v 0 raster header', () => {

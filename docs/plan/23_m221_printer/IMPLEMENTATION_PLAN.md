@@ -19,7 +19,7 @@ will need.
 | | |
 |---|---|
 | **Media alignment** | The M221 physically centres narrower stock under the head. Confirmed on the hardware, not inferred from a driver. |
-| **Head width** | **600 dots (75 mm).** Measured — §2. |
+| **Head width** | **576 dots (72 mm).** §2. |
 | **Tag orientation** | Price and name share an orientation, and both are rotated. Forced: the name column is ~22 mm wide, and no useful text runs across 22 mm. |
 | **What "description" is** | The frozen `SwapItem.name`, already what `ItemLabelData` receives. Nothing new to thread through. |
 | **Sizes** | 40 × 30 is dropped. 50 × 30 and 62 × 100 remain, and adding more is the point of §3. |
@@ -27,29 +27,29 @@ will need.
 
 ---
 
-## 2. The head width — 600 dots
+## 2. The head width — 576 dots
 
-The M221 is a 3-inch printer at **203 DPI** with a **20–75 mm** print width
-([Phomemo](https://phomemo.com/products/m221-label-maker),
-[manual](https://manuals.plus/phomemo/m221-label-maker-printer-manual)). 203 DPI
-is 7.992 dots/mm, so the existing 8 dots/mm assumption holds to within a dot over
+The M221 is a 3-inch printer at **203 DPI** ([Phomemo](https://phomemo.com/products/m221-label-maker),
+[manual](https://manuals.plus/phomemo/m221-label-maker-printer-manual)), which is
+7.992 dots/mm, so the existing 8 dots/mm assumption holds to within a dot over
 100 mm and needed no change.
 
-Published head widths contradicted each other — [one community
-driver](https://github.com/c08306605-crypto/Momir-Jamie-Dave/pull/4) says 576 for
-the M220 class, [vivier/phomemo-tools](https://github.com/vivier/phomemo-tools)
-says 344 — so it was set to 576 and measured with a calibration label.
+The head is **576 dots — 72 mm**, which is the figure [the community CUPS
+work](https://github.com/c08306605-crypto/Momir-Jamie-Dave/pull/4) reports for
+the M220 class. It was briefly set to 600 on the manufacturer's quoted 75 mm
+print width plus a reading of a calibration label, and that was wrong: the
+quoted width is presumably the media it accepts rather than the dots it has, and
+the label was read by estimating pixels off a photograph.
 
-**It is 600.** The label says so three ways. Its diagonals span the whole head, so
-the row where they meet the media's left edge measures how much head sits outside
-the media: about 8 mm down, where 576 predicts 6.8 mm and 600 predicts 8.5. The
-diagonals cross on the label's centreline, confirming the centring. And the margin
-box sat slightly left of centre — exactly what too small a head does once content
-is drawn centred. 600 dots is also 75 mm, the quoted maximum print width.
+**The printer settles it, and does so unambiguously.** `GS v 0` declares bytes
+per row in its header, so too large a head is not a shifted or clipped label —
+the printer rejects the raster and no paper moves at all. At 600 nothing printed;
+at 576 it does. Any future head width is measurable the same way, and a label
+size that prints blank on new hardware should have this suspected first.
 
-Being wrong by 24 dots cost a 1.5 mm shift and nothing else, which is the
-property centring buys: content is drawn centred, so an error moves it by half
-itself rather than pushing it off the label.
+Centring still matters for small errors: content is drawn centred, so being a
+little wrong shifts the label by half the error. It does not rescue an error
+large enough to be refused.
 
 ---
 

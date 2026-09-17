@@ -58,27 +58,31 @@ export const PRINTER_MODEL: Record<PrinterModelId, PrinterModel> = {
     id: 'm221',
     label: 'Phomemo M221',
     /*
-     * 75 mm — the manufacturer's quoted maximum print width, and what a
-     * calibration label on the hardware agrees with.
+     * 72 mm. The printer decided this, and it is the only witness that counts.
      *
-     * Community drivers report 72 bytes (576) for the M220 class and this was
-     * set there first, which put the media 12 dots left of where it belonged.
-     * The label said otherwise three ways: its diagonals span the whole head, so
-     * the row where they meet the media's left edge measures how much head sits
-     * outside it — about 8 mm down, where 576 predicts 6.8 and 600 predicts 8.5.
-     * The diagonals crossed on the label's centreline, and the margin box sat
-     * slightly left of centre, which is exactly what too small a head does once
-     * content is drawn centred.
+     * It was set to 600 (75 mm) on the manufacturer's quoted maximum print width
+     * plus a reading of a calibration label — where the diagonals appeared to
+     * meet the media's edge about 8 mm down, which 600 predicts and 576 does
+     * not. That reading was pixels estimated by eye off a photograph, and it was
+     * wrong: at 600 the printer prints nothing at all, and at 576 it prints.
+     *
+     * The failure mode is worth knowing because it makes this number
+     * self-verifying. `GS v 0` declares bytes per row in its header, so too
+     * large a head is not a shifted label or a clipped one — the printer appears
+     * to reject the raster outright and no paper moves. If a label size ever
+     * prints blank on new hardware, suspect this before anything else.
+     *
+     * The quoted "20–75 mm print width" is presumably the media it accepts
+     * rather than the dots it has.
      */
-    headWidthDots: 600,
+    headWidthDots: 576,
     /*
-     * Confirmed twice: there is a physical guide that centres stock, and the
-     * calibration diagonals cross on the label's centreline rather than off to
-     * one side.
+     * There is a physical guide that centres stock, and the calibration
+     * diagonals cross on the label's centreline rather than off to one side.
      *
-     * Centring is also what makes this forgiving. Content is drawn centred, so
-     * an error in the head width shifts it by half the error instead of pushing
-     * it off the label — which is why 576 printed acceptably while being wrong.
+     * Centring means an error in the head width shifts content by half the
+     * error rather than pushing it off the label — but only for an error small
+     * enough to print at all. See above: too large and nothing comes out.
      */
     mediaAlignment: 'centre',
   },
