@@ -107,10 +107,25 @@ ok('confirming returns the sign-in context',
 
 const H = { authorization: `Bearer ${session.accessToken}`, 'content-type': 'application/json' };
 
-const joined = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/join`, {
-  method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
-}).then(unwrap);
+// The very first joins, and three of them at once — which is the ordinary case,
+// not a contrived one: a station QR opened twice, a reload, or a double-tapped
+// link all land concurrent joins on a seller who has no profile yet. `upsert` is
+// a select and then an insert, so all three used to miss, all three inserted,
+// and the losers came back 500 on `SellerProfile_membershipId_key`. Racing has
+// to come before the sequential checks below, because once the profile exists
+// there is nothing left to race for.
+const racers = await Promise.all([0, 1, 2].map(() =>
+  fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/join`, {
+    method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
+  })));
+const raced = await Promise.all(racers.map((r) => r.json()));
+const joined = raced[0].data ?? raced[0];
 ok('joining creates a seller profile', !!joined.sellerId, JSON.stringify(joined).slice(0, 100));
+ok('three first joins at once all succeed on one profile',
+   racers.every((r) => r.ok) &&
+   new Set(raced.map((b) => b.data?.sellerId)).size === 1 &&
+   !!raced[0].data?.sellerId,
+   racers.map((r) => r.status).join(','));
 
 const joinAgain = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/join`, {
   method: 'POST', headers: H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),

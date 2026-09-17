@@ -7,6 +7,7 @@ import { PrintQueueService } from './print-queue.service';
 import { PrintRecipeService, printTargetFor } from './printing/print-recipe.service';
 import { ItemService } from './item.service';
 import { displayName } from '../common/util/person';
+import { isUniqueViolation } from '../common/util/prisma-errors';
 import type { SignInContext } from '../contracts/auth.contracts';
 
 /**
@@ -101,6 +102,37 @@ export class CheckinService {
    * Idempotent, and it has to be: a seller who reloads mid-check-in hits this
    * again, and the profile carries every item they have entered.
    */
+  /**
+   * This seller's profile, created the first time they check in.
+   *
+   * Two joins racing each other is the ordinary case, not a rare one: a station
+   * QR opened twice, a reload, or a seller double-tapping the link all land two
+   * of these at once, and `upsert` is not atomic enough to survive it (see
+   * `isUniqueViolation`). Losing the race means the profile exists, which is
+   * what the call was for — so read it back instead of failing a check-in.
+   */
+  private async claimSellerProfile(membershipId: string): Promise<{ id: string }> {
+    try {
+      return await this.prisma.sellerProfile.upsert({
+        where: { membershipId },
+        update: { deletedAt: null },
+        // No businessName: check-in creates individuals. A business seller is set
+        // up by staff, and already has a profile before they get here.
+        create: { id: createId(), membershipId },
+        select: { id: true },
+      });
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      // The winner has committed by the time the loser's insert is rejected, so
+      // this reads a row rather than racing for it again.
+      return this.prisma.sellerProfile.update({
+        where: { membershipId },
+        data: { deletedAt: null },
+        select: { id: true },
+      });
+    }
+  }
+
   async join(userId: string, swapId: string, stationId: string) {
     const ctx = await this.context(swapId, stationId);
 
@@ -115,14 +147,7 @@ export class CheckinService {
     });
 
     const membership = await this.people.upsertMembership(userId, ctx.orgId);
-    const seller = await this.prisma.sellerProfile.upsert({
-      where: { membershipId: membership.id },
-      update: { deletedAt: null },
-      // No businessName: check-in creates individuals. A business seller is set
-      // up by staff, and already has a profile before they get here.
-      create: { id: createId(), membershipId: membership.id },
-      select: { id: true },
-    });
+    const seller = await this.claimSellerProfile(membership.id);
 
     return {
       ...ctx,

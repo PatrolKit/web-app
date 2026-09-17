@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { createId } from '@paralleldrive/cuid2';
+import { isUniqueViolation } from '../util/prisma-errors';
 import type { Prisma, User } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MembershipTouchService } from './membership-touch.service';
@@ -103,13 +104,23 @@ export class PersonService {
    * duplicate. `@@unique([userId, orgId])` means there is only ever one row.
    */
   async upsertMembership(userId: string, orgId: string): Promise<{ id: string }> {
-    const membership = await this.prisma.membership.upsert({
-      where: { userId_orgId: { userId, orgId } },
-      update: { deletedAt: null, updatedAt: new Date() },
-      create: { id: createId(), userId, orgId, updatedAt: new Date() },
-      select: { id: true },
-    });
-    return membership;
+    try {
+      return await this.prisma.membership.upsert({
+        where: { userId_orgId: { userId, orgId } },
+        update: { deletedAt: null, updatedAt: new Date() },
+        create: { id: createId(), userId, orgId, updatedAt: new Date() },
+        select: { id: true },
+      });
+    } catch (err) {
+      // Same race as `claimSellerProfile`, one call earlier: two joins arriving
+      // together both find no membership and both insert one.
+      if (!isUniqueViolation(err)) throw err;
+      return this.prisma.membership.update({
+        where: { userId_orgId: { userId, orgId } },
+        data: { deletedAt: null, updatedAt: new Date() },
+        select: { id: true },
+      });
+    }
   }
 
   /**
