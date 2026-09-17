@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronDown as faChevronDownDuo, faPlus as faPlusDuo } from '@fortawesome/pro-duotone-svg-icons';
@@ -54,14 +54,6 @@ export function toAttributeInputs(state: DescriberState): ItemAttributeInput[] {
   });
 }
 
-/**
- * How many questions a phone shows before the rest collapse.
- *
- * Four fits above the iOS keyboard alongside the price and the finish button,
- * which is the constraint the whole screen is laid out around.
- */
-const VISIBLE_ON_PHONE = 4;
-
 // ─── The name preview ────────────────────────────────────────────────────────
 
 /**
@@ -72,6 +64,30 @@ const VISIBLE_ON_PHONE = 4;
  * seller their listing improving as they answer, and being a keystroke behind
  * the truth would cost nothing but being a request behind it would.
  */
+/**
+ * What one answer reads as: a chosen label, something typed, or a number and
+ * its unit. Empty when the question is unanswered.
+ *
+ * Shared by the name preview and the accordion rows, because a row saying one
+ * thing while the tag says another is the kind of disagreement nobody reports
+ * and everybody distrusts.
+ */
+export function answerText(
+  attribute: ResolvedAttribute,
+  answer: DescriberAnswer,
+  valueLabelById: Map<string, string>,
+): string {
+  if (answer.valueId) return valueLabelById.get(answer.valueId) ?? '';
+  if (answer.freeText?.trim()) return answer.freeText.trim();
+  if (answer.numberValue !== undefined && answer.numberValue.trim() !== '') {
+    const n = Number(answer.numberValue);
+    if (!Number.isFinite(n)) return '';
+    const digits = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
+    return `${digits}${attribute.unit ?? ''}`;
+  }
+  return '';
+}
+
 export function previewName(
   state: DescriberState,
   category: ResolvedCategory | undefined,
@@ -84,17 +100,7 @@ export function previewName(
     .filter((x): x is { attribute: ResolvedAttribute; answer: DescriberAnswer } => !!x.attribute)
     .filter((x) => x.attribute.nameSlot !== null)
     .sort((a, b) => (a.attribute.nameSlot ?? 0) - (b.attribute.nameSlot ?? 0) || a.attribute.displayOrder - b.attribute.displayOrder)
-    .map(({ attribute, answer }) => {
-      if (answer.valueId) return valueLabelById.get(answer.valueId) ?? '';
-      if (answer.freeText?.trim()) return answer.freeText.trim();
-      if (answer.numberValue !== undefined && answer.numberValue.trim() !== '') {
-        const n = Number(answer.numberValue);
-        if (!Number.isFinite(n)) return '';
-        const digits = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
-        return `${digits}${attribute.unit ?? ''}`;
-      }
-      return '';
-    })
+    .map(({ attribute, answer }) => answerText(attribute, answer, valueLabelById))
     .filter((p) => p !== '');
 
   return [...parts, category.label].join(' ').replace(/\s+/g, ' ').trim();
@@ -220,9 +226,54 @@ function ValueSelect({
   );
 }
 
+/**
+ * One question as a row: its name, its answer, and the control folded away.
+ *
+ * Seven questions laid out as seven open fields is a form, and a form reads as
+ * something to complete. Collapsed, the same seven fit above the fold, an
+ * unanswered row is visibly blank rather than pointedly empty, and what is
+ * already answered can be read back without scrolling past the controls that
+ * set it.
+ */
+function AccordionRow({
+  attribute, summary, open, onToggle, children,
+}: {
+  attribute: ResolvedAttribute;
+  summary: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="border-b border-gray-800 last:border-b-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 py-2.5 text-left"
+      >
+        <span className="flex items-center gap-1.5 text-sm text-gray-300">
+          <NodeIcon icon={attribute.icon} className="h-3.5 w-3.5" />
+          {attribute.label}
+        </span>
+        <span className="flex items-center gap-2 min-w-0">
+          <span className={`text-sm truncate ${summary ? 'text-white' : 'text-gray-600'}`}>
+            {summary || '—'}
+          </span>
+          <FontAwesomeIcon
+            icon={faChevronDownDuo}
+            className={`h-3 w-3 shrink-0 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </span>
+      </button>
+      {open && <div className="pb-3">{children}</div>}
+    </div>
+  );
+}
+
 /** One question, and whatever its answer opens up beneath it. */
 function AttributeField({
-  orgId, attribute, state, setAnswer, depth, onValuesLoaded,
+  orgId, attribute, state, setAnswer, depth, onValuesLoaded, hideLabel = false,
 }: {
   orgId: string;
   attribute: ResolvedAttribute;
@@ -230,6 +281,8 @@ function AttributeField({
   setAnswer: (attributeId: string, next: DescriberAnswer) => void;
   depth: number;
   onValuesLoaded: (values: ResolvedValue[]) => void;
+  /** The accordion row above already names the question; two labels is one too many. */
+  hideLabel?: boolean;
 }) {
   const answer = state.answers[attribute.id] ?? {};
 
@@ -261,11 +314,13 @@ function AttributeField({
 
   return (
     <div className={depth > 0 ? 'pl-3 border-l border-gray-800 space-y-1.5' : 'space-y-1.5'}>
-      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-400">
-        <NodeIcon icon={attribute.icon} className="h-3.5 w-3.5" />
-        {attribute.label}
-        {attribute.unit ? <span className="text-gray-600">({attribute.unit})</span> : null}
-      </label>
+      {!hideLabel && (
+        <label className="flex items-center gap-1.5 text-xs font-medium text-gray-400">
+          <NodeIcon icon={attribute.icon} className="h-3.5 w-3.5" />
+          {attribute.label}
+          {attribute.unit ? <span className="text-gray-600">({attribute.unit})</span> : null}
+        </label>
+      )}
 
       {attribute.input === 'number' ? (
         <div className="flex items-center gap-2">
@@ -328,7 +383,11 @@ export interface ItemDescriberProps {
 export default function ItemDescriber({
   orgId, value, onChange, layout = 'stacked', renderPreview,
 }: ItemDescriberProps) {
-  const [expanded, setExpanded] = useState(false);
+  /**
+   * Which question is open. One at a time — two open rows is the stack of
+   * fields this replaced.
+   */
+  const [openId, setOpenId] = useState<string | null>(null);
   /**
    * Labels for values that arrived through a deferred fetch.
    *
@@ -409,14 +468,24 @@ export default function ItemDescriber({
         ...value,
         answers: { ...value.answers, [attributeId]: next },
       });
+
+      // Picking closes the row — unless the answer asked another question. A
+      // manufacturer opens a model list, and collapsing on top of it would hide
+      // the thing the tap just produced. Typed numbers never close: every
+      // keystroke is a change, and the row would shut on the first digit.
+      if (!next.valueId) return;
+      const attribute = topLevel.find((a) => a.id === attributeId);
+      if (!attribute) return;
+      const picked = (attribute.values ?? []).find((v) => v.id === next.valueId);
+      if (!picked || picked.attributes.length === 0) setOpenId(null);
     },
-    [onChange, value],
+    [onChange, value, topLevel],
   );
 
   const pickCategory = (categoryId: string) => {
     // A different category asks different questions, so the answers go with it.
     onChange(categoryId === value.categoryId ? emptyDescriber : { categoryId, answers: {} });
-    setExpanded(false);
+    setOpenId(null);
   };
 
   const preview = previewName(value, category, attributesById, labelIndex);
@@ -465,11 +534,6 @@ export default function ItemDescriber({
     );
   }
 
-  // Counted over the top-level questions, so the number does not jump when
-  // answering one opens a branch beneath it.
-  const shown = layout === 'grid' || expanded ? topLevel : topLevel.slice(0, VISIBLE_ON_PHONE);
-  const hidden = topLevel.length - shown.length;
-
   return (
     <div className="space-y-3">
       {/* Collapses to a header once picked, with the way back out beside it. */}
@@ -503,31 +567,47 @@ export default function ItemDescriber({
         </p>
       )}
 
-      <div className={layout === 'grid' ? 'grid grid-cols-2 gap-x-4 gap-y-3' : 'space-y-3'}>
-        {shown.map((a) => (
-          <AttributeField
-            key={a.id}
-            orgId={orgId}
-            attribute={a}
-            state={value}
-            setAnswer={setAnswer}
-            depth={0}
-            onValuesLoaded={onValuesLoaded}
-          />
-        ))}
-      </div>
-
-      {/* The count is the honest signal that there is more, and that skipping it
-          is allowed — nothing here is required (D6). */}
-      {hidden > 0 && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="text-sm text-brand-400 hover:text-brand-300 flex items-center gap-1.5"
-        >
-          <FontAwesomeIcon icon={faChevronDownDuo} />
-          More detail ({hidden})
-        </button>
+      {/* Two densities of the same form, as before. The desk has room to show
+          every question at once and staff enter items all day, so nothing there
+          is worth a tap to open. A phone does not, and did not: four questions
+          fitted and the other three sat behind "More detail", which is a worse
+          version of a row you can open. */}
+      {layout === 'grid' ? (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          {topLevel.map((a) => (
+            <AttributeField
+              key={a.id}
+              orgId={orgId}
+              attribute={a}
+              state={value}
+              setAnswer={setAnswer}
+              depth={0}
+              onValuesLoaded={onValuesLoaded}
+            />
+          ))}
+        </div>
+      ) : (
+        <div>
+          {topLevel.map((a) => (
+            <AccordionRow
+              key={a.id}
+              attribute={a}
+              summary={answerText(a, value.answers[a.id] ?? {}, labelIndex)}
+              open={openId === a.id}
+              onToggle={() => setOpenId(openId === a.id ? null : a.id)}
+            >
+              <AttributeField
+                orgId={orgId}
+                attribute={a}
+                state={value}
+                setAnswer={setAnswer}
+                depth={0}
+                onValuesLoaded={onValuesLoaded}
+                hideLabel
+              />
+            </AccordionRow>
+          ))}
+        </div>
       )}
 
       {renderPreview ? renderPreview(preview) : null}
