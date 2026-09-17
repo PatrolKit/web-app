@@ -130,6 +130,23 @@ export interface ConnectedM110 {
 
 const WINDOW = 3; // chunks in-flight before pausing for ACKs
 
+/**
+ * How long to wait for the acknowledgements a job is owed.
+ *
+ * Five seconds was fixed, and fine while every job was a 30 mm label — about
+ * 12 KB and a second of paper. A 62 × 100 label is 60 KB, which is five times
+ * the bytes over the same radio and three times the paper to pull through, and a
+ * deadline that does not know the difference will fire on the larger one while
+ * the printer is still working.
+ *
+ * Scaled by the job, floored at the old value so nothing changes for the labels
+ * that already worked, and capped so a printer that has genuinely stopped
+ * answering still fails rather than hanging.
+ */
+function ackDeadlineMs(jobBytes: number): number {
+  return Math.min(30_000, Math.max(5_000, Math.round(jobBytes * 0.4)));
+}
+
 async function sendJob(
   writeChar: BluetoothRemoteGATTCharacteristic,
   ackChar: BluetoothRemoteGATTCharacteristic,
@@ -150,10 +167,17 @@ async function sendJob(
       // Pause if we are WINDOW chunks ahead of acknowledged chunks
       if (sentCount - ackCount >= WINDOW) {
         await new Promise<void>((resolve, reject) => {
-          const deadline = Date.now() + 5000;
+          const deadline = Date.now() + ackDeadlineMs(job.length);
           function poll() {
             if (ackCount >= sentCount - WINDOW + 1) { resolve(); return; }
-            if (Date.now() > deadline) { reject(new Error('Printer ACK timeout')); return; }
+            if (Date.now() > deadline) {
+              reject(new Error(
+                `The printer stopped acknowledging ${Math.round((offset / job.length) * 100)}% of the ` +
+                `way through a ${Math.round(job.length / 1024)} KB label ` +
+                `(${ackCount} of ${sentCount} chunks acknowledged).`,
+              ));
+              return;
+            }
             setTimeout(poll, 1);
           }
           poll();
@@ -166,12 +190,19 @@ async function sendJob(
       sentCount++;
     }
 
-    // Drain remaining ACKs
+    // Drain remaining ACKs. This is the one that waits for paper: the last
+    // chunks are acknowledged as the label physically prints.
     await new Promise<void>((resolve, reject) => {
-      const deadline = Date.now() + 5000;
+      const deadline = Date.now() + ackDeadlineMs(job.length);
       function drain() {
         if (ackCount >= sentCount) { resolve(); return; }
-        if (Date.now() > deadline) { reject(new Error('Printer ACK timeout')); return; }
+        if (Date.now() > deadline) {
+          reject(new Error(
+            `The printer took every byte of a ${Math.round(job.length / 1024)} KB label but ` +
+            `acknowledged ${ackCount} of ${sentCount} chunks. It may still be printing.`,
+          ));
+          return;
+        }
         setTimeout(drain, 1);
       }
       drain();
