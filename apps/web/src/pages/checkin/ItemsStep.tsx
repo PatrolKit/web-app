@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCamera as faCameraDuo,
   faCheck as faCheckDuo,
+  faCircleCheck as faCircleCheckDuo,
   faRotateRight as faRotateRightDuo,
   faSpinner as faSpinnerDuo,
 } from '@fortawesome/pro-duotone-svg-icons';
@@ -103,6 +104,22 @@ export default function ItemsStep({
   const [error, setError] = useState('');
   const [finishing, setFinishing] = useState(false);
   const [reprinting, setReprinting] = useState<string | null>(null);
+  /**
+   * The item just saved, if the seller has not moved on from it.
+   *
+   * Saving used to empty the form and leave the seller looking at it, which
+   * says nothing about what happened — the item they entered was now a row in
+   * a list below the fold, and so was the button that ends check-in. So the
+   * screen answered "I added an item" with a blank form, and the only visible
+   * next step was to fill it in again.
+   *
+   * Held as a snapshot rather than an id alone so the panel can name the item
+   * in the same tick it saved, before the summary has refetched. The tag's
+   * print state is still read live from the summary below.
+   */
+  const [added, setAdded] = useState<
+    { id: string; name: string; sku: string; priceCents: number } | null
+  >(null);
   const priceRef = useRef<HTMLInputElement>(null);
 
   // A half-typed item survives a reload. Sellers put phones down mid-check-in,
@@ -149,6 +166,9 @@ export default function ItemsStep({
       }
 
       setDraft(emptyDraft);
+      setAdded({ id: item.id, name: item.name, sku: item.sku, priceCents: item.priceCents });
+      // The panel replaces a form the seller may have scrolled down inside.
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       await qc.invalidateQueries({ queryKey: summaryKey });
       // A value the seller just typed is now a pending node the tree does not
       // offer, so the next item's picker has to refetch rather than show a list
@@ -187,6 +207,21 @@ export default function ItemsStep({
   }
 
   const items = summary?.items ?? [];
+  // The snapshot names it; the summary says whether its tag has come out yet.
+  const addedLive = added ? items.find((i) => i.id === added.id) : undefined;
+
+  /**
+   * The way out of check-in, when it is one of two choices rather than the only
+   * one on screen.
+   *
+   * Not `secondaryButtonClass`: grey on this flow is the retreat colour — "Fix
+   * it", "use a different email" — and the button that ends check-in has already
+   * been mistaken for a disabled one once. Outlined and white keeps it plainly
+   * pressable while leaving the red for carrying on.
+   */
+  const finishButtonClass =
+    'w-full py-3.5 rounded-lg bg-surface-100 hover:bg-surface-200 border border-gray-600 ' +
+    'disabled:opacity-40 text-white text-base font-medium';
 
   return (
     <CheckinShell
@@ -194,6 +229,43 @@ export default function ItemsStep({
       subtitle={contextLine(context)}
       logoUrl={context.orgLogoUrl}
     >
+      {added ? (
+        <div className="space-y-3 bg-surface-50 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <FontAwesomeIcon icon={faCircleCheckDuo} className="h-5 w-5 text-green-400 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-white">{added.name}</p>
+              <p className="text-xs text-gray-500">
+                {added.sku} · {formatCents(added.priceCents)}
+              </p>
+            </div>
+          </div>
+
+          {/* The tag comes out of a printer across the room, so whether it has
+              is the one thing a seller cannot see for themselves. */}
+          {addedLive?.hasPrintedTag ? (
+            <p className="text-xs text-green-400">
+              <FontAwesomeIcon icon={faCheckDuo} /> Tag printed
+            </p>
+          ) : (
+            <p className="text-xs text-amber-400">
+              <FontAwesomeIcon icon={faSpinnerDuo} spin /> Printing its tag…
+            </p>
+          )}
+
+          <ErrorNote>{error}</ErrorNote>
+
+          {/* Red for carrying on, because most sellers arrive with more than one
+              thing, and finishing early is the more expensive mistake — it
+              prints a receipt and closes check-in. */}
+          <button className={primaryButtonClass} onClick={() => setAdded(null)}>
+            Add another item
+          </button>
+          <button className={finishButtonClass} disabled={finishing} onClick={finish}>
+            {finishing ? 'Printing your receipt…' : "I'm done — print my receipt"}
+          </button>
+        </div>
+      ) : (
       <div className="space-y-3 bg-surface-50 border border-gray-800 rounded-xl p-4">
         <ItemDescriber
           orgId={context.orgId}
@@ -267,6 +339,7 @@ export default function ItemsStep({
           {busy ? 'Saving…' : 'Add item and print tag'}
         </button>
       </div>
+      )}
 
       {items.length > 0 && (
         <div className="space-y-2">
@@ -329,10 +402,16 @@ export default function ItemsStep({
           {/* Primary, like every other forward step in this flow. Grey is the
               retreat colour here — "Fix it", "use a different email" — so the
               one button that ends check-in was reading as disabled, next to a
-              genuinely disabled Add button that looked more pressable than it. */}
-          <button className={primaryButtonClass} disabled={finishing} onClick={finish}>
-            {finishing ? 'Printing your receipt…' : "I'm done — print my receipt"}
-          </button>
+              genuinely disabled Add button that looked more pressable than it.
+
+              Hidden while the just-added panel is up, because that panel offers
+              the same choice and two of this button on one screen is a
+              question asked twice. */}
+          {!added && (
+            <button className={primaryButtonClass} disabled={finishing} onClick={finish}>
+              {finishing ? 'Printing your receipt…' : "I'm done — print my receipt"}
+            </button>
+          )}
         </div>
       )}
     </CheckinShell>
