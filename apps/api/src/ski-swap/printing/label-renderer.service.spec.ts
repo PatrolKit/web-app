@@ -136,9 +136,9 @@ describe('LabelRendererService', () => {
      * The failure mode only this tier has.
      *
      * The compact tag shrinks a long name until it fits one line; the tall tag
-     * wraps it up a 22 mm column and has to decide what to do when it runs out
-     * of lines. Nothing else in the renderer wraps, so this is the one case with
-     * no precedent to lean on.
+     * wraps it up a narrow column, sizes it to whatever fits two lines whole,
+     * and has to decide what to do when no size does. Nothing else in the
+     * renderer wraps, so this is the one case with no precedent to lean on.
      */
     it('tall item tag wraps a long name, and ellipsises what will not fit', async () => {
       expectGolden(

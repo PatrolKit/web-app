@@ -139,7 +139,9 @@ function typeScale(W: number): number {
  * produce an empty line and loop. The last line is ellipsised if anything is
  * left over, so the overflow is visible rather than silent.
  */
-function wrap(ctx: SKRSContext2D, text: string, maxWidth: number, maxLines: number): string[] {
+function wrap(
+  ctx: SKRSContext2D, text: string, maxWidth: number, maxLines: number,
+): { lines: string[]; truncated: boolean } {
   const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let line = '';
@@ -171,11 +173,36 @@ function wrap(ctx: SKRSContext2D, text: string, maxWidth: number, maxLines: numb
   // Anything left unplaced is said rather than dropped.
   const placed = lines.join(' ').replace(/\s+/g, ' ').trim();
   const wanted = text.replace(/\s+/g, ' ').trim();
-  if (lines.length === maxLines && placed.length < wanted.length) {
-    const last = lines[maxLines - 1];
-    lines[maxLines - 1] = fit(ctx, `${last}…`, maxWidth);
+  const truncated = lines.length === maxLines && placed.length < wanted.length;
+  if (truncated) {
+    lines[maxLines - 1] = fit(ctx, `${lines[maxLines - 1]}…`, maxWidth);
   }
-  return lines;
+  return { lines, truncated };
+}
+
+/**
+ * The largest size at which `text` fits `maxLines` without losing any of it.
+ *
+ * `fitted` shrinks one line until it fits; this shrinks until the *wrap* fits,
+ * which is a different question — a name too long for one line at 40 may be
+ * perfectly comfortable on two. Stepping down only when something would
+ * actually be cut is what lets a short name be set large and a long one still
+ * be set whole.
+ *
+ * Falls back to `minSize` and whatever that holds, ellipsis included, for a name
+ * no size can accommodate.
+ */
+function fitWrapped(
+  ctx: SKRSContext2D, text: string, preferred: number, minSize: number,
+  maxWidth: number, maxLines: number,
+): { size: number; lines: string[] } {
+  for (let size = preferred; size > minSize; size -= 2) {
+    ctx.font = labelFont(size, 'bold');
+    const { lines, truncated } = wrap(ctx, text, maxWidth, maxLines);
+    if (!truncated) return { size, lines };
+  }
+  ctx.font = labelFont(minSize, 'bold');
+  return { size: minSize, lines: wrap(ctx, text, maxWidth, maxLines).lines };
 }
 
 /**
@@ -336,10 +363,15 @@ export async function drawLargeItemTag(
   ctx.restore();
 
   // ── Name, rotated up the narrow column ────────────────────────────────────
-  const NAME_SIZE = Math.round(W * 0.055);
-  const NAME_LINES = 3;
-  ctx.font = labelFont(NAME_SIZE, 'bold');
-  const nameLines = wrap(ctx, item.name, upperH - GAP, NAME_LINES);
+  //
+  // Rotated, so the lines stack across the column's *width* and each line runs
+  // along its depth. Two lines rather than three, and sized to fill what that
+  // leaves: at three the type was a fixed 26 and used three quarters of the
+  // column, which read small on a label this size for no reason.
+  const NAME_LINES = 2;
+  const nameMax = Math.floor(nameColW / (NAME_LINES * 1.2));
+  const { size: NAME_SIZE, lines: nameLines } =
+    fitWrapped(ctx, item.name, nameMax, 14, upperH - GAP, NAME_LINES);
 
   ctx.save();
   ctx.translate(priceColW + GAP + nameColW / 2, upperH / 2);
