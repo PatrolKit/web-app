@@ -227,33 +227,46 @@ function ValueSelect({
 }
 
 /**
- * The question being asked, and the ones already dealt with above it.
+ * One question as a row: its name, its answer, and the control folded away.
  *
- * Seven questions as seven open fields is a form, and a form reads as something
- * to complete. One at a time reads as a conversation you can leave: what is
- * settled sits behind you as chips, what is being asked is the only thing with
- * controls, and Add item never goes away.
+ * Seven questions laid out as seven open fields is a form, and a form reads as
+ * something to complete. Collapsed, the same seven fit above the fold, an
+ * unanswered row is visibly blank rather than pointedly empty, and what is
+ * already answered can be read back without scrolling past the controls that
+ * set it.
  */
-function AnsweredChips({
-  answered, onRevisit,
+function AccordionRow({
+  attribute, summary, open, onToggle, children,
 }: {
-  answered: { attribute: ResolvedAttribute; text: string }[];
-  onRevisit: (attributeId: string) => void;
+  attribute: ResolvedAttribute;
+  summary: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
 }) {
-  if (answered.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {answered.map(({ attribute, text }) => (
-        <button
-          key={attribute.id}
-          type="button"
-          onClick={() => onRevisit(attribute.id)}
-          className="flex items-baseline gap-1.5 rounded-full bg-surface-100 border border-gray-800 px-2.5 py-1 text-xs text-white hover:border-gray-600"
-        >
-          <span className="text-gray-500">{attribute.label}</span>
-          {text}
-        </button>
-      ))}
+    <div className="border-b border-gray-800 last:border-b-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 py-2.5 text-left"
+      >
+        <span className="flex items-center gap-1.5 text-sm text-gray-300">
+          <NodeIcon icon={attribute.icon} className="h-3.5 w-3.5" />
+          {attribute.label}
+        </span>
+        <span className="flex items-center gap-2 min-w-0">
+          <span className={`text-sm truncate ${summary ? 'text-white' : 'text-gray-600'}`}>
+            {summary || '—'}
+          </span>
+          <FontAwesomeIcon
+            icon={faChevronDownDuo}
+            className={`h-3 w-3 shrink-0 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </span>
+      </button>
+      {open && <div className="pb-3">{children}</div>}
     </div>
   );
 }
@@ -371,13 +384,10 @@ export default function ItemDescriber({
   orgId, value, onChange, layout = 'stacked', renderPreview,
 }: ItemDescriberProps) {
   /**
-   * The question on screen, or null once there is nothing left to ask.
-   *
-   * `skipped` is what keeps a pass final: without it, advancing to the next
-   * unanswered question would walk straight back onto the one just declined.
+   * Which question is open. One at a time — two open rows is the stack of
+   * fields this replaced.
    */
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  const [openId, setOpenId] = useState<string | null>(null);
   /**
    * Labels for values that arrived through a deferred fetch.
    *
@@ -452,78 +462,33 @@ export default function ItemDescriber({
     });
   }, []);
 
-  /**
-   * The next question worth asking after `from`, or null when there is none.
-   *
-   * Skips what is answered and what was passed on, so the queue only ever moves
-   * forward and a seller is never handed back a question they just declined.
-   */
-  const nextAfter = useCallback(
-    (fromId: string | null, answers: DescriberState['answers'], passed: Set<string>) => {
-      const start = fromId ? topLevel.findIndex((a) => a.id === fromId) + 1 : 0;
-      for (let i = start; i < topLevel.length; i++) {
-        const a = topLevel[i];
-        if (passed.has(a.id)) continue;
-        if (answerText(a, answers[a.id] ?? {}, labelIndex)) continue;
-        return a.id;
-      }
-      return null;
-    },
-    [topLevel, labelIndex],
-  );
-
   const setAnswer = useCallback(
     (attributeId: string, next: DescriberAnswer) => {
-      const answers = { ...value.answers, [attributeId]: next };
-      onChange({ ...value, answers });
+      onChange({
+        ...value,
+        answers: { ...value.answers, [attributeId]: next },
+      });
 
-      // Answering moves the queue on — but only for a tapped value, and only
-      // when that value did not itself ask something. A manufacturer opens a
-      // model list, and advancing past it would bury what the tap produced.
-      // Typed numbers never advance: every keystroke is a change, and the queue
-      // would move on after the first digit.
-      if (!next.valueId || attributeId !== cursor) return;
+      // Picking closes the row — unless the answer asked another question. A
+      // manufacturer opens a model list, and collapsing on top of it would hide
+      // the thing the tap just produced. Typed numbers never close: every
+      // keystroke is a change, and the row would shut on the first digit.
+      if (!next.valueId) return;
       const attribute = topLevel.find((a) => a.id === attributeId);
-      const picked = attribute && (attribute.values ?? []).find((v) => v.id === next.valueId);
-      if (picked && picked.attributes.length > 0) return;
-      setCursor(nextAfter(attributeId, answers, skipped));
+      if (!attribute) return;
+      const picked = (attribute.values ?? []).find((v) => v.id === next.valueId);
+      if (!picked || picked.attributes.length === 0) setOpenId(null);
     },
-    [onChange, value, topLevel, cursor, skipped, nextAfter],
+    [onChange, value, topLevel],
   );
 
   const pickCategory = (categoryId: string) => {
     // A different category asks different questions, so the answers go with it.
     onChange(categoryId === value.categoryId ? emptyDescriber : { categoryId, answers: {} });
-    setSkipped(new Set());
-    // The cursor follows from the new category — see the effect below.
+    setOpenId(null);
   };
 
-  /**
-   * Opens on the first question a category has not already answered.
-   *
-   * `cursor` being null means "nothing left to ask", which is also where a
-   * useState default would start — so without this the form would greet every
-   * seller with the finished state. Keyed on the category, because that is what
-   * changes the question set; the answers move the cursor themselves.
-   */
-  const categoryId = category?.id;
-  useEffect(() => {
-    if (!categoryId) { setCursor(null); return; }
-    setCursor(nextAfter(null, value.answers, new Set()));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryId]);
-
   const preview = previewName(value, category, attributesById, labelIndex);
-
-  /**
-   * The question on screen. Held as an id rather than an index so that a tree
-   * which loads a branch underneath does not shift it, and resolved late so an
-   * id left behind by a category change cannot render a stale question.
-   */
-  const current = topLevel.find((a) => a.id === cursor) ?? null;
-  const answeredTotal = topLevel.filter(
-    (a) => answerText(a, value.answers[a.id] ?? {}, labelIndex) !== '',
-  ).length;
 
   if (isLoading) return <p className="text-sm text-gray-500">Loading…</p>;
 
@@ -622,69 +587,26 @@ export default function ItemDescriber({
           ))}
         </div>
       ) : (
-        <div className="space-y-3">
-          <AnsweredChips
-            answered={topLevel
-              .filter((a) => a.id !== cursor)
-              .map((a) => ({ attribute: a, text: answerText(a, value.answers[a.id] ?? {}, labelIndex) }))
-              .filter((x) => x.text !== '')}
-            onRevisit={(id) => {
-              // Coming back un-skips it, or the next answer would step straight
-              // over the question just reopened.
-              setSkipped((prev) => {
-                const n = new Set(prev); n.delete(id); return n;
-              });
-              setCursor(id);
-            }}
-          />
-
-          {current ? (
-            <div className="space-y-2">
-              <div>
-                <p className="flex items-center gap-1.5 text-sm font-medium text-white">
-                  <NodeIcon icon={current.icon} className="h-3.5 w-3.5" />
-                  {current.label}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {`Question ${topLevel.indexOf(current) + 1} of ${topLevel.length}`}
-                  {current.unit ? ` · in ${current.unit}` : ''}
-                </p>
-              </div>
-
+        <div>
+          {topLevel.map((a) => (
+            <AccordionRow
+              key={a.id}
+              attribute={a}
+              summary={answerText(a, value.answers[a.id] ?? {}, labelIndex)}
+              open={openId === a.id}
+              onToggle={() => setOpenId(openId === a.id ? null : a.id)}
+            >
               <AttributeField
                 orgId={orgId}
-                attribute={current}
+                attribute={a}
                 state={value}
                 setAnswer={setAnswer}
                 depth={0}
                 onValuesLoaded={onValuesLoaded}
                 hideLabel
               />
-
-              <button
-                type="button"
-                onClick={() => {
-                  const passed = new Set(skipped).add(current.id);
-                  setSkipped(passed);
-                  setCursor(nextAfter(current.id, value.answers, passed));
-                }}
-                className="text-xs text-gray-400 hover:text-gray-200 underline underline-offset-2"
-              >
-                {answerText(current, value.answers[current.id] ?? {}, labelIndex)
-                  ? 'Done with this one'
-                  : 'Skip this one'}
-              </button>
-            </div>
-          ) : (
-            // Nothing left to ask. Not a dead end — every chip above reopens,
-            // and Add item has been available throughout.
-            <p className="text-xs text-gray-500">
-              That is everything we ask. Add the item whenever you are ready
-              {answeredTotal < topLevel.length
-                ? ', or tap anything above to fill in more.'
-                : '.'}
-            </p>
-          )}
+            </AccordionRow>
+          ))}
         </div>
       )}
 
