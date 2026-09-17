@@ -317,6 +317,15 @@ const receiptJobs = await prisma.printJob.count({
   where: { stationId: station.id, kind: { in: ['receipt_header', 'receipt_items'] } },
 });
 ok('the receipt is header plus item pages', receiptJobs === finish.receiptPages, `${receiptJobs} jobs`);
+
+// This station prints 50 × 30, where a receipt has to be a masthead label and
+// then a strip of item labels. The 62 × 100 tier composes all of that onto one
+// page and queues no masthead job, so the two arrangements are one edit apart —
+// see smoke-tall-receipt.mjs for the other half.
+const mastheads = await prisma.printJob.count({
+  where: { stationId: station.id, kind: 'receipt_header' },
+});
+ok('a compact receipt still leads with its own masthead label', mastheads === 1, `${mastheads}`);
 ok('the bridge prints the receipt too', (await drain()) === receiptJobs);
 
 // ─── Someone else's item ─────────────────────────────────────────────────────

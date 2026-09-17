@@ -10,6 +10,9 @@ import {
   type PrintTarget,
 } from './geometry';
 import {
+  type ItemLabelData,
+  type ReceiptHeaderData,
+  type ReceiptItemLine,
   calibrationPattern,
   drawItemTag,
   drawLargeItemTag,
@@ -18,8 +21,7 @@ import {
   drawReceiptHeader,
   drawReceiptItems,
   drawRotatedBranding,
-  type ItemLabelData,
-  type ReceiptHeaderData,
+  drawTallReceipt,
 } from './label-templates';
 
 type DrawFn = (ctx: SKRSContext2D, w: number, h: number) => void | Promise<void>;
@@ -63,6 +65,45 @@ export class LabelRendererService {
 
   qrLabel(sellerName: string, url: string, target: PrintTarget = DEFAULT_TARGET): Promise<boolean[][]> {
     return this.compose((ctx, w, h) => drawQrLabel(ctx, w, h, sellerName, url), target);
+  }
+
+  /**
+   * A whole receipt for the tall tier: masthead, code, items and total on one
+   * page, spilling onto more only when the list does.
+   *
+   * Separate from `receiptHeader` + `receiptItems` rather than a variant of
+   * them, because it is not the same composition scaled — those two are a
+   * header label and a strip of item labels, which is what a 50 × 30 receipt
+   * has to be. See `drawTallReceipt`.
+   */
+  async tallReceipt(
+    data: ReceiptHeaderData,
+    items: ReceiptItemLine[],
+    target: PrintTarget = DEFAULT_TARGET,
+  ): Promise<boolean[][][]> {
+    const totalCents = items.reduce((sum, i) => sum + i.priceCents, 0);
+    const pages: boolean[][][] = [];
+    let offset = 0;
+
+    // Runs once even with nothing to list: a seller who reaches the end of
+    // check-in gets a receipt, and an empty one still carries their QR.
+    do {
+      let drawnThisPage = 0;
+      const index = pages.length;
+      pages.push(
+        await this.compose(async (ctx, w, h) => {
+          ({ rowsDrawn: drawnThisPage } = await drawTallReceipt(
+            ctx, w, h, data, items.slice(offset),
+            { index, itemCount: items.length, totalCents },
+          ));
+        }, target),
+      );
+      // A single item too tall to fit would otherwise loop forever.
+      if (drawnThisPage === 0) break;
+      offset += drawnThisPage;
+    } while (offset < items.length);
+
+    return pages;
   }
 
   receiptHeader(data: ReceiptHeaderData, target: PrintTarget = DEFAULT_TARGET): Promise<boolean[][]> {

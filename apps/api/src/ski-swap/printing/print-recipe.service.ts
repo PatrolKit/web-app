@@ -84,21 +84,7 @@ export class PrintRecipeService {
 
       case 'receipt_header': {
         const seller = await this.seller(orgId, recipe.sellerId);
-        return [
-          await this.renderer.receiptHeader(
-            {
-              orgLogoUrl: seller.orgLogoUrl,
-              date: new Date().toLocaleString('en-US', {
-                month: 'short', day: 'numeric', year: 'numeric',
-                hour: 'numeric', minute: '2-digit',
-              }),
-              sellerName: seller.name,
-              phone: seller.phone ?? '',
-              qrUrl: seller.statusUrl,
-            },
-            target,
-          ),
-        ];
+        return [await this.renderer.receiptHeader(this.masthead(seller), target)];
       }
 
       case 'receipt_items': {
@@ -110,6 +96,13 @@ export class PrintRecipeService {
           orderBy: { createdAt: 'asc' },
           select: { name: true, sku: true, priceCents: true },
         });
+        // On the tall tier this job is the whole receipt — the masthead is part
+        // of page one rather than a page of its own, so `enqueueReceipt` queues
+        // no header job and there is nothing here to concatenate.
+        if (target.size.tier === 'tall') {
+          const seller = await this.seller(orgId, recipe.sellerId);
+          return this.renderer.tallReceipt(this.masthead(seller), items, target);
+        }
         return this.renderer.receiptItems(items, target);
       }
 
@@ -125,6 +118,27 @@ export class PrintRecipeService {
   async receiptPageCount(orgId: string, swapId: string, sellerId: string, target: PrintTarget): Promise<number> {
     const pages = await this.resolve(orgId, { kind: 'receipt_items', swapId, sellerId }, target);
     return pages.length;
+  }
+
+  /** Who the receipt is for, however the tier chooses to lay it out. */
+  private masthead(seller: {
+    orgLogoUrl: string | null;
+    name: string;
+    phone: string | null;
+    statusUrl: string;
+  }) {
+    return {
+      orgLogoUrl: seller.orgLogoUrl,
+      // Rendered at claim rather than at enqueue, so it is when the receipt
+      // actually printed.
+      date: new Date().toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit',
+      }),
+      sellerName: seller.name,
+      phone: seller.phone ?? '',
+      qrUrl: seller.statusUrl,
+    };
   }
 
   /** The seller's display name, phone, and the absolute URL their QR points at. */

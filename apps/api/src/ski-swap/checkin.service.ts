@@ -230,10 +230,13 @@ export class CheckinService {
 
     // Header plus one job per page of the item list. Page count comes from the
     // renderer rather than a guess about how many fit.
-    const pageCount = await this.recipes.receiptPageCount(
-      orgId, swapId, seller.id, printTargetFor(station.bridge?.bridgedPrinter ?? null),
-    );
-    await this.queue.enqueueReceipt({ orgId, stationId: station.id, swapId, sellerId: seller.id, pageCount });
+    const target = printTargetFor(station.bridge?.bridgedPrinter ?? null);
+    const pageCount = await this.recipes.receiptPageCount(orgId, swapId, seller.id, target);
+    await this.queue.enqueueReceipt({
+      orgId, stationId: station.id, swapId, sellerId: seller.id, pageCount,
+      // The tall tier's page one carries the masthead itself.
+      withHeader: target.size.tier !== 'tall',
+    });
 
     /**
      * Only what has been accepted. An item still waiting for a staff member to

@@ -45,6 +45,21 @@ const TARGETS: Record<string, PrintTarget> = {
   '62x100': printTarget('m221', '62x100'),
 };
 
+const RECEIPT = {
+  orgLogoUrl: null,
+  date: 'Aug 26, 2026, 9:42 AM',
+  sellerName: 'Jane Doe',
+  phone: '+1 555 010 1001',
+  qrUrl: 'https://skiswap.patrolkit.io/s/abc123',
+};
+
+const receiptItems = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    name: i % 3 === 0 ? 'Rossignol Experience 88 Ti 172cm Red' : `Item ${i + 1}`,
+    sku: `SS26-A-${String(i + 1).padStart(4, '0')}`,
+    priceCents: 4500 + i * 500,
+  }));
+
 describe('LabelRendererService', () => {
   const renderer = new LabelRendererService();
 
@@ -221,6 +236,18 @@ describe('LabelRendererService', () => {
     it('calibration pattern', () => {
       expectGolden('calibration', renderer.calibration(TARGETS['50x30']));
     });
+
+    it('tall receipt, whole thing on one page', async () => {
+      const pages = await renderer.tallReceipt(RECEIPT, receiptItems(5), TARGETS['62x100']);
+      expect(pages).toHaveLength(1);
+      expectGolden('receipt-62x100', pages[0]);
+    });
+
+    it('tall receipt, continuation page', async () => {
+      const pages = await renderer.tallReceipt(RECEIPT, receiptItems(20), TARGETS['62x100']);
+      expect(pages.length).toBeGreaterThan(1);
+      expectGolden('receipt-62x100-continued', pages[1]);
+    });
   });
 
   describe('receipt pagination', () => {
@@ -245,6 +272,38 @@ describe('LabelRendererService', () => {
 
     it('returns nothing for no items', async () => {
       expect(await renderer.receiptItems([], TARGETS['50x30'])).toHaveLength(0);
+    });
+
+    /**
+     * The tall tier's whole point: what took a masthead page plus an item page
+     * on 62 × 100 — two sheets for one pair of skis — is now one.
+     */
+    it('puts an ordinary seller on a single tall page', async () => {
+      for (const n of [1, 3, 5]) {
+        expect(await renderer.tallReceipt(RECEIPT, receiptItems(n), TARGETS['62x100']))
+          .toHaveLength(1);
+      }
+    });
+
+    it('spills onto more tall pages only once the list runs past the bottom', async () => {
+      const long = await renderer.tallReceipt(RECEIPT, receiptItems(40), TARGETS['62x100']);
+      expect(long.length).toBeGreaterThan(1);
+      long.forEach((p) =>
+        expect(p[0]).toHaveLength(geometryOf(TARGETS['62x100']).headWidthDots));
+
+      // Each extra page has to earn itself: a continuation carries more items
+      // than page one, which spends its top half on the masthead and the code.
+      const perPage = (await renderer.tallReceipt(RECEIPT, receiptItems(200), TARGETS['62x100'])).length;
+      expect(perPage).toBeLessThan(200);
+    });
+
+    /**
+     * Unlike the compact list, which is nothing when there is nothing to list.
+     * A tall receipt is the receipt itself — the seller's name, the date and the
+     * code that tracks their items — so it prints even when the list is empty.
+     */
+    it('still prints one tall page for no items', async () => {
+      expect(await renderer.tallReceipt(RECEIPT, [], TARGETS['62x100'])).toHaveLength(1);
     });
   });
 });

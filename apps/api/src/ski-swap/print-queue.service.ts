@@ -182,13 +182,20 @@ export class PrintQueueService {
     this.wake(station.id);
   }
 
-  /** Queues a seller's receipt: a header, then a page per batch of line items. */
+  /**
+   * Queues a seller's receipt.
+   *
+   * The compact tier prints a masthead label and then a page per batch of line
+   * items. The tall tier fits the masthead onto page one, so it has no separate
+   * header job and `withHeader` is false — see `drawTallReceipt`.
+   */
   async enqueueReceipt(params: {
     orgId: string;
     stationId: string;
     swapId: string;
     sellerId: string;
     pageCount: number;
+    withHeader: boolean;
   }): Promise<void> {
     const station = await this.station(params.orgId, params.stationId);
     const base = {
@@ -198,15 +205,18 @@ export class PrintQueueService {
       swapId: params.swapId,
       sellerId: params.sellerId,
     };
+    const headerJobs = params.withHeader
+      ? [{ ...base, id: createId(), kind: 'receipt_header', seq: 0 }]
+      : [];
     await this.prisma.printJob.createMany({
       data: [
-        { ...base, id: createId(), kind: 'receipt_header', seq: 0 },
+        ...headerJobs,
         ...Array.from({ length: params.pageCount }, (_, i) => ({
           ...base,
           id: createId(),
           kind: 'receipt_items',
           params: { page: i } as Prisma.InputJsonValue,
-          seq: i + 1,
+          seq: headerJobs.length + i,
         })),
       ],
     });

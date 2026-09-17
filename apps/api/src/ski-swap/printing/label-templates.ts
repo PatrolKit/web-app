@@ -611,6 +611,197 @@ export function drawReceiptItems(
   return { rowsDrawn: drawn };
 }
 
+export interface ReceiptItemLine {
+  name: string;
+  sku: string;
+  priceCents: number;
+}
+
+/**
+ * A whole receipt on one page, continuing onto more only when the list warrants.
+ *
+ * The compact tier has no choice about this: a 50 × 30 label holds a masthead or
+ * about three line items, so a receipt there is a header label followed by a
+ * strip of item labels, and the seller carries a small paper chain. On 62 × 100
+ * that arrangement spent a whole 100 mm page on a logo, a name and a QR, then
+ * started the items on a second — two pages for a seller with one pair of skis,
+ * neither of them close to full.
+ *
+ * So the tall tier composes rather than concatenates: masthead, code, list and
+ * total on one page, and a second page only once the items genuinely run past
+ * the bottom. Roughly seven items fit under the masthead and twelve on a
+ * continuation, which covers nearly every seller in one sheet.
+ *
+ * Takes the items still to be drawn and reports how many it managed, so the
+ * caller paginates without this needing to know which page it is beyond whether
+ * it is the first.
+ */
+export async function drawTallReceipt(
+  ctx: SKRSContext2D,
+  W: number,
+  H: number,
+  data: ReceiptHeaderData,
+  remaining: ReceiptItemLine[],
+  page: { index: number; itemCount: number; totalCents: number },
+): Promise<{ rowsDrawn: number }> {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  ctx.textBaseline = 'top';
+
+  // Fractions of the content box rather than dots, like the tall item tag, so a
+  // second stock in this tier needs a row in the size table and nothing here.
+  const GAP = Math.round(W * 0.03);
+  const RULE = Math.max(1, Math.round(W * 0.004));
+
+  let y =
+    page.index === 0
+      ? await drawReceiptMasthead(ctx, W, GAP, RULE, data)
+      : drawReceiptContinuation(ctx, W, GAP, RULE, data.sellerName);
+
+  // ── The foot is reserved before the list, not after ───────────────────────
+  // Every page keeps the same strip free, so how many items fit does not depend
+  // on whether this page turns out to be the last — which is not known until
+  // the items have been laid out.
+  const TOTAL_H = Math.round(W * 0.055);
+  const footH = RULE + GAP + lineHeight(TOTAL_H);
+  const listBottom = H - footH;
+
+  // ── Line items ────────────────────────────────────────────────────────────
+  const NAME_H = Math.round(W * 0.045);
+  const SKU_H = Math.round(W * 0.034);
+  const ROW_GAP = Math.round(W * 0.018);
+  const rowH = lineHeight(NAME_H) + 2 + lineHeight(SKU_H);
+
+  let drawn = 0;
+  for (const item of remaining) {
+    if ((drawn > 0 ? y + ROW_GAP : y) + rowH > listBottom) break;
+    if (drawn > 0) y += ROW_GAP;
+
+    const priceStr = `$${(item.priceCents / 100).toFixed(2)}`;
+    ctx.font = labelFont(NAME_H, 'bold');
+    const priceW = ctx.measureText(priceStr).width;
+
+    // The name takes what the price leaves and shrinks to stay inside it rather
+    // than being cut: the amount owed is the one thing on the line that must
+    // never be crowded.
+    ctx.textAlign = 'left';
+    ctx.fillText(fitted(ctx, item.name, NAME_H, 12, W - priceW - GAP), 0, y);
+    ctx.textAlign = 'right';
+    ctx.font = labelFont(NAME_H, 'bold');
+    ctx.fillText(priceStr, W, y);
+    y += lineHeight(NAME_H) + 2;
+
+    ctx.font = labelFont(SKU_H, 'bold');
+    ctx.textAlign = 'left';
+    ctx.fillText(item.sku, 0, y);
+    y += lineHeight(SKU_H);
+    drawn++;
+  }
+
+  // ── The foot ──────────────────────────────────────────────────────────────
+  ctx.fillRect(0, listBottom, W, RULE);
+  const fy = listBottom + RULE + GAP;
+
+  if (drawn === remaining.length) {
+    ctx.font = labelFont(TOTAL_H, 'bold');
+    ctx.textAlign = 'left';
+    ctx.fillText(`${page.itemCount} item${page.itemCount === 1 ? '' : 's'}`, 0, fy);
+    ctx.textAlign = 'right';
+    ctx.fillText(`$${(page.totalCents / 100).toFixed(2)}`, W, fy);
+  } else {
+    // Said on the page rather than left to the seller to work out from a torn
+    // edge: they are holding one sheet of two and nothing else says so.
+    ctx.font = labelFont(Math.round(W * 0.04), 'bold');
+    ctx.textAlign = 'center';
+    ctx.fillText('continued on the next page', W / 2, fy);
+  }
+
+  return { rowsDrawn: drawn };
+}
+
+/** Page one's head: who, when, and the code that tracks their items. */
+async function drawReceiptMasthead(
+  ctx: SKRSContext2D, W: number, GAP: number, RULE: number, data: ReceiptHeaderData,
+): Promise<number> {
+  const LOGO = Math.round(W * 0.17);
+  if (data.orgLogoUrl) {
+    try {
+      const logo = await loadImage(data.orgLogoUrl);
+      const oc = createCanvas(LOGO, LOGO);
+      const og = oc.getContext('2d');
+      og.fillStyle = '#fff';
+      og.fillRect(0, 0, LOGO, LOGO);
+      og.drawImage(logo, 0, 0, LOGO, LOGO);
+      threshold(og, LOGO, LOGO);
+      ctx.drawImage(oc, 0, 0, LOGO, LOGO);
+    } catch {
+      // A missing or unreadable org logo must never fail a receipt.
+    }
+  }
+
+  const DATE_H = Math.round(W * 0.04);
+  const PHONE_H = Math.round(W * 0.042);
+  // Bounded by what the logo leaves, so a long name shrinks rather than running
+  // back over the org's mark.
+  const textW = W - LOGO - GAP;
+  const NAME_H = fitSize(ctx, data.sellerName, Math.round(W * 0.075), 14, textW);
+
+  let ty = 0;
+  ctx.textAlign = 'right';
+  ctx.font = labelFont(DATE_H, 'bold');
+  ctx.fillText(data.date, W, ty);
+  ty += lineHeight(DATE_H) + 2;
+  ctx.font = labelFont(NAME_H, 'bold');
+  ctx.fillText(fit(ctx, data.sellerName, textW), W, ty);
+  ty += lineHeight(NAME_H) + 2;
+  ctx.font = labelFont(PHONE_H, 'bold');
+  ctx.fillText(data.phone, W, ty);
+  ty += lineHeight(PHONE_H);
+
+  let y = Math.max(LOGO, ty) + GAP;
+  ctx.fillRect(0, y, W, RULE);
+  y += RULE + GAP;
+
+  const QR = Math.round(W * 0.30);
+  drawQr(ctx, data.qrUrl, W - QR, y, QR);
+
+  const scanW = W - QR - GAP;
+  const SCAN = commonFitSize(ctx, ['Scan to track', 'your items:'], Math.round(W * 0.062), 12, scanW);
+  const scanY = y + Math.floor((QR - (lineHeight(SCAN) * 2 + 4)) / 2);
+  ctx.fillStyle = '#000';
+  ctx.font = labelFont(SCAN, 'bold');
+  ctx.textAlign = 'left';
+  ctx.fillText('Scan to track', 0, scanY);
+  ctx.fillText('your items:', 0, scanY + lineHeight(SCAN) + 4);
+
+  y += QR + GAP;
+  ctx.fillRect(0, y, W, RULE);
+  y += RULE + GAP;
+
+  const HEAD = Math.round(W * 0.042);
+  ctx.font = labelFont(HEAD, 'bold');
+  ctx.textAlign = 'left';
+  ctx.fillText('YOUR ITEMS', 0, y);
+  return y + lineHeight(HEAD) + GAP;
+}
+
+/** Later pages get a strip naming whose receipt this is, and nothing else. */
+function drawReceiptContinuation(
+  ctx: SKRSContext2D, W: number, GAP: number, RULE: number, sellerName: string,
+): number {
+  const CONT = Math.round(W * 0.04);
+  ctx.font = labelFont(CONT, 'bold');
+  ctx.textAlign = 'right';
+  ctx.fillText('continued', W, 0);
+  ctx.textAlign = 'left';
+  ctx.fillText(fit(ctx, sellerName, W * 0.6), 0, 0);
+
+  let y = lineHeight(CONT) + GAP;
+  ctx.fillRect(0, y, W, RULE);
+  return y + RULE + GAP;
+}
+
 /** A seller's personal QR, printed so they can check item status later. */
 export function drawQrLabel(
   ctx: SKRSContext2D, W: number, H: number, sellerName: string, url: string,
