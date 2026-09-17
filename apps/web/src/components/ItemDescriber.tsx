@@ -38,16 +38,6 @@ export interface DescriberAnswer {
   freeText?: string;
 }
 
-/** How an answer arrived, where that changes what the form does next. */
-export interface SetAnswerOptions {
-  /**
-   * A tap that finished the question. Chips collapse the row; a typed number
-   * never can, because every keystroke is a change and the row would shut on
-   * the first digit.
-   */
-  collapse?: boolean;
-}
-
 export interface DescriberState {
   categoryId: string | null;
   /** Keyed by attribute id. */
@@ -201,90 +191,18 @@ function fold(s: string): string {
  * coarse step is a closed list wearing a text field. Only a short one: a ski
  * length is 70–215 in steps of 1, and 146 chips is not a control.
  */
-/**
- * Higher than `MAX_INLINE_CHIPS` because a number is two or three characters
- * wide where a value is a word: two dozen lengths are four short rows, and
- * splitting them into ranges would cost a tap to save nothing.
- */
-const MAX_FLAT_NUMBER_CHIPS = 24;
+const MAX_NUMBER_CHIPS = 16;
 
-/**
- * A cap on what is worth enumerating at all. Every number question in the tree
- * today is well inside it — a ski length is the longest at 146 — and it exists
- * so that an attribute configured 0 to 100000 in ones falls back to a text field
- * instead of trying to draw a hundred thousand chips.
- */
-const MAX_NUMBER_VALUES = 400;
-
-export function numberChoices(attribute: ResolvedAttribute): string[] | null {
+function numberChoices(attribute: ResolvedAttribute): string[] | null {
   const { min, max, step } = attribute;
   if (min === undefined || max === undefined || !step || step <= 0) return null;
   const count = Math.floor((max - min) / step) + 1;
-  if (count < 2 || count > MAX_NUMBER_VALUES) return null;
+  if (count < 2 || count > MAX_NUMBER_CHIPS) return null;
   return Array.from({ length: count }, (_, i) => {
     const n = min + i * step;
     // Steps of 0.5 must not print as 12.000000000000002.
     return String(Number(n.toFixed(4)));
   });
-}
-
-/**
- * A long run of numbers, split into ranges you pick before the value.
- *
- * A ski length is 70 to 215 in ones. That is a closed list — the server rejects
- * anything off the step — but 146 chips is not a control, and the coarse set the
- * mockup used (150 to 190 in fives) is a guess about skis that the range cannot
- * make and that misses 172, 177 and every other odd length people actually own.
- *
- * Ranges cost one extra tap and lose nothing: two taps reach any value exactly,
- * with no keyboard and no scrolling. The bucket is chosen so that the number of
- * ranges and the number of values inside one stay about even — fifteen ranges of
- * ten for a ski length, four of ten for a boot size.
- */
-export function numberRanges(choices: string[]): { label: string; values: string[] }[] | null {
-  if (choices.length <= MAX_FLAT_NUMBER_CHIPS) return null;
-  const nums = choices.map(Number);
-  const span = nums[nums.length - 1] - nums[0];
-
-  let best: { size: number; worst: number } | null = null;
-  for (const size of [1, 2, 5, 10, 25, 50, 100, 250, 1000]) {
-    const groups = Math.floor(span / size) + 1;
-    const per = Math.ceil(choices.length / groups);
-    if (groups > 20 || per > 20) continue;
-    // Neither row should be the long one. `<=` so a tie goes to the larger
-    // bucket: four ranges of ten read better than nine of four, and round
-    // numbers are how people hold a length in their head anyway.
-    const worst = Math.max(groups, per);
-    if (!best || worst <= best.worst) best = { size, worst };
-  }
-  if (!best) return null;
-
-  const by = new Map<number, string[]>();
-  for (const c of choices) {
-    const key = Math.floor(Number(c) / best.size) * best.size;
-    (by.get(key) ?? by.set(key, []).get(key)!).push(c);
-  }
-  const groups = [...by.values()];
-
-  // The ends rarely land on a round number — a ski length stops at 215, a
-  // mondopoint starts at 14 — which leaves a range holding one or two values
-  // next to ones holding ten. Fold those into the neighbour, so the last chip
-  // reads 210–215 rather than 210–219 and 215 does not sit on its own.
-  const full = Math.max(...groups.map((g) => g.length));
-  if (groups.length > 1 && groups[0].length < full / 2) {
-    groups[1] = [...groups[0], ...groups[1]];
-    groups.shift();
-  }
-  if (groups.length > 1 && groups[groups.length - 1].length < full / 2) {
-    groups[groups.length - 2] = [...groups[groups.length - 2], ...groups[groups.length - 1]];
-    groups.pop();
-  }
-
-  return groups.map((values) => ({
-    // Labelled by what is in it, so the last range stops at 215 rather than 219.
-    label: values.length === 1 ? values[0] : `${values[0]}–${values[values.length - 1]}`,
-    values,
-  }));
 }
 
 /**
@@ -349,19 +267,7 @@ function ValueChips({
   );
 }
 
-const numberChipClass = (on: boolean) =>
-  `px-2.5 py-1.5 rounded-lg text-sm border tabular-nums ${
-    on
-      ? 'bg-brand-600 border-brand-600 text-white'
-      : 'bg-surface-100 border-gray-700 text-gray-200 hover:bg-surface-200'
-  }`;
-
-/**
- * A bounded number question, answered by tapping.
- *
- * Short lists are one row of chips. Long ones are a row of ranges and then the
- * values inside the one you picked — see `numberRanges`.
- */
+/** Plain chips over strings, for a bounded number question. */
 function NumberChips({
   choices, unit, selected, onPick,
 }: {
@@ -370,66 +276,25 @@ function NumberChips({
   selected: string | undefined;
   onPick: (value: string | undefined) => void;
 }) {
-  const ranges = useMemo(() => numberRanges(choices), [choices]);
-  const same = (a: string | undefined, b: string) => a !== undefined && Number(a) === Number(b);
-
-  /**
-   * Which range is showing. Starts on the one holding the answer, so reopening
-   * a question lands on the value already given rather than at 70.
-   */
-  const [openRange, setOpenRange] = useState<number | null>(() => {
-    if (!ranges || selected === undefined) return null;
-    const i = ranges.findIndex((r) => r.values.some((v) => same(selected, v)));
-    return i === -1 ? null : i;
-  });
-
-  if (!ranges) {
-    return (
-      <div className="flex flex-wrap gap-1.5">
-        {choices.map((c) => (
-          <button key={c} type="button" onClick={() => onPick(same(selected, c) ? undefined : c)}
-            className={numberChipClass(same(selected, c))}>
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {choices.map((c) => {
+        const on = selected !== undefined && Number(selected) === Number(c);
+        return (
+          <button
+            key={c}
+            type="button"
+            onClick={() => onPick(on ? undefined : c)}
+            className={`px-2.5 py-1.5 rounded-lg text-sm border tabular-nums ${
+              on
+                ? 'bg-brand-600 border-brand-600 text-white'
+                : 'bg-surface-100 border-gray-700 text-gray-200 hover:bg-surface-200'
+            }`}
+          >
             {c}{unit ? ` ${unit}` : ''}
           </button>
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5">
-        {ranges.map((r, i) => {
-          const holdsAnswer = r.values.some((v) => same(selected, v));
-          return (
-            <button
-              key={r.label}
-              type="button"
-              onClick={() => setOpenRange(openRange === i ? null : i)}
-              aria-expanded={openRange === i}
-              className={`px-2.5 py-1.5 rounded-lg text-sm border tabular-nums ${
-                openRange === i
-                  ? 'bg-surface-200 border-gray-500 text-white'
-                  : holdsAnswer
-                    ? 'bg-surface-100 border-brand-600 text-white'
-                    : 'bg-surface-100 border-gray-700 text-gray-200 hover:bg-surface-200'
-              }`}
-            >
-              {r.label}
-            </button>
-          );
-        })}
-      </div>
-      {openRange !== null && (
-        <div className="flex flex-wrap gap-1.5 pl-2 border-l border-gray-800">
-          {ranges[openRange].values.map((c) => (
-            <button key={c} type="button" onClick={() => onPick(same(selected, c) ? undefined : c)}
-              className={numberChipClass(same(selected, c))}>
-              {c}{unit ? ` ${unit}` : ''}
-            </button>
-          ))}
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -684,7 +549,7 @@ function AttributeField({
   orgId: string;
   attribute: ResolvedAttribute;
   state: DescriberState;
-  setAnswer: (attributeId: string, next: DescriberAnswer, opts?: SetAnswerOptions) => void;
+  setAnswer: (attributeId: string, next: DescriberAnswer) => void;
   depth: number;
   onValuesLoaded: (values: ResolvedValue[]) => void;
   /** The accordion row above already names the question; two labels is one too many. */
@@ -703,11 +568,6 @@ function AttributeField({
   onSheetOpenChange?: (open: boolean) => void;
 }) {
   const answer = state.answers[attribute.id] ?? {};
-  // 146 strings for a ski length; built once per attribute, not twice per render.
-  const numbers = useMemo(
-    () => (attribute.input === 'number' ? numberChoices(attribute) : null),
-    [attribute],
-  );
   const [ownSheetOpen, setOwnSheetOpen] = useState(false);
   const showSheet = sheetOpen ?? ownSheetOpen;
   const setSheetOpen = useCallback(
@@ -759,13 +619,12 @@ function AttributeField({
         </label>
       )}
 
-      {chips && numbers ? (
+      {attribute.input === 'number' && chips && numberChoices(attribute) ? (
         <NumberChips
-          choices={numbers}
+          choices={numberChoices(attribute) as string[]}
           unit={attribute.unit}
           selected={answer.numberValue}
-          onPick={(n) =>
-            setAnswer(attribute.id, n === undefined ? {} : { numberValue: n }, { collapse: n !== undefined })}
+          onPick={(n) => setAnswer(attribute.id, n === undefined ? {} : { numberValue: n })}
         />
       ) : attribute.input === 'number' ? (
         <div className="flex items-center gap-2">
@@ -970,14 +829,11 @@ export default function ItemDescriber({
   }, []);
 
   const setAnswer = useCallback(
-    (attributeId: string, next: DescriberAnswer, opts?: SetAnswerOptions) => {
+    (attributeId: string, next: DescriberAnswer) => {
       onChange({
         ...value,
         answers: { ...value.answers, [attributeId]: next },
       });
-
-      // A number answered by tapping is as finished as a chip, and says so.
-      if (opts?.collapse) { setOpenId(null); return; }
 
       // Picking closes the row — unless the answer asked another question. A
       // manufacturer opens a model list, and collapsing on top of it would hide
