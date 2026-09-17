@@ -5,7 +5,7 @@ import { faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTa
 import type { ItemAttributeInput, ItemResponse, SellerResponse } from '../../lib/api.types';
 import SearchableSelect from '../../components/SearchableSelect';
 import ItemDescriber, {
-  emptyDescriber, toAttributeInputs, type DescriberState,
+  emptyDescriber, toAttributeInputs, NamePreview, type DescriberState,
 } from '../../components/ItemDescriber';
 import { usePrinter } from '../../contexts/PrinterContext';
 import { isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
@@ -430,12 +430,8 @@ export default function SwapItemsPanel({
               // Wider screen, so every question shows rather than the tail of
               // them collapsing behind "More detail".
               layout="grid"
-              renderPreview={(name) =>
-                name ? (
-                  <p className="text-sm text-white bg-surface-100 rounded px-3 py-2 border border-gray-700">
-                    {name}
-                  </p>
-                ) : null
+              renderPreview={(name, { parts }) =>
+                name ? <NamePreview name={name} parts={parts} /> : null
               }
             />
             <textarea

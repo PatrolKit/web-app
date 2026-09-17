@@ -9,7 +9,7 @@ import {
 } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import ItemDescriber, {
-  emptyDescriber, toAttributeInputs, type DescriberState,
+  emptyDescriber, toAttributeInputs, NamePreview, type DescriberState,
 } from '../../components/ItemDescriber';
 import { downscaleImage } from '../../lib/downscaleImage';
 import {
@@ -206,12 +206,8 @@ export default function ItemsStep({
            * Rendered here rather than inside the describer so it sits directly
            * above the price, where the eye already is.
            */
-          renderPreview={(name) =>
-            name ? (
-              <p className="text-sm text-white bg-surface-100 rounded-lg px-3 py-2 border border-gray-800">
-                {name}
-              </p>
-            ) : null
+          renderPreview={(name, { parts }) =>
+            name ? <NamePreview name={name} parts={parts} /> : null
           }
         />
 

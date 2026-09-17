@@ -5,6 +5,7 @@ import {
   faChevronDown as faChevronDownDuo,
   faChevronRight as faChevronRightDuo,
   faPlus as faPlusDuo,
+  faTag as faTagDuo,
   faXmark as faXmarkDuo,
 } from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../lib/api';
@@ -103,6 +104,29 @@ export function answerText(
   return '';
 }
 
+/**
+ * The answered questions the name is made of, in the order it uses them.
+ *
+ * Split out from `previewName` because the screen says where the name came
+ * from, not just what it is, and counting the parts is the honest way to say
+ * "built from three of your answers" rather than asserting it.
+ */
+export function nameParts(
+  state: DescriberState,
+  category: ResolvedCategory | undefined,
+  attributesById: Map<string, ResolvedAttribute>,
+  valueLabelById: Map<string, string>,
+): string[] {
+  if (!category) return [];
+  return Object.entries(state.answers)
+    .map(([attributeId, answer]) => ({ attribute: attributesById.get(attributeId), answer }))
+    .filter((x): x is { attribute: ResolvedAttribute; answer: DescriberAnswer } => !!x.attribute)
+    .filter((x) => x.attribute.nameSlot !== null)
+    .sort((a, b) => (a.attribute.nameSlot ?? 0) - (b.attribute.nameSlot ?? 0) || a.attribute.displayOrder - b.attribute.displayOrder)
+    .map(({ attribute, answer }) => answerText(attribute, answer, valueLabelById))
+    .filter((p) => p !== '');
+}
+
 export function previewName(
   state: DescriberState,
   category: ResolvedCategory | undefined,
@@ -110,15 +134,35 @@ export function previewName(
   valueLabelById: Map<string, string>,
 ): string {
   if (!category) return '';
-  const parts = Object.entries(state.answers)
-    .map(([attributeId, answer]) => ({ attribute: attributesById.get(attributeId), answer }))
-    .filter((x): x is { attribute: ResolvedAttribute; answer: DescriberAnswer } => !!x.attribute)
-    .filter((x) => x.attribute.nameSlot !== null)
-    .sort((a, b) => (a.attribute.nameSlot ?? 0) - (b.attribute.nameSlot ?? 0) || a.attribute.displayOrder - b.attribute.displayOrder)
-    .map(({ attribute, answer }) => answerText(attribute, answer, valueLabelById))
-    .filter((p) => p !== '');
+  return [...nameParts(state, category, attributesById, valueLabelById), category.label]
+    .join(' ').replace(/\s+/g, ' ').trim();
+}
 
-  return [...parts, category.label].join(' ').replace(/\s+/g, ' ').trim();
+/**
+ * The name, and where it came from.
+ *
+ * It used to be the bare string in a bordered box — the same border, fill and
+ * text size as the price field under it and the notes field under that. So it
+ * read as a name you were expected to type and had not, which is the one thing
+ * it is not: it is assembled from the answers above and there is no way to edit
+ * it here. Saying so costs a line of grey text, and a dashed border to keep it
+ * from looking like somewhere to put a cursor.
+ */
+export function NamePreview({ name, parts }: { name: string; parts: number }) {
+  return (
+    <div className="rounded-lg border border-dashed border-gray-700 bg-surface-200 px-3 py-2.5 space-y-1">
+      <p className="flex items-center gap-1.5 text-xs text-gray-500">
+        <FontAwesomeIcon icon={faTagDuo} className="h-3 w-3" />
+        Its tag will read — built from your answers
+      </p>
+      <p className="text-sm font-medium text-white">{name}</p>
+      {parts === 0 && (
+        <p className="text-xs text-gray-500">
+          Answer a question above and the name gets more specific.
+        </p>
+      )}
+    </div>
+  );
 }
 
 // ─── Bits ────────────────────────────────────────────────────────────────────
@@ -838,7 +882,7 @@ export interface ItemDescriberProps {
   onChange: (next: DescriberState) => void;
   layout?: 'stacked' | 'grid';
   /** Rendered under the questions, so the preview sits beside the price. */
-  renderPreview?: (name: string) => React.ReactNode;
+  renderPreview?: (name: string, detail: { parts: number }) => React.ReactNode;
 }
 
 export default function ItemDescriber({
@@ -955,7 +999,10 @@ export default function ItemDescriber({
     setSheetId(null);
   };
 
-  const preview = previewName(value, category, attributesById, labelIndex);
+  const parts = nameParts(value, category, attributesById, labelIndex);
+  const preview = category
+    ? [...parts, category.label].join(' ').replace(/\s+/g, ' ').trim()
+    : '';
 
   if (isLoading) return <p className="text-sm text-gray-500">Loading…</p>;
 
@@ -1093,7 +1140,7 @@ export default function ItemDescriber({
         </div>
       )}
 
-      {renderPreview ? renderPreview(preview) : null}
+      {renderPreview ? renderPreview(preview, { parts: parts.length }) : null}
     </div>
   );
 }
