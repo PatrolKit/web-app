@@ -648,10 +648,22 @@ export function calibrationPattern(target: PrintTarget): boolean[][] {
   const rows: boolean[][] = Array.from({ length: H }, () => new Array<boolean>(W).fill(false));
   const D = 2;
 
-  // The margin rectangle is drawn on the media, not on the head — that is the
-  // whole point of printing one. Where the diagonals cross is the head's centre,
-  // and where the full-width box is clipped is the head's real edge, so a single
-  // label answers both "how wide is the head" and "do the margins hold".
+  // Everything here is drawn on the media, never on the head.
+  //
+  // The diagonals used to span the head, so they ran corner to corner of
+  // something the operator cannot see and were cut off by the label's edges part
+  // way down. That was deliberate — where they were cut measured the head — but
+  // the printer turned out to measure its own head far better: declare more
+  // bytes per row than it has and it refuses the raster outright. So the
+  // diagonals go back to doing the job somebody holding a label can check, which
+  // is whether the geometry lands where it should.
+  //
+  // Corner to corner of the *media*, so on a correctly placed label they meet
+  // its four corners and cross in the middle. Anything else is visible at a
+  // glance: a shifted crossing means the media offset is wrong, and diagonals
+  // running off an edge mean the label is narrower than the size says.
+  const ML = mediaOffsetDots;
+  const MR = mediaOffsetDots + mediaWidthDots - 1;
   const L = mediaOffsetDots + margins.marginLeft;
   const R = mediaOffsetDots + mediaWidthDots - margins.marginRight;
   const T = margins.marginTop;
@@ -666,13 +678,13 @@ export function calibrationPattern(target: PrintTarget): boolean[][] {
     for (let d = 0; d < D; d++) if (x + d < W) for (let y = y0; y < y1; y++) rows[y][x + d] = true;
   };
 
+  const span = MR - ML;
   for (let y = 0; y < H; y++) {
-    const x1 = Math.round((y * (W - 1)) / (H - 1));
-    const x2 = W - 1 - x1;
-    if (x1 < W) rows[y][x1] = true;
-    if (x1 + 1 < W) rows[y][x1 + 1] = true;
-    if (x2 >= 0) rows[y][x2] = true;
-    if (x2 - 1 >= 0) rows[y][x2 - 1] = true;
+    const x1 = ML + Math.round((y * span) / (H - 1));
+    const x2 = ML + MR - x1;
+    for (const x of [x1, x1 + 1, x2, x2 - 1]) {
+      if (x >= ML && x <= MR) rows[y][x] = true;
+    }
   }
 
   hline(T, L, R);

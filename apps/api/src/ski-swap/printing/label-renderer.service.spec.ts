@@ -208,6 +208,16 @@ describe('LabelRendererService', () => {
       );
     });
 
+    /**
+     * The tall calibration was not pinned by anything, which is how its
+     * diagonals came to be drawn across the head rather than the label without
+     * a test noticing. It is the instrument every other measurement is taken
+     * with, so it is the last thing that should be free to drift.
+     */
+    it('tall calibration pattern', () => {
+      expectGolden('calibration-62x100', renderer.calibration(TARGETS['62x100']));
+    });
+
     it('calibration pattern', () => {
       expectGolden('calibration', renderer.calibration(TARGETS['50x30']));
     });
