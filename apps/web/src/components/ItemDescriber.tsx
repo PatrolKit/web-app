@@ -487,6 +487,22 @@ export default function ItemDescriber({
         </button>
       </div>
 
+      {/* Said outright, because nothing else on the screen said it.
+          Every answer here is optional (D6), and `canAdd` bears that out — a
+          category and a price are the whole requirement. The count on "More
+          detail" was the only hint, and it only ever spoke about the questions
+          still hidden, never the ones a seller is looking at, so somebody who
+          does not know a model year had no way to tell whether they were stuck.
+
+          One idea, not two: the preview underneath already shows the name
+          improving as answers go in, so saying that here as well would be
+          explaining what the screen is busy demonstrating. */}
+      {topLevel.length > 0 && (
+        <p className="text-xs text-gray-500">
+          Answer what you know — none of it is required.
+        </p>
+      )}
+
       <div className={layout === 'grid' ? 'grid grid-cols-2 gap-x-4 gap-y-3' : 'space-y-3'}>
         {shown.map((a) => (
           <AttributeField
