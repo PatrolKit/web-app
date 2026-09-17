@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { PoweredByFooter } from '../public/PoweredByFooter';
+import { PublicPageHeader } from '../public/PublicPageHeader';
 import type { CheckinContext } from '../../lib/api.types';
 
 /**
@@ -51,24 +52,7 @@ export function CheckinShell({
   return (
     <div className="min-h-screen bg-surface text-white">
       <div className="mx-auto w-full max-w-md px-4 py-6 space-y-6">
-        <header className="space-y-2 text-center">
-          {logoUrl && <img src={logoUrl} alt="" className="mx-auto h-12 object-contain" />}
-          {/* The instruction, and the loudest thing on the screen. Every step
-              puts what to do next here; anything explaining the step goes in
-              the body under it. */}
-          <h1 className="text-2xl font-bold">{title}</h1>
-          {subtitle && (
-            // Tighter than the header's own rhythm: these are one thought split
-            // across two lines, not two separate things.
-            <div className="space-y-0.5">
-              {(Array.isArray(subtitle) ? subtitle : [subtitle]).map((line, i) => (
-                <p key={line} className={i === 0 ? 'text-sm text-gray-400' : 'text-xs text-gray-500'}>
-                  {line}
-                </p>
-              ))}
-            </div>
-          )}
-        </header>
+        <PublicPageHeader title={title} subtitle={subtitle} logoUrl={logoUrl} />
         {children}
         {footer && <div className="pt-2">{footer}</div>}
         <SignedInAs />

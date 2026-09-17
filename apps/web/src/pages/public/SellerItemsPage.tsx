@@ -2,6 +2,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { PoweredByFooter } from './PoweredByFooter';
+import { PublicPageHeader } from './PublicPageHeader';
 
 function formatPrice(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -41,16 +42,20 @@ export default function SellerItemsPage() {
   return (
     <div className="min-h-screen bg-surface px-4 py-8">
       <div className="max-w-xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col items-center gap-2">
-          {data.orgLogoUrl ? (
-            <img src={data.orgLogoUrl} alt={data.orgName} className="h-12 object-contain" />
-          ) : (
-            <span className="text-xl font-bold text-white">{data.orgName}</span>
-          )}
-          <h1 className="text-lg font-semibold text-white">Ski Swap — Item Status</h1>
-          <p className="text-gray-400 text-sm">{data.sellerName}</p>
-        </div>
+        {/*
+          * The same header as check-in and the receipt, because a seller
+          * arrives here from one of them.
+          *
+          * The mark and the org's name used to be alternatives — a club with a
+          * logo never saw its own name — and "Ski Swap — Item Status" was
+          * quieter than the name above it. This says what the screen is for,
+          * loudest, and puts who and where underneath.
+          */}
+        <PublicPageHeader
+          title="Your items"
+          subtitle={[data.orgName, data.sellerName]}
+          logoUrl={data.orgLogoUrl}
+        />
 
         {/* Content */}
         {!hasItems ? (
