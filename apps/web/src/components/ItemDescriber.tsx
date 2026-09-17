@@ -1,7 +1,12 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChevronDown as faChevronDownDuo, faPlus as faPlusDuo } from '@fortawesome/pro-duotone-svg-icons';
+import {
+  faChevronDown as faChevronDownDuo,
+  faChevronRight as faChevronRightDuo,
+  faPlus as faPlusDuo,
+  faXmark as faXmarkDuo,
+} from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../lib/api';
 import { taxonomyIcon } from '../lib/taxonomyIcons';
 import SearchableSelect from './SearchableSelect';
@@ -125,6 +130,65 @@ function NodeIcon({ icon, className }: { icon?: ResolvedIcon; className?: string
   return <FontAwesomeIcon icon={def} className={className} />;
 }
 
+/**
+ * Diacritics folded away, so typing what is on the keyboard finds what is on the
+ * topsheet. Half the makes a seller looks for are spelled Völkl, Stöckli or
+ * Kästle, and none of them are reachable from a phone without this.
+ */
+function fold(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+/**
+ * The legal answers to a number question, when there are few enough to tap.
+ *
+ * `min`, `max` and `step` already describe a finite set — the server rejects
+ * anything off the step with "goes in steps of 5" — so a bounded question with a
+ * coarse step is a closed list wearing a text field. Only a short one: a ski
+ * length is 70–215 in steps of 1, and 146 chips is not a control.
+ */
+const MAX_NUMBER_CHIPS = 16;
+
+function numberChoices(attribute: ResolvedAttribute): string[] | null {
+  const { min, max, step } = attribute;
+  if (min === undefined || max === undefined || !step || step <= 0) return null;
+  const count = Math.floor((max - min) / step) + 1;
+  if (count < 2 || count > MAX_NUMBER_CHIPS) return null;
+  return Array.from({ length: count }, (_, i) => {
+    const n = min + i * step;
+    // Steps of 0.5 must not print as 12.000000000000002.
+    return String(Number(n.toFixed(4)));
+  });
+}
+
+/**
+ * How many chips will sit in a row's body before it is a list rather than a
+ * choice. Fourteen colors are five short lines and read at a glance; the
+ * thirty-seven makes never did.
+ *
+ * Not the old `> 8`, which was drawn for a dropdown: eight was where scrolling a
+ * native select got annoying, and it sent Color — a question whose whole point
+ * is that you recognise the answer — off to a screen of its own.
+ */
+const MAX_INLINE_CHIPS = 16;
+
+/**
+ * Whether a question is too long to answer in place.
+ *
+ * Decided from the attribute alone, never from the values, because the row that
+ * has to draw the trigger renders before a deferred branch has loaded — and a
+ * branch is only ever deferred because it is long.
+ */
+export function usesSheet(attribute: ResolvedAttribute): boolean {
+  if (attribute.input !== 'select') return false;
+  // Free entry alone does not earn a sheet: a short list keeps its chips and
+  // gains one more that opens the sheet to type in.
+  return (
+    attribute.valuesDeferred === true ||
+    (attribute.values?.length ?? 0) > MAX_INLINE_CHIPS
+  );
+}
+
 /** Chips, for a short closed list. One tap, no dropdown, no keyboard. */
 function ValueChips({
   values, selected, onPick,
@@ -159,11 +223,164 @@ function ValueChips({
   );
 }
 
+/** Plain chips over strings, for a bounded number question. */
+function NumberChips({
+  choices, unit, selected, onPick,
+}: {
+  choices: string[];
+  unit?: string;
+  selected: string | undefined;
+  onPick: (value: string | undefined) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {choices.map((c) => {
+        const on = selected !== undefined && Number(selected) === Number(c);
+        return (
+          <button
+            key={c}
+            type="button"
+            onClick={() => onPick(on ? undefined : c)}
+            className={`px-2.5 py-1.5 rounded-lg text-sm border tabular-nums ${
+              on
+                ? 'bg-brand-600 border-brand-600 text-white'
+                : 'bg-surface-100 border-gray-700 text-gray-200 hover:bg-surface-200'
+            }`}
+          >
+            {c}{unit ? ` ${unit}` : ''}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * A long list, answered on a screen of its own.
+ *
+ * Thirty-seven makes have never fitted inside a card, and the dropdown that used
+ * to hold them came with a text field and a "+" beside it — three affordances
+ * for one answer. A sheet has room to be one: search narrows, chips answer, and
+ * something the list has never heard of is another chip rather than another
+ * control.
+ */
+function ValueSheet({
+  attribute, values, answer, onPick, onClose,
+}: {
+  attribute: ResolvedAttribute;
+  values: ResolvedValue[];
+  answer: DescriberAnswer;
+  onPick: (next: DescriberAnswer) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const needle = fold(query.trim());
+
+  const hits = useMemo(
+    () => (needle ? values.filter((v) => fold(v.label).includes(needle)) : values),
+    [values, needle],
+  );
+  // Only offer to mint what the list does not already hold, or two chips would
+  // answer the same question differently — one a value, one a pending duplicate.
+  const canAdd =
+    attribute.allowFreeEntry === true &&
+    query.trim() !== '' &&
+    !values.some((v) => fold(v.label) === needle);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface-50 border-t border-gray-700 rounded-t-2xl flex flex-col max-h-[85vh] p-4"
+        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={attribute.label}
+      >
+        <div className="flex items-center justify-between gap-3 pb-3">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-white">
+            <NodeIcon icon={attribute.icon} className="h-4 w-4" />
+            {attribute.label}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-white text-sm flex items-center gap-1.5"
+          >
+            <FontAwesomeIcon icon={faXmarkDuo} className="h-3.5 w-3.5" />
+            Cancel
+          </button>
+        </div>
+
+        <input
+          autoFocus
+          className="bg-surface-100 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-brand-600 focus:outline-none"
+          placeholder={
+            attribute.allowFreeEntry
+              ? `Search ${values.length}, or type a new one`
+              : `Search ${values.length}`
+          }
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+
+        <div className="flex flex-wrap gap-1.5 overflow-y-auto pt-3 -mx-1 px-1">
+          {canAdd && (
+            <button
+              type="button"
+              onClick={() => onPick({ freeText: query.trim() })}
+              className="px-2.5 py-1.5 rounded-lg text-sm border border-dashed border-gray-600 text-gray-300 bg-surface-100 hover:bg-surface-200 flex items-center gap-1.5"
+            >
+              <FontAwesomeIcon icon={faPlusDuo} className="h-3 w-3" />
+              Use “{query.trim()}”
+            </button>
+          )}
+          {hits.map((v) => {
+            const on = answer.valueId === v.id;
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => onPick(on ? {} : { valueId: v.id })}
+                className={`px-2.5 py-1.5 rounded-lg text-sm border flex items-center gap-1.5 ${
+                  on
+                    ? 'bg-brand-600 border-brand-600 text-white'
+                    : 'bg-surface-100 border-gray-700 text-gray-200 hover:bg-surface-200'
+                }`}
+              >
+                <NodeIcon icon={v.icon} className="h-3.5 w-3.5" />
+                {v.label}
+              </button>
+            );
+          })}
+          {hits.length === 0 && !canAdd && (
+            <p className="text-xs text-gray-500 py-2">
+              {attribute.allowFreeEntry
+                ? 'Nothing matches. Type it and use what you typed.'
+                : 'Nothing matches.'}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * A long list, or one that takes free entry.
  *
  * `SearchableSelect` handles the listed values; the free-entry row sits beside
- * it, because the select cannot offer something it has never heard of.
+ * it, because the select cannot offer something it has never heard of. Kept for
+ * the desk, where a pointer and a keyboard make a dropdown the faster control.
  */
 function ValueSelect({
   attribute, values, answer, onChange,
@@ -236,13 +453,15 @@ function ValueSelect({
  * set it.
  */
 function AccordionRow({
-  attribute, summary, open, onToggle, children,
+  attribute, summary, open, onToggle, children, sheet = false,
 }: {
   attribute: ResolvedAttribute;
   summary: string;
   open: boolean;
   onToggle: () => void;
   children: ReactNode;
+  /** This one leaves for a screen of its own, so it points the way rather than down. */
+  sheet?: boolean;
 }) {
   return (
     <div className="border-b border-gray-800 last:border-b-0">
@@ -261,8 +480,10 @@ function AccordionRow({
             {summary || '—'}
           </span>
           <FontAwesomeIcon
-            icon={faChevronDownDuo}
-            className={`h-3 w-3 shrink-0 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}
+            icon={sheet ? faChevronRightDuo : faChevronDownDuo}
+            className={`h-3 w-3 shrink-0 text-gray-500 transition-transform ${
+              !sheet && open ? 'rotate-180' : ''
+            }`}
           />
         </span>
       </button>
@@ -274,6 +495,7 @@ function AccordionRow({
 /** One question, and whatever its answer opens up beneath it. */
 function AttributeField({
   orgId, attribute, state, setAnswer, depth, onValuesLoaded, hideLabel = false,
+  chips = false, sheetOpen, onSheetOpenChange,
 }: {
   orgId: string;
   attribute: ResolvedAttribute;
@@ -283,8 +505,26 @@ function AttributeField({
   onValuesLoaded: (values: ResolvedValue[]) => void;
   /** The accordion row above already names the question; two labels is one too many. */
   hideLabel?: boolean;
+  /** One control everywhere: chips in place, a sheet for the lists too long to sit in one. */
+  chips?: boolean;
+  /**
+   * Whether the sheet is showing, when someone above needs to say so.
+   *
+   * A top-level question is opened by its row, and the row has to be able to
+   * open it again — mounting with the sheet up would only work the first time,
+   * because tapping an already-open row changes nothing to re-mount. A nested
+   * question has no row above it, so it keeps its own state.
+   */
+  sheetOpen?: boolean;
+  onSheetOpenChange?: (open: boolean) => void;
 }) {
   const answer = state.answers[attribute.id] ?? {};
+  const [ownSheetOpen, setOwnSheetOpen] = useState(false);
+  const showSheet = sheetOpen ?? ownSheetOpen;
+  const setSheetOpen = useCallback(
+    (open: boolean) => (onSheetOpenChange ? onSheetOpenChange(open) : setOwnSheetOpen(open)),
+    [onSheetOpenChange],
+  );
 
   /**
    * A deferred branch — a manufacturer's model list — fetched on first render of
@@ -311,6 +551,14 @@ function AttributeField({
   }, [values, onValuesLoaded]);
 
   const chosen = answer.valueId ? values.find((v) => v.id === answer.valueId) : undefined;
+  // A value typed but not yet minted reads back the same as one that was listed.
+  const pendingLabel = answer.freeText?.trim();
+  const chosenLabel = chosen?.label ?? pendingLabel ?? '';
+  const pendingNote = pendingLabel ? (
+    <p className="text-xs text-amber-400">
+      “{pendingLabel}” is new — it will be added for your club to approve.
+    </p>
+  ) : null;
 
   return (
     <div className={depth > 0 ? 'pl-3 border-l border-gray-800 space-y-1.5' : 'space-y-1.5'}>
@@ -322,7 +570,14 @@ function AttributeField({
         </label>
       )}
 
-      {attribute.input === 'number' ? (
+      {attribute.input === 'number' && chips && numberChoices(attribute) ? (
+        <NumberChips
+          choices={numberChoices(attribute) as string[]}
+          unit={attribute.unit}
+          selected={answer.numberValue}
+          onPick={(n) => setAnswer(attribute.id, n === undefined ? {} : { numberValue: n })}
+        />
+      ) : attribute.input === 'number' ? (
         <div className="flex items-center gap-2">
           <input
             className="w-28 bg-surface-100 border border-gray-700 rounded-lg px-2.5 py-2 text-sm text-white placeholder:text-gray-500 focus:border-brand-600 focus:outline-none"
@@ -337,6 +592,65 @@ function AttributeField({
         <p className="text-xs text-gray-500">Loading…</p>
       ) : values.length === 0 && !attribute.allowFreeEntry ? (
         <p className="text-xs text-gray-600">Nothing to choose from yet.</p>
+      ) : chips && usesSheet(attribute) ? (
+        <>
+          {/* One button, and the answer on it. The sheet behind it is where the
+              search, the list and the free entry all live now. */}
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="w-full flex items-center justify-between gap-2 bg-surface-100 border border-gray-700 rounded-lg px-3 py-2 text-sm text-left hover:bg-surface-200"
+          >
+            <span className={chosenLabel ? 'text-white' : 'text-gray-500'}>
+              {chosenLabel || `Choose ${attribute.label.toLowerCase()}…`}
+            </span>
+            <FontAwesomeIcon icon={faChevronRightDuo} className="h-3 w-3 shrink-0 text-gray-500" />
+          </button>
+          {pendingNote}
+          {showSheet && (
+            <ValueSheet
+              attribute={attribute}
+              values={values}
+              answer={answer}
+              onPick={(next) => { setAnswer(attribute.id, next); setSheetOpen(false); }}
+              onClose={() => setSheetOpen(false)}
+            />
+          )}
+        </>
+      ) : chips ? (
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            <ValueChips
+              values={values}
+              selected={answer.valueId}
+              onPick={(valueId) => setAnswer(attribute.id, valueId ? { valueId } : {})}
+            />
+            {attribute.allowFreeEntry && (
+              <button
+                type="button"
+                onClick={() => setSheetOpen(true)}
+                className={`px-2.5 py-1.5 rounded-lg text-sm border border-dashed flex items-center gap-1.5 ${
+                  answer.freeText?.trim()
+                    ? 'bg-brand-600 border-brand-600 text-white'
+                    : 'border-gray-600 text-gray-300 bg-surface-100 hover:bg-surface-200'
+                }`}
+              >
+                <FontAwesomeIcon icon={faPlusDuo} className="h-3 w-3" />
+                {answer.freeText?.trim() || 'Something else'}
+              </button>
+            )}
+          </div>
+          {pendingNote}
+          {showSheet && (
+            <ValueSheet
+              attribute={attribute}
+              values={values}
+              answer={answer}
+              onPick={(next) => { setAnswer(attribute.id, next); setSheetOpen(false); }}
+              onClose={() => setSheetOpen(false)}
+            />
+          )}
+        </>
       ) : values.length > 8 || attribute.allowFreeEntry ? (
         <ValueSelect
           attribute={attribute}
@@ -363,6 +677,7 @@ function AttributeField({
           setAnswer={setAnswer}
           depth={Math.min(depth + 1, 1)}
           onValuesLoaded={onValuesLoaded}
+          chips={chips}
         />
       ))}
     </div>
@@ -388,6 +703,8 @@ export default function ItemDescriber({
    * fields this replaced.
    */
   const [openId, setOpenId] = useState<string | null>(null);
+  /** Which question has taken the screen, if any. See `AttributeField`'s props. */
+  const [sheetId, setSheetId] = useState<string | null>(null);
   /**
    * Labels for values that arrived through a deferred fetch.
    *
@@ -486,6 +803,7 @@ export default function ItemDescriber({
     // A different category asks different questions, so the answers go with it.
     onChange(categoryId === value.categoryId ? emptyDescriber : { categoryId, answers: {} });
     setOpenId(null);
+    setSheetId(null);
   };
 
   const preview = previewName(value, category, attributesById, labelIndex);
@@ -594,7 +912,16 @@ export default function ItemDescriber({
               attribute={a}
               summary={answerText(a, value.answers[a.id] ?? {}, labelIndex)}
               open={openId === a.id}
-              onToggle={() => setOpenId(openId === a.id ? null : a.id)}
+              // A question with a sheet behind it has nothing worth showing in a
+              // row, so opening the row opens the sheet, every time it is tapped
+              // rather than only the first — the row is a label and a chevron,
+              // and tapping it can only mean "let me answer this".
+              sheet={usesSheet(a)}
+              onToggle={() => {
+                if (usesSheet(a)) { setOpenId(a.id); setSheetId(a.id); return; }
+                setSheetId(null);
+                setOpenId(openId === a.id ? null : a.id);
+              }}
             >
               <AttributeField
                 orgId={orgId}
@@ -604,6 +931,13 @@ export default function ItemDescriber({
                 depth={0}
                 onValuesLoaded={onValuesLoaded}
                 hideLabel
+                chips
+                {...(usesSheet(a)
+                  ? {
+                      sheetOpen: sheetId === a.id,
+                      onSheetOpenChange: (open: boolean) => setSheetId(open ? a.id : null),
+                    }
+                  : {})}
               />
             </AccordionRow>
           ))}
