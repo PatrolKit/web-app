@@ -1077,7 +1077,11 @@ export default function ItemDescriber({
           explaining what the screen is busy demonstrating. */}
       {topLevel.length > 0 && (
         <p className="text-xs text-gray-500">
-          Answer what you know — none of it is required.
+          Answer what you know —{' '}
+          {/* Weighted and lifted out of the grey, because this is the half of
+              the sentence someone skims for when they do not know a model year
+              and are wondering whether they are stuck. */}
+          <strong className="font-semibold text-gray-300">none of it is required</strong>.
         </p>
       )}
 
