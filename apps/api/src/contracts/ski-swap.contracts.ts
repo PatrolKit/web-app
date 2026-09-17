@@ -839,8 +839,17 @@ export const ClaimedJobSchema = z.object({
   id: z.string(),
   kind: z.string(),
   seq: z.number().int(),
-  /** Base64 ESC/POS, ready to hand straight to the printer over BLE. */
+  /** The base64 raster. The bridge wraps it in ESC/POS and adds its own feed. */
   payload: z.string(),
+  /**
+   * Bytes per raster row — how the bridge knows the label's width, and with the
+   * payload's length, its height.
+   *
+   * Firmware that predates this field reads 50, which is right for every M110.
+   * It refuses a payload that is not a whole number of `widthBytes` rows, so
+   * this and the bytes beside it have to agree; both come off the same raster.
+   */
+  widthBytes: z.number().int().positive(),
 });
 
 /** A peripheral this bridge should be holding, by the name it advertises. */

@@ -118,10 +118,14 @@ await prisma.printJob.create({
 claim = await fetch(`${BASE}/devices/me/print-jobs/claim`, { method: 'POST', headers: H }).then(unwrap);
 ok('claims the queued job', claim.jobs.length === 1, JSON.stringify(claim).slice(0, 200));
 const job = claim.jobs[0];
-ok('payload decodes to a whole number of rows', (() => {
+// The bridge divides the payload by widthBytes to find the height and refuses a
+// remainder, so these two have to agree or the job is dropped before it reaches
+// the printer. That is how a 62 x 100 raster failed against a hard-coded 50.
+ok('the job says how wide its rows are', job.widthBytes === 50, String(job.widthBytes));
+ok('payload decodes to a whole number of those rows', (() => {
   const bytes = Buffer.from(job.payload, 'base64');
-  return bytes.length % 50 === 0 && bytes.length > 0;
-})(), `${Buffer.from(job.payload, 'base64').length} bytes`);
+  return bytes.length % job.widthBytes === 0 && bytes.length > 0;
+})(), `${Buffer.from(job.payload, 'base64').length} bytes / ${job.widthBytes}`);
 
 if (job) {
   const bytes = Buffer.from(job.payload, 'base64');
@@ -136,6 +140,10 @@ if (job) {
      bytes.subarray(0, 8).toString('hex'));
   ok('payload is one 50x30 label at 400 dots wide', bytes.length === 224 * 50,
      `${bytes.length} bytes, expected ${224 * 50}`);
+  // The firmware's host suite pins this exact figure for the M110, so a change
+  // here is a change to a number two repositories agree on.
+  ok('and the M110 job is the 11,200 bytes the firmware tests against',
+     bytes.length === 11200, String(bytes.length));
 }
 
 // A second claim must not re-issue the same job

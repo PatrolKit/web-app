@@ -52,6 +52,19 @@ export interface ClaimedJob {
   seq: number;
   /** The rendered raster, base64-encoded. */
   payload: string;
+  /**
+   * Bytes per raster row, which is how the bridge knows the label's width.
+   *
+   * It used to divide the payload by a hard-coded 50 to find the height, so a
+   * 62 mm label — 72 bytes a row — was not a whole number of rows and the job
+   * was refused before it reached the printer. Bytes rather than dots because
+   * that is the value both ends already hold: the `GS v 0` header wants bytes,
+   * and a row's length is bytes.
+   *
+   * Always sent. Firmware that predates it reads 50 and is right about every
+   * M110, which is every board in the field today.
+   */
+  widthBytes: number;
 }
 
 /**
@@ -408,6 +421,9 @@ export class PrintQueueService {
           // A bare raster, not a finished job: the firmware wraps it in ESC/POS
           // itself and adds its own feed rows.
           payload: this.renderer.toRaster(rows).toString('base64'),
+          // Taken from the raster rather than the target, so it cannot disagree
+          // with the bytes beside it.
+          widthBytes: Math.ceil((rows[0]?.length ?? 0) / 8),
         });
       } catch (err) {
         // Nobody is watching a claim the way a seller watches a save, so a
