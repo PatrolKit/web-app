@@ -337,7 +337,7 @@ export default function ItemDescriber({
    */
   const [valueLabels, setValueLabels] = useState<Map<string, string>>(new Map());
 
-  const { data: taxonomy, isLoading } = useQuery<ResolvedTaxonomy>({
+  const { data: taxonomy, isLoading, error } = useQuery<ResolvedTaxonomy>({
     queryKey: ['taxonomy', orgId],
     queryFn: () => api.skiSwap.taxonomy(orgId),
     staleTime: 5 * 60 * 1000,
@@ -422,6 +422,18 @@ export default function ItemDescriber({
   const preview = previewName(value, category, attributesById, labelIndex);
 
   if (isLoading) return <p className="text-sm text-gray-500">Loading…</p>;
+
+  // A failed fetch is not an empty tree, and saying so sent people to configure
+  // something that was already there — a seller was being refused this call,
+  // and the form reported eighteen categories as none.
+  if (error) {
+    return (
+      <p className="text-sm text-amber-400">
+        The item list could not be loaded. {(error as Error)?.message ?? 'Try again.'}
+      </p>
+    );
+  }
+
   if (!taxonomy || taxonomy.categories.length === 0) {
     return (
       <p className="text-sm text-amber-400">

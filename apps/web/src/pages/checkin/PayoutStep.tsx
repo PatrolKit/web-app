@@ -40,10 +40,22 @@ export default function PayoutStep({
   /** Steps back to the address, so there is one address and one place to edit it. */
   onEditAddress: () => void;
 }) {
+  /**
+   * Opens on PayPal, but only when it costs the seller nothing to accept.
+   *
+   * Electronic payout is better for both sides — the patrol does not write,
+   * post and reconcile a cheque, and the seller is not waiting on one — so it
+   * leads. What it must not do is lead into a dead end: with no verified email
+   * or phone the only PayPal target is an ID they have to type, and Continue
+   * stays disabled until they do. A seller in that position lands on Check,
+   * which needs nothing, and PayPal is still the first thing they see.
+   */
   const [method, setMethod] = useState<Method>(
     profile.payoutMethod === 'PAYPAL' || profile.payoutMethod === 'VENMO'
       ? profile.payoutMethod
-      : 'CHECK',
+      : profile.verifiedEmail || profile.verifiedPhone
+        ? 'PAYPAL'
+        : 'CHECK',
   );
 
   // Opens on a verified segment when there is one, so the default path is the
@@ -161,7 +173,8 @@ export default function PayoutStep({
     >
       <div className="space-y-3">
         <div className="grid grid-cols-3 gap-2 p-1 bg-surface-100 rounded-lg">
-          {(['CHECK', 'PAYPAL', 'VENMO'] as Method[]).map((m) => (
+          {/* PayPal first, Check last: the order is the nudge. */}
+          {(['PAYPAL', 'VENMO', 'CHECK'] as Method[]).map((m) => (
             <button key={m} className={segmentClass(method === m)} onClick={() => setMethod(m)}>
               {m === 'CHECK' ? 'Check' : m === 'PAYPAL' ? 'PayPal' : 'Venmo'}
             </button>

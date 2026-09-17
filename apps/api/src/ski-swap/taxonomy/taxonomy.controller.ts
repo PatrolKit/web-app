@@ -58,13 +58,19 @@ export class TaxonomyController {
   /**
    * The resolved tree the item form is generated from (§4.1).
    *
-   * `ski_swap:report` rather than `:manage`, because a seller entering their own
-   * items reads this too and that is the level the ski-swap pages already
-   * fetch settings at.
+   * **Org membership, and no permission beyond it.** This sat behind
+   * `ski_swap:report` on the reasoning that a seller entering their own items
+   * reads it too — but a seller has no ski-swap permissions at all. They are a
+   * membership with a seller profile, which is how `seller-self` identifies one.
+   * So somebody checking themselves in got a 403 on the one call the item form
+   * cannot start without, and the form reported it as an empty tree.
+   *
+   * There is nothing here to protect. It is a list of the shapes an item can
+   * be — "Skis", "Boots" — and `OrgContextGuard` has already proven an active
+   * membership by the time this runs.
    */
   @Get()
   @RequireDeviceRole('ski_swap.staff_check_in')
-  @RequirePermissions('ski_swap:report')
   resolve(@Param('orgId') orgId: string, @Query() query: TaxonomyDepthQueryDto) {
     // `?depth=full` expands every deferred branch inline, for a client that
     // prefetches rather than loading on open. The default is unchanged.
@@ -72,9 +78,10 @@ export class TaxonomyController {
   }
 
   /** A deferred branch — a manufacturer's model list — fetched on open (§7.2). */
+  // Same reasoning as the resolve above: a seller opening a manufacturer's model
+  // list is the same seller, one tap later.
   @Get('nodes/:nodeId/children')
   @RequireDeviceRole('ski_swap.staff_check_in')
-  @RequirePermissions('ski_swap:report')
   children(@Param('orgId') orgId: string, @Param('nodeId') nodeId: string) {
     return this.taxonomy.children(orgId, nodeId);
   }
