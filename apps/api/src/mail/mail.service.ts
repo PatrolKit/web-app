@@ -120,6 +120,18 @@ export class MailService {
    * (see `SendOutcome`), and `failed` is returned as well as thrown so a caller
    * that catches still has the message.
    */
+  /**
+   * A receipt, whose body is built by `receipt-templates` rather than here.
+   *
+   * The other templates in this file are a heading and a button. A receipt is a
+   * document with a variable-length table in it, and it is rendered from the
+   * same `ReceiptView` the web page and the SMS use, so that the three cannot
+   * disagree about what somebody dropped off.
+   */
+  async sendReceipt(to: string, orgName: string, html: string): Promise<SendOutcome> {
+    return this.send(to, `Your ${orgName} ski swap receipt`, html);
+  }
+
   private async send(to: string, subject: string, html: string): Promise<SendOutcome> {
     if (!this.config.get<boolean>('app.outboundNotifications', false)) {
       this.logger.log({ to, subject }, '[mail suppressed] OUTBOUND_NOTIFICATIONS is off');

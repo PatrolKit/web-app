@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../lib/api';
+import { api, ApiError } from '../../lib/api';
 import { usePrinter } from '../../contexts/PrinterContext';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
@@ -17,6 +17,9 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
   const { printReceipt } = usePrinter();
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sent, setSent] = useState<{ destination: string; status: string } | null>(null);
 
   const enabled = !!seller && !!swapId;
 
@@ -28,10 +31,39 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
   });
   const items = itemsData?.items ?? [];
 
+  /**
+   * What has already gone out, so a volunteer can see whether to send again.
+   *
+   * Read from the deliveries rather than from this session's state: somebody
+   * else may have sent it, or the seller may have asked for it themselves.
+   */
+  const { data: receipts } = useQuery({
+    queryKey: ['ski-swap/receipts', orgId, swapId, seller?.id],
+    queryFn: () => api.receipts.list(orgId, seller!.id, swapId!),
+    enabled,
+    staleTime: 30_000,
+  });
+  const lastDelivery = receipts?.flatMap((r) => r.deliveries)[0] ?? null;
+
   if (!seller) return null;
 
   const isLoading = itemsLoading;
   const totalCents = items.reduce((sum, it) => sum + it.priceCents * it.inStock, 0);
+
+  async function handleSend() {
+    setSending(true);
+    setSendError(null);
+    try {
+      const res = await api.receipts.send(orgId, seller!.id, swapId!);
+      setSent({ destination: res.destination, status: res.status });
+    } catch (err) {
+      // The "no verified contact" refusal is a sentence worth showing a
+      // volunteer verbatim — it says what is missing.
+      setSendError(err instanceof ApiError ? err.message : 'Could not send the receipt');
+    } finally {
+      setSending(false);
+    }
+  }
 
   async function handlePrint() {
     setPrinting(true);
@@ -53,7 +85,7 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-white font-medium">Print Receipt</h3>
+          <h3 className="text-white font-medium">Receipt</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-lg leading-none">×</button>
         </div>
 
@@ -80,6 +112,35 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
         >
           {printing ? 'Printing…' : 'Print Receipt'}
         </button>
+
+        {/* Paper and a copy are the same receipt, which is why they sit
+            together: this modal already answers "what is on it". */}
+        <button
+          onClick={handleSend}
+          disabled={sending || isLoading || !swapId}
+          className="w-full bg-surface-100 hover:bg-surface-200 border border-gray-600 disabled:opacity-40 text-white py-2 rounded text-sm font-medium"
+        >
+          {sending ? 'Sending…' : 'Send Receipt'}
+        </button>
+
+        {sent && (
+          <p className="text-xs text-center text-green-400">
+            {sent.status === 'SUPPRESSED'
+              ? /* Notifications are off on this deployment. Saying "sent" would
+                   be a lie the volunteer cannot check. */
+                `Recorded for ${sent.destination} — sending is switched off here`
+              : `Sent to ${sent.destination}`}
+          </p>
+        )}
+        {sendError && <p className="text-red-400 text-xs text-center">{sendError}</p>}
+        {!sent && !sendError && lastDelivery && (
+          <p className="text-xs text-center text-gray-500">
+            Last sent to {lastDelivery.destination} ·{' '}
+            {new Date(lastDelivery.createdAt).toLocaleString(undefined, {
+              month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+            })}
+          </p>
+        )}
 
         {printError && (
           <div className="space-y-1">

@@ -39,6 +39,7 @@ import OrgGeneralPage from './pages/org/OrgGeneralPage';
 import OrgResortsPage from './pages/org/OrgResortsPage';
 import OrgModulesPage from './pages/org/OrgModulesPage';
 import CheckinPage from './pages/checkin/CheckinPage';
+import ReceiptPage from './pages/ReceiptPage';
 
 // Evaluated once at module load — never changes for a given page load.
 const isSellerSite = window.location.hostname.startsWith('skiswap.');
@@ -70,6 +71,9 @@ export default function App() {
               /app/auth/verify a sign-in link points at. */}
           <Route path="auth/verify" element={<VerifyPage />} />
           <Route path="s/:sellerId" element={<SellerItemsPage />} />
+          {/* A receipt link from an email or a text. Public: the token is
+              the credential, and it names one check-in rather than a seller. */}
+          <Route path="r/:token" element={<ReceiptPage />} />
           <Route path=":orgSlug/ski-swap/status" element={<SellerStatusPage />} />
           {/* Last: a bare slug is the org lookup, so it must not shadow the
               static segments above it. */}
@@ -93,6 +97,9 @@ export default function App() {
         <Route path=":orgSlug/ski-swap/status" element={<SellerStatusPage />} />
         {/* Seller website public routes */}
         <Route path="s/:sellerId" element={<SellerItemsPage />} />
+        {/* Also on the staff host, for local development where there is no
+            seller subdomain to branch on — same reason `checkin` is above. */}
+        <Route path="r/:token" element={<ReceiptPage />} />
         <Route path="dashboard" element={<AppShell />}>
           <Route index element={<DefaultDashboardRedirect />} />
           <Route path="members" element={<MembersPage />} />

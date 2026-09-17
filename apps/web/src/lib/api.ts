@@ -146,6 +146,35 @@ export const api = {
    * Self-service check-in. The first two calls are unauthenticated: the seller
    * arrives with nothing but a QR code.
    */
+  receipts: {
+    /** Staff, for any seller at this swap. */
+    send: (orgId: string, sellerId: string, swapId: string) =>
+      request<import('./api.types').SendReceiptResponse>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/receipts/send`,
+        { method: 'POST', body: JSON.stringify({ swapId }) },
+      ),
+    /** Staff, without sending: the record iOS and the sellers list both need. */
+    create: (orgId: string, sellerId: string, swapId: string, stationId?: string) =>
+      request<import('./api.types').PublicReceiptResponse>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/receipts`,
+        { method: 'POST', body: JSON.stringify({ swapId, ...(stationId ? { stationId } : {}) }) },
+      ),
+    list: (orgId: string, sellerId: string, swapId: string) =>
+      request<import('./api.types').SellerReceiptRow[]>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/receipts?swapId=${encodeURIComponent(swapId)}`,
+      ),
+    revoke: (orgId: string, receiptId: string) =>
+      request<{ revoked: true }>(`/orgs/${orgId}/ski-swap/receipts/${receiptId}/revoke`, {
+        method: 'POST',
+      }),
+    /** The seller asking for their own copy. Throttled server-side. */
+    sendMine: (orgId: string, swapId: string) =>
+      request<import('./api.types').SendReceiptResponse>(
+        `/orgs/${orgId}/ski-swap/seller/me/receipts/send`,
+        { method: 'POST', body: JSON.stringify({ swapId }) },
+      ),
+  },
+
   checkin: {
     context: (swapId: string, stationId: string) =>
       request<import('./api.types').CheckinContext>(
@@ -1089,6 +1118,11 @@ export const api = {
   },
 
   public: {
+    /** A frozen receipt, by the token from an email or a text. */
+    getReceipt: (token: string) =>
+      request<import('./api.types').PublicReceiptResponse>(
+        `/public/receipts/${encodeURIComponent(token)}`,
+      ),
     getSellerDetail: (sellerId: string) =>
       request<import('./api.types').PublicSellerDetailResponse>(`/public/sellers/${sellerId}`),
     getOrgBranding: (orgSlug: string) =>

@@ -22,7 +22,25 @@ describe('device role coverage', () => {
     });
   }
 
-  const files = controllers(SRC).map((f) => ({ file: path.relative(SRC, f), src: fs.readFileSync(f, 'utf8') }));
+  /**
+   * Comments stripped before anything is matched.
+   *
+   * Every check below asks whether a controller *uses* a guard, and a bare grep
+   * cannot tell that from a comment explaining why it does not — which made
+   * writing down the reasoning for a deliberate choice fail the test that the
+   * reasoning was about.
+   */
+  function code(src: string): string {
+    return src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      // Not `://`, so a URL in a string survives.
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  }
+
+  const files = controllers(SRC).map((f) => ({
+    file: path.relative(SRC, f),
+    src: code(fs.readFileSync(f, 'utf8')),
+  }));
 
   it('finds the controllers to check', () => {
     expect(files.length).toBeGreaterThan(10);

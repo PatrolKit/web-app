@@ -101,6 +101,7 @@ model Organization {
   taxonomyNodes   TaxonomyNode[]
   checkinStations CheckinStation[]
   printJobs       PrintJob[]
+  receipts        Receipt[]
 
   resorts           Resort[]
   timeClockEvents   TimeClockEvent[]
@@ -356,17 +357,17 @@ model SquareConfig {
 }
 
 model SkiSwap {
-  id               String   @id @default(cuid())
-  orgId            String
-  title            String
-  squareCategoryId String
-  locationId       String   @default("") // Square Location ID for inventory ops
-  active           Boolean  @default(false)
-  skuPrefix        String
+  id                   String   @id @default(cuid())
+  orgId                String
+  title                String
+  squareCategoryId     String
+  locationId           String   @default("") // Square Location ID for inventory ops
+  active               Boolean  @default(false)
+  skuPrefix            String
   /// Mirror of skuPrefix, written only while the swap is active. MySQL allows
   /// many NULLs in a unique index, so inactive swaps never collide — which is
   /// what stops two live swaps issuing the same SKU.
-  activeSkuPrefix  String?
+  activeSkuPrefix      String?
   /// Whether this swap accepts gear that arrives already carrying a numbered
   /// ticket from the stockpile, instead of a tag printed at check-in.
   ///
@@ -378,7 +379,7 @@ model SkiSwap {
   /// Per swap rather than per org because a patrol can run one swap clearing
   /// old stock and the next entirely on printed tags — and it retires itself
   /// when the stockpile is gone. Off unless somebody asks for it.
-  legacyTicketsEnabled Boolean @default(false)
+  legacyTicketsEnabled Boolean  @default(false)
   /// Whether the stockpile is the *only* way in for this swap — no printed
   /// tags, every item arriving on a numbered ticket.
   ///
@@ -386,15 +387,16 @@ model SkiSwap {
   /// off, so the pair can never say "only tickets" about a swap that takes
   /// none. Nothing enforces it yet; it is read by the staff iPad to decide what
   /// it offers.
-  legacyTicketsOnly Boolean @default(false)
-  createdBy        String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  legacyTicketsOnly    Boolean  @default(false)
+  createdBy            String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  org         Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org          Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   items        SwapItem[]
   skuCounters  SwapSkuCounter[]
   ticketRanges LegacyTicketRange[]
+  receipts     Receipt[]
 
   @@unique([orgId, title])
   @@unique([orgId, activeSkuPrefix])
@@ -417,10 +419,11 @@ model SellerProfile {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  membership       Membership    @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  membership       Membership          @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   swapItems        SwapItem[]
   assignedPrinters SwapPrinter[]
   ticketRanges     LegacyTicketRange[]
+  receipts         Receipt[]
 }
 
 /// A block of pre-printed tickets issued to a business seller for one swap.
@@ -479,10 +482,10 @@ model SwapItem {
   /// `requireConsignmentScan` on — the setting is read once, there, and never
   /// again. That is what lets the toggle change mid-swap without moving
   /// anything already on the floor.
-  consignedAt       DateTime?
+  consignedAt DateTime?
   /// Whoever accepted it: a user id, or a device id when the staff iPad did.
   /// The audit log carries which of the two, so this does not need to.
-  consignedBy       String?
+  consignedBy String?
 
   /// The CATEGORY node this item was described under. Null for an item created
   /// by an importer that only had a name (Plan 19 D12).
@@ -492,11 +495,11 @@ model SwapItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  swap     SkiSwap             @relation(fields: [swapId], references: [id], onDelete: Cascade)
-  org      Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  seller   SellerProfile?      @relation(fields: [sellerId], references: [id], onDelete: SetNull)
-  photos   SwapItemPhoto[]
-  category TaxonomyNode?       @relation("ItemCategory", fields: [categoryId], references: [id], onDelete: Restrict)
+  swap       SkiSwap             @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  org        Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  seller     SellerProfile?      @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  photos     SwapItemPhoto[]
+  category   TaxonomyNode?       @relation("ItemCategory", fields: [categoryId], references: [id], onDelete: Restrict)
   attributes SwapItemAttribute[]
 
   @@unique([swapId, sku])
@@ -684,9 +687,9 @@ model SwapSkuCounter {
 }
 
 model SkiSwapSettings {
-  id            String   @id @default(cuid())
-  orgId         String   @unique
-  labelsPerItem Int      @default(1)
+  id            String @id @default(cuid())
+  orgId         String @unique
+  labelsPerItem Int    @default(1)
 
   /// Whether a self check-in item waits for a staff member to scan it before
   /// it can be sold. Off by default: an org that has not asked for the extra
@@ -786,18 +789,18 @@ model TaxonomyNode {
   retiredAt    DateTime?
 
   // ── ATTRIBUTE only ────────────────────────────────────────────────────────
-  input TaxonomyInput?
+  input          TaxonomyInput?
   /// Where this answer sits in the derived name, ascending. Null ⇒ captured
   /// but not named — a detail worth having in a report and not on a tag.
-  nameSlot Int?
+  nameSlot       Int?
   /// Appended to a NUMBER with no space: 112 + "cm" ⇒ "112cm".
-  unit     String? @db.VarChar(12)
-  minValue Float?
-  maxValue Float?
-  step     Float?
+  unit           String?        @db.VarChar(12)
+  minValue       Float?
+  maxValue       Float?
+  step           Float?
   /// Whether a seller may type a value that is not listed, minting a PENDING
   /// org value (D7). SELECT only.
-  allowFreeEntry Boolean @default(false)
+  allowFreeEntry Boolean        @default(false)
 
   // ── Dedupe ────────────────────────────────────────────────────────────────
   /// `<orgId|global>:<parentId|root>:<label lower-cased, trimmed, spaces
@@ -807,12 +810,12 @@ model TaxonomyNode {
   /// by the client.
   dedupeKey String @unique @db.VarChar(400)
 
-  createdBy String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   /// Who approved a PENDING value, and when. Null while pending.
-  approvedBy String?
-  approvedAt DateTime?
+  approvedBy  String?
+  approvedAt  DateTime?
   /// Set when an org asks for this value to become global. Null otherwise.
   suggestedAt DateTime?
 
@@ -1115,4 +1118,94 @@ model DeviceImageRelease {
   updatedAt DateTime @updatedAt
 
   @@unique([name, version])
+}
+
+/// One check-in, frozen (Plan 24 §3).
+///
+/// A receipt is a record of a transaction — *this is what you handed over, this
+/// is what it was priced at* — so it cannot follow the edits that happen
+/// afterwards. The live view of a seller's items already exists at
+/// `/s/:sellerId` and answers a different question.
+model Receipt {
+  id        String  @id
+  orgId     String
+  swapId    String
+  sellerId  String
+  /// Where it happened. Null for a receipt minted from the sellers list.
+  stationId String?
+
+  /// The public link. Random, not derived from any id: a leaked link should
+  /// expose one check-in and nothing else.
+  token     String    @unique @db.VarChar(32)
+  /// Revokes the link without deleting the record.
+  revokedAt DateTime?
+
+  /// Denormalised so the public page renders without joining a live tree, and
+  /// so an org rename does not rewrite history.
+  orgName     String
+  orgLogoUrl  String?
+  swapTitle   String
+  sellerName  String
+  /// Where the money was going, as it was then.
+  payoutLabel String?
+
+  totalCents Int
+  itemCount  Int
+
+  createdAt DateTime @default(now())
+
+  org    Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  swap   SkiSwap       @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  seller SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  lines      ReceiptLine[]
+  deliveries ReceiptDelivery[]
+
+  @@index([orgId, swapId, sellerId, createdAt])
+}
+
+/// A line as it was.
+///
+/// `itemId` is a pointer for staff tooling; the text is the record and is never
+/// re-resolved — Plan 19's frozen-name rule, applied to the receipt rather than
+/// the item. Deliberately no foreign key: deleting an item must not reach in
+/// here and rewrite what somebody was handed.
+model ReceiptLine {
+  id         String  @id
+  receiptId  String
+  itemId     String?
+  name       String
+  sku        String
+  priceCents Int
+  position   Int
+
+  receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@index([receiptId, position])
+}
+
+/// One attempt to put a receipt in somebody's hands (Plan 24 §9).
+///
+/// `status` is `SendOutcome` written down. SUPPRESSED is the one that earns its
+/// place: OUTBOUND_NOTIFICATIONS is off outside production, and without it a
+/// staging box stores a delivery that never happened.
+model ReceiptDelivery {
+  id          String   @id
+  receiptId   String
+  /// EMAIL | SMS
+  channel     String   @db.VarChar(8)
+  /// The address or number it actually went to, as it was then.
+  destination String
+  /// SENT | SUPPRESSED | FAILED
+  status      String   @db.VarChar(12)
+  /// The provider's id for the message, when there is one.
+  providerRef String?
+  error       String?  @db.Text
+  /// Who pressed the button. Null when the seller sent it to themselves.
+  actorUserId String?
+  createdAt   DateTime @default(now())
+
+  receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@index([receiptId, createdAt])
 }

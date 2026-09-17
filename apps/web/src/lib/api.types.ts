@@ -797,3 +797,57 @@ export interface ItemAttributeInput {
   /** A value the seller typed. Mints a value the org has yet to approve. */
   freeText?: string;
 }
+
+// ─── Receipts (Plan 24) ──────────────────────────────────────────────────────
+
+export interface SendReceiptResponse {
+  receiptId: string;
+  channel: 'EMAIL' | 'SMS';
+  /** The address or number it went to, so the UI can name it. */
+  destination: string;
+  /**
+   * SUPPRESSED means the send was deliberately not made — `OUTBOUND_NOTIFICATIONS`
+   * is off. The UI must not report it as delivered.
+   */
+  status: 'SENT' | 'SUPPRESSED' | 'FAILED';
+  sentAt: string;
+  url: string;
+}
+
+export interface PublicReceiptLine {
+  name: string;
+  sku: string;
+  priceCents: number;
+}
+
+/** A frozen receipt, as the public page and the create call receive it. */
+export interface PublicReceiptResponse {
+  id: string;
+  token: string;
+  orgName: string;
+  orgLogoUrl: string | null;
+  swapTitle: string;
+  sellerName: string;
+  payoutLabel: string | null;
+  totalCents: number;
+  itemCount: number;
+  createdAt: string;
+  url: string;
+  lines: PublicReceiptLine[];
+}
+
+export interface SellerReceiptRow {
+  id: string;
+  createdAt: string;
+  itemCount: number;
+  totalCents: number;
+  revokedAt: string | null;
+  url: string;
+  deliveries: {
+    channel: 'EMAIL' | 'SMS';
+    destination: string;
+    status: 'SENT' | 'SUPPRESSED' | 'FAILED';
+    error: string | null;
+    createdAt: string;
+  }[];
+}

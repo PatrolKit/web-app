@@ -106,7 +106,16 @@ export default function CheckinPage() {
   }
 
   if (finished) {
-    return <FinishStep context={context} awaitingConsignment={finished.awaitingConsignment} />;
+    return (
+      <FinishStep
+        context={context}
+        awaitingConsignment={finished.awaitingConsignment}
+        // Which verified contact they have decides whether a copy can be sent
+        // at all, and what the button is allowed to promise.
+        verifiedEmail={joined.profile.verifiedEmail}
+        verifiedPhone={joined.profile.verifiedPhone}
+      />
+    );
   }
 
   // Only a first-time seller sees this; everyone the roster already knows goes

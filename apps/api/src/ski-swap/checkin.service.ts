@@ -6,6 +6,7 @@ import { ContactChallengeService, type IssuedChallenge } from '../auth/contact-c
 import { PrintQueueService } from './print-queue.service';
 import { PrintRecipeService, printTargetFor } from './printing/print-recipe.service';
 import { ItemService } from './item.service';
+import { ReceiptService } from './receipt.service';
 import { displayName } from '../common/util/person';
 import { isUniqueViolation } from '../common/util/prisma-errors';
 import type { SignInContext } from '../contracts/auth.contracts';
@@ -28,6 +29,7 @@ export class CheckinService {
     private readonly queue: PrintQueueService,
     private readonly recipes: PrintRecipeService,
     private readonly items: ItemService,
+    private readonly receipts: ReceiptService,
   ) {}
 
   // ─── Public: before anyone is signed in ─────────────────────────────────────
@@ -236,6 +238,20 @@ export class CheckinService {
       orgId, stationId: station.id, swapId, sellerId: seller.id, pageCount,
       // The tall tier's page one carries the masthead itself.
       withHeader: target.size.tier !== 'tall',
+    });
+
+    /*
+     * The record, frozen here because here is where it is true. Nothing is sent
+     * — that needs a button (Plan 24 §4) — but the seller is standing at the
+     * counter with the items they just described, and every later edit makes
+     * this moment harder to reconstruct.
+     *
+     * Best-effort, like the Square push below and for the same reason: a seller
+     * who has done everything right must not be held at the counter because a
+     * row could not be written. The sellers list can mint one on demand.
+     */
+    await this.receipts.snapshot(orgId, swapId, seller.id, station.id).catch((err) => {
+      this.logger.error({ err, swapId, sellerId: seller.id }, 'Could not snapshot the receipt');
     });
 
     /**

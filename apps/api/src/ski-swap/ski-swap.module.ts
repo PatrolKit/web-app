@@ -35,6 +35,12 @@ import { ScanController } from './scan.controller';
 import { ScannerController } from './scanner.controller';
 import { PrinterController } from './printer.controller';
 import { CheckinService } from './checkin.service';
+import {
+  ReceiptController,
+  SellerReceiptController,
+  PublicReceiptController,
+} from './receipt.controller';
+import { ReceiptService } from './receipt.service';
 import { CheckinController, PublicCheckinController } from './checkin.controller';
 import { StationService } from './station.service';
 import { StationController } from './station.controller';
@@ -77,8 +83,12 @@ import { IdentityModule } from '../common/identity/identity.module';
     TaxonomyController,
     TaxonomyAdminController,
     TaxonomyAdminIconController,
+    ReceiptController,
+    SellerReceiptController,
+    PublicReceiptController,
   ],
   providers: [
+    ReceiptService,
     IdempotencyService,
     SkuService,
     LabelRendererService,
