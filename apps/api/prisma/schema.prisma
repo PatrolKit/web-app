@@ -718,10 +718,6 @@ model SkiSwapSettings {
   /// displayed as a percentage, converted only at the edges (Plan 25 §3).
   commissionBasisPoints Int @default(0)
 
-  /// Below this, a payout costs more to send than it is worth (Plan 25 §7).
-  /// The line is held rather than batched, and shows as such.
-  payoutMinimumCents Int @default(100)
-
   /// The PIN that unlocks the admin sheet on a `ski_swap.staff_check_in` iPad.
   ///
   /// Four digits, and stored in the clear on purpose: this gates a settings
@@ -1318,7 +1314,7 @@ model PayoutLine {
   netCents        Int
 
   /// PENDING | APPROVED | SENDING | SENT | UNCLAIMED | FAILED | RETURNED |
-  /// PAID_BY_CHECK | DONATED | BELOW_MINIMUM
+  /// PAID_BY_CHECK | DONATED
   status     String  @db.VarChar(16)
   /// Why it is where it is: PayPal's failure reason, or that a held item is
   /// under review.

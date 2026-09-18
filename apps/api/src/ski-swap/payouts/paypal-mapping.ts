@@ -16,7 +16,7 @@ export type PayPalItemStatus = (typeof PAYPAL_ITEM_STATUSES)[number];
 /** What we call it. */
 export type LineStatus =
   | 'PENDING' | 'APPROVED' | 'SENDING' | 'SENT' | 'UNCLAIMED'
-  | 'FAILED' | 'RETURNED' | 'PAID_BY_CHECK' | 'DONATED' | 'BELOW_MINIMUM';
+  | 'FAILED' | 'RETURNED' | 'PAID_BY_CHECK' | 'DONATED';
 
 export interface MappedStatus {
   status: LineStatus;

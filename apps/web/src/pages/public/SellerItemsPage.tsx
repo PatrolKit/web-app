@@ -117,11 +117,6 @@ function describe(payout: PublicSellerPayout): { line: string; tone: string } {
       };
     case 'DONATED':
       return { line: 'You gave this to the patrol. Thank you.', tone: 'bg-surface-100 text-gray-400' };
-    case 'BELOW_MINIMUM':
-      return {
-        line: 'Too small to send electronically. The patrol will arrange another way.',
-        tone: 'bg-surface-100 text-gray-400',
-      };
     default:
       return {
         line: payout.method === 'CHECK'

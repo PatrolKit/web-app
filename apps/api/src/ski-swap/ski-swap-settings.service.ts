@@ -5,8 +5,6 @@ import type { DevicePinResponse } from '../contracts/devices.contracts';
 import { basisPointsToPercent, percentToBasisPoints } from './payouts/money';
 
 const DEFAULT_LABELS_PER_ITEM = 1;
-/** A dollar. Below it, the fee outweighs the payout (Plan 25 §7). */
-const DEFAULT_PAYOUT_MINIMUM_CENTS = 100;
 
 @Injectable()
 export class SkiSwapSettingsService {
@@ -26,7 +24,6 @@ export class SkiSwapSettingsService {
       // its cut is takes nothing, rather than a number somebody guessed.
       commissionPercent: basisPointsToPercent(row?.commissionBasisPoints ?? 0),
       commissionBasisPoints: row?.commissionBasisPoints ?? 0,
-      payoutMinimumCents: row?.payoutMinimumCents ?? DEFAULT_PAYOUT_MINIMUM_CENTS,
     };
   }
 
@@ -40,7 +37,6 @@ export class SkiSwapSettingsService {
       labelsPerItem?: number;
       requireConsignmentScan?: boolean;
       commissionPercent?: string | number;
-      payoutMinimumCents?: number;
     },
     actorId?: string,
   ): Promise<SkiSwapSettingsResponse> {
@@ -66,16 +62,12 @@ export class SkiSwapSettingsService {
           ? { requireConsignmentScan: data.requireConsignmentScan }
           : {}),
         ...(commissionBasisPoints !== undefined ? { commissionBasisPoints } : {}),
-        ...(data.payoutMinimumCents !== undefined
-          ? { payoutMinimumCents: data.payoutMinimumCents }
-          : {}),
       },
       create: {
         orgId,
         labelsPerItem: data.labelsPerItem ?? DEFAULT_LABELS_PER_ITEM,
         requireConsignmentScan: data.requireConsignmentScan ?? false,
         commissionBasisPoints: commissionBasisPoints ?? 0,
-        payoutMinimumCents: data.payoutMinimumCents ?? DEFAULT_PAYOUT_MINIMUM_CENTS,
       },
     });
 
@@ -103,7 +95,6 @@ export class SkiSwapSettingsService {
       taxonomyVersion: row.taxonomyVersion,
       commissionPercent: basisPointsToPercent(row.commissionBasisPoints),
       commissionBasisPoints: row.commissionBasisPoints,
-      payoutMinimumCents: row.payoutMinimumCents,
     };
   }
 

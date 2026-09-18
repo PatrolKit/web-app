@@ -19,7 +19,7 @@ const sale = (over: Partial<PosSaleLine> = {}): PosSaleLine => ({
   refundedQuantity: 0, soldAt: SOLD_AT, ...over,
 });
 
-const opts = { commissionBasisPoints: 2000, minimumCents: 100 };
+const opts = { commissionBasisPoints: 2000 };
 
 describe('buildRun', () => {
   it('owes the listed price and takes the commission from it', () => {
@@ -70,15 +70,20 @@ describe('buildRun', () => {
     expect(lines[0]).toMatchObject({ status: 'DONATED', netCents: 8_000, destination: null });
   });
 
-  /** §7's floor. Forty cents costs more to send than it is worth. */
-  it('holds an electronic payout below the minimum', () => {
+  /**
+   * There is no floor. A run once held anything under a dollar back, on the
+   * reasoning that the fee outweighed it — but the money is the seller's
+   * either way, and a payout nobody sends is a payout somebody has to chase.
+   * Forty cents goes out like four hundred.
+   */
+  it('sends a payout however small it is', () => {
     const { lines } = buildRun(
       [item({ priceCents: 50 })], [seller()], [sale({ collectedCents: 50 })], opts,
     );
-    expect(lines[0].status).toBe('BELOW_MINIMUM');
+    expect(lines[0]).toMatchObject({ status: 'PENDING', netCents: 40, statusNote: null });
   });
 
-  it('does not hold a small check — posting it costs the same either way', () => {
+  it('sends a small check on the same terms', () => {
     const { lines } = buildRun(
       [item({ priceCents: 50 })], [seller({ method: 'CHECK', target: null })], [sale({ collectedCents: 50 })], opts,
     );

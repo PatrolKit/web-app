@@ -541,8 +541,6 @@ export interface SkiSwapSettings {
   commissionPercent: string;
   /** The same number the server does the arithmetic with. */
   commissionBasisPoints: number;
-  /** Below this, an electronic payout is held rather than sent. */
-  payoutMinimumCents: number;
 }
 
 // ─── Payouts (Plan 25) ──────────────────────────────────────────────────
@@ -559,7 +557,7 @@ export interface PayPalConfigResponse {
 
 export type PayoutLineStatus =
   | 'PENDING' | 'APPROVED' | 'SENDING' | 'SENT' | 'UNCLAIMED'
-  | 'FAILED' | 'RETURNED' | 'PAID_BY_CHECK' | 'DONATED' | 'BELOW_MINIMUM';
+  | 'FAILED' | 'RETURNED' | 'PAID_BY_CHECK' | 'DONATED';
 
 export type PayoutMethod = 'PAYPAL' | 'VENMO' | 'CHECK' | 'DONATE';
 

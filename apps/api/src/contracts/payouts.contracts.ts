@@ -117,7 +117,6 @@ export const PAYOUT_LINE_STATUSES = [
   'RETURNED',
   'PAID_BY_CHECK',
   'DONATED',
-  'BELOW_MINIMUM',
 ] as const;
 
 export type PayoutLineStatus = (typeof PAYOUT_LINE_STATUSES)[number];

@@ -32,7 +32,6 @@ const STATUS_LABEL: Record<PayoutLineStatus, string> = {
   RETURNED: 'Returned',
   PAID_BY_CHECK: 'Check sent',
   DONATED: 'Donated',
-  BELOW_MINIMUM: 'Under minimum',
 };
 
 const STATUS_TONE: Record<PayoutLineStatus, string> = {
@@ -45,7 +44,6 @@ const STATUS_TONE: Record<PayoutLineStatus, string> = {
   RETURNED: 'bg-red-500/10 text-red-400 border-red-800/50',
   PAID_BY_CHECK: 'bg-green-500/10 text-green-400 border-green-800/50',
   DONATED: 'bg-surface-100 text-gray-400 border-gray-700',
-  BELOW_MINIMUM: 'bg-surface-100 text-gray-400 border-gray-700',
 };
 
 type Tab = 'payouts' | 'checks' | 'discounts';

@@ -67,6 +67,8 @@ for (const s of priorSwaps) {
 await prisma.skiSwap.deleteMany({ where: { orgId: org.id, title: 'Payout smoke swap' } });
 
 const SELLERS = [
+  // `tiny` sells one dollar of gear: eighty cents after the patrol's cut, which
+  // is the smallest payout the system can produce and goes out like any other.
   { key: 'paypal',  phone: '+15550198201', method: 'PAYPAL', target: 'EMAIL',    handle: null,       email: `${SEED}-paypal@patrolkit.invalid` },
   { key: 'venmo',   phone: '+15550198202', method: 'VENMO',  target: 'VENMO_ID', handle: '@smoke-venmo', email: null },
   { key: 'check',   phone: '+15550198203', method: 'CHECK',  target: null,       handle: null,       email: null },
@@ -80,8 +82,8 @@ for (const s of SELLERS) {
 
 await prisma.skiSwapSettings.upsert({
   where: { orgId: org.id },
-  update: { commissionBasisPoints: 2000, payoutMinimumCents: 100 },
-  create: { orgId: org.id, commissionBasisPoints: 2000, payoutMinimumCents: 100 },
+  update: { commissionBasisPoints: 2000 },
+  create: { orgId: org.id, commissionBasisPoints: 2000 },
 });
 
 const swap = await prisma.skiSwap.create({
@@ -200,10 +202,13 @@ ok('a Venmo seller is addressed by handle',
   byName('venmo').destinationType === 'VENMO_ID' && byName('venmo').destination === '@smoke-venmo');
 ok('a donated payout is not pending anything',
   byName('donate').status === 'DONATED');
-ok('a payout under the minimum is held rather than batched',
-  byName('tiny').status === 'BELOW_MINIMUM',
-  `$0.80 net, against a $1.00 minimum — got ${byName('tiny').status}`);
-ok('a check line is never below the minimum',
+// There is no floor. The money is the seller's however small it is, and a
+// payout nobody sends is a payout somebody has to chase.
+ok('a payout of eighty cents is treated like any other',
+  byName('tiny').status === 'PENDING' && byName('tiny').netCents === 80 &&
+  byName('tiny').statusNote === null,
+  `got ${byName('tiny').status} / ${byName('tiny').netCents} / ${byName('tiny').statusNote}`);
+ok('a check line starts where every other line starts',
   byName('check').status === 'PENDING');
 
 // Money the org took that nobody is being paid for. Kept on the run rather than
@@ -312,30 +317,42 @@ console.log('\n── The sweep, for the webhook that never comes ────�
 // Same proof by the other road: approve and send the Venmo line, then resolve
 // it with the sweep instead of a webhook. If only one of the two paths worked,
 // the other would be silently covering for it.
+//
+// The eighty-cent line rides along, because there is no floor and the way to
+// show that is a batch with eighty cents in it — not a status that merely
+// failed to say otherwise.
 await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/approve`, {
-  method: 'POST', body: JSON.stringify({ lineIds: [byName('venmo').id], approved: true }),
+  method: 'POST',
+  body: JSON.stringify({ lineIds: [byName('venmo').id, byName('tiny').id], approved: true }),
 }).then(unwrap);
 await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/send`, {
-  method: 'POST', body: JSON.stringify({ expectedLineCount: 1 }),
+  method: 'POST', body: JSON.stringify({ expectedLineCount: 2 }),
 }).then(unwrap);
 
 const venmoSending = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(unwrap);
 ok('the second send is its own batch, under a new attempt',
   stubCalls('createBatch').length === 3 &&
   stubCalls('createBatch')[2].senderBatchId !== both[0].senderBatchId);
+ok('an eighty-cent payout is actually handed to PayPal',
+  stubCalls('createBatch')[2].items.some((i) => i.amountCents === 80),
+  JSON.stringify(stubCalls('createBatch')[2].items.map((i) => i.amountCents)));
 ok('the Venmo line is in flight',
   venmoSending.lines.find((l) => l.id === byName('venmo').id).status === 'SENDING');
+const venmoItem = stubCalls('createBatch')[2].items
+  .find((i) => i.senderItemId === byName('venmo').id);
 ok('a Venmo payout is addressed as a user handle',
-  stubCalls('createBatch')[2].items[0].recipient.recipient_type === 'USER_HANDLE' &&
-  stubCalls('createBatch')[2].items[0].recipient.recipient_wallet === 'Venmo');
+  venmoItem?.recipient.recipient_type === 'USER_HANDLE' &&
+  venmoItem?.recipient.recipient_wallet === 'Venmo');
 ok('...with the @ stripped, so two spellings are one destination',
-  stubCalls('createBatch')[2].items[0].recipient.receiver === 'smoke-venmo');
+  venmoItem?.recipient.receiver === 'smoke-venmo');
 
 await api(`/orgs/${org.id}/ski-swap/payout-runs/reconcile`, { method: 'POST' }).then(unwrap);
 
 const swept = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(unwrap);
 ok('the sweep resolves a line no webhook arrived for',
   swept.lines.find((l) => l.id === byName('venmo').id).status === 'SENT');
+ok('...including the eighty-cent one',
+  swept.lines.find((l) => l.id === byName('tiny').id).status === 'SENT');
 ok('...and a line already paid is not touched again',
   swept.lines.find((l) => l.id === paypalLine.id).sentAt === paid.sentAt);
 
@@ -382,7 +399,7 @@ const closed = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(
 ok('closing a run closes it', closed.status === 'CLOSED');
 
 const lateApprove = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/approve`, {
-  method: 'POST', body: JSON.stringify({ lineIds: [byName('tiny').id], approved: true }),
+  method: 'POST', body: JSON.stringify({ lineIds: [byName('donate').id], approved: true }),
 });
 ok('a closed run approves nothing further', lateApprove.status === 409, `HTTP ${lateApprove.status}`);
 

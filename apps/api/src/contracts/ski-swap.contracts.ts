@@ -701,8 +701,6 @@ export const UpdateSkiSwapSettingsSchema = z
     commissionPercent: z
       .union([z.string().regex(/^\d{1,3}(\.\d{1,2})?%?$/), z.number().min(0).max(100)])
       .optional(),
-    /** Below this, an electronic payout is held rather than sent. */
-    payoutMinimumCents: z.number().int().min(0).max(100_00).optional(),
   })
   .strict();
 
@@ -717,7 +715,6 @@ export const SkiSwapSettingsResponseSchema = z.object({
    * percentage back out of a string.
    */
   commissionBasisPoints: z.number().int(),
-  payoutMinimumCents: z.number().int(),
   /**
    * The version of this org's item-description tree, so a client can tell
    * whether its cached copy is stale without downloading one to find out.

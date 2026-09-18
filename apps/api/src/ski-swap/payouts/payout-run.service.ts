@@ -63,7 +63,6 @@ export class PayoutRunService {
 
     const settings = await this.prisma.skiSwapSettings.findUnique({ where: { orgId } });
     const commissionBasisPoints = settings?.commissionBasisPoints ?? 0;
-    const minimumCents = settings?.payoutMinimumCents ?? 100;
 
     // The window. Defaults to the swap's whole life, because the alternative —
     // guessing at its dates — can only ever guess short, and a sale outside the
@@ -128,7 +127,7 @@ export class PayoutRunService {
       verifiedPhone: s.membership.user.verifiedPhone,
     }));
 
-    const built = buildRun(items, sellers, sales, { commissionBasisPoints, minimumCents });
+    const built = buildRun(items, sellers, sales, { commissionBasisPoints });
     const runId = createId();
 
     await this.prisma.$transaction(async (tx) => {

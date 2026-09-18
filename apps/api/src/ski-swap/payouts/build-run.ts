@@ -1,5 +1,5 @@
 import type { PosSaleLine } from '../pos/pos.adapter';
-import { formatCents, splitCommission } from './money';
+import { splitCommission } from './money';
 import type { PayoutMethod, PayoutTarget } from './paypal-mapping';
 
 /**
@@ -55,7 +55,7 @@ export interface BuiltLine {
   grossCents: number;
   commissionCents: number;
   netCents: number;
-  status: 'PENDING' | 'DONATED' | 'BELOW_MINIMUM';
+  status: 'PENDING' | 'DONATED';
   statusNote: string | null;
   items: BuiltLineItem[];
 }
@@ -75,8 +75,6 @@ export interface BuiltRun {
 
 export interface BuildOptions {
   commissionBasisPoints: number;
-  /** Below this a payout is held rather than sent (§7). */
-  minimumCents: number;
 }
 
 /**
@@ -155,11 +153,6 @@ export function buildRun(
     if (seller.method === 'DONATE') {
       status = 'DONATED';
       statusNote = 'The seller gave this payout to the patrol';
-    } else if (seller.method !== 'CHECK' && split.netCents < opts.minimumCents) {
-      // Sending forty cents costs more than it is worth. Held rather than
-      // batched, and visible, because the alternative is finding it as a fee.
-      status = 'BELOW_MINIMUM';
-      statusNote = `Below the ${formatCents(opts.minimumCents)} minimum for an electronic payout`;
     } else if (seller.method !== 'CHECK' && !destination) {
       // Not refused at the batch, where it would fail one item of many, but
       // here, where somebody is looking at a screen and can fix it.

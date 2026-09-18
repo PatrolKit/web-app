@@ -982,7 +982,6 @@ export const api = {
         requireConsignmentScan?: boolean;
         /** A percentage, as typed: "20", "20.5", "20.5%". Never basis points. */
         commissionPercent?: string;
-        payoutMinimumCents?: number;
       },
     ) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`, {

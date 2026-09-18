@@ -436,12 +436,16 @@ describes it as under review, which can sit for days, and a treasurer asking
 "why has this not landed" deserves better than a spinner. `DENIED` is not in the
 table because it is a *batch* status, not an item one.
 
-### A floor
+### No floor
 
-Sending $0.40 costs more than it is worth and clutters a batch. A run refuses to
-send a line below a configured minimum — default $1.00 — and marks it for the
-next swap or a check. Stated here because the alternative is discovering it as a
-PayPal fee.
+Every payout is sent, however small.
+
+An earlier draft of this plan held anything under a configured minimum back, on
+the reasoning that sending $0.40 costs more than it is worth. That reasoning is
+the patrol's, and the money is the seller's. A line parked for being small is
+still owed, still has to be explained to whoever asks, and still has to be paid
+eventually — by check, by hand, or at the next swap. The fee is cheaper than the
+errand.
 
 ---
 

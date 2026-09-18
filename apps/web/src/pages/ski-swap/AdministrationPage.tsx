@@ -287,36 +287,24 @@ function PayoutsSection({ orgId }: { orgId: string }) {
   });
 
   const [percent, setPercent] = useState<string | null>(null);
-  const [minimum, setMinimum] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: (data: { commissionPercent?: string; payoutMinimumCents?: number }) =>
+    mutationFn: (data: { commissionPercent?: string }) =>
       api.skiSwap.updateSettings(orgId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ski-swap/settings', orgId] });
       setPercent(null);
-      setMinimum(null);
     },
   });
 
   // The stored value until somebody starts typing, then theirs. Without this
   // the field fights the user every time the query refetches.
   const shownPercent = percent ?? (settings ? settings.commissionPercent.replace('%', '') : '');
-  const shownMinimum =
-    minimum ?? (settings ? (settings.payoutMinimumCents / 100).toFixed(2) : '');
 
   function savePercent() {
     if (percent === null || !settings) return;
     if (percent.trim() === settings.commissionPercent.replace('%', '')) { setPercent(null); return; }
     mutation.mutate({ commissionPercent: percent.trim() });
-  }
-
-  function saveMinimum() {
-    if (minimum === null || !settings) return;
-    const cents = Math.round(Number(minimum) * 100);
-    if (!Number.isFinite(cents) || cents < 0) { setMinimum(null); return; }
-    if (cents === settings.payoutMinimumCents) { setMinimum(null); return; }
-    mutation.mutate({ payoutMinimumCents: cents });
   }
 
   // What the current cut does to a round number, worked out the same way the
@@ -360,28 +348,6 @@ function PayoutsSection({ orgId }: { orgId: string }) {
               className="w-24 bg-surface-100 border border-gray-700 rounded pl-3 pr-7 py-2 text-sm text-white text-right"
             />
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
-          </div>
-        </div>
-
-        <div className="flex items-start justify-between gap-4 border-t border-gray-800 pt-4">
-          <div className="space-y-1">
-            <p className="text-sm text-white">Smallest payout worth sending</p>
-            <p className="text-xs text-gray-500">
-              A PayPal or Venmo payout under this is held for review rather than sent. Checks are
-              not affected.
-            </p>
-          </div>
-          <div className="relative shrink-0">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
-            <input
-              inputMode="decimal"
-              value={shownMinimum}
-              onChange={(e) => setMinimum(e.target.value)}
-              onBlur={saveMinimum}
-              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-              aria-label="Smallest payout worth sending, in dollars"
-              className="w-24 bg-surface-100 border border-gray-700 rounded pl-7 pr-3 py-2 text-sm text-white text-right"
-            />
           </div>
         </div>
 
