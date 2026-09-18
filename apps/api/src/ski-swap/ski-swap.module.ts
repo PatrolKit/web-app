@@ -63,6 +63,7 @@ import { PayoutRunService } from './payouts/payout-run.service';
 import { PayoutRunController } from './payouts/payout-run.controller';
 import { PayoutNudgeService } from './payouts/payout-nudge.service';
 import { PayoutWebhookController } from './payouts/payout-webhook.controller';
+import { StubPayPalClient, StubPosAdapterFactory, payoutStubsEnabled } from './payouts/stub.providers';
 import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { IdentityModule } from '../common/identity/identity.module';
@@ -107,12 +108,18 @@ import { IdentityModule } from '../common/identity/identity.module';
     CredentialCryptoService,
     SquareClientService,
     SquareConfigService,
-    { provide: PayPalClient, useClass: HttpPayPalClient },
+    // The test doubles only when `PAYOUTS_STUB=1`, which throws in production.
+    // Chosen here rather than inside the services so that nothing downstream
+    // has to know, or can be tempted to check, which one it is talking to.
+    { provide: PayPalClient, useClass: payoutStubsEnabled() ? StubPayPalClient : HttpPayPalClient },
     PayPalConfigService,
     PayoutRunService,
     PayoutNudgeService,
     S3Service,
-    { provide: PosAdapterFactory, useClass: SquarePosAdapterFactory },
+    {
+      provide: PosAdapterFactory,
+      useClass: payoutStubsEnabled() ? StubPosAdapterFactory : SquarePosAdapterFactory,
+    },
     SwapService,
     SellerService,
     ItemService,
