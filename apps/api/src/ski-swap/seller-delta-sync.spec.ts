@@ -68,6 +68,8 @@ function row(over: {
         email: null, phone: '+15550199001',
         street: '12 Elm Street', city: 'Burlington', state: 'VT', zip: '05401',
         emailVerifiedAt: null, phoneVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
+        // Verified by phone and not by email, so a receipt would go by text.
+        verifiedEmail: null, verifiedPhone: '+15550199001',
         payoutMethod: 'CHECK', payoutTarget: null, payoutHandle: null,
         ...over.user,
       },

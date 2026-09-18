@@ -273,6 +273,8 @@ export interface SellerResponse {
   payoutHandle: string | null;
   emailVerifiedAt: string | null;
   phoneVerifiedAt: string | null;
+  /** Where a receipt would go, or null when there is nowhere to send one. */
+  receiptChannel: 'EMAIL' | 'SMS' | null;
   /** Set once removed. Only ever populated for a caller passing `updatedSince`. */
   deletedAt: string | null;
   createdAt: string;

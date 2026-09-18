@@ -95,6 +95,7 @@ type SellerRow = {
       email: string | null; phone: string | null;
       street: string | null; city: string | null; state: string | null; zip: string | null;
       emailVerifiedAt: Date | null; phoneVerifiedAt: Date | null;
+      verifiedEmail: string | null; verifiedPhone: string | null;
       payoutMethod: string | null; payoutTarget: string | null; payoutHandle: string | null;
     };
   };
@@ -124,6 +125,9 @@ export function toSellerResponse(s: SellerRow): SellerResponse {
     payoutHandle: u.payoutHandle,
     emailVerifiedAt: u.emailVerifiedAt?.toISOString() ?? null,
     phoneVerifiedAt: u.phoneVerifiedAt?.toISOString() ?? null,
+    // The same precedence the send uses, from the same columns. A claim in
+    // `email` is not somewhere a receipt may go.
+    receiptChannel: u.verifiedEmail ? 'EMAIL' : u.verifiedPhone ? 'SMS' : null,
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.membership.updatedAt.toISOString(),
     deletedAt: deletedAt?.toISOString() ?? null,

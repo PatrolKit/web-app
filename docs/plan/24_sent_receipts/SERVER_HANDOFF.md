@@ -55,7 +55,9 @@ station; omit it otherwise.
   "totalCents": 13500,
   "itemCount": 2,
   "createdAt": "2026-09-17T13:42:00.000Z",
+  "logoImageUrl": null,
   "url": "https://skiswap.patrolkit.io/r/Xk3pQ9vR2mT8nL5wZ7yB4cD6fH1jK0sA",
+  "trackUrl": "https://skiswap.patrolkit.io/s/q6nn54sqqzohao2ov4ftlo7o",
   "lines": [
     { "name": "Rossignol 172cm Red Skis", "sku": "RCP-R-0001", "priceCents": 4500 },
     { "name": "Snowboard", "sku": "RCP-R-0002", "priceCents": 9000 }
@@ -85,8 +87,14 @@ a copy sendable later, so a failure is worth retrying rather than swallowing.
 
 ```
 POST /orgs/:orgId/ski-swap/sellers/:sellerId/receipts/send
+Idempotency-Key: <a key of your choosing>      // optional, but send one
 { "swapId": "..." }
 ```
+
+**Send the key.** A send is the one write here that is not idempotent by nature:
+without a key, every call is another message in somebody's inbox. With one, a
+repeat replays the first result and sends nothing — including when the first
+attempt failed, so a genuine retry needs a new key.
 
 ```json
 {
@@ -172,13 +180,16 @@ copying if the iOS seller screen has room; skippable for a first pass.
 
 ## 6. Permissions
 
-Everything above needs `ski_swap:manage` on a **user** token.
+`create` and `send` take either a user token with `ski_swap:manage` or a device
+token whose role is `ski_swap.staff_check_in`. `list` and `revoke` are user-only.
 
-Note for anyone wiring these into an existing controller: they are deliberately
-*not* reachable by a device token. `PermissionsGuard` checks a device against its
-role rather than against permission keys, so anything a device can reach, every
-provisioned device can reach — and a barcode scanner has no business emailing a
-seller.
+> **Corrected.** This section first said user-token only, on the reasoning that
+> anything a device can reach every provisioned device can reach. That is true
+> of a *class-level* `@RequireDeviceRole` — `PermissionsGuard` resolves it with
+> `getAllAndOverride([handler, class])` — but not of one named per route, which
+> admits exactly the check-in stations. The iPad has no user token and no way to
+> get one, so as first written the one change §1 asks for was impossible. See
+> `HANDOFF_REPLY_2.md`.
 
 ---
 
@@ -190,5 +201,7 @@ seller.
   that matters; Send is a convenience the web already has.
 - **Offline.** If the iPad prints while offline, the record does not exist yet.
   Creating it on reconnect still works — but the snapshot will be of the items as
-  they are *then*. If that matters, say so and we will take a `createdAt` from
-  the client.
+  they are *then*. **Answered:** iOS declined a client `createdAt` and declined
+  sending us the lines, on the grounds that the server should keep deriving the
+  amounts on a document a member of the public receives. Agreed; nothing to
+  build.

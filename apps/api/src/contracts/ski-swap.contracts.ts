@@ -155,6 +155,18 @@ export const SellerResponseSchema = z.object({
   emailVerifiedAt: z.string().datetime().nullable(),
   phoneVerifiedAt: z.string().datetime().nullable(),
   /**
+   * Where a receipt would go, or null if there is nowhere to send one.
+   *
+   * Derived from the *verified* contacts, by the same rule the send itself
+   * uses — so a client can disable the button rather than discovering the
+   * refusal by pressing it. The channel rather than a boolean, because the
+   * button says which it will be.
+   *
+   * Deliberately not the address: knowing a receipt can be sent is not the
+   * same as needing the contact, and this rides on every seller in the list.
+   */
+  receiptChannel: z.enum(['EMAIL', 'SMS']).nullable(),
+  /**
    * Set once the seller has been removed, from the swap or from the org.
    * Returned only to a caller passing `updatedSince` — a soft removal exists so
    * that an offline client can learn about it, which it cannot do from a list

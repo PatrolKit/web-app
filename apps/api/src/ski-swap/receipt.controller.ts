@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard, type AuthenticatedUser } from '../common/guards/jwt-auth.guard';
+import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
+import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -13,16 +15,23 @@ import { ReceiptService } from './receipt.service';
 import { CreateReceiptDto, SendReceiptDto } from '../contracts/receipt.contracts';
 
 /**
- * Sending a receipt, from the staff side.
+ * Receipts, from the staff side.
  *
- * Guarded by permissions, and deliberately not by `OrDeviceAuthGuard` the way
- * the sellers controller is. `PermissionsGuard` checks a *device* against its
- * role instead of against permission keys, so anything reachable by a device
- * is reachable by every provisioned device — and a scanner has no business
- * emailing a seller.
+ * Reachable by a person with `ski_swap:manage`, and — on the two routes that
+ * carry `@RequireDeviceRole` — by a check-in iPad, which has no user token and
+ * never will: it authenticates with provisioning credentials and there is no
+ * sign-in anywhere in that app.
+ *
+ * The role is named per route, never on the class. `PermissionsGuard` resolves
+ * `@RequireDeviceRole` with `getAllAndOverride([handler, class])`, so a
+ * class-level annotation would open every route in here to every device that
+ * matched — which is the trap, rather than device access itself. Per route the
+ * set is exactly the check-in stations, which already create the sellers and
+ * items a receipt is a snapshot of. `list` and `revoke` name no role and so
+ * refuse device tokens outright, which is the guard's default.
  */
 @Controller('orgs/:orgId/ski-swap')
-@UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireModule('ski_swap')
 export class ReceiptController {
   constructor(private readonly receipts: ReceiptService) {}
@@ -41,6 +50,7 @@ export class ReceiptController {
    */
   @Post('sellers/:sellerId/receipts')
   @RequirePermissions('ski_swap:manage')
+  @RequireDeviceRole('ski_swap.staff_check_in')
   create(
     @Param('orgId') orgId: string,
     @Param('sellerId') sellerId: string,
@@ -51,17 +61,26 @@ export class ReceiptController {
 
   @Post('sellers/:sellerId/receipts/send')
   @RequirePermissions('ski_swap:manage')
+  @RequireDeviceRole('ski_swap.staff_check_in')
   send(
     @Param('orgId') orgId: string,
     @Param('sellerId') sellerId: string,
     @Body() body: SendReceiptDto,
-    @CurrentUser() user: AuthenticatedUser,
+    // Undefined for a device: a station has no person behind it, and the
+    // delivery row records that as nobody rather than inventing an actor.
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    // A send is the one write here that is not naturally idempotent — it puts
+    // a message in a member of the public's inbox. A client that queues sends
+    // for an offline counter retries them, and a retry must not be a second
+    // email. See `ReceiptService.send`.
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     return this.receipts.send({
       orgId,
       swapId: body.swapId,
       sellerId,
-      actorUserId: user.userId,
+      actorUserId: user?.userId ?? null,
+      idempotencyKey,
     });
   }
 
@@ -102,6 +121,7 @@ export class SellerReceiptController {
     @Param('orgId') orgId: string,
     @Body() body: SendReceiptDto,
     @CurrentSeller() seller: CallerSellerProfile,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     return this.receipts.send({
       orgId,
@@ -109,6 +129,7 @@ export class SellerReceiptController {
       sellerId: seller.id,
       // Nobody pressed it on their behalf.
       actorUserId: null,
+      idempotencyKey,
     });
   }
 }

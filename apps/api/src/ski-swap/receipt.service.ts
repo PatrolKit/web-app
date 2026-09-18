@@ -4,6 +4,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { randomBytes } from 'crypto';
 import type { Receipt, ReceiptLine } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { IdempotencyService } from '../common/services/idempotency.service';
 import { MailService } from '../mail/mail.service';
 import { SmsService } from '../sms/sms.service';
 import { displayName } from '../common/util/person';
@@ -54,7 +55,14 @@ export interface SendResult {
   channel: ReceiptChannel;
   destination: string;
   status: 'SENT' | 'SUPPRESSED' | 'FAILED';
-  sentAt: Date;
+  /**
+   * ISO, not a `Date`.
+   *
+   * A replayed send comes back through JSON, where a `Date` has already become
+   * a string — so returning one here would mean the first call and its retry
+   * had different types for the same field.
+   */
+  sentAt: string;
   url: string;
 }
 
@@ -72,6 +80,7 @@ export class ReceiptService {
     private readonly mail: MailService,
     private readonly sms: SmsService,
     private readonly config: ConfigService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   /**
@@ -186,8 +195,28 @@ export class ReceiptService {
     swapId: string;
     sellerId: string;
     actorUserId?: string | null;
+    idempotencyKey?: string;
   }): Promise<SendResult> {
     const { orgId, swapId, sellerId } = params;
+
+    /*
+     * The one write here that is not idempotent by nature.
+     *
+     * `currentFor` is — the same items give back the same receipt — but the
+     * dispatch under it is not: every call puts another message in somebody's
+     * inbox and writes another delivery row. A client that queues sends for an
+     * offline counter retries them on a schedule it controls, and a lost
+     * response would otherwise become two emails to a member of the public, or
+     * five. So a retry with the same key replays the first answer instead.
+     *
+     * Scoped to the org, like every other key here: the value is client-chosen,
+     * and two callers landing on the same string must not read each other's
+     * results.
+     */
+    if (params.idempotencyKey) {
+      const cached = await this.idempotency.getCached(`receipt-send:${orgId}`, params.idempotencyKey);
+      if (cached) return cached as unknown as SendResult;
+    }
     const receipt = await this.currentFor(orgId, swapId, sellerId);
     const view = await this.view(receipt);
 
@@ -242,14 +271,28 @@ export class ReceiptService {
       },
     });
 
-    return {
+    const result: SendResult = {
       receiptId: receipt.id,
       channel,
       destination,
       status,
-      sentAt: delivery.createdAt,
+      sentAt: delivery.createdAt.toISOString(),
       url: view.url,
     };
+
+    // Cached whatever happened, including a failure: a retry of a send that
+    // failed should report that failure rather than quietly trying again on a
+    // schedule the caller did not choose. A caller who means to try again sends
+    // a new key.
+    if (params.idempotencyKey) {
+      await this.idempotency.save(
+        `receipt-send:${orgId}`,
+        params.idempotencyKey,
+        result as unknown as Record<string, unknown>,
+      );
+    }
+
+    return result;
   }
 
   /**

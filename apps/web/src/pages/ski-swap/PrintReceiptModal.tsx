@@ -117,11 +117,23 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
             together: this modal already answers "what is on it". */}
         <button
           onClick={handleSend}
-          disabled={sending || isLoading || !swapId}
+          disabled={sending || isLoading || !swapId || !seller.receiptChannel}
           className="w-full bg-surface-100 hover:bg-surface-200 border border-gray-600 disabled:opacity-40 text-white py-2 rounded text-sm font-medium"
         >
-          {sending ? 'Sending…' : 'Send Receipt'}
+          {sending
+            ? 'Sending…'
+            : seller.receiptChannel === 'SMS'
+              ? 'Text Receipt'
+              : 'Email Receipt'}
         </button>
+        {/* Said before the press rather than after it. The server refuses this
+            case in a sentence, but an action that cannot work should not look
+            like one that can. */}
+        {!seller.receiptChannel && (
+          <p className="text-xs text-center text-gray-500">
+            No verified email or phone on file, so there is nowhere to send it.
+          </p>
+        )}
 
         {sent && (
           <p className="text-xs text-center text-green-400">

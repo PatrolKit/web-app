@@ -4,7 +4,10 @@
 //   node apps/api/scripts/smoke-sent-receipts.mjs
 //
 // Sign-in endpoints are throttled to five attempts a minute, and this script
-// registers two sellers. Leave a minute between runs.
+// registers three sellers and signs a staff user in. Leave a minute between
+// runs — and note that everything needing a sign-in happens first for the same
+// reason: the device and idempotency checks at the foot need neither, so they
+// must not sit between two registrations and push one over the limit.
 //
 // Everything below is about how a receipt is snapshotted, chosen a channel for,
 // and recorded — so the first thing asserted is that the sellers have items at
@@ -218,5 +221,79 @@ const mineBody = await unwrap(mine.clone());
 ok('a seller can send their own copy', mine.ok, String(mine.status));
 ok('to themselves, not to whoever the path names',
    mineBody.destination === SMS_PHONE, `${mineBody.destination}`);
+
+// ─── The check-in iPad, which has no user token and never will ───────────────
+//
+// It authenticates with provisioning credentials, so if these routes were
+// user-only the one change the iOS side has to make — recording the receipt it
+// prints — would be impossible. The role is named per route rather than on the
+// controller: a print bridge holds a different one and must still be refused.
+const ipadSecret = 'receipt-smoke-ipad-secret';
+await prisma.device.deleteMany({ where: { clientId: `${SEED}-ipad` } });
+await prisma.device.create({
+  data: { orgId: org.id, name: 'Receipt iPad', clientId: `${SEED}-ipad`,
+          secretHash: await argon2.hash(ipadSecret), role: 'ski_swap.staff_check_in' },
+});
+const ipadToken = await fetch(`${BASE}/auth/device/token`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ clientId: `${SEED}-ipad`, clientSecret: ipadSecret }),
+}).then(unwrap);
+const DH = { authorization: `Bearer ${ipadToken.accessToken}`, 'content-type': 'application/json' };
+
+const deviceCreate = await fetch(
+  `${BASE}/orgs/${org.id}/ski-swap/sellers/${mailer.sellerId}/receipts`,
+  { method: 'POST', headers: DH, body: JSON.stringify({ swapId: swap.id, stationId: station.id }) },
+);
+ok('a check-in station can record the receipt it prints', deviceCreate.ok, String(deviceCreate.status));
+
+const deviceSend = await fetch(
+  `${BASE}/orgs/${org.id}/ski-swap/sellers/${mailer.sellerId}/receipts/send`,
+  { method: 'POST', headers: DH, body: JSON.stringify({ swapId: swap.id }) },
+);
+ok('and send one from the counter', deviceSend.ok, String(deviceSend.status));
+
+// The bridge shares the building, not the authority.
+const bridgeToken = await fetch(`${BASE}/auth/device/token`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ clientId: `${SEED}-bridge`, clientSecret: 'smoke-secret' }),
+}).then(unwrap);
+const bridgeSend = await fetch(
+  `${BASE}/orgs/${org.id}/ski-swap/sellers/${mailer.sellerId}/receipts/send`,
+  { method: 'POST',
+    headers: { authorization: `Bearer ${bridgeToken.accessToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ swapId: swap.id }) },
+);
+ok('a print bridge cannot email a seller', bridgeSend.status === 403, String(bridgeSend.status));
+
+// `list` names no device role, so the guard's default refuses a device.
+const deviceList = await fetch(
+  `${BASE}/orgs/${org.id}/ski-swap/sellers/${mailer.sellerId}/receipts?swapId=${swap.id}`,
+  { headers: DH },
+);
+ok('and a station cannot read the delivery history', deviceList.status === 403, String(deviceList.status));
+
+// ─── Sending twice with one key is one message ───────────────────────────────
+//
+// The iPad queues sends when the counter is offline and retries them. Without
+// this a lost response is a second email to a member of the public.
+const idemKey = `${RUN}-send-once`;
+const beforeRows = await prisma.receiptDelivery.count({ where: { receipt: { sellerId: mailer.sellerId } } });
+const first = await fetch(
+  `${BASE}/orgs/${org.id}/ski-swap/sellers/${mailer.sellerId}/receipts/send`,
+  { method: 'POST', headers: { ...SH, 'idempotency-key': idemKey }, body: JSON.stringify({ swapId: swap.id }) },
+).then(unwrap);
+const replay = await fetch(
+  `${BASE}/orgs/${org.id}/ski-swap/sellers/${mailer.sellerId}/receipts/send`,
+  { method: 'POST', headers: { ...SH, 'idempotency-key': idemKey }, body: JSON.stringify({ swapId: swap.id }) },
+).then(unwrap);
+const afterRows = await prisma.receiptDelivery.count({ where: { receipt: { sellerId: mailer.sellerId } } });
+ok('a retried send is not a second message', afterRows === beforeRows + 1, `${beforeRows} → ${afterRows}`);
+// Field by field, not by stringifying: the replay comes back out of a JSON
+// column, which does not promise to have kept the key order.
+const sameAnswer = (a, b) =>
+  Object.keys(a).length === Object.keys(b).length &&
+  Object.keys(a).every((k) => a[k] === b[k]);
+ok('and the retry replays the first answer', sameAnswer(first, replay),
+   `${first.receiptId}/${first.status} vs ${replay.receiptId}/${replay.status}`);
 
 await prisma.$disconnect();
