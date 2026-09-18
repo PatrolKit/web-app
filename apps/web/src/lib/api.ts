@@ -542,6 +542,18 @@ export const api = {
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items${qs ? `?${qs}` : ''}`
       );
     },
+    /**
+     * Accepts every item one seller is still waiting on.
+     *
+     * Scoped by seller on the server rather than by item ids from the screen:
+     * the list is a page of fifty, and a shop's inventory is not.
+     */
+    consignAllForSeller: (orgId: string, swapId: string, sellerId: string) =>
+      request<{ consigned: number; pushing: number }>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/consign`,
+        { method: 'POST', body: JSON.stringify({ sellerId }) },
+      ),
+
     /** Who staff may upload a file for: everyone holding tickets in this swap. */
     listTicketSellers: (orgId: string, swapId: string) =>
       request<import('./api.types').TicketSeller[]>(

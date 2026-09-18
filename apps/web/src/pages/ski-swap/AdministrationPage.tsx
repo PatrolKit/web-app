@@ -244,6 +244,13 @@ function AcceptingItemsSection({ orgId }: { orgId: string }) {
             <p className="text-xs text-gray-500">
               Applies to items checked in from now on — anything already on the floor stays there.
             </p>
+            {/* Said here because the alternative is an administrator with this
+                off, looking at a shop's inventory sitting unaccepted, and
+                concluding the toggle is broken. */}
+            <p className="text-xs text-gray-500">
+              This is about the check-in table. Items a shop enters or uploads itself always wait
+              for staff, whatever this says — nobody has seen them yet.
+            </p>
           </div>
           <button
             type="button"

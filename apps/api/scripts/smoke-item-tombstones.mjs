@@ -15,9 +15,11 @@
 //   - the deleted item's ticket number can be issued again, which is the
 //     unique index actually releasing it rather than a query pretending to;
 //   - a withdrawn tag scans as nothing;
-//   - a seller can withdraw an item they have tagged but nobody has accepted,
-//     and cannot once it is consigned — which on every path is the same moment
-//     it becomes sellable in Square, imported rows included.
+//   - a seller can withdraw an item nobody has accepted, and cannot once staff
+//     have — which on every path is the same moment it becomes sellable;
+//   - who uploaded a file decides whether its rows arrive accepted;
+//   - one press accepts everything a shop was waiting on, and pressing it twice
+//     accepts nothing.
 //
 // Sign-in is throttled to five a minute and this script signs in twice — once
 // as staff, once as the seller, because the guard on withdrawing an accepted
@@ -260,11 +262,11 @@ ok('staff at the counter can remove the very same item',
 
 console.log('\n── A file staff uploaded for a shop ─────────────────────');
 
-// An import writes through `create`, which stamps `consignedAt` — deliberately,
-// so a shop's uploaded inventory reaches Square instead of sitting unsellable
-// while the same items typed one at a time go on the floor. Which means the
-// consignment guard applies to imported rows as much as to typed ones, and
-// this says so out loud rather than leaving it to be discovered at a counter.
+// Who uploaded the file decides whether its rows arrive received.
+//
+// Staff uploading for a shop means the boxes are in the room and a volunteer is
+// loading the list that came with them. A shop uploading its own file means a
+// list of what it intends to bring, and nobody has seen any of it.
 await prisma.legacyTicketRange.create({
   data: {
     id: createId(), orgId: org.id, swapId: swap.id, sellerId: sellerProfile.id,
@@ -272,38 +274,102 @@ await prisma.legacyTicketRange.create({
   },
 });
 
-const csv = 'sku,name,price\n78001,Imported skis,120.00\n78002,Imported poles,25.00\n';
-const form = new FormData();
-form.append('file', new Blob([csv], { type: 'text/csv' }), 'inventory.csv');
-form.append('sellerId', sellerProfile.id);
+const csv = (rows) => 'sku,name,price\n' + rows.map((r) => `${r},Imported ${r},50.00`).join('\n') + '\n';
+const upload = async (url, tokenToUse, rows, extra = {}) => {
+  const form = new FormData();
+  form.append('file', new Blob([csv(rows)], { type: 'text/csv' }), 'inventory.csv');
+  for (const [k, v] of Object.entries(extra)) form.append(k, v);
+  return fetch(`${BASE}${url}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${tokenToUse}` },
+    body: form,
+  }).then(unwrap);
+};
 
-const imported = await fetch(`${BASE}${ITEMS}/import`, {
-  method: 'POST',
-  headers: { authorization: `Bearer ${token}` },
-  body: form,
-}).then(unwrap);
-
+const staffUpload = await upload(`${ITEMS}/import`, token, ['78001', '78002'], {
+  sellerId: sellerProfile.id,
+});
 ok('staff can upload a file for a shop',
-  Array.isArray(imported) && imported.every((r) => r.outcome === 'created'),
-  JSON.stringify(imported).slice(0, 160));
+  Array.isArray(staffUpload) && staffUpload.every((r) => r.outcome === 'created'),
+  JSON.stringify(staffUpload).slice(0, 160));
 
-const importedRows = await prisma.swapItem.findMany({
+const staffRows = await prisma.swapItem.findMany({
   where: { swapId: swap.id, sku: { in: ['78001', '78002'] } },
 });
-ok('...and every imported row is consigned on the way in',
-  importedRows.length === 2 && importedRows.every((r) => r.consignedAt !== null),
-  `${importedRows.length} rows, ${importedRows.filter((r) => r.consignedAt).length} consigned`);
+ok('...and every row staff uploaded is received on the way in',
+  staffRows.length === 2 && staffRows.every((r) => r.consignedAt !== null),
+  `${staffRows.length} rows, ${staffRows.filter((r) => r.consignedAt).length} received`);
+ok('so the shop cannot delete a row from it',
+  (await sellerApi(`/orgs/${org.id}/ski-swap/seller/me/items/${staffRows[0]?.id}`,
+    { method: 'DELETE' })).status === 409);
 
-const sellerTriesImported = await sellerApi(
-  `/orgs/${org.id}/ski-swap/seller/me/items/${importedRows[0]?.id}`,
-  { method: 'DELETE' },
+const shopUpload = await upload(
+  `/orgs/${org.id}/ski-swap/seller/me/items/import`, sellerToken, ['78010', '78011', '78012'],
+  { swapId: swap.id },
 );
-ok('so the shop cannot delete a row from it either',
-  sellerTriesImported.status === 409, `HTTP ${sellerTriesImported.status}`);
+ok('a shop can upload its own file',
+  Array.isArray(shopUpload) && shopUpload.every((r) => r.outcome === 'created'),
+  JSON.stringify(shopUpload).slice(0, 160));
 
-const staffDeletesImported = await api(`${ITEMS}/${importedRows[0]?.id}`, { method: 'DELETE' });
-ok('...and staff, who put it there, can take it away',
-  staffDeletesImported.status === 204, `HTTP ${staffDeletesImported.status}`);
+const shopRows = await prisma.swapItem.findMany({
+  where: { swapId: swap.id, sku: { in: ['78010', '78011', '78012'] } },
+});
+ok('...and none of it is received, because nobody has seen it',
+  shopRows.length === 3 && shopRows.every((r) => r.consignedAt === null),
+  `${shopRows.length} rows, ${shopRows.filter((r) => r.consignedAt).length} received`);
+ok('...nor in Square, which is the same fact said twice',
+  shopRows.every((r) => r.squareVariationId === null));
+ok('so the shop can still take one back off its own list',
+  (await sellerApi(`/orgs/${org.id}/ski-swap/seller/me/items/${shopRows[0]?.id}`,
+    { method: 'DELETE' })).status === 204);
+
+console.log('\n── Staff accepting a delivery ─────────────────────────');
+
+const waitingBefore = await prisma.swapItem.count({
+  where: { swapId: swap.id, sellerId: sellerProfile.id, consignedAt: null, deletedAt: null },
+});
+ok('the shop has items waiting to be accepted', waitingBefore > 0, `${waitingBefore} waiting`);
+
+const batch = await api(`${ITEMS}/consign`, {
+  method: 'POST', body: JSON.stringify({ sellerId: sellerProfile.id }),
+}).then(unwrap);
+ok('one press accepts everything they were waiting on',
+  batch.consigned === waitingBefore, `accepted ${batch.consigned} of ${waitingBefore}`);
+
+const waitingAfter = await prisma.swapItem.count({
+  where: { swapId: swap.id, sellerId: sellerProfile.id, consignedAt: null, deletedAt: null },
+});
+ok('...leaving none behind', waitingAfter === 0, `${waitingAfter} still waiting`);
+
+const stamped = await prisma.swapItem.findMany({
+  where: { swapId: swap.id, sellerId: sellerProfile.id, deletedAt: null },
+  select: { consignedBy: true, consignedAt: true },
+});
+ok('...and recording who accepted them',
+  stamped.every((r) => r.consignedAt !== null) &&
+  stamped.some((r) => r.consignedBy === staff.id),
+  JSON.stringify(stamped.map((r) => r.consignedBy)).slice(0, 120));
+
+// Idempotent: two volunteers pressing it must not restamp what the first
+// accepted, which would move the time it happened.
+const firstTimes = stamped.map((r) => r.consignedAt?.toISOString()).sort();
+const again = await api(`${ITEMS}/consign`, {
+  method: 'POST', body: JSON.stringify({ sellerId: sellerProfile.id }),
+}).then(unwrap);
+ok('pressing it twice accepts nothing the second time', again.consigned === 0,
+  `accepted ${again.consigned}`);
+
+const afterSecond = await prisma.swapItem.findMany({
+  where: { swapId: swap.id, sellerId: sellerProfile.id, deletedAt: null },
+  select: { consignedAt: true },
+});
+ok('...and does not move when they were accepted',
+  JSON.stringify(afterSecond.map((r) => r.consignedAt?.toISOString()).sort()) ===
+    JSON.stringify(firstTimes));
+
+ok('a shop cannot delete what has now been accepted',
+  (await sellerApi(`/orgs/${org.id}/ski-swap/seller/me/items/${shopRows[1]?.id}`,
+    { method: 'DELETE' })).status === 409);
 
 await finish();
 

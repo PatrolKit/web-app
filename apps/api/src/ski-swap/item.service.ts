@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  Logger,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -45,6 +46,8 @@ function isDuplicateSku(err: unknown): boolean {
 
 @Injectable()
 export class ItemService {
+  private readonly logger = new Logger(ItemService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly posFactory: PosAdapterFactory,
@@ -137,11 +140,9 @@ export class ItemService {
       /**
        * The seller entered this themselves, with no staff present.
        *
-       * Only these can be made to wait for a scan — anything a staff member
-       * typed was already in somebody's hands, and a second handling buys
-       * nothing. Waiting also needs a station: a business seller listing stock
-       * from their own desk entered it themselves too, and there is nobody at
-       * a table to come and look through a box that has not arrived.
+       * Only these can be made to wait: anything a staff member typed or
+       * uploaded was already in somebody's hands, and a second handling buys
+       * nothing.
        */
       selfService?: boolean;
     },
@@ -176,11 +177,34 @@ export class ItemService {
       }
     }
 
-    // Read once, here, and answered onto the row. Nothing consults it again.
-    const awaitsConsignment =
-      data.selfService && station
+    /**
+     * Whether this item waits for a staff member before it can sell.
+     *
+     * Read once, here, and answered onto the row. Nothing consults it again,
+     * which is what lets the org toggle change mid-swap without moving anything
+     * already on the floor.
+     *
+     * Three cases, and the middle one is the point:
+     *
+     *   staff entered it       — consigned. It was in their hands as they typed.
+     *   seller, at a station   — the org's choice. Somebody is standing at the
+     *                            table with the gear, so an org that wants the
+     *                            extra scan turns `requireConsignmentScan` on
+     *                            and an org that does not leaves it off.
+     *   seller, anywhere else  — always waits. A shop listing stock from its own
+     *                            desk, or uploading a file the night before, has
+     *                            handed over nothing yet. Nobody has seen the
+     *                            goods, and an item nobody has seen must not be
+     *                            sellable.
+     *
+     * That last case used to be consigned at birth, which put a shop's whole
+     * uploaded inventory on the register before a box of it had arrived.
+     */
+    const awaitsConsignment = data.selfService
+      ? station
         ? (await this.settings.get(orgId)).requireConsignmentScan
-        : false;
+        : true
+      : false;
 
     const item = await this.create(
       orgId,
@@ -550,9 +574,8 @@ export class ItemService {
    * back into it. Nothing is written unless every row passes.
    *
    * The writes go through `create` rather than straight to Prisma, which is the
-   * whole point: an item made by hand here would carry no `consignedAt` and
-   * never reach Square, so a shop's uploaded inventory would sit unaccepted and
-   * unsellable while the same items typed in one at a time went on the floor.
+   * whole point: it is the one place that knows about consignment, Square, and
+   * how the two relate, and a row made by hand here would agree with none of it.
    */
   /**
    * The staff path: a file a shop sent in, uploaded on their behalf.
@@ -573,14 +596,25 @@ export class ItemService {
       throw new BadRequestException('This swap does not accept legacy tickets.');
     }
     await this.sellerService.findOrThrow(orgId, sellerId);
-    return this.importTicketItems(orgId, swapId, sellerId, rows);
+    // Staff uploaded it, so the goods are already accounted for.
+    return this.importTicketItems(orgId, swapId, sellerId, rows, { selfService: false });
   }
 
+  /**
+   * Writes a checked file.
+   *
+   * `selfService` decides whether the rows arrive consigned, and it is the only
+   * thing that differs between the two callers. A file staff uploaded was sent
+   * in by a shop and handed to a volunteer to load, so the goods are accounted
+   * for; a file the shop uploaded itself is a list of what they intend to
+   * bring, and nobody has seen any of it.
+   */
   async importTicketItems(
     orgId: string,
     swapId: string,
     sellerId: string,
     rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+    opts: { selfService: boolean },
   ): Promise<ImportRowResult[]> {
     const results = await this.tickets.checkImportRows(swapId, sellerId, rows);
     if (results.some((r) => r.outcome === 'error')) return results;
@@ -600,6 +634,7 @@ export class ItemService {
         quantity: 1,
         sellerId,
         sku,
+        awaitsConsignment: opts.selfService,
       });
 
       // `create` has no `alreadyPrinted` — that belongs to the station path —
@@ -638,6 +673,76 @@ export class ItemService {
     if (!item) throw new NotFoundException(`No item in this swap has tag ${tag}.`);
     const inventoryMap = await this.fetchInventoryMap(orgId, swap, [item]);
     return this.toResponse(item, inventoryMap);
+  }
+
+  /**
+   * Accepts everything a seller is still waiting on, in one go.
+   *
+   * What staff press when a shop's boxes arrive and the list of what is in them
+   * was uploaded a week ago. The alternative is scanning two hundred tags to
+   * say something they already know.
+   *
+   * The rows are consigned in a single write and the answer goes back
+   * immediately; the Square pushes run behind it. Two hundred sequential calls
+   * to Square is minutes, and holding an HTTP request open for that would trade
+   * a screen that works for one that times out halfway with no way to tell what
+   * landed.
+   *
+   * Losing a push is already a state this app has a name for: the item shows as
+   * `Not in Square` on the items page, with a button to push it again. So a
+   * crash mid-batch leaves the same visible, fixable condition as a Square
+   * outage does, rather than a new one.
+   */
+  async consignAllForSeller(
+    orgId: string,
+    swapId: string,
+    sellerId: string,
+    actorId: string | null,
+  ): Promise<{ consigned: number; pushing: number }> {
+    await this.findSwapOrThrow(orgId, swapId);
+
+    const waiting = await this.prisma.swapItem.findMany({
+      where: { orgId, swapId, sellerId, consignedAt: null, deletedAt: null },
+      select: { id: true },
+    });
+    if (!waiting.length) return { consigned: 0, pushing: 0 };
+
+    await this.prisma.swapItem.updateMany({
+      // `consignedAt: null` repeated in the update's own filter, not just the
+      // read above: two volunteers pressing this at once must not restamp what
+      // the first one accepted, or the second would move the time it happened.
+      where: { orgId, swapId, sellerId, consignedAt: null, deletedAt: null },
+      data: { consignedAt: new Date(), consignedBy: actorId },
+    });
+
+    void this.pushConsignedBatch(orgId, swapId, waiting.map((w) => w.id));
+
+    return { consigned: waiting.length, pushing: waiting.length };
+  }
+
+  /**
+   * The Square half of a batch consign, after the caller has been answered.
+   *
+   * Never throws. Nothing is waiting on it, so a rejection here would be an
+   * unhandled one, and the item's own state already records what happened.
+   */
+  private async pushConsignedBatch(orgId: string, swapId: string, itemIds: string[]) {
+    let failed = 0;
+    for (const itemId of itemIds) {
+      const result = await this.syncToPos(orgId, swapId, itemId).catch((err: unknown) => {
+        this.logger.error({ err, itemId }, 'Square push threw during batch consign');
+        return null;
+      });
+      // `PosSyncResult` is 'synced' | 'skipped' | 'failed'. `skipped` is an org
+      // with no Square, which is not a failure and has nothing to re-push.
+      if (result === null || result === 'failed') failed++;
+    }
+    if (failed) {
+      this.logger.warn(
+        { orgId, swapId, failed, of: itemIds.length },
+        'Batch consign finished with items not in Square',
+      );
+    }
   }
 
   /**

@@ -88,6 +88,9 @@ export default function ItemsPage() {
         deleteItem: (iid) => api.skiSwap.deleteItem(orgId, swapId, iid),
         uploadPhoto: (iid, file) => api.skiSwap.uploadPhoto(orgId, swapId, iid, file),
         deletePhoto: (iid, pid) => api.skiSwap.deletePhoto(orgId, swapId, iid, pid),
+        // Staff only. The seller's own page does not pass this, so the button
+        // never appears there — accepting your own goods is not a thing.
+        consignAllForSeller: (sid, sellerId) => api.skiSwap.consignAllForSeller(orgId, sid, sellerId),
       }}
     />
 

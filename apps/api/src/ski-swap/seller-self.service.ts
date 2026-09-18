@@ -104,7 +104,11 @@ export class SellerSelfService {
     rows: { sku: string; name?: string; description?: string; priceCents: number }[],
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
-    return this.itemService.importTicketItems(orgId, swapId, seller.id, rows);
+    // The shop's own file: a list of what they mean to bring, none of which
+    // anybody has seen. It waits for staff like everything else they enter.
+    return this.itemService.importTicketItems(orgId, swapId, seller.id, rows, {
+      selfService: true,
+    });
   }
 
   /**

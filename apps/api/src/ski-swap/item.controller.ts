@@ -87,6 +87,31 @@ export class ItemController {
   }
 
   /**
+   * Accepts everything one seller is still waiting on.
+   *
+   * Scoped to a seller rather than to the screen: the items page shows fifty
+   * rows at a time and filters what it has, so a button acting on "what you can
+   * see" would leave the rest of a shop's inventory behind without saying so.
+   *
+   * Staff only, and no device role — a batch acceptance is a decision about a
+   * pile of goods somebody has looked at, which is the scanner's whole job to
+   * do one at a time.
+   */
+  @Post('consign')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:manage')
+  consignAll(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Body('sellerId') sellerId: string,
+    @Req() req: Request & { user?: { userId: string }; device?: { deviceId: string } },
+  ) {
+    if (!sellerId) throw new BadRequestException('Choose which seller to accept items for.');
+    const actorId = req.user?.userId ?? req.device?.deviceId ?? null;
+    return this.itemService.consignAllForSeller(orgId, swapId, sellerId, actorId);
+  }
+
+  /**
    * A shop's inventory, uploaded by staff on their behalf.
    *
    * The seller is named in the body rather than taken from the caller — that is

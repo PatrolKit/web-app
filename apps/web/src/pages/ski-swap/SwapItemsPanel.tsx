@@ -13,7 +13,17 @@ import { isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterServic
 // ─── API adapter interface ────────────────────────────────────────────────────
 
 export interface SwapItemsPanelApi {
-  fetchItems: (swapId: string, opts?: { query?: string }) => Promise<{ items: ItemResponse[]; total: number }>;
+  /**
+   * `sellerId` is applied by the server, not by filtering what came back.
+   *
+   * The list is a page of fifty. A seller scope that only hid rows already
+   * fetched would disagree with "accept everything this seller is waiting on",
+   * which acts on all of them — and the button would quietly do more than the
+   * screen showed.
+   */
+  fetchItems: (swapId: string, opts?: { query?: string; sellerId?: string }) => Promise<{ items: ItemResponse[]; total: number }>;
+  /** Accepts every item this seller is still waiting on. Staff pages only. */
+  consignAllForSeller?: (swapId: string, sellerId: string) => Promise<{ consigned: number; pushing: number }>;
   createItem: (swapId: string, data: CreateItemInput) => Promise<ItemResponse>;
   patchItem: (itemId: string, data: PatchItemInput) => Promise<ItemResponse>;
   deleteItem: (itemId: string) => Promise<void>;
@@ -120,14 +130,73 @@ function describeRanges(ranges: { startNumber: number; endNumber: number }[]): s
  * unscanned item is not also "not in Square" as far as anybody acting on this
  * screen is concerned, it is unscanned, and scanning it fixes both.
  */
-export type ItemStateKey = 'awaiting_scan' | 'not_in_square' | 'for_sale' | 'sold';
+export type ItemStateKey = 'not_received' | 'not_in_square' | 'for_sale' | 'sold';
 
 export const ITEM_STATE_FILTERS: { value: ItemStateKey; label: string }[] = [
-  { value: 'awaiting_scan', label: 'Awaiting scan' },
+  { value: 'not_received', label: 'Not yet received' },
   { value: 'not_in_square', label: 'Not in Square' },
   { value: 'for_sale', label: 'For sale' },
   { value: 'sold', label: 'Sold' },
 ];
+
+/**
+ * Accepts everything one seller is still waiting on.
+ *
+ * Says the number before it does anything, and says it again afterwards. A
+ * button labelled "Consign all" on a screen showing a page of fifty invites
+ * exactly one question — all of what? — so the count comes from the server's
+ * total for this seller rather than from the rows on screen.
+ */
+function ConsignAllButton({
+  sellerName, waiting, total, pending, result, error, onConsign,
+}: {
+  sellerName: string;
+  /** Waiting on this page. Only ever used to decide whether to offer at all. */
+  waiting: number;
+  total: number;
+  pending: boolean;
+  result?: { consigned: number; pushing: number };
+  error: unknown;
+  onConsign: () => void;
+}) {
+  if (result) {
+    return (
+      <span className="text-sm text-gray-400">
+        {result.consigned === 0
+          ? 'Nothing was waiting.'
+          : `Accepted ${result.consigned} item${result.consigned === 1 ? '' : 's'} — they appear in Square shortly.`}
+      </span>
+    );
+  }
+  if (!waiting) return null;
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => {
+          if (confirm(
+            `Accept everything ${sellerName} is still waiting on?\n\n` +
+            'This puts their items in Square and they go on sale. It applies to ' +
+            'all of their waiting items, not just the ones on this page.',
+          )) onConsign();
+        }}
+        disabled={pending}
+        className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm px-3 py-1.5 rounded"
+      >
+        {pending ? 'Accepting…' : `Accept ${sellerName}'s items`}
+      </button>
+      {total > 0 && <span className="text-xs text-gray-500">{total} in this swap</span>}
+      {!!error && (
+        <span className="text-xs text-red-400">
+          {/* `Error`, not `ApiError`: this panel takes its calls as a prop and
+              has no business knowing which client made them. ApiError extends
+              Error, so the server's sentence still comes through. */}
+          {error instanceof Error ? error.message : 'Could not accept them'}
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function itemState(item: ItemResponse): {
   key: ItemStateKey;
@@ -142,10 +211,13 @@ export function itemState(item: ItemResponse): {
 
   if (!item.consignedAt) {
     return {
-      key: 'awaiting_scan',
-      label: 'Awaiting scan',
+      key: 'not_received',
+      // Not "Awaiting scan" any more. A shop's uploaded inventory sits here too
+      // and nobody is going to scan it — staff accept the boxes when they
+      // arrive. The word has to be true for both.
+      label: 'Not yet received',
       tone: 'bg-gray-700/50 text-gray-300',
-      title: 'A volunteer has not accepted this item yet. It is not in Square and cannot sell.',
+      title: 'Staff have not accepted this item yet. It is not in Square and cannot sell.',
     };
   }
 
@@ -196,11 +268,16 @@ export default function SwapItemsPanel({
   const { printItem } = usePrinter();
   const [form, setForm] = useState<ItemFormData>(emptyForm);
 
-  const queryKey = [queryKeyPrefix, orgId, swapId, query];
+  const [sellerFilter, setSellerFilter] = useState('');
+
+  const queryKey = [queryKeyPrefix, orgId, swapId, query, sellerFilter];
 
   const { data, isLoading } = useQuery({
     queryKey,
-    queryFn: () => panelApi.fetchItems(swapId!, query ? { query } : undefined),
+    queryFn: () => panelApi.fetchItems(swapId!, {
+      ...(query ? { query } : {}),
+      ...(sellerFilter ? { sellerId: sellerFilter } : {}),
+    }),
     enabled: !!swapId,
   });
 
@@ -257,6 +334,18 @@ export default function SwapItemsPanel({
   const deleteMutation = useMutation({
     mutationFn: (itemId: string) => panelApi.deleteItem(itemId),
     onSettled: () => qc.invalidateQueries({ queryKey }),
+  });
+
+  const consignAll = useMutation({
+    mutationFn: () => panelApi.consignAllForSeller!(swapId!, sellerFilter),
+    // The rows are consigned before this answers, but their Square pushes are
+    // still running behind it — so what comes back now will show some of them
+    // as `Not in Square` until they land. Refetched again shortly after, which
+    // is cheaper than making the operator wonder whether to press it twice.
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey });
+      setTimeout(() => void qc.invalidateQueries({ queryKey }), 4000);
+    },
   });
 
   const uploadPhotoMutation = useMutation({
@@ -362,6 +451,19 @@ export default function SwapItemsPanel({
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+          {sellers && (
+            <select
+              value={sellerFilter}
+              onChange={(e) => setSellerFilter(e.target.value)}
+              aria-label="Filter by seller"
+              className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white max-w-52"
+            >
+              <option value="">All sellers</option>
+              {sellers.map((sl) => (
+                <option key={sl.id} value={sl.id}>{sl.displayName}</option>
+              ))}
+            </select>
+          )}
           <select
             value={printFilter}
             onChange={(e) => setPrintFilter(e.target.value as '' | 'not_printed' | 'printed')}
@@ -373,6 +475,17 @@ export default function SwapItemsPanel({
           </select>
         </div>
         <div className="flex gap-2 items-center">
+        {sellerFilter && panelApi.consignAllForSeller && (
+          <ConsignAllButton
+            sellerName={sellers?.find((sl) => sl.id === sellerFilter)?.displayName ?? 'this seller'}
+            waiting={(data?.items ?? []).filter((i) => !i.consignedAt).length}
+            total={data?.total ?? 0}
+            pending={consignAll.isPending}
+            result={consignAll.data}
+            error={consignAll.error}
+            onConsign={() => consignAll.mutate()}
+          />
+        )}
         {toolbarExtra}
         {canManage && (
           <button

@@ -174,14 +174,30 @@ describe('deciding at check-in whether an item waits', () => {
     expect(rows[0].consignedAt).not.toBeNull();
   });
 
-  it('never makes an item entered away from a station wait', async () => {
-    // No station means a business seller at their own desk, listing stock they
-    // will bring in. There is nobody standing at a table to scan it.
-    const { service, rows } = harness({ requireConsignmentScan: true });
+  it('always makes an item entered away from a station wait', async () => {
+    // No station means a shop at its own desk, listing stock it intends to
+    // bring. Nobody has seen any of it, and an item nobody has seen must not be
+    // sellable — so this waits regardless of the setting, which is about the
+    // counter and has nothing to say about a box that has not arrived.
+    //
+    // It used to be consigned at birth, which put a shop's whole uploaded
+    // inventory on the register before any of it turned up.
+    const { service, rows } = harness({ requireConsignmentScan: false });
 
     await service.createAtStation('org-1', 'swap-1', { ...ITEM, selfService: true });
 
-    expect(rows[0].consignedAt).not.toBeNull();
+    expect(rows[0].consignedAt).toBeNull();
+  });
+
+  it('...and does not reach Square while it waits', async () => {
+    // The two halves of the same fact. A row marked as waiting that was pushed
+    // anyway is sellable, and the mark is then decoration.
+    const { service, rows, pushed } = harness({ requireConsignmentScan: false });
+
+    await service.createAtStation('org-1', 'swap-1', { ...ITEM, selfService: true });
+
+    expect(rows[0].consignedAt).toBeNull();
+    expect(pushed).toEqual([]);
   });
 
   it('leaves the floor alone when the toggle goes on mid-swap', async () => {
