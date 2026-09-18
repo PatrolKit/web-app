@@ -196,6 +196,8 @@ export class ReceiptService {
     orgId: string;
     swapId: string;
     sellerId: string;
+    /** The caller's choice. Absent, the server resolves it — see `resolveChannel`. */
+    channel?: ReceiptChannel | null;
     actorUserId?: string | null;
     idempotencyKey?: string;
   }): Promise<SendResult> {
@@ -228,22 +230,7 @@ export class ReceiptService {
     });
     const user = seller.membership.user;
 
-    /*
-     * Verified contacts only.
-     *
-     * `email` and `phone` are claims — indexed, deliberately not unique, and
-     * possibly somebody else's. `verifiedEmail` and `verifiedPhone` are the ones
-     * that have been proved, and are already what a payout resolves through. A
-     * receipt carries a name, a list of what somebody owns, and for a
-     * mailed-check seller an address.
-     */
-    const channel: ReceiptChannel | null =
-      user.verifiedEmail ? 'EMAIL' : user.verifiedPhone ? 'SMS' : null;
-    if (!channel) {
-      throw new BadRequestException(
-        'This seller has no verified email or phone, so there is nowhere to send a receipt.',
-      );
-    }
+    const channel = resolveChannel(params.channel ?? null, user);
     const destination = (channel === 'EMAIL' ? user.verifiedEmail : user.verifiedPhone)!;
 
     let outcome: SendOutcome;
@@ -410,6 +397,59 @@ export class ReceiptService {
   }
 
 
+}
+
+/** The verified columns a send resolves through. */
+export interface VerifiedContacts {
+  verifiedEmail: string | null;
+  verifiedPhone: string | null;
+}
+
+/**
+ * Which channel a send uses, and the refusal when it cannot use one.
+ *
+ * Verified contacts only, whether the caller asked for a channel or not.
+ * `email` and `phone` are claims — indexed, deliberately not unique, and
+ * possibly somebody else's. `verifiedEmail` and `verifiedPhone` are the ones
+ * that have been proved, and are already what a payout resolves through. A
+ * receipt carries a name, a list of what somebody owns, and for a mailed-check
+ * seller an address.
+ *
+ * So `requested` picks between the proved contacts; it cannot conjure one. A
+ * caller naming a channel the seller has not proved is refused exactly as one
+ * who has nothing to send to, because from here those are the same fact.
+ */
+export function resolveChannel(
+  requested: ReceiptChannel | null,
+  user: VerifiedContacts,
+): ReceiptChannel {
+  const verified: Record<ReceiptChannel, string | null> = {
+    EMAIL: user.verifiedEmail,
+    SMS: user.verifiedPhone,
+  };
+  // Unasked, the order is the old one: email first, phone second. The web sends
+  // no channel and must keep getting what it got before.
+  const channel = requested ?? (verified.EMAIL ? 'EMAIL' : verified.SMS ? 'SMS' : null);
+  if (channel && verified[channel]) return channel;
+
+  /*
+   * Two sentences, because a volunteer reads this one and acts on it.
+   *
+   * "no verified email or phone" is the truth when there is nothing at all, and
+   * the handoff tells iOS to render it. Said to somebody who tapped Text for a
+   * seller whose email is proved, it is false in the way that matters: it reads
+   * as "do not bother trying Email either", and Email would have worked.
+   */
+  if (!verified.EMAIL && !verified.SMS) {
+    throw new BadRequestException(
+      'This seller has no verified email or phone, so there is nowhere to send a receipt.',
+    );
+  }
+  throw new BadRequestException(
+    channel === 'SMS'
+      ? 'This seller has no verified phone, so a receipt cannot be texted.'
+      : 'This seller has no verified email, so a receipt cannot be emailed.',
+  );
 }
 
 /**

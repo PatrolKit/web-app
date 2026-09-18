@@ -88,7 +88,7 @@ a copy sendable later, so a failure is worth retrying rather than swallowing.
 ```
 POST /orgs/:orgId/ski-swap/sellers/:sellerId/receipts/send
 Idempotency-Key: <a key of your choosing>      // optional, but send one
-{ "swapId": "..." }
+{ "swapId": "...", "channel": "SMS" }          // channel optional
 ```
 
 **Send the key.** A send is the one write here that is not idempotent by nature:
@@ -114,10 +114,22 @@ duplicate for a routine state nobody can interpret.
 }
 ```
 
-The server picks the channel: a verified email if the seller has one, otherwise a
-verified phone by SMS. **Unverified contacts are never used** — `email` and
-`phone` on a user are claims and may be somebody else's; only `verifiedEmail` and
-`verifiedPhone` have been proved.
+### Which channel it goes out on
+
+Send `"channel": "EMAIL"` or `"channel": "SMS"` and that is the one used. Omit it
+and the server resolves as it always has: a verified email if the seller has one,
+otherwise a verified phone by SMS. The web omits it.
+
+`channel` picks *how*, never *where*. The destination stays resolved here from
+the seller's verified columns, so the worst a stolen station token can do is send
+a seller their own receipt by the other channel. **Unverified contacts are never
+used** — `email` and `phone` on a user are claims and may be somebody else's;
+only `verifiedEmail` and `verifiedPhone` have been proved, and asking for a
+channel whose contact is not proved is refused rather than downgraded.
+
+For a menu with one row per channel, gate the rows on `emailVerifiedAt` and
+`phoneVerifiedAt` from the sellers list — those are set by the same write that
+sets the verified contact, so a row that lights up here will send.
 
 **`status` matters.** Only `SENT` means a message left the building.
 
@@ -137,9 +149,19 @@ sure the UI does not claim a delivery on it.
 400  { "success": false, "error": "This seller has no verified email or phone, so there is nowhere to send a receipt." }
 ```
 
-That sentence is written to be shown to a volunteer. Render it rather than a
-generic failure — it says what is missing, which is the only thing that can fix
-it. Better still, disable the button when the seller has neither contact.
+Asking for a channel the seller has not proved is the same 400, with a sentence
+that names the one channel rather than both — telling somebody who tapped Text
+that there is "no verified email or phone" would stop them trying Email, which
+would have worked:
+
+```
+400  { "success": false, "error": "This seller has no verified phone, so a receipt cannot be texted." }
+400  { "success": false, "error": "This seller has no verified email, so a receipt cannot be emailed." }
+```
+
+These sentences are written to be shown to a volunteer. Render them rather than a
+generic failure — they say what is missing, which is the only thing that can fix
+it. Better still, disable the row when the seller has not proved that contact.
 
 ---
 

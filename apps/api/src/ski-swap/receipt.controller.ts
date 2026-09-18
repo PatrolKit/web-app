@@ -79,6 +79,10 @@ export class ReceiptController {
       orgId,
       swapId: body.swapId,
       sellerId,
+      // Optional, and the counter's reason for existing: an iPad offering
+      // Print / Email / Text needs Text to send a text. Omitted — which is what
+      // the web sends — the server resolves it as it always has.
+      channel: body.channel ?? null,
       actorUserId: user?.userId ?? null,
       idempotencyKey,
     });
@@ -127,6 +131,10 @@ export class SellerReceiptController {
       orgId,
       swapId: body.swapId,
       sellerId: seller.id,
+      // Honoured here too rather than silently dropped: the body schema is
+      // shared, and a seller choosing between their own two verified contacts
+      // reaches nothing the default would not have.
+      channel: body.channel ?? null,
       // Nobody pressed it on their behalf.
       actorUserId: null,
       idempotencyKey,
