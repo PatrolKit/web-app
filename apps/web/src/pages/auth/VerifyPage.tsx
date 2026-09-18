@@ -99,9 +99,15 @@ export default function VerifyPage() {
       </p>
 
       {/* Lifted out of the sentence, the way the address is on "Check your
-          email". It is the one thing here somebody might act on twice. */}
+          email".
+
+          "This link works once" said the true thing and left the consequence
+          for the reader to work out — and the reader is somebody who may well
+          come back to the same email tomorrow and tap it again. So it now says
+          which link, and what to do when it has been spent. */}
       <p className="my-4 rounded-lg border border-gray-700 bg-surface-100 px-4 py-2.5 text-center text-sm text-gray-300">
-        This link works <span className="text-white font-medium">once</span>.
+        The link you followed works <span className="text-white font-medium">only once</span>.
+        To sign in again later, request a new one.
       </p>
 
       <button
