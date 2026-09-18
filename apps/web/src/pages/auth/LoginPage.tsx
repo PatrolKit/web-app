@@ -140,12 +140,28 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-surface flex items-center justify-center px-4">
+    <div className="min-h-screen bg-surface flex items-center justify-center px-4 py-10">
       <div className="max-w-md w-full bg-surface-50 rounded-xl p-8">
-        <h1 className="text-3xl font-bold mb-2">
-          <span className="text-brand-600">Patrol</span>Kit
-        </h1>
-        <p className="text-gray-400 mb-6">Sign in with your phone number or email</p>
+        {/* The mark, then the name. This is the front door of the product and
+            it wore a text wordmark and nothing else, which is less branding
+            than the footer of a public seller page.
+
+            `logo-mark.png` rather than `logo.png`: the same artwork at 128px
+            instead of 1254, which is 13 KB against 522 for something drawn
+            here at 56. */}
+        <div className="mb-7 text-center">
+          <img
+            src="/logo-mark.png"
+            alt=""
+            className="mx-auto mb-3 h-14 w-14"
+          />
+          <h1 className="text-3xl font-bold">
+            <span className="text-brand-600">Patrol</span>Kit
+          </h1>
+          <p className="text-gray-400 text-sm mt-1.5">
+            Sign in with your phone number or email
+          </p>
+        </div>
 
         <div className="flex gap-2 mb-6">
           {(['phone', 'email'] as const).map((c) => (
