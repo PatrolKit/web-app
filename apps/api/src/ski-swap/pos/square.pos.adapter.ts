@@ -4,6 +4,7 @@ import { SquareClient, SquareError } from 'square';
 import { SquareClientService } from '../square-client.service';
 import { PosAdapterFactory, type IPosAdapter, type PosItemSync } from './pos.adapter';
 import type { Square } from 'square';
+import type { PosSaleLine } from './pos.adapter';
 
 function isSquareMissingReferenceError(err: unknown): boolean {
   if (!(err instanceof SquareError)) return false;
@@ -168,6 +169,67 @@ class SquarePosAdapter implements IPosAdapter {
     return map;
   }
 
+  /**
+   * Completed orders in a window, flattened to one entry per line item.
+   *
+   * Paged to the end rather than to the first cursor: a payout built from a
+   * partial read underpays whoever fell off the last page, and nothing would
+   * say so.
+   *
+   * `COMPLETED` only. An open or cancelled order has not taken anybody's money,
+   * and paying on one would be paying for a sale that did not happen.
+   */
+  async listSales(locationId: string, from: Date, to: Date): Promise<PosSaleLine[]> {
+    const lines: PosSaleLine[] = [];
+    let cursor: string | undefined;
+
+    do {
+      const res = await this.client.orders.search({
+        locationIds: [locationId],
+        cursor,
+        limit: 200,
+        query: {
+          filter: {
+            stateFilter: { states: ['COMPLETED'] },
+            dateTimeFilter: {
+              closedAt: { startAt: from.toISOString(), endAt: to.toISOString() },
+            },
+          },
+        },
+      });
+      if (res.errors?.length) {
+        throw new Error(`Square order search failed: ${res.errors.map((e) => `${e.code}: ${e.detail}`).join(', ')}`);
+      }
+
+      for (const order of res.orders ?? []) {
+        // `closedAt` is when the money was taken, which is the date a seller
+        // would recognise. `createdAt` is when the cart was opened.
+        const soldAt = new Date(order.closedAt ?? order.createdAt ?? Date.now());
+        const refundedByLine = refundedQuantities(order);
+
+        for (const line of order.lineItems ?? []) {
+          // A line with no catalog object is something rung up by hand. It
+          // cannot be matched to a seller's item, and the run reports those
+          // rather than dropping them — see `PayoutRunService`.
+          if (!line.catalogObjectId) continue;
+          lines.push({
+            orderId: order.id ?? '',
+            variationId: line.catalogObjectId,
+            quantity: Number(line.quantity ?? '0'),
+            // `totalMoney` is after discounts, which is what the register took
+            // and therefore what the org actually has.
+            collectedCents: Number(line.totalMoney?.amount ?? 0n),
+            refundedQuantity: refundedByLine.get(line.uid ?? '') ?? 0,
+            soldAt,
+          });
+        }
+      }
+      cursor = res.cursor;
+    } while (cursor);
+
+    return lines;
+  }
+
   async setInitialInventory(variationId: string, locationId: string, quantity: number): Promise<void> {
     const res = await this.client.inventory.batchCreateChanges({
       idempotencyKey: uuidv4(),
@@ -222,3 +284,21 @@ export class SquarePosAdapterFactory extends PosAdapterFactory {
   }
 }
 
+/**
+ * How much of each line came back, keyed by the line's uid.
+ *
+ * Square records a return as its own set of line items pointing at the ones
+ * they reverse. A refunded quantity is not a sale, and counting it would pay a
+ * seller for goods the buyer handed back.
+ */
+function refundedQuantities(order: Square.Order): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const ret of order.returns ?? []) {
+    for (const line of ret.returnLineItems ?? []) {
+      const uid = line.sourceLineItemUid;
+      if (!uid) continue;
+      out.set(uid, (out.get(uid) ?? 0) + Number(line.quantity ?? '0'));
+    }
+  }
+  return out;
+}

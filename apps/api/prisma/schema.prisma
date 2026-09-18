@@ -718,6 +718,10 @@ model SkiSwapSettings {
   /// displayed as a percentage, converted only at the edges (Plan 25 §3).
   commissionBasisPoints Int @default(0)
 
+  /// Below this, a payout costs more to send than it is worth (Plan 25 §7).
+  /// The line is held rather than batched, and shows as such.
+  payoutMinimumCents Int @default(100)
+
   /// The PIN that unlocks the admin sheet on a `ski_swap.staff_check_in` iPad.
   ///
   /// Four digits, and stored in the clear on purpose: this gates a settings

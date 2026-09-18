@@ -9,6 +9,25 @@ export interface PosItemSync {
   categoryName: string;
 }
 
+/**
+ * One line of one order: something that actually sold, at a time, for an amount.
+ *
+ * The distinction that matters for a payout (Plan 25 §2): inventory going down
+ * is not a sale, because a volunteer correcting a count looks identical. A line
+ * here came from a transaction and can be pointed at.
+ */
+export interface PosSaleLine {
+  orderId: string;
+  /** The catalog variation, which is `SwapItem.squareVariationId`. */
+  variationId: string;
+  quantity: number;
+  /** What the register actually took for this line, after any discount. */
+  collectedCents: number;
+  /** How much of `quantity` came back. */
+  refundedQuantity: number;
+  soldAt: Date;
+}
+
 /** Org-scoped POS adapter — all methods operate against one org's credentials. */
 export interface IPosAdapter {
   /** Creates or recreates a POS category and returns its ID. */
@@ -20,6 +39,13 @@ export interface IPosAdapter {
   getInventoryCounts(variationIds: string[], locationId: string): Promise<Map<string, number>>;
   setInitialInventory(variationId: string, locationId: string, quantity: number): Promise<void>;
   setInventoryPhysicalCount(variationId: string, locationId: string, quantity: number): Promise<void>;
+  /**
+   * Completed sales in a window, one entry per order line.
+   *
+   * Paginates to the end: a partial read would silently underpay whoever fell
+   * off the last page.
+   */
+  listSales(locationId: string, from: Date, to: Date): Promise<PosSaleLine[]>;
 }
 
 /** Factory that builds an org-scoped adapter, returning null when POS is not configured. */
