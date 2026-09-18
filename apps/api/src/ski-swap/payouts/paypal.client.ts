@@ -51,7 +51,17 @@ export abstract class PayPalClient {
   abstract getBatch(orgId: string, batchId: string): Promise<PayoutBatchResult>;
   abstract cancelItem(orgId: string, payoutItemId: string): Promise<void>;
   abstract verifyWebhook(orgId: string, headers: Record<string, string>, rawBody: string): Promise<boolean>;
+  abstract testConnection(orgId: string): Promise<{ success: boolean; message: string }>;
 }
+
+/**
+ * The scope PayPal grants an app that is allowed to pay people.
+ *
+ * Checked at configuration time rather than discovered at send time, because
+ * the failure it prevents is a batch that authenticates, is accepted, and then
+ * pays nobody.
+ */
+const PAYOUTS_SCOPE = 'https://uri.paypal.com/services/payments/payouts';
 
 const HOSTS = {
   sandbox: 'https://api-m.sandbox.paypal.com',
@@ -62,7 +72,7 @@ const HOSTS = {
 export class HttpPayPalClient extends PayPalClient {
   private readonly logger = new Logger(HttpPayPalClient.name);
   /** Short-lived, and re-fetched rather than refreshed. */
-  private tokens = new Map<string, { token: string; expiresAt: number }>();
+  private tokens = new Map<string, { token: string; expiresAt: number; scopes: string[] }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -133,6 +143,33 @@ export class HttpPayPalClient extends PayPalClient {
     return (res as { verification_status?: string }).verification_status === 'SUCCESS';
   }
 
+  /**
+   * Whether these credentials work, and whether they are allowed to pay people.
+   *
+   * Two different questions. A client id and secret from an app that was never
+   * granted Payouts will fetch a token quite happily and then fail at the only
+   * moment that matters, so the granted scopes are read here while somebody is
+   * still looking at the settings screen.
+   */
+  async testConnection(orgId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const { scopes, host } = await this.authorise(orgId);
+      const where = host.includes('sandbox') ? 'sandbox' : 'live';
+      if (scopes.length && !scopes.includes(PAYOUTS_SCOPE)) {
+        return {
+          success: false,
+          message:
+            `These credentials work, but this PayPal app is not approved for Payouts. ` +
+            `Enable Payouts on the app in your PayPal developer dashboard, then test again.`,
+        };
+      }
+      return { success: true, message: `Connected to PayPal (${where}) with Payouts enabled` };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return { success: false, message };
+    }
+  }
+
   // ─── Plumbing ──────────────────────────────────────────────────────────────
 
   private toBatchResult(res: unknown): PayoutBatchResult {
@@ -183,14 +220,14 @@ export class HttpPayPalClient extends PayPalClient {
     return text ? JSON.parse(text) : {};
   }
 
-  private async authorise(orgId: string): Promise<{ host: string; token: string }> {
+  private async authorise(orgId: string): Promise<{ host: string; token: string; scopes: string[] }> {
     const config = await this.prisma.payPalConfig.findUnique({ where: { orgId } });
     if (!config) throw new PayPalError('PayPal is not configured for this organization', 412);
 
     const host = HOSTS[config.environment === 'live' ? 'live' : 'sandbox'];
     const cached = this.tokens.get(orgId);
     if (cached && cached.expiresAt > Date.now() + 30_000) {
-      return { host, token: cached.token };
+      return { host, token: cached.token, scopes: cached.scopes };
     }
 
     const secret = this.crypto.decrypt(config.clientSecretEnc);
@@ -206,12 +243,18 @@ export class HttpPayPalClient extends PayPalClient {
     if (!res.ok) {
       throw new PayPalError(`PayPal auth failed: ${res.status}`, res.status);
     }
-    const json = (await res.json()) as { access_token: string; expires_in: number };
+    const json = (await res.json()) as {
+      access_token: string;
+      expires_in: number;
+      scope?: string;
+    };
+    const scopes = (json.scope ?? '').split(' ').filter(Boolean);
     this.tokens.set(orgId, {
       token: json.access_token,
       expiresAt: Date.now() + json.expires_in * 1000,
+      scopes,
     });
-    return { host, token: json.access_token };
+    return { host, token: json.access_token, scopes };
   }
 }
 

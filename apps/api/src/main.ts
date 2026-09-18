@@ -3,6 +3,7 @@ import { Logger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { json, urlencoded } from 'express';
+import type { IncomingMessage } from 'http';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -41,7 +42,19 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // Body size limits (CSV uploads handled separately by multer)
-  app.use(json({ limit: '1mb' }));
+  //
+  // PayPal's webhook signature is computed over the delivered bytes, so the
+  // parsed object cannot be re-serialised to check it — a space or an escaped
+  // character is enough to fail. The raw buffer is kept for that one path and
+  // nowhere else: holding a second copy of every request body to serve one
+  // route would be a waste, and request bodies are the last thing worth
+  // duplicating in memory.
+  app.use(json({
+    limit: '1mb',
+    verify: (req: IncomingMessage & { rawBody?: Buffer }, _res, buf) => {
+      if (req.url?.includes('/webhooks/paypal/')) req.rawBody = Buffer.from(buf);
+    },
+  }));
   app.use(urlencoded({ limit: '1mb', extended: true }));
 
   // Health probes sit outside the version prefix. Their callers are

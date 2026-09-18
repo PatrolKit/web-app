@@ -56,6 +56,12 @@ import {
   TaxonomyAdminController,
   TaxonomyAdminIconController,
 } from './taxonomy/taxonomy-admin.controller';
+import { PayPalClient, HttpPayPalClient } from './payouts/paypal.client';
+import { PayPalConfigService } from './payouts/paypal-config.service';
+import { PayPalConfigController } from './payouts/paypal-config.controller';
+import { PayoutRunService } from './payouts/payout-run.service';
+import { PayoutRunController } from './payouts/payout-run.controller';
+import { PayoutWebhookController } from './payouts/payout-webhook.controller';
 import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { IdentityModule } from '../common/identity/identity.module';
@@ -66,6 +72,9 @@ import { IdentityModule } from '../common/identity/identity.module';
     ScannerController,
     ScanController,
     SquareConfigController,
+    PayPalConfigController,
+    PayoutRunController,
+    PayoutWebhookController,
     SwapController,
     SellerController,
     ItemController,
@@ -97,6 +106,9 @@ import { IdentityModule } from '../common/identity/identity.module';
     CredentialCryptoService,
     SquareClientService,
     SquareConfigService,
+    { provide: PayPalClient, useClass: HttpPayPalClient },
+    PayPalConfigService,
+    PayoutRunService,
     S3Service,
     { provide: PosAdapterFactory, useClass: SquarePosAdapterFactory },
     SwapService,

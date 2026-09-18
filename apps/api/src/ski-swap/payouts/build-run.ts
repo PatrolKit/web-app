@@ -218,7 +218,7 @@ export function resolveDestination(
 
 /** A sale below its listed price. What §5's discount report is built from. */
 export interface Discount {
-  itemId: string;
+  itemId: string | null;
   name: string;
   sku: string;
   sellerName: string;
@@ -230,13 +230,32 @@ export interface Discount {
 }
 
 /**
+ * The least a line has to look like for a discount to be read off it.
+ *
+ * Narrower than `BuiltLine` so the report can be run over rows read back from
+ * the database as easily as over a run just built — without either side having
+ * to pretend to be the other.
+ */
+export interface DiscountableLine {
+  sellerName: string;
+  items: {
+    itemId: string | null;
+    name: string;
+    sku: string;
+    priceCents: number;
+    quantity: number;
+    collectedCents: number;
+  }[];
+}
+
+/**
  * Every line the register took less for than the item listed at (§5).
  *
  * Derived from the same rows the evidence uses, so it cannot disagree with
  * them. Three rules, each of which would otherwise corrupt the total:
  * only downward, refunds excluded, and zero flagged rather than counted.
  */
-export function discountsOf(lines: BuiltLine[]): { discounts: Discount[]; totalGapCents: number } {
+export function discountsOf(lines: DiscountableLine[]): { discounts: Discount[]; totalGapCents: number } {
   const discounts: Discount[] = [];
 
   for (const line of lines) {
