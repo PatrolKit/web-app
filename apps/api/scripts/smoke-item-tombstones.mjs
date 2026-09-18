@@ -17,7 +17,7 @@
 //   - a withdrawn tag scans as nothing;
 //   - a seller can withdraw an item they have tagged but nobody has accepted,
 //     and cannot once it is consigned — which on every path is the same moment
-//     it becomes sellable in Square.
+//     it becomes sellable in Square, imported rows included.
 //
 // Sign-in is throttled to five a minute and this script signs in twice — once
 // as staff, once as the seller, because the guard on withdrawing an accepted
@@ -257,6 +257,53 @@ ok('...and the item is untouched',
 const staffRemoved = await api(`${ITEMS}/${accepted.id}`, { method: 'DELETE' });
 ok('staff at the counter can remove the very same item',
   staffRemoved.status === 204, `HTTP ${staffRemoved.status}`);
+
+console.log('\n── A file staff uploaded for a shop ─────────────────────');
+
+// An import writes through `create`, which stamps `consignedAt` — deliberately,
+// so a shop's uploaded inventory reaches Square instead of sitting unsellable
+// while the same items typed one at a time go on the floor. Which means the
+// consignment guard applies to imported rows as much as to typed ones, and
+// this says so out loud rather than leaving it to be discovered at a counter.
+await prisma.legacyTicketRange.create({
+  data: {
+    id: createId(), orgId: org.id, swapId: swap.id, sellerId: sellerProfile.id,
+    startNumber: 78000, endNumber: 78100,
+  },
+});
+
+const csv = 'sku,name,price\n78001,Imported skis,120.00\n78002,Imported poles,25.00\n';
+const form = new FormData();
+form.append('file', new Blob([csv], { type: 'text/csv' }), 'inventory.csv');
+form.append('sellerId', sellerProfile.id);
+
+const imported = await fetch(`${BASE}${ITEMS}/import`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${token}` },
+  body: form,
+}).then(unwrap);
+
+ok('staff can upload a file for a shop',
+  Array.isArray(imported) && imported.every((r) => r.outcome === 'created'),
+  JSON.stringify(imported).slice(0, 160));
+
+const importedRows = await prisma.swapItem.findMany({
+  where: { swapId: swap.id, sku: { in: ['78001', '78002'] } },
+});
+ok('...and every imported row is consigned on the way in',
+  importedRows.length === 2 && importedRows.every((r) => r.consignedAt !== null),
+  `${importedRows.length} rows, ${importedRows.filter((r) => r.consignedAt).length} consigned`);
+
+const sellerTriesImported = await sellerApi(
+  `/orgs/${org.id}/ski-swap/seller/me/items/${importedRows[0]?.id}`,
+  { method: 'DELETE' },
+);
+ok('so the shop cannot delete a row from it either',
+  sellerTriesImported.status === 409, `HTTP ${sellerTriesImported.status}`);
+
+const staffDeletesImported = await api(`${ITEMS}/${importedRows[0]?.id}`, { method: 'DELETE' });
+ok('...and staff, who put it there, can take it away',
+  staffDeletesImported.status === 204, `HTTP ${staffDeletesImported.status}`);
 
 await finish();
 
