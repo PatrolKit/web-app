@@ -34,13 +34,36 @@ const emptyForm: SellerForm = {
 };
 
 /** Sort keys the table exposes — all derived, so they are named explicitly. */
-type SellerSortKey = 'displayName' | 'email' | 'phone';
+type SellerSortKey = 'displayName' | 'email' | 'phone' | 'payoutMethod';
+
+/**
+ * How a seller gets paid, including not having said.
+ *
+ * `payoutMethod` is nullable and check-in refuses to finish without one, so
+ * null is "has not answered yet" rather than a fifth way of being paid — and
+ * it is the row a treasurer most needs to find, which is why it is a filter
+ * option rather than a blank cell you have to go looking for.
+ */
+type PayoutKey = 'CHECK' | 'PAYPAL' | 'VENMO' | 'DONATE' | 'NONE';
+
+const PAYOUT_FILTERS: { value: PayoutKey; label: string }[] = [
+  { value: 'CHECK', label: 'Check' },
+  { value: 'PAYPAL', label: 'PayPal' },
+  { value: 'VENMO', label: 'Venmo' },
+  { value: 'DONATE', label: 'Donating' },
+  { value: 'NONE', label: 'Not set' },
+];
+
+const payoutLabel = (k: PayoutKey) => PAYOUT_FILTERS.find((f) => f.value === k)!.label;
+
+const payoutOf = (s: SellerResponse): PayoutKey => (s.payoutMethod ?? 'NONE');
 
 export default function SellersPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'individual' | 'business'>('all');
+  const [payoutFilter, setPayoutFilter] = useState<'all' | PayoutKey>('all');
   const [editSeller, setEditSeller] = useState<SellerResponse | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -199,7 +222,10 @@ export default function SellersPage() {
       (s.email ?? '').toLowerCase().includes(q);
     const sellerType = s.businessName ? 'business' : 'individual';
     const matchesType = typeFilter === 'all' || sellerType === typeFilter;
-    return matchesSearch && matchesType;
+    // Through `payoutOf`, so the filter and the column cannot form different
+    // opinions about what an unanswered payout is.
+    const matchesPayout = payoutFilter === 'all' || payoutOf(s) === payoutFilter;
+    return matchesSearch && matchesType && matchesPayout;
   });
 
   return (
@@ -220,6 +246,16 @@ export default function SellersPage() {
             <option value="all">All types</option>
             <option value="individual">Individual</option>
             <option value="business">Business</option>
+          </select>
+          <select
+            value={payoutFilter}
+            onChange={(e) => setPayoutFilter(e.target.value as typeof payoutFilter)}
+            className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
+          >
+            <option value="all">All payouts</option>
+            {PAYOUT_FILTERS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
           </select>
           <button
             onClick={() => setIncompleteOnly((v) => !v)}
@@ -536,13 +572,14 @@ export default function SellersPage() {
             <SortHeader label="Name"  field="displayName" />
             <SortHeader label="Email" field="email" />
             <SortHeader label="Phone" field="phone" />
+            <SortHeader label="Payout" field="payoutMethod" />
             {canManage && <th className="pb-2">Actions</th>}
           </tr>
         </thead>
         <tbody>
           {sellers.length === 0 && (
             <tr>
-              <td colSpan={4} className="py-12 text-center">
+              <td colSpan={5} className="py-12 text-center">
                 <div className="text-4xl mb-3">🎿</div>
                 <p className="text-gray-400 text-sm">No sellers yet — the mountain awaits.</p>
               </td>
@@ -550,7 +587,7 @@ export default function SellersPage() {
           )}
           {sellers.length > 0 && filtered.length === 0 && (
             <tr>
-              <td colSpan={4} className="py-12 text-center">
+              <td colSpan={5} className="py-12 text-center">
                 <div className="text-4xl mb-3">🔍</div>
                 <p className="text-gray-400 text-sm">No sellers match your search. Maybe they're still on the lift.</p>
               </td>
@@ -582,6 +619,25 @@ export default function SellersPage() {
                     : <FontAwesomeIcon icon={faCircle} className="text-gray-600 w-2.5 shrink-0" title="Not verified" />
                   }
                 </span>
+              </td>
+              <td className="py-2 pr-4">
+                {(() => {
+                  const key = payoutOf(s);
+                  return key === 'NONE' ? (
+                    <span className="text-amber-400 text-xs" title="No payout method chosen. This seller cannot be paid.">
+                      Not set
+                    </span>
+                  ) : (
+                    <span
+                      className="text-gray-300 text-xs"
+                      // Where the money goes, for the one question this column
+                      // raises and cannot answer in its own width.
+                      title={s.payoutHandle ? `${payoutLabel(key)} — ${s.payoutHandle}` : payoutLabel(key)}
+                    >
+                      {payoutLabel(key)}
+                    </span>
+                  );
+                })()}
               </td>
               {canManage && (
                 <td className="py-2">
