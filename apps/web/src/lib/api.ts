@@ -977,7 +977,13 @@ export const api = {
     updateSettings: (
       orgId: string,
       // A patch: sending one setting must not clear the other.
-      data: { labelsPerItem?: number; requireConsignmentScan?: boolean },
+      data: {
+        labelsPerItem?: number;
+        requireConsignmentScan?: boolean;
+        /** A percentage, as typed: "20", "20.5", "20.5%". Never basis points. */
+        commissionPercent?: string;
+        payoutMinimumCents?: number;
+      },
     ) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`, {
         method: 'PATCH', body: JSON.stringify(data),
@@ -991,6 +997,116 @@ export const api = {
       request<import('./api.types').DevicePinResponse>(`/orgs/${orgId}/ski-swap/settings/device-pin`, {
         method: 'PUT', body: JSON.stringify({ devicePin }),
       }),
+
+    // ─── PayPal credentials (Plan 25 §6) ────────────────────────────
+
+    getPayPalConfig: (orgId: string) =>
+      request<import('./api.types').PayPalConfigResponse>(`/orgs/${orgId}/ski-swap/paypal-config`),
+    getPayPalStatus: (orgId: string) =>
+      request<{ configured: boolean; environment: string | null; webhookRegistered: boolean }>(
+        `/orgs/${orgId}/ski-swap/paypal-config/status`,
+      ),
+    upsertPayPalConfig: (
+      orgId: string,
+      data: { clientId: string; clientSecret: string; environment: 'sandbox' | 'live'; webhookId?: string | null },
+    ) =>
+      request<import('./api.types').PayPalConfigResponse>(`/orgs/${orgId}/ski-swap/paypal-config`, {
+        method: 'PUT', body: JSON.stringify(data),
+      }),
+    deletePayPalConfig: (orgId: string) =>
+      request<void>(`/orgs/${orgId}/ski-swap/paypal-config`, { method: 'DELETE' }),
+    testPayPalConnection: (orgId: string) =>
+      request<{ success: boolean; message: string }>(
+        `/orgs/${orgId}/ski-swap/paypal-config/test`, { method: 'POST' },
+      ),
+
+    // ─── Payout runs (Plan 25 §5–§10) ───────────────────────────
+
+    listPayoutRuns: (orgId: string, swapId?: string) =>
+      request<import('./api.types').PayoutRunSummary[]>(
+        `/orgs/${orgId}/ski-swap/payout-runs${swapId ? `?swapId=${swapId}` : ''}`,
+      ),
+    createPayoutRun: (orgId: string, swapId: string, data: { salesFrom?: string; salesTo?: string } = {}) =>
+      request<import('./api.types').PayoutRun>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/payout-runs`,
+        { method: 'POST', body: JSON.stringify(data) },
+      ),
+    getPayoutRun: (orgId: string, runId: string) =>
+      request<import('./api.types').PayoutRun>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}`),
+    getPayoutDiscounts: (orgId: string, runId: string) =>
+      request<{
+        runId: string;
+        discounts: import('./api.types').PayoutDiscount[];
+        totalGapCents: number;
+        totalGapFormatted: string;
+      }>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}/discounts`),
+    approvePayoutLines: (orgId: string, runId: string, lineIds: string[], approved = true) =>
+      request<{ requested: number; changed: number }>(
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/approve`,
+        { method: 'POST', body: JSON.stringify({ lineIds, approved }) },
+      ),
+    /**
+     * `expectedLineCount` is what the screen showed. The server refuses if it
+     * disagrees — somebody approved a line between looking and clicking, and
+     * the whole point of the confirmation is that the operator knows what they
+     * are authorising.
+     */
+    sendPayoutRun: (orgId: string, runId: string, expectedLineCount: number) =>
+      request<import('./api.types').PayoutRun>(
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/send`,
+        { method: 'POST', body: JSON.stringify({ expectedLineCount }) },
+      ),
+    closePayoutRun: (orgId: string, runId: string) =>
+      request<import('./api.types').PayoutRun>(
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/close`, { method: 'POST' },
+      ),
+    reconcilePayouts: (orgId: string) =>
+      request<{ batches: number; reconciled: number }>(
+        `/orgs/${orgId}/ski-swap/payout-runs/reconcile`, { method: 'POST' },
+      ),
+    nudgePayouts: (orgId: string) =>
+      request<{ considered: number; sent: number; suppressed: number; failed: number; skipped: number }>(
+        `/orgs/${orgId}/ski-swap/payout-runs/nudge`, { method: 'POST' },
+      ),
+    cancelUnclaimedPayout: (orgId: string, runId: string, lineId: string) =>
+      request<{ id: string; status: string }>(
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/lines/${lineId}/cancel`, { method: 'POST' },
+      ),
+    listCheckPayees: (orgId: string, runId: string) =>
+      request<import('./api.types').CheckPayee[]>(
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/checks`,
+      ),
+    /**
+     * The check register as a file.
+     *
+     * Fetched rather than linked, like the QR sheet: the session token travels
+     * in a header, and a plain navigation cannot carry one — a download link
+     * would simply be refused.
+     */
+    checksCsv: async (orgId: string, runId: string): Promise<Blob> => {
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      const res = await fetch(
+        `/api/v1/orgs/${orgId}/ski-swap/payout-runs/${runId}/checks.csv`,
+        { credentials: 'include', headers },
+      );
+      if (!res.ok) {
+        // On failure the body is the API's JSON envelope, not a CSV.
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? 'Could not build the check register');
+      }
+      return res.blob();
+    },
+    recordCheckSent: (
+      orgId: string,
+      runId: string,
+      lineId: string,
+      data: { checkNumber?: string | null; sentAt?: string | null },
+    ) =>
+      request<{ id: string; checkNumber: string | null; checkSentAt: string | null; status: string }>(
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/lines/${lineId}/check`,
+        { method: 'POST', body: JSON.stringify(data) },
+      ),
   },
 
   timeClock: {

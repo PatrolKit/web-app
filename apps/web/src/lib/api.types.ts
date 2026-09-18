@@ -537,6 +537,120 @@ export interface SkiSwapSettings {
    * what is already on the floor.
    */
   requireConsignmentScan: boolean;
+  /** The org's cut, as a percentage: "20%", "20.5%", "0%". */
+  commissionPercent: string;
+  /** The same number the server does the arithmetic with. */
+  commissionBasisPoints: number;
+  /** Below this, an electronic payout is held rather than sent. */
+  payoutMinimumCents: number;
+}
+
+// ─── Payouts (Plan 25) ──────────────────────────────────────────────────
+
+export interface PayPalConfigResponse {
+  orgId: string;
+  clientId: string;
+  environment: 'sandbox' | 'live';
+  webhookId: string | null;
+  /** There is no secret field. This is all the UI is told about it. */
+  hasSecret: boolean;
+  updatedAt: string;
+}
+
+export type PayoutLineStatus =
+  | 'PENDING' | 'APPROVED' | 'SENDING' | 'SENT' | 'UNCLAIMED'
+  | 'FAILED' | 'RETURNED' | 'PAID_BY_CHECK' | 'DONATED' | 'BELOW_MINIMUM';
+
+export type PayoutMethod = 'PAYPAL' | 'VENMO' | 'CHECK' | 'DONATE';
+
+export interface PayoutLineItem {
+  id: string;
+  itemId: string | null;
+  name: string;
+  sku: string;
+  priceCents: number;
+  quantity: number;
+  /** What the register took, which may be less than listed. Evidence, not pay. */
+  collectedCents: number;
+  squareOrderId: string;
+  soldAt: string;
+  refundedQty: number;
+}
+
+export interface PayoutLine {
+  id: string;
+  sellerId: string;
+  sellerName: string;
+  method: PayoutMethod;
+  destination: string | null;
+  destinationType: 'EMAIL' | 'PHONE' | 'PAYPAL_ID' | 'VENMO_ID' | null;
+  grossCents: number;
+  commissionCents: number;
+  netCents: number;
+  status: PayoutLineStatus;
+  statusNote: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  sentAt: string | null;
+  payoutBatchId: string | null;
+  payoutItemId: string | null;
+  checkNumber: string | null;
+  checkSentAt: string | null;
+  items: PayoutLineItem[];
+}
+
+export interface PayoutRun {
+  id: string;
+  swapId: string;
+  swapTitle: string;
+  status: 'DRAFT' | 'REVIEW' | 'CLOSED';
+  salesFrom: string;
+  salesTo: string;
+  commissionBasisPoints: number;
+  sendAttempt: number;
+  createdAt: string;
+  closedAt: string | null;
+  totals: { grossCents: number; commissionCents: number; netCents: number };
+  byStatus: Record<string, number>;
+  lines: PayoutLine[];
+}
+
+export interface PayoutRunSummary {
+  id: string;
+  swapId: string;
+  swapTitle: string;
+  status: 'DRAFT' | 'REVIEW' | 'CLOSED';
+  createdAt: string;
+  closedAt: string | null;
+  lineCount: number;
+  totalNetCents: number;
+  byStatus: Record<string, number>;
+}
+
+/** A sale the register took less for than the item listed at. */
+export interface PayoutDiscount {
+  itemId: string | null;
+  name: string;
+  sku: string;
+  sellerName: string;
+  listedCents: number;
+  collectedCents: number;
+  gapCents: number;
+  /** Collected nothing: a give-away, or a match against the wrong item. */
+  zeroCollected: boolean;
+}
+
+export interface CheckPayee {
+  sellerName: string;
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  phone: string | null;
+  amountCents: number;
+  reference: string;
+  checkNumber: string | null;
+  sentAt: string | null;
 }
 
 /**

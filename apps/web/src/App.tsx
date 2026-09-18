@@ -26,6 +26,8 @@ import TimeClockDevicesPage from './pages/time-tracking/DevicesPage';
 import SwapsPage from './pages/ski-swap/SwapsPage';
 import ItemsPage from './pages/ski-swap/ItemsPage';
 import SellersPage from './pages/ski-swap/SellersPage';
+import PayoutsPage from './pages/ski-swap/PayoutsPage';
+import PayoutRunPage from './pages/ski-swap/PayoutRunPage';
 import AdministrationPage from './pages/ski-swap/AdministrationPage';
 import AdministrationLayout from './pages/ski-swap/AdministrationLayout';
 import ItemDetailsPage from './pages/ski-swap/ItemDetailsPage';
@@ -121,6 +123,8 @@ export default function App() {
             <Route path="swaps" element={<SwapsPage />} />
             <Route path="items" element={<ItemsPage />} />
             <Route path="sellers" element={<SellersPage />} />
+            <Route path="payouts" element={<PayoutsPage />} />
+            <Route path="payouts/:runId" element={<PayoutRunPage />} />
             <Route path="check-in" element={<CheckinStationsPage />} />
             <Route path="printers" element={<PrintersPage />} />
             <Route path="config" element={<AdministrationLayout />}>

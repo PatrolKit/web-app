@@ -66,6 +66,10 @@ export default function AdministrationPage() {
 
       <AcceptingItemsSection orgId={orgId} />
 
+      <PayoutsSection orgId={orgId} />
+
+      <PayPalSection orgId={orgId} />
+
       <div className="space-y-6">
       <h2 className="text-white font-semibold">Square API Configuration</h2>
       {!config && (
@@ -142,7 +146,7 @@ export default function AdministrationPage() {
       <div className="border border-red-900 rounded-lg p-4 space-y-3">
         <h3 className="text-red-400 font-medium text-sm uppercase tracking-wide">Danger Zone</h3>
         <p className="text-gray-400 text-sm">
-          Permanently delete all items and sellers for this organisation from the PatrolKit database.
+          Permanently delete all items and sellers for this organization from the PatrolKit database.
           This does <strong className="text-white">not</strong> remove anything from Square.
         </p>
         <label className="block">
@@ -261,6 +265,331 @@ function AcceptingItemsSection({ orgId }: { orgId: string }) {
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The patrol's cut, and the floor under an electronic payout (Plan 25 §3, §7).
+ *
+ * A percentage, everywhere. Basis points are how the server does the
+ * arithmetic and nobody using this needs to know the phrase. Saved on blur and
+ * on Enter rather than per keystroke — "2" is a valid percentage on the way to
+ * typing "20", and saving it would be saving a number nobody meant.
+ */
+function PayoutsSection({ orgId }: { orgId: string }) {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['ski-swap/settings', orgId],
+    queryFn: () => api.skiSwap.getSettings(orgId),
+    enabled: !!orgId,
+    staleTime: 60_000,
+  });
+
+  const [percent, setPercent] = useState<string | null>(null);
+  const [minimum, setMinimum] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: (data: { commissionPercent?: string; payoutMinimumCents?: number }) =>
+      api.skiSwap.updateSettings(orgId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ski-swap/settings', orgId] });
+      setPercent(null);
+      setMinimum(null);
+    },
+  });
+
+  // The stored value until somebody starts typing, then theirs. Without this
+  // the field fights the user every time the query refetches.
+  const shownPercent = percent ?? (settings ? settings.commissionPercent.replace('%', '') : '');
+  const shownMinimum =
+    minimum ?? (settings ? (settings.payoutMinimumCents / 100).toFixed(2) : '');
+
+  function savePercent() {
+    if (percent === null || !settings) return;
+    if (percent.trim() === settings.commissionPercent.replace('%', '')) { setPercent(null); return; }
+    mutation.mutate({ commissionPercent: percent.trim() });
+  }
+
+  function saveMinimum() {
+    if (minimum === null || !settings) return;
+    const cents = Math.round(Number(minimum) * 100);
+    if (!Number.isFinite(cents) || cents < 0) { setMinimum(null); return; }
+    if (cents === settings.payoutMinimumCents) { setMinimum(null); return; }
+    mutation.mutate({ payoutMinimumCents: cents });
+  }
+
+  // What the current cut does to a round number, worked out the same way the
+  // server works it out, so the percentage is not the only thing an
+  // administrator has to reason about. On $100.00 — 10,000 cents — the cut in
+  // cents happens to equal the basis points, which is the arithmetic, not a
+  // shortcut around it.
+  const HUNDRED_DOLLARS_CENTS = 10_000;
+  const bps = settings?.commissionBasisPoints ?? 0;
+  const exampleCut = Math.round((HUNDRED_DOLLARS_CENTS * bps) / 10_000);
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-white font-semibold">Payouts</h2>
+      <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm text-white">The patrol's share</p>
+            <p className="text-xs text-gray-500">
+              Taken off every seller's total before they are paid. Up to two decimal places.
+            </p>
+            {settings && (
+              <p className="text-xs text-gray-500">
+                On a $100.00 sale the patrol keeps{' '}
+                <span className="text-gray-300">${(exampleCut / 100).toFixed(2)}</span> and the
+                seller gets{' '}
+                <span className="text-gray-300">
+                  ${((HUNDRED_DOLLARS_CENTS - exampleCut) / 100).toFixed(2)}
+                </span>.
+              </p>
+            )}
+          </div>
+          <div className="relative shrink-0">
+            <input
+              inputMode="decimal"
+              value={shownPercent}
+              onChange={(e) => setPercent(e.target.value)}
+              onBlur={savePercent}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              aria-label="The patrol's share, as a percentage"
+              className="w-24 bg-surface-100 border border-gray-700 rounded pl-3 pr-7 py-2 text-sm text-white text-right"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
+          </div>
+        </div>
+
+        <div className="flex items-start justify-between gap-4 border-t border-gray-800 pt-4">
+          <div className="space-y-1">
+            <p className="text-sm text-white">Smallest payout worth sending</p>
+            <p className="text-xs text-gray-500">
+              A PayPal or Venmo payout under this is held for review rather than sent. Checks are
+              not affected.
+            </p>
+          </div>
+          <div className="relative shrink-0">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+            <input
+              inputMode="decimal"
+              value={shownMinimum}
+              onChange={(e) => setMinimum(e.target.value)}
+              onBlur={saveMinimum}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              aria-label="Smallest payout worth sending, in dollars"
+              className="w-24 bg-surface-100 border border-gray-700 rounded pl-7 pr-3 py-2 text-sm text-white text-right"
+            />
+          </div>
+        </div>
+
+        {mutation.isError && (
+          <p className="text-xs text-red-400">
+            {mutation.error instanceof ApiError ? mutation.error.message : 'Could not save that.'}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * PayPal credentials, beside Square's (Plan 25 §6).
+ *
+ * The secret is write-only. There is no field for it in the response at all, so
+ * this screen can say whether one is stored and nothing more — changing it
+ * means typing a new one, which is the same bargain Square's token makes.
+ */
+function PayPalSection({ orgId }: { orgId: string }) {
+  const qc = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [webhookId, setWebhookId] = useState('');
+  const [environment, setEnvironment] = useState<'sandbox' | 'live'>('sandbox');
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const { data: config } = useQuery({
+    queryKey: ['ski-swap/paypal-config', orgId],
+    queryFn: () => api.skiSwap.getPayPalConfig(orgId).catch(() => null),
+    enabled: !!orgId,
+  });
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.skiSwap.upsertPayPalConfig(orgId, {
+        clientId, clientSecret, environment, webhookId: webhookId || null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ski-swap/paypal-config', orgId] });
+      setShowForm(false);
+      setClientId(''); setClientSecret(''); setWebhookId('');
+      setTestResult(null);
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.skiSwap.deletePayPalConfig(orgId),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['ski-swap/paypal-config', orgId] }),
+  });
+
+  const test = useMutation({
+    mutationFn: () => api.skiSwap.testPayPalConnection(orgId),
+    onSuccess: setTestResult,
+    onError: () => setTestResult({ success: false, message: 'Could not reach PayPal' }),
+  });
+
+  function openForm() {
+    setClientId(config?.clientId ?? '');
+    setWebhookId(config?.webhookId ?? '');
+    setEnvironment(config?.environment ?? 'sandbox');
+    setClientSecret('');
+    setShowForm(true);
+  }
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-white font-semibold">PayPal Payouts</h2>
+
+      {config && !showForm && (
+        <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3">
+          {/* Sandbox or live is the single most consequential thing on this
+              card, so it is stated rather than tucked into a form. */}
+          {config.environment === 'live' ? (
+            <p className="inline-flex items-center gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-700/50 rounded px-2 py-1">
+              Live — payouts from this organization move real money
+            </p>
+          ) : (
+            <p className="inline-flex items-center gap-2 text-xs text-gray-400 bg-surface-100 border border-gray-700 rounded px-2 py-1">
+              Sandbox — nothing sent from here reaches anybody
+            </p>
+          )}
+
+          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+            <span className="text-gray-400">Client ID</span>
+            <span className="text-gray-300 font-mono text-xs break-all">{config.clientId}</span>
+            <span className="text-gray-400">Secret</span>
+            <span className="text-gray-500">{config.hasSecret ? 'Stored' : 'Not set'}</span>
+            <span className="text-gray-400">Webhook</span>
+            <span className={config.webhookId ? 'text-gray-500' : 'text-amber-400'}>
+              {config.webhookId ?? 'Not registered'}
+            </span>
+          </div>
+
+          {!config.webhookId && (
+            <p className="text-xs text-amber-300/80">
+              Without a webhook, payout results have to be fetched by hand. Register one in your
+              PayPal dashboard pointing at{' '}
+              <span className="font-mono break-all">{`${window.location.origin}/api/v1/webhooks/paypal/${orgId}`}</span>{' '}
+              and paste its ID here.
+            </p>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => test.mutate()} disabled={test.isPending}
+              className="bg-surface-100 hover:bg-surface-200 text-white text-sm px-3 py-1.5 rounded disabled:opacity-40">
+              {test.isPending ? 'Testing…' : 'Test connection'}
+            </button>
+            <button onClick={openForm} className="text-sm text-brand-500 hover:underline">
+              Update credentials
+            </button>
+            <button
+              onClick={() => { if (confirm('Remove PayPal configuration? Payouts will stop working.')) remove.mutate(); }}
+              className="text-sm text-red-500 hover:underline ml-auto"
+            >
+              Remove
+            </button>
+          </div>
+
+          {testResult && (
+            <p className={`text-sm ${testResult.success ? 'text-green-400' : 'text-red-400'}`}>
+              {testResult.success ? '✓' : '✗'} {testResult.message}
+            </p>
+          )}
+        </div>
+      )}
+
+      {(!config || showForm) && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); save.mutate(); }}
+          className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-4"
+        >
+          <p className="text-xs text-gray-500">
+            From a REST app in your PayPal developer dashboard. The app must have Payouts enabled —
+            Test connection checks that, not just the password.
+          </p>
+
+          <label className="block">
+            <span className="text-gray-400 text-xs uppercase">Client ID</span>
+            <input
+              required value={clientId} onChange={(e) => setClientId(e.target.value)}
+              className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-gray-400 text-xs uppercase">Client secret</span>
+            <input
+              required type="password" value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+              placeholder={config ? 'Type the secret again to save' : ''}
+              className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-gray-400 text-xs uppercase">Webhook ID</span>
+            <input
+              value={webhookId} onChange={(e) => setWebhookId(e.target.value)}
+              placeholder="Optional — register the webhook first, then paste its ID"
+              className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono"
+            />
+          </label>
+
+          <div className="space-y-1.5">
+            <span className="text-gray-400 text-xs uppercase">Environment</span>
+            <div className="flex gap-2">
+              {(['sandbox', 'live'] as const).map((env) => (
+                <button
+                  key={env} type="button" onClick={() => setEnvironment(env)}
+                  className={`px-3 py-1.5 rounded text-sm capitalize transition ${
+                    environment === env ? 'bg-brand-600 text-white' : 'bg-surface-100 text-gray-300 hover:bg-surface-200'
+                  }`}
+                >
+                  {env}
+                </button>
+              ))}
+            </div>
+            {environment === 'live' && (
+              <p className="text-xs text-amber-300">
+                Payouts sent with these credentials move real money out of your PayPal account.
+              </p>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={save.isPending || !clientId || !clientSecret}
+              className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
+            >
+              Save
+            </button>
+            {showForm && (
+              <button type="button" onClick={() => setShowForm(false)}
+                className="text-gray-400 hover:text-white text-sm px-3 py-2">Cancel</button>
+            )}
+          </div>
+
+          {save.isError && (
+            <p className="text-red-400 text-sm">
+              {save.error instanceof ApiError ? save.error.message : 'Save failed'}
+            </p>
+          )}
+        </form>
+      )}
     </div>
   );
 }

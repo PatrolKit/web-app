@@ -141,8 +141,12 @@ export default function SkiSwapLayout() {
   // its subtabs too — Item details is the org's taxonomy, the same tree whichever
   // swap is selected, so offering a swap to pick would be offering a choice that
   // changes nothing.
+  //
+  // One payout run names its own swap and is reached from a list that was
+  // already filtered by one, so the picker there would offer a choice that
+  // changes nothing on the screen.
   const isSwapScopedTab = !location.pathname.match(
-    /\/(sellers|swaps|my-items|seller-profile)$|\/config(\/|$)/,
+    /\/(sellers|swaps|my-items|seller-profile)$|\/config(\/|$)|\/payouts\/[^/]+$/,
   );
 
   return (
@@ -157,11 +161,13 @@ export default function SkiSwapLayout() {
             <>
               <span className={disabledTabClass}>Dashboard</span>
               <span className={disabledTabClass}>Items</span>
+              <span className={disabledTabClass}>Payouts</span>
             </>
           ) : (
             <>
               {perms.has('ski_swap:report') && <NavLink to="" end className={navClass}>Dashboard</NavLink>}
               {perms.has('ski_swap:report') && <NavLink to="items" className={navClass}>Items</NavLink>}
+              {perms.has('ski_swap:report') && <NavLink to="payouts" className={navClass}>Payouts</NavLink>}
               {isSellerOnly && <NavLink to="my-items" className={navClass}>My Items</NavLink>}
               {isSellerOnly && <NavLink to="seller-profile" className={navClass}>Seller Profile</NavLink>}
             </>
