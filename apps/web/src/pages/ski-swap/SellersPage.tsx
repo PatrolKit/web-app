@@ -58,6 +58,46 @@ const payoutLabel = (k: PayoutKey) => PAYOUT_FILTERS.find((f) => f.value === k)!
 
 const payoutOf = (s: SellerResponse): PayoutKey => (s.payoutMethod ?? 'NONE');
 
+/**
+ * PayPal, and which of its three destinations.
+ *
+ * It is the only method with a choice: check-in offers a PayPal ID, or a
+ * verified email, or a verified phone. Venmo always resolves to `VENMO_ID` and
+ * check and donating have no target at all, so compositing those would add a
+ * word that is never anything but the same word.
+ *
+ * The distinction earns its place because of what is *not* stored. A PayPal
+ * paid to an email or a phone saves `payoutHandle: null` — the destination is
+ * read from the verified contact when the money moves, so a stale copy cannot
+ * be paid to. Those rows said "PayPal" and had nothing behind them; now they
+ * say which contact to go and look at.
+ */
+const PAYOUT_TARGET_LABELS: Partial<Record<NonNullable<SellerResponse['payoutTarget']>, string>> = {
+  EMAIL: 'email',
+  PHONE: 'phone',
+  PAYPAL_ID: 'ID',
+  VENMO_ID: 'ID',
+};
+
+function payoutDisplay(s: SellerResponse): string {
+  const key = payoutOf(s);
+  if (key !== 'PAYPAL' || !s.payoutTarget) return payoutLabel(key);
+  return `PayPal (${PAYOUT_TARGET_LABELS[s.payoutTarget] ?? s.payoutTarget})`;
+}
+
+/** Where the money actually goes, for the tooltip. */
+function payoutTitle(s: SellerResponse): string {
+  const shown = payoutDisplay(s);
+  if (s.payoutHandle) return `${shown} — ${s.payoutHandle}`;
+  if (s.payoutMethod === 'PAYPAL' && s.payoutTarget === 'EMAIL') {
+    return `${shown} — their verified email, read when the money moves`;
+  }
+  if (s.payoutMethod === 'PAYPAL' && s.payoutTarget === 'PHONE') {
+    return `${shown} — their verified phone, read when the money moves`;
+  }
+  return shown;
+}
+
 export default function SellersPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
   const qc = useQueryClient();
@@ -628,13 +668,8 @@ export default function SellersPage() {
                       Not set
                     </span>
                   ) : (
-                    <span
-                      className="text-gray-300 text-xs"
-                      // Where the money goes, for the one question this column
-                      // raises and cannot answer in its own width.
-                      title={s.payoutHandle ? `${payoutLabel(key)} — ${s.payoutHandle}` : payoutLabel(key)}
-                    >
-                      {payoutLabel(key)}
+                    <span className="text-gray-300 text-xs whitespace-nowrap" title={payoutTitle(s)}>
+                      {payoutDisplay(s)}
                     </span>
                   );
                 })()}
