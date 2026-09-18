@@ -60,17 +60,25 @@ export default function VerifyPage() {
   if (malformed || error) {
     return (
       <Shell icon={faTriangleExclamationDuo} tone="amber" title="That link did not work">
-        {/* The server's sentence where there is one: an expired link and a
-            link that was already used are different problems, and only it
-            knows which. */}
+        {/* The server's sentence where there is one: an expired link and a link
+            already used are different problems, and only it knows which. */}
         <p className="text-center text-sm text-gray-400">
-          {error || 'This sign-in link is missing part of itself. Links can be broken by an email client that wraps them.'}
+          {error || 'This sign-in link is missing part of itself. An email client that wraps long lines can break one.'}
         </p>
+
+        {/* Here, not on the page before it. This is the screen where somebody
+            has actually been stopped, and the explanation is the difference
+            between "the app is broken" and "ask for another one". */}
+        <p className="my-4 rounded-lg border border-gray-700 bg-surface-100 px-4 py-2.5 text-center text-sm text-gray-300">
+          Sign-in links work <span className="text-white font-medium">once</span> and expire after
+          15 minutes. Getting another takes a moment.
+        </p>
+
         <a
           href="/auth/login"
-          className="mt-6 block w-full rounded-lg bg-brand-600 hover:bg-brand-700 py-3 text-center text-white font-medium"
+          className="block w-full rounded-lg bg-brand-600 hover:bg-brand-700 py-3 text-center text-white font-medium"
         >
-          Back to sign in
+          Send me a new link
         </a>
       </Shell>
     );
@@ -98,18 +106,15 @@ export default function VerifyPage() {
         Tap below to finish signing in.
       </p>
 
-      {/* Lifted out of the sentence, the way the address is on "Check your
-          email".
-
-          "This link works once" said the true thing and left the consequence
-          for the reader to work out — and the reader is somebody who may well
-          come back to the same email tomorrow and tap it again. So it now says
-          which link, and what to do when it has been spent. */}
-      <p className="my-4 rounded-lg border border-gray-700 bg-surface-100 px-4 py-2.5 text-center text-sm text-gray-300">
-        The link you followed works <span className="text-white font-medium">only once</span>.
-        To sign in again later, request a new one.
-      </p>
-
+      {/* Nothing here about links expiring or working once.
+          
+          Somebody on this page is signing in *now*, and most of them are
+          holding a link that works — this screen cannot know yet, which is why
+          the confirmation is behind a button at all. A caveat about needing a
+          new link later is noise at best, and at worst reads as a warning that
+          this one has already failed. It belongs on the screen where it has
+          actually happened. */}
+      <div className="mt-6">
       <button
         onClick={confirm}
         disabled={busy}
@@ -117,6 +122,7 @@ export default function VerifyPage() {
       >
         {busy ? 'Signing you in…' : 'Sign in'}
       </button>
+      </div>
     </Shell>
   );
 }
