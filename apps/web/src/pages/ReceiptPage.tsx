@@ -1,6 +1,8 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { PublicPageHeader } from './public/PublicPageHeader';
+import { PoweredByFooter } from './public/PoweredByFooter';
 import type { PublicReceiptResponse } from '../lib/api.types';
 
 function money(cents: number): string {
@@ -27,19 +29,21 @@ export default function ReceiptPage() {
   });
 
   if (isLoading) {
-    return <Frame><p className="text-sm text-gray-500">Loading…</p></Frame>;
+    return <Frame header={<p className="text-center text-sm text-gray-500">Loading…</p>} />;
   }
 
   // A revoked link and a wrong one look the same on purpose: neither should
   // confirm that a receipt was ever there.
   if (error || !data) {
     return (
-      <Frame>
-        <h1 className="text-xl font-semibold text-white">Receipt not available</h1>
-        <p className="text-sm text-gray-400 mt-2">
-          This link may have expired or been replaced. Ask the club for a new one.
-        </p>
-      </Frame>
+      <Frame
+        header={
+          <PublicPageHeader
+            title="Receipt not available"
+            subtitle="This link may have expired or been replaced. Ask the club for a new one."
+          />
+        }
+      />
     );
   }
 
@@ -48,22 +52,24 @@ export default function ReceiptPage() {
   });
 
   return (
-    <Frame>
-      <div className="flex items-start gap-3">
-        {data.orgLogoUrl && (
-          <img src={data.orgLogoUrl} alt="" className="h-10 w-10 object-contain rounded" />
-        )}
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-white truncate">{data.orgName}</h1>
-          <p className="text-sm text-gray-400 truncate">{data.swapTitle}</p>
-        </div>
-      </div>
-
-      <p className="text-xs text-gray-500 mt-3">
+    <Frame
+      /* The same header as check-in and item tracking. A seller reaches this
+         from a link in one of them, so it should not look like somewhere
+         else. */
+      header={
+        <PublicPageHeader
+          title="Your receipt"
+          subtitle={[data.orgName, data.swapTitle]}
+          logoUrl={data.orgLogoUrl}
+        />
+      }
+    >
+      <div className="bg-surface-50 border border-gray-800 rounded-xl p-5">
+      <p className="text-xs text-gray-500 text-center">
         Checked in {when} · {data.sellerName}
       </p>
 
-      <ul className="mt-5 border-t border-gray-800">
+      <ul className="mt-4 border-t border-gray-800">
         {data.lines.map((line) => (
           <li
             key={line.sku}
@@ -110,19 +116,24 @@ export default function ReceiptPage() {
       <p className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-800">
         This is a record of what you dropped off. It does not change as items sell.
       </p>
+      </div>
     </Frame>
   );
 }
 
-function Frame({ children }: { children: React.ReactNode }) {
+/**
+ * `CheckinShell`'s chrome without its sign-in line, which a public page has no
+ * business showing. The header sits above the card rather than inside it, the
+ * way it does on check-in and on item tracking.
+ */
+function Frame({ header, children }: { header: React.ReactNode; children?: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-surface px-4 py-10">
-      <div className="max-w-md mx-auto bg-surface-50 border border-gray-800 rounded-xl p-5">
+    <div className="min-h-screen bg-surface text-white">
+      <div className="mx-auto w-full max-w-md px-4 py-6 space-y-6">
+        {header}
         {children}
+        <PoweredByFooter />
       </div>
-      <p className="max-w-md mx-auto text-center text-xs text-gray-600 mt-6">
-        Powered by <span className="text-brand-500">PatrolKit</span>
-      </p>
     </div>
   );
 }

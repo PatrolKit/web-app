@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { SquareClientService } from './square-client.service';
 import { deriveSkuPrefix } from './sku.util';
+import { isUniqueViolation } from '../common/util/prisma-errors';
 import { createId } from '@paralleldrive/cuid2';
 import { v4 as uuidv4 } from 'uuid';
 import type { SwapResponse } from '../contracts/ski-swap.contracts';
@@ -159,6 +160,8 @@ export class SwapService {
         },
       })
       .catch((err: unknown) => {
+        // A collision on the (orgId, activeSkuPrefix) index — two live swaps,
+        // one prefix.
         if (isUniqueViolation(err)) {
           throw new ConflictException(
             `Another running swap already issues "${newSkuPrefix}" SKUs. Rename one, or close the other first.`,
@@ -326,9 +329,4 @@ export class SwapService {
       updatedAt: swap.updatedAt.toISOString(),
     };
   }
-}
-
-/** A collision on the (orgId, activeSkuPrefix) index — two live swaps, one prefix. */
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
 }

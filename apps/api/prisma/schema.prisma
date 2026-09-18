@@ -84,7 +84,14 @@ model Organization {
   name      String
   slug      String   @unique
   status    String   @default("active") // active | suspended
-  logoUrl   String?
+  /// An https URL where S3 is configured, and a `data:` URI where it is not.
+  ///
+  /// MediumText because of the second one. The default VARCHAR(191) fits a URL
+  /// and nothing else, so the data-URI branch in `uploadLogo` could never
+  /// actually write — every upload on a deployment without a bucket threw on
+  /// the column, which is why no logo has ever appeared in local development.
+  /// Base64 of the 2 MB upload cap is about 2.7 MB, inside MediumText's 16.
+  logoUrl   String?  @db.MediumText
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

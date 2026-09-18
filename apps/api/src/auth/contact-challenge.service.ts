@@ -5,6 +5,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { SmsService } from '../sms/sms.service';
+import { isUniqueViolation } from '../common/util/prisma-errors';
 import type { SignInContext } from '../contracts/auth.contracts';
 
 export type ChallengeChannel = 'email' | 'phone';
@@ -225,8 +226,4 @@ export class ContactChallengeService {
         : this.mail.sendMagicLink(target, url);
     send.catch((err) => this.logger.error({ err }, 'Challenge email delivery failed'));
   }
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
 }

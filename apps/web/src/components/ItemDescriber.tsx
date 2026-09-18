@@ -191,20 +191,6 @@ function fold(s: string): string {
  * coarse step is a closed list wearing a text field. Only a short one: a ski
  * length is 70–215 in steps of 1, and 146 chips is not a control.
  */
-const MAX_NUMBER_CHIPS = 16;
-
-function numberChoices(attribute: ResolvedAttribute): string[] | null {
-  const { min, max, step } = attribute;
-  if (min === undefined || max === undefined || !step || step <= 0) return null;
-  const count = Math.floor((max - min) / step) + 1;
-  if (count < 2 || count > MAX_NUMBER_CHIPS) return null;
-  return Array.from({ length: count }, (_, i) => {
-    const n = min + i * step;
-    // Steps of 0.5 must not print as 12.000000000000002.
-    return String(Number(n.toFixed(4)));
-  });
-}
-
 /**
  * How many chips will sit in a row's body before it is a list rather than a
  * choice. Fourteen colors are five short lines and read at a glance; the
@@ -260,38 +246,6 @@ function ValueChips({
           >
             <NodeIcon icon={v.icon} className="h-3.5 w-3.5" />
             {v.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Plain chips over strings, for a bounded number question. */
-function NumberChips({
-  choices, unit, selected, onPick,
-}: {
-  choices: string[];
-  unit?: string;
-  selected: string | undefined;
-  onPick: (value: string | undefined) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {choices.map((c) => {
-        const on = selected !== undefined && Number(selected) === Number(c);
-        return (
-          <button
-            key={c}
-            type="button"
-            onClick={() => onPick(on ? undefined : c)}
-            className={`px-2.5 py-1.5 rounded-lg text-sm border tabular-nums ${
-              on
-                ? 'bg-brand-600 border-brand-600 text-white'
-                : 'bg-surface-100 border-gray-700 text-gray-200 hover:bg-surface-200'
-            }`}
-          >
-            {c}{unit ? ` ${unit}` : ''}
           </button>
         );
       })}
@@ -619,14 +573,15 @@ function AttributeField({
         </label>
       )}
 
-      {attribute.input === 'number' && chips && numberChoices(attribute) ? (
-        <NumberChips
-          choices={numberChoices(attribute) as string[]}
-          unit={attribute.unit}
-          selected={answer.numberValue}
-          onPick={(n) => setAnswer(attribute.id, n === undefined ? {} : { numberValue: n })}
-        />
-      ) : attribute.input === 'number' ? (
+      {/* Every number is typed.
+          
+          Chips were offered where the legal set was short enough to lay out
+          flat, which after the ranged experiment was reverted left exactly one
+          attribute in the whole tree wearing them — a 70 to 140 length in
+          fives, fifteen values — while ski length, waist width, mondopoint and
+          the rest were fields. One question behaving unlike its nine siblings
+          is worse than any of the arrangements, so the threshold is gone. */}
+      {attribute.input === 'number' ? (
         <div className="flex items-center gap-2">
           <input
             className="w-28 bg-surface-100 border border-gray-700 rounded-lg px-2.5 py-2 text-base text-white placeholder:text-gray-500 focus:border-brand-600 focus:outline-none"

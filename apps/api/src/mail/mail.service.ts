@@ -3,79 +3,58 @@ import { ConfigService } from '@nestjs/config';
 import nodemailer from 'nodemailer';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import type { SendOutcome } from '../common/messaging/send-outcome';
+import { emailShell } from './email-shell';
 
 function magicLinkTemplate(magicLinkUrl: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Sign in to PatrolKit</title></head>
-<body style="font-family: Inter, 'Plus Jakarta Sans', sans-serif; background: #1a1a1a; color: #fff; margin: 0; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #252525; border-radius: 8px; padding: 40px;">
-    <h1 style="color: #dc2626; font-size: 24px; margin: 0 0 8px;">PatrolKit</h1>
-    <p style="color: #9ca3af; margin: 0 0 32px; font-size: 14px;">Sign in to your account</p>
-    <p style="margin: 0 0 24px;">Click the button below to sign in. This link expires in <strong>15 minutes</strong>.</p>
-    <a href="${magicLinkUrl}" style="display: inline-block; background: #dc2626; color: #fff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Sign in to PatrolKit</a>
-    <p style="color: #6b7280; font-size: 13px; margin-top: 32px;">If you didn't request this, you can safely ignore this email.</p>
-    <hr style="border: none; border-top: 1px solid #333; margin: 24px 0;">
-    <p style="color: #4b5563; font-size: 12px; margin: 0;">Or copy this link: <span style="word-break: break-all; color: #9ca3af;">${magicLinkUrl}</span></p>
-  </div>
-</body>
-</html>`;
+  return emailShell({
+    title: 'Sign in to PatrolKit',
+    kicker: 'Sign in to your account',
+    heading: 'Your sign-in link',
+    body: ['Use the button below to sign in. This link expires in <strong>15 minutes</strong>.'],
+    action: { label: 'Sign in to PatrolKit', url: magicLinkUrl },
+    footnote: "If you didn't request this, you can safely ignore this email.",
+    showRawLink: true,
+  });
 }
 
 function sellerVerificationTemplate(verifyUrl: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Verify your email with PatrolKit</title></head>
-<body style="font-family: Inter, 'Plus Jakarta Sans', sans-serif; background: #1a1a1a; color: #fff; margin: 0; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #252525; border-radius: 8px; padding: 40px;">
-    <h1 style="color: #dc2626; font-size: 24px; margin: 0 0 8px;">PatrolKit</h1>
-    <p style="color: #9ca3af; margin: 0 0 32px; font-size: 14px;">Ski swap management</p>
-    <p style="margin: 0 0 8px; font-size: 18px; font-weight: 600;">Verify your email address</p>
-    <p style="color: #9ca3af; margin: 0 0 24px; font-size: 14px;">Click the button below to confirm your email. This link expires in <strong style="color: #e5e7eb;">15 minutes</strong>.</p>
-    <a href="${verifyUrl}" style="display: inline-block; background: #dc2626; color: #fff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Verify Email</a>
-    <p style="color: #6b7280; font-size: 13px; margin-top: 32px;">If you weren't expecting this, you can safely ignore this email.</p>
-    <hr style="border: none; border-top: 1px solid #333; margin: 24px 0;">
-    <p style="color: #4b5563; font-size: 12px; margin: 0;">Or copy this link: <span style="word-break: break-all; color: #9ca3af;">${verifyUrl}</span></p>
-  </div>
-</body>
-</html>`;
+  return emailShell({
+    title: 'Verify your email with PatrolKit',
+    kicker: 'Ski swap management',
+    heading: 'Verify your email address',
+    body: ['Confirm your email with the button below. This link expires in <strong>15 minutes</strong>.'],
+    action: { label: 'Verify email', url: verifyUrl },
+    footnote: "If you weren't expecting this, you can safely ignore this email.",
+    showRawLink: true,
+  });
 }
 
 function sellerAddedTemplate(signInUrl: string, orgName: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>You've been added to a ski swap</title></head>
-<body style="font-family: Inter, 'Plus Jakarta Sans', sans-serif; background: #1a1a1a; color: #fff; margin: 0; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #252525; border-radius: 8px; padding: 40px;">
-    <h1 style="color: #dc2626; font-size: 24px; margin: 0 0 8px;">PatrolKit</h1>
-    <p style="color: #9ca3af; margin: 0 0 32px; font-size: 14px;">Ski swap management</p>
-    <p style="margin: 0 0 8px; font-size: 18px; font-weight: 600;">You've been added to a new ski swap!</p>
-    <p style="color: #9ca3af; margin: 0 0 24px; font-size: 14px;"><strong style="color: #e5e7eb;">${orgName}</strong> has added you as a business seller. Sign in to manage your items.</p>
-    <a href="${signInUrl}" style="display: inline-block; background: #dc2626; color: #fff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Sign in to PatrolKit</a>
-    <p style="color: #6b7280; font-size: 13px; margin-top: 32px;">If you weren't expecting this, you can safely ignore this email.</p>
-  </div>
-</body>
-</html>`;
+  return emailShell({
+    title: "You've been added to a ski swap",
+    kicker: 'Ski swap management',
+    heading: "You've been added to a new ski swap",
+    body: [
+      `<strong>${orgName}</strong> has added you as a business seller. Sign in to manage your items.`,
+    ],
+    action: { label: 'Sign in to PatrolKit', url: signInUrl },
+    footnote: "If you weren't expecting this, you can safely ignore this email.",
+  });
 }
 
 function sellerInviteTemplate(inviteUrl: string, orgName: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>You're invited to sell on PatrolKit</title></head>
-<body style="font-family: Inter, 'Plus Jakarta Sans', sans-serif; background: #1a1a1a; color: #fff; margin: 0; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #252525; border-radius: 8px; padding: 40px;">
-    <h1 style="color: #dc2626; font-size: 24px; margin: 0 0 8px;">PatrolKit</h1>
-    <p style="color: #9ca3af; margin: 0 0 32px; font-size: 14px;">Ski swap management</p>
-    <p style="margin: 0 0 8px; font-size: 18px; font-weight: 600;">You've been invited to participate in a ski swap!</p>
-    <p style="color: #9ca3af; margin: 0 0 24px; font-size: 14px;"><strong style="color: #e5e7eb;">${orgName}</strong> has invited you to list your consignment items through PatrolKit.</p>
-    <p style="margin: 0 0 24px; font-size: 14px;">Click the button below to set up your account and start managing your items. This invite link expires in <strong>30 days</strong>.</p>
-    <a href="${inviteUrl}" style="display: inline-block; background: #dc2626; color: #fff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Accept Invitation</a>
-    <p style="color: #6b7280; font-size: 13px; margin-top: 32px;">If you weren't expecting this invitation, you can safely ignore this email.</p>
-    <hr style="border: none; border-top: 1px solid #333; margin: 24px 0;">
-    <p style="color: #4b5563; font-size: 12px; margin: 0;">Or copy this link: <span style="word-break: break-all; color: #9ca3af;">${inviteUrl}</span></p>
-  </div>
-</body>
-</html>`;
+  return emailShell({
+    title: "You're invited to sell on PatrolKit",
+    kicker: 'Ski swap management',
+    heading: "You've been invited to a ski swap",
+    body: [
+      `<strong>${orgName}</strong> has invited you to list your consignment items through PatrolKit.`,
+      'Set up your account with the button below. This invite expires in <strong>30 days</strong>.',
+    ],
+    action: { label: 'Accept invitation', url: inviteUrl },
+    footnote: "If you weren't expecting this invitation, you can safely ignore this email.",
+    showRawLink: true,
+  });
 }
 
 @Injectable()

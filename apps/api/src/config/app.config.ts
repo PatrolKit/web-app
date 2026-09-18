@@ -4,7 +4,6 @@ export default registerAs('app', () => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parseInt(process.env.PORT ?? '4000', 10),
   appUrl: process.env.APP_URL ?? 'http://localhost:3000',
-  apiUrl: process.env.API_URL ?? 'http://localhost:4000',
   cookieDomain: process.env.COOKIE_DOMAIN ?? '',
   /// Where sellers land: the skiswap.* host, which is a different origin from
   /// the staff app. Sign-in links have to be issued against the origin the
