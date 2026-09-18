@@ -206,6 +206,14 @@ ok('a payout under the minimum is held rather than batched',
 ok('a check line is never below the minimum',
   byName('check').status === 'PENDING');
 
+// Money the org took that nobody is being paid for. Kept on the run rather than
+// logged, because a log line nobody reads is the same as dropping it.
+ok('a sale matching no item of this swap is reported, not dropped',
+  run.unmatchedSales?.length === 1 &&
+  run.unmatchedSales[0].orderId === 'stub-order-orphan' &&
+  run.unmatchedSales[0].collectedCents === 2500,
+  JSON.stringify(run.unmatchedSales));
+
 console.log('\n── Approval ──────────────────────────────────────────────────');
 
 // Only the PayPal seller. The Venmo line stays unapproved on purpose: the whole

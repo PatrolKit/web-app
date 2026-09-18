@@ -205,6 +205,12 @@ function RunRow({ run }: { run: PayoutRunSummary }) {
                 {' '}· {waiting} {waiting === 1 ? 'needs' : 'need'} attention
               </span>
             )}
+            {run.unmatchedCount > 0 && (
+              <span className="text-amber-400">
+                {' '}· {run.unmatchedCount} unmatched{' '}
+                {run.unmatchedCount === 1 ? 'sale' : 'sales'}
+              </span>
+            )}
           </p>
         </div>
         <span className="text-white font-medium shrink-0">{usd(run.totalNetCents)}</span>

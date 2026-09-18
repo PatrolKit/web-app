@@ -1276,6 +1276,15 @@ model PayoutRun {
   /// what stops PayPal paying a batch twice (§7).
   sendAttempt Int @default(0)
 
+  /// Sales in the window that matched no item of this swap — something rung up
+  /// by hand, a mis-scan, or another swap's stock at the same location (§12).
+  ///
+  /// Kept rather than only logged: this is money the org took that nobody is
+  /// being paid for, and a log line nobody reads is the same as dropping it.
+  /// Frozen with the run, because it is a statement about one reading of the
+  /// orders and re-deriving it would need Square again.
+  unmatchedSales Json?
+
   createdAt DateTime  @default(now())
   closedAt  DateTime?
   closedBy  String?

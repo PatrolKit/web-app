@@ -9,7 +9,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PosAdapterFactory } from '../pos/pos.adapter';
 import { sellerDisplayName, SELLER_NAME_INCLUDE } from '../seller.service';
-import { buildRun, discountsOf, type RunItem, type RunSeller } from './build-run';
+import { buildRun, discountsOf, type BuiltRun, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
 import { PayPalClient, PayPalError, type PayoutItemRequest } from './paypal.client';
 import { formatCents } from './money';
@@ -141,6 +141,10 @@ export class PayoutRunService {
           salesFrom,
           salesTo,
           commissionBasisPoints,
+          // Stored, not just logged. A sale that matched nothing is money the
+          // org took that nobody is being paid for, and the only response
+          // guaranteed to mean nobody looks is silence.
+          unmatchedSales: built.unmatched.length ? (built.unmatched as never) : undefined,
         },
       });
 
@@ -213,6 +217,7 @@ export class PayoutRunService {
       createdAt: run.createdAt.toISOString(),
       closedAt: run.closedAt?.toISOString() ?? null,
       lineCount: run.lines.length,
+      unmatchedCount: ((run.unmatchedSales ?? []) as unknown[]).length,
       totalNetCents: run.lines.reduce((sum, l) => sum + l.netCents, 0),
       byStatus: tally(run.lines.map((l) => l.status)),
     }));
@@ -237,6 +242,7 @@ export class PayoutRunService {
       salesTo: run.salesTo.toISOString(),
       commissionBasisPoints: run.commissionBasisPoints,
       sendAttempt: run.sendAttempt,
+      unmatchedSales: (run.unmatchedSales ?? []) as BuiltRun['unmatched'],
       createdAt: run.createdAt.toISOString(),
       closedAt: run.closedAt?.toISOString() ?? null,
       totals: {

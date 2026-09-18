@@ -612,6 +612,13 @@ export interface PayoutRun {
   closedAt: string | null;
   totals: { grossCents: number; commissionCents: number; netCents: number };
   byStatus: Record<string, number>;
+  /**
+   * Sales in the window that matched no item of this swap.
+   *
+   * Money the org took that nobody is being paid for — a manual register
+   * entry, a mis-scan, or another swap's stock at the same location.
+   */
+  unmatchedSales: { variationId: string; orderId: string; collectedCents: number }[];
   lines: PayoutLine[];
 }
 
@@ -623,6 +630,7 @@ export interface PayoutRunSummary {
   createdAt: string;
   closedAt: string | null;
   lineCount: number;
+  unmatchedCount: number;
   totalNetCents: number;
   byStatus: Record<string, number>;
 }

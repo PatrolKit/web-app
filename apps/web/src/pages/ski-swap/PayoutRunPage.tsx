@@ -102,7 +102,10 @@ export default function PayoutRunPage() {
       </nav>
 
       {tab === 'payouts' && (
-        <LinesTable run={run} isAdmin={isAdmin} onChanged={invalidate} />
+        <>
+          <UnmatchedSales run={run} />
+          <LinesTable run={run} isAdmin={isAdmin} onChanged={invalidate} />
+        </>
       )}
       {tab === 'checks' && <ChecksTab run={run} isAdmin={isAdmin} onChanged={invalidate} />}
       {tab === 'discounts' && <DiscountsTab orgId={orgId} runId={run.id} />}
@@ -253,6 +256,68 @@ function RunHeader({
             </p>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Sales this run could not attribute to anybody (§12).
+ *
+ * Almost always something rung up by hand at the register, or another swap's
+ * stock at the same Square location. Shown rather than logged, because it is
+ * money the org took and nobody is being paid for it — and nobody goes looking
+ * for a number they were never told about.
+ */
+function UnmatchedSales({ run }: { run: PayoutRun }) {
+  const [open, setOpen] = useState(false);
+  if (!run.unmatchedSales?.length) return null;
+
+  const total = run.unmatchedSales.reduce((sum, s) => sum + s.collectedCents, 0);
+
+  return (
+    <div className="rounded-lg border border-amber-800/50 bg-amber-500/5 p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <span className="text-amber-400 leading-none">⚠</span>
+        <div className="flex-1 text-sm text-amber-100">
+          <p>
+            {run.unmatchedSales.length}{' '}
+            {run.unmatchedSales.length === 1 ? 'sale' : 'sales'} totalling{' '}
+            <strong>{usd(total)}</strong> matched no item in this swap, so nobody is being paid
+            for {run.unmatchedSales.length === 1 ? 'it' : 'them'}.
+          </p>
+          <p className="text-amber-200/70 text-xs mt-1">
+            Usually something rung up by hand, or another swap's stock at the same Square
+            location.
+          </p>
+        </div>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="text-xs text-amber-300 hover:text-amber-200 shrink-0"
+        >
+          {open ? 'Hide' : 'Show orders'}
+        </button>
+      </div>
+
+      {open && (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-amber-200/60 text-left">
+              <th className="pb-1.5 font-normal">Square order</th>
+              <th className="pb-1.5 font-normal">Catalog item</th>
+              <th className="pb-1.5 font-normal text-right">Collected</th>
+            </tr>
+          </thead>
+          <tbody>
+            {run.unmatchedSales.map((sale, i) => (
+              <tr key={`${sale.orderId}-${i}`} className="border-t border-amber-800/30">
+                <td className="py-1.5 font-mono text-amber-100/90">{sale.orderId}</td>
+                <td className="py-1.5 font-mono text-amber-200/60">{sale.variationId}</td>
+                <td className="py-1.5 text-right text-amber-100">{usd(sale.collectedCents)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
