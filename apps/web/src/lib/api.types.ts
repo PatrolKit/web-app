@@ -640,6 +640,28 @@ export interface PayoutDiscount {
   zeroCollected: boolean;
 }
 
+/**
+ * What a seller is owed and what became of it, on their own status page.
+ *
+ * `destination` is masked by the server: this page needs no sign-in, so it is
+ * as public as whoever holds the link.
+ */
+export interface PublicSellerPayout {
+  swapTitle: string;
+  status: PayoutLineStatus;
+  grossCents: number;
+  commissionCents: number;
+  netCents: number;
+  /** "20%" — what the arithmetic above took. */
+  commissionPercent: string;
+  method: PayoutMethod;
+  destination: string | null;
+  sentAt: string | null;
+  checkSentAt: string | null;
+  /** Unclaimed: the one state where the seller is the person who can act. */
+  needsAction: boolean;
+}
+
 export interface CheckPayee {
   sellerName: string;
   street: string | null;
@@ -690,6 +712,8 @@ export interface PublicSellerDetailResponse {
   orgName: string;
   orgLogoUrl: string | null;
   swaps: PublicSellerDetailSwap[];
+  /** Newest first. Empty until a payout run has been built (Plan 25 §8). */
+  payouts: PublicSellerPayout[];
 }
 
 export interface SellerFindResponse {

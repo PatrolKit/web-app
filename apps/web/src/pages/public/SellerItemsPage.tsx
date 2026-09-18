@@ -3,9 +3,133 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { PoweredByFooter } from './PoweredByFooter';
 import { PublicPageHeader } from './PublicPageHeader';
+import type { PublicSellerPayout } from '../../lib/api.types';
 
 function formatPrice(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * What the seller is owed, and where it went (Plan 25 §8).
+ *
+ * The arithmetic is shown rather than only the total. A seller who sold $315
+ * and receives $252 should be able to see the $63 and what it was for, on the
+ * same screen, without having to ask anybody.
+ */
+function PayoutsSection({ payouts }: { payouts: PublicSellerPayout[] }) {
+  return (
+    <div className="space-y-2">
+      <h2 className="text-white font-medium text-sm">Your payout</h2>
+      <div className="space-y-3">
+        {payouts.map((payout, i) => (
+          <PayoutCard key={`${payout.swapTitle}-${i}`} payout={payout} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PayoutCard({ payout }: { payout: PublicSellerPayout }) {
+  const { line, tone } = describe(payout);
+
+  return (
+    <div className="rounded-lg border border-gray-700 p-4 space-y-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-gray-400 text-xs">{payout.swapTitle}</span>
+        <span className={`text-xs px-2 py-0.5 rounded ${tone}`}>{label(payout)}</span>
+      </div>
+
+      <dl className="space-y-1 text-sm">
+        <div className="flex justify-between">
+          <dt className="text-gray-400">Sold</dt>
+          <dd className="text-white">{formatPrice(payout.grossCents)}</dd>
+        </div>
+        {payout.commissionCents > 0 && (
+          <div className="flex justify-between">
+            <dt className="text-gray-400">Patrol ({payout.commissionPercent})</dt>
+            <dd className="text-gray-300">−{formatPrice(payout.commissionCents)}</dd>
+          </div>
+        )}
+        <div className="flex justify-between border-t border-gray-800 pt-1 mt-1">
+          <dt className="text-white font-medium">Payout</dt>
+          <dd className="text-white font-semibold">{formatPrice(payout.netCents)}</dd>
+        </div>
+      </dl>
+
+      <p className={`text-xs ${payout.needsAction ? 'text-amber-300' : 'text-gray-400'}`}>{line}</p>
+    </div>
+  );
+}
+
+function label(payout: PublicSellerPayout): string {
+  switch (payout.status) {
+    case 'SENT': return 'Paid';
+    case 'PAID_BY_CHECK': return 'Check sent';
+    case 'UNCLAIMED': return 'Needs your attention';
+    case 'SENDING': return 'On its way';
+    case 'FAILED':
+    case 'RETURNED': return 'Did not arrive';
+    case 'DONATED': return 'Donated';
+    default: return 'Being prepared';
+  }
+}
+
+/**
+ * One sentence about where the money is.
+ *
+ * `UNCLAIMED` is the only state that asks the seller for anything, so it is the
+ * only one that says what to do — everywhere else the patrol is the one with
+ * something to do, and telling the seller to act would be telling them to chase
+ * a thing they cannot move.
+ */
+function describe(payout: PublicSellerPayout): { line: string; tone: string } {
+  const when = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString(undefined, { month: 'long', day: 'numeric' }) : '';
+
+  switch (payout.status) {
+    case 'SENT':
+      return {
+        line: `Sent to ${payout.destination ?? 'your account'} on ${when(payout.sentAt)}.`,
+        tone: 'bg-green-900/40 text-green-400',
+      };
+    case 'PAID_BY_CHECK':
+      return {
+        line: payout.checkSentAt
+          ? `A check was posted on ${when(payout.checkSentAt)}.`
+          : 'A check is being written for you.',
+        tone: 'bg-green-900/40 text-green-400',
+      };
+    case 'UNCLAIMED':
+      return {
+        line:
+          `We sent this to ${payout.destination ?? 'your account'}, but PayPal could not deliver it — ` +
+          `usually because that is not the address on your PayPal account. Get in touch with the ` +
+          `patrol and they can send it somewhere else. PayPal returns an unclaimed payment after 30 days.`,
+        tone: 'bg-amber-900/40 text-amber-300',
+      };
+    case 'SENDING':
+      return { line: 'On its way through PayPal.', tone: 'bg-blue-900/40 text-blue-300' };
+    case 'FAILED':
+    case 'RETURNED':
+      return {
+        line: 'This payment did not go through. The patrol has been told and will sort it out.',
+        tone: 'bg-red-900/40 text-red-400',
+      };
+    case 'DONATED':
+      return { line: 'You gave this to the patrol. Thank you.', tone: 'bg-surface-100 text-gray-400' };
+    case 'BELOW_MINIMUM':
+      return {
+        line: 'Too small to send electronically. The patrol will arrange another way.',
+        tone: 'bg-surface-100 text-gray-400',
+      };
+    default:
+      return {
+        line: payout.method === 'CHECK'
+          ? 'A check is being prepared for you.'
+          : 'Being prepared. Nothing for you to do.',
+        tone: 'bg-surface-100 text-gray-400',
+      };
+  }
 }
 
 export default function SellerItemsPage() {
@@ -112,6 +236,12 @@ export default function SellerItemsPage() {
             ),
           )
         )}
+        {/* Optional chaining on purpose. This page is reached from a printed
+            tag, so it outlives the deploy that added the field — a seller with
+            a cached bundle, or an older API in front of it, should see their
+            items rather than a blank screen. */}
+        {!!data.payouts?.length && <PayoutsSection payouts={data.payouts} />}
+
         <PoweredByFooter />
       </div>
     </div>

@@ -13,7 +13,7 @@ import { buildRun, discountsOf, type RunItem, type RunSeller } from './build-run
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
 import { PayPalClient, PayPalError, type PayoutItemRequest } from './paypal.client';
 import { formatCents } from './money';
-import { checksToCsv, type CheckRow } from './checks-csv';
+import { checksToCsv, phoneForHumans, type CheckRow } from './checks-csv';
 import { TERMINAL_PAYOUT_STATUSES, type PayoutLineStatus } from '../../contracts/payouts.contracts';
 
 /**
@@ -530,7 +530,7 @@ export class PayoutRunService {
         zip: user.zip,
         // The verified number where there is one, but an unverified number is
         // better than a blank column on a check that comes back.
-        phone: user.verifiedPhone ?? user.phone,
+        phone: phoneForHumans(user.verifiedPhone ?? user.phone),
         amountCents: line.netCents,
         reference: line.id,
         checkNumber: line.checkNumber,

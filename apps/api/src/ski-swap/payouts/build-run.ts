@@ -1,5 +1,5 @@
 import type { PosSaleLine } from '../pos/pos.adapter';
-import { splitCommission } from './money';
+import { formatCents, splitCommission } from './money';
 import type { PayoutMethod, PayoutTarget } from './paypal-mapping';
 
 /**
@@ -159,7 +159,7 @@ export function buildRun(
       // Sending forty cents costs more than it is worth. Held rather than
       // batched, and visible, because the alternative is finding it as a fee.
       status = 'BELOW_MINIMUM';
-      statusNote = `Below the ${opts.minimumCents / 100} dollar minimum for an electronic payout`;
+      statusNote = `Below the ${formatCents(opts.minimumCents)} minimum for an electronic payout`;
     } else if (seller.method !== 'CHECK' && !destination) {
       // Not refused at the batch, where it would fail one item of many, but
       // here, where somebody is looking at a screen and can fix it.

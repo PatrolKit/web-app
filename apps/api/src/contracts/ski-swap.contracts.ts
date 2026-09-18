@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { PAYOUT_LINE_STATUSES } from './payouts.contracts';
 
 // ─── Square Config ────────────────────────────────────────────────────────────
 
@@ -756,13 +757,40 @@ export const PublicSellerDetailSwapSchema = z.object({
   items: z.array(PublicSellerDetailItemSchema),
 });
 
+/**
+ * What the seller is owed, and what became of it (Plan 25 §8).
+ *
+ * This page is reachable by seller id alone, so the destination is masked. A
+ * seller needs to recognise their own address to answer "is that the right
+ * one?"; nobody holding the link needs to be handed it.
+ */
+export const PublicSellerPayoutSchema = z.object({
+  swapTitle: z.string(),
+  status: z.enum(PAYOUT_LINE_STATUSES),
+  grossCents: z.number().int(),
+  commissionCents: z.number().int(),
+  netCents: z.number().int(),
+  /** "20%" — what the arithmetic above took. */
+  commissionPercent: z.string(),
+  method: z.enum(['PAYPAL', 'VENMO', 'CHECK', 'DONATE']),
+  /** Masked: "d••••@example.com", "(•••) •••-1212". Null for a check. */
+  destination: z.string().nullable(),
+  sentAt: z.string().datetime().nullable(),
+  checkSentAt: z.string().datetime().nullable(),
+  /** The one state where the seller is the person who can do something. */
+  needsAction: z.boolean(),
+});
+
 export const PublicSellerDetailResponseSchema = z.object({
   sellerName: z.string(),
   orgName: z.string(),
   orgLogoUrl: z.string().nullable(),
   swaps: z.array(PublicSellerDetailSwapSchema),
+  /** Newest first. Empty until a payout run has been built. */
+  payouts: z.array(PublicSellerPayoutSchema),
 });
 
+export type PublicSellerPayout = z.infer<typeof PublicSellerPayoutSchema>;
 export type PublicSellerDetailItem = z.infer<typeof PublicSellerDetailItemSchema>;
 export type PublicSellerDetailSwap = z.infer<typeof PublicSellerDetailSwapSchema>;
 export type PublicSellerDetailResponse = z.infer<typeof PublicSellerDetailResponseSchema>;

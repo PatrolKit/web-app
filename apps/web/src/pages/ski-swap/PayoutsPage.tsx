@@ -201,7 +201,9 @@ function RunRow({ run }: { run: PayoutRunSummary }) {
           <p className="text-gray-500 text-xs mt-1">
             {run.lineCount} {run.lineCount === 1 ? 'seller' : 'sellers'}
             {waiting > 0 && (
-              <span className="text-amber-400"> · {waiting} need attention</span>
+              <span className="text-amber-400">
+                {' '}· {waiting} {waiting === 1 ? 'needs' : 'need'} attention
+              </span>
             )}
           </p>
         </div>

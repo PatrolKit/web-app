@@ -1,4 +1,4 @@
-import { checksToCsv, CHECK_CSV_HEADERS, type CheckRow } from './checks-csv';
+import { checksToCsv, phoneForHumans, CHECK_CSV_HEADERS, type CheckRow } from './checks-csv';
 
 function row(over: Partial<CheckRow> = {}): CheckRow {
   return {
@@ -7,7 +7,7 @@ function row(over: Partial<CheckRow> = {}): CheckRow {
     city: 'Stowe',
     state: 'VT',
     zip: '05672',
-    phone: '+18025551212',
+    phone: phoneForHumans('+18025551212'),
     amountCents: 4250,
     reference: 'line_abc',
     checkNumber: null,
@@ -27,19 +27,42 @@ function topLevelCommas(line: string): number {
   return count;
 }
 
+describe('phoneForHumans', () => {
+  it('reads a US number the way somebody about to dial it would', () => {
+    expect(phoneForHumans('+18025551212')).toBe('(802) 555-1212');
+  });
+
+  it('handles a ten-digit number with no country code', () => {
+    expect(phoneForHumans('8025551212')).toBe('(802) 555-1212');
+  });
+
+  it('leaves a number it does not recognise exactly as stored', () => {
+    // Mangling an international number to make it look tidy would be worse
+    // than leaving it alone: the digits are what somebody has to dial.
+    expect(phoneForHumans('+442071234567')).toBe('+442071234567');
+  });
+
+  it('is unchanged by being applied twice', () => {
+    expect(phoneForHumans(phoneForHumans('+18025551212'))).toBe('(802) 555-1212');
+  });
+
+  it('says nothing for a seller with no number', () => {
+    expect(phoneForHumans(null)).toBe('');
+  });
+});
+
 describe('checksToCsv', () => {
   it('writes the agreed columns in the agreed order', () => {
     expect(checksToCsv([]).trim()).toBe(CHECK_CSV_HEADERS.join(','));
   });
 
   it('carries the phone number, which is what the treasurer rings when a check bounces back', () => {
-    // Formatted, not E.164. A leading `+` is a formula to a spreadsheet, and
-    // the person reading this column is about to dial it.
     expect(checksToCsv([row()])).toContain('"(802) 555-1212"');
   });
 
-  it('leaves a number it does not recognise exactly as stored', () => {
-    expect(checksToCsv([row({ phone: '+442071234567' })])).toContain(`"'+442071234567"`);
+  it('defuses a number it could not format, which still starts with a plus', () => {
+    expect(checksToCsv([row({ phone: phoneForHumans('+442071234567') })]))
+      .toContain(`"'+442071234567"`);
   });
 
   it('writes the amount as a bare decimal so the column can be summed', () => {

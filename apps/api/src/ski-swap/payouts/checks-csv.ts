@@ -12,6 +12,7 @@ export interface CheckRow {
   city: string | null;
   state: string | null;
   zip: string | null;
+  /** Already formatted for reading. See `phoneForHumans`. */
   phone: string | null;
   amountCents: number;
   /** The payout line id: what to write in the memo, and what to search on later. */
@@ -35,7 +36,7 @@ export function checksToCsv(rows: CheckRow[]): string {
         cell(row.city),
         cell(row.state),
         cell(row.zip),
-        cell(forHumans(row.phone)),
+        cell(row.phone),
         // Bare decimal, no currency symbol: this column is summed and mail-merged.
         (row.amountCents / 100).toFixed(2),
         cell(row.reference),
@@ -52,15 +53,19 @@ export function checksToCsv(rows: CheckRow[]): string {
 /**
  * A phone number as somebody about to dial it wants to read it.
  *
- * Stored E.164, printed `(802) 555-1212`. Not cosmetic: a bare `+18025551212`
- * is a formula to a spreadsheet, and the apostrophe that would otherwise be
- * needed to defuse it then rides along into every mail merge. Formatting it
- * removes the leading `+` and the problem with it.
+ * Stored E.164, printed `(802) 555-1212`. Applied once, in the service, so the
+ * check screen and the file it exports show the same string — they were
+ * showing `+15550198203` and `(555) 019-8203` side by side, which reads like
+ * two different numbers.
+ *
+ * Not only cosmetic: a bare `+18025551212` is a formula to a spreadsheet, and
+ * the apostrophe that would otherwise defuse it rides along into every mail
+ * merge. Formatting removes the leading `+` and the problem with it.
  *
  * Anything that is not a US number is left exactly as stored — mangling an
- * international number to make it look tidy is worse than an apostrophe.
+ * international number to look tidy is worse than an apostrophe.
  */
-function forHumans(phone: string | null): string {
+export function phoneForHumans(phone: string | null): string {
   if (!phone) return '';
   const digits = phone.replace(/\D/g, '');
   if (digits.length === 11 && digits.startsWith('1')) {
