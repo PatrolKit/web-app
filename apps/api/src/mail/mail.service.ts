@@ -135,7 +135,7 @@ export class MailService {
   private async send(to: string, subject: string, html: string): Promise<SendOutcome> {
     if (!this.config.get<boolean>('app.outboundNotifications', false)) {
       this.logger.log({ to, subject }, '[mail suppressed] OUTBOUND_NOTIFICATIONS is off');
-      return { status: 'suppressed' };
+      return { status: 'suppressed', reason: 'OUTBOUND_NOTIFICATIONS is off' };
     }
     const from = this.config.get<string>('app.emailFrom', 'noreply@patrolkit.io');
     const transport = this.config.get<string>('app.mailTransport', 'smtp');

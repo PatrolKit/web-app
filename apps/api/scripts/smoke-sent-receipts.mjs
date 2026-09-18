@@ -142,6 +142,12 @@ ok('sending reuses the snapshot rather than minting a second',
 
 const deliveries = await prisma.receiptDelivery.findMany({ where: { receiptId: snap.id } });
 ok('the attempt is written down', deliveries.length === 1, `${deliveries.length}`);
+// SUPPRESSED alone does not say which suppression: a box with messaging
+// switched off and a product with no registered number look identical months
+// later, and they are not the same problem.
+ok('a suppressed row records why nothing went',
+   deliveries[0]?.status !== 'SUPPRESSED' || !!deliveries[0]?.error,
+   `${deliveries[0]?.status}: ${deliveries[0]?.error}`);
 ok('with who pressed it', deliveries[0]?.actorUserId === staff.user.id,
    `${deliveries[0]?.actorUserId}`);
 

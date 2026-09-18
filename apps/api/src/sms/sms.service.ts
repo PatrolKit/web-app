@@ -23,7 +23,7 @@ export class SmsService {
   async send(to: string, body: string): Promise<SendOutcome> {
     if (!this.config.get<boolean>('app.outboundNotifications', false)) {
       this.logger.log({ to, body }, '[SMS suppressed] OUTBOUND_NOTIFICATIONS is off');
-      return { status: 'suppressed' };
+      return { status: 'suppressed', reason: 'OUTBOUND_NOTIFICATIONS is off' };
     }
     const originationNumber = this.config.get<string>('app.snsOriginationNumber', '');
     if (!originationNumber) {
@@ -33,8 +33,11 @@ export class SmsService {
       );
       // Suppressed rather than sent: nothing left the building. Toll-free
       // registration is still pending, so this is the state every environment
-      // is in today and it must not read as a delivery.
-      return { status: 'suppressed' };
+      // is in today — production included — and it must not read as a delivery.
+      // Distinguished from the gate above because they are not the same
+      // problem: one is a switch, the other is a registration nobody here can
+      // hurry.
+      return { status: 'suppressed', reason: 'no SMS origination number is registered' };
     }
     const region = this.config.get<string>('app.awsRegion', 'us-east-2');
     const client = new SNSClient({ region });

@@ -266,7 +266,14 @@ export class ReceiptService {
         destination,
         status,
         providerRef: outcome.status === 'sent' ? (outcome.providerRef ?? null) : null,
-        error: outcome.status === 'failed' ? outcome.error : null,
+        // Why nothing went, for both of the ways nothing goes. A suppressed row
+        // that says only SUPPRESSED cannot tell somebody looking at it months
+        // later whether a box had messaging switched off or whether texts did
+        // not work anywhere yet.
+        error:
+          outcome.status === 'failed' ? outcome.error
+          : outcome.status === 'suppressed' ? (outcome.reason ?? null)
+          : null,
         actorUserId: params.actorUserId ?? null,
       },
     });

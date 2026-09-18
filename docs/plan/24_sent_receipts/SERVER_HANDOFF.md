@@ -96,6 +96,13 @@ without a key, every call is another message in somebody's inbox. With one, a
 repeat replays the first result and sends nothing — including when the first
 attempt failed, so a genuine retry needs a new key.
 
+The guarantee is that **once a result is recorded, a retry replays it**. A
+request that never reached us leaves the key unused and genuinely sends, which
+is the offline case. There is a narrow window between the provider accepting a
+message and the result being written where a crash would let a retry send twice;
+closing it would mean reserving the key before dispatch, which trades a rare
+duplicate for a routine state nobody can interpret.
+
 ```json
 {
   "receiptId": "...",

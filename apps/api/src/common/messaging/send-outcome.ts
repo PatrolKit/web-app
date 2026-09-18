@@ -11,5 +11,14 @@
  */
 export type SendOutcome =
   | { status: 'sent'; providerRef?: string }
-  | { status: 'suppressed' }
+  /**
+   * Nothing was sent, on purpose. `reason` says which purpose.
+   *
+   * There is more than one, and they have different lifetimes: a deployment
+   * with outbound messaging switched off is a setting somebody can change,
+   * while SMS with no origination number is the whole product waiting on a
+   * toll-free registration. A record that says only "suppressed" cannot tell
+   * support which of those it is looking at.
+   */
+  | { status: 'suppressed'; reason?: string }
   | { status: 'failed'; error: string };
