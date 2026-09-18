@@ -96,6 +96,59 @@ function describeRanges(ranges: { startNumber: number; endNumber: number }[]): s
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+/**
+ * What is true of an item right now, as one cell.
+ *
+ * This replaces an "In Stock" and a "Sold" column which between them told a
+ * lie. `soldCount` is not recorded anywhere — it is `originalQuantity - inStock`
+ * — and `inStock` is zero for anything Square has never heard of. So an item
+ * waiting for a volunteer to scan it, which has never been pushed, read as
+ * fully **sold**: the one state where nothing has happened looked like the one
+ * where everything had.
+ *
+ * Ordered by what stops a sale first, because only the first answer matters: an
+ * unscanned item is not also "not in Square" as far as anybody acting on this
+ * screen is concerned, it is unscanned, and scanning it fixes both.
+ */
+export function itemState(item: ItemResponse): { label: string; tone: string; title: string } {
+  const qty = item.originalQuantity;
+  // Only where there is something to count. Nearly every row is one item, and
+  // "1 of 1" on all of them buries the rows that are not.
+  const of = (n: number) => (qty > 1 ? ` · ${n} of ${qty}` : '');
+
+  if (!item.consignedAt) {
+    return {
+      label: 'Awaiting scan',
+      tone: 'bg-gray-700/50 text-gray-300',
+      title: 'A volunteer has not accepted this item yet. It is not in Square and cannot sell.',
+    };
+  }
+
+  // Accepted, but the push did not land — `finish()` counts these as
+  // `squareFailures`. It cannot sell, and nothing on this screen said so.
+  if (!item.squareSynced) {
+    return {
+      label: 'Not in Square',
+      tone: 'bg-amber-900/40 text-amber-300',
+      title: 'Accepted, but it never reached Square. It cannot sell until it does — re-push it from here.',
+    };
+  }
+
+  if (item.inStock > 0) {
+    return {
+      label: `For sale${qty > 1 ? ` · ${item.inStock} of ${qty} left` : ''}`,
+      tone: 'bg-green-900/40 text-green-400',
+      title: 'In Square with stock on the floor.',
+    };
+  }
+
+  return {
+    label: `Sold${of(item.soldCount)}`,
+    tone: 'bg-blue-900/40 text-blue-300',
+    title: 'In Square with nothing left.',
+  };
+}
+
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi,
   showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
@@ -308,15 +361,14 @@ export default function SwapItemsPanel({
               <th className="pb-2 pr-4">Name</th>
               <th className="pb-2 pr-4">Price</th>
               {sellers && <th className="pb-2 pr-4">Seller</th>}
-              <th className="pb-2 pr-4">In Stock</th>
-              <th className="pb-2 pr-4">Sold</th>
+              <th className="pb-2 pr-4">State</th>
               <th className="pb-2 pr-4" title="Tag printed"><FontAwesomeIcon icon={faTagDuo} /></th>
               {canManage && <th className="pb-2">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {items.length === 0 && (
-              <tr><td colSpan={sellers ? 8 : 7} className="py-6 text-center text-gray-500 text-sm">{emptyMessage}</td></tr>
+              <tr><td colSpan={sellers ? 7 : 6} className="py-6 text-center text-gray-500 text-sm">{emptyMessage}</td></tr>
             )}
             {items.map((item) => (
               <tr key={item.id} className="border-b border-gray-900 hover:bg-surface-50">
@@ -327,8 +379,19 @@ export default function SwapItemsPanel({
                 </td>
                 <td className="py-2 pr-4 text-gray-300">${(item.priceCents / 100).toFixed(2)}</td>
                 {sellers && <td className="py-2 pr-4 text-gray-400">{item.seller?.displayName ?? '—'}</td>}
-                <td className="py-2 pr-4 text-gray-300">{item.inStock}</td>
-                <td className="py-2 pr-4 text-gray-300">{item.soldCount}</td>
+                <td className="py-2 pr-4">
+                  {(() => {
+                    const st = itemState(item);
+                    return (
+                      <span
+                        title={st.title}
+                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${st.tone}`}
+                      >
+                        {st.label}
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td className="py-2 pr-4">
                   {item.hasPrintedTag
                     ? <FontAwesomeIcon icon={faTagDuo} className="text-green-500" title="Printed" />
