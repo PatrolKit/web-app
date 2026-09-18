@@ -109,6 +109,8 @@ model Organization {
   checkinStations CheckinStation[]
   printJobs       PrintJob[]
   receipts        Receipt[]
+  payPalConfig    PayPalConfig?
+  payoutRuns      PayoutRun[]
 
   resorts           Resort[]
   timeClockEvents   TimeClockEvent[]
@@ -404,6 +406,7 @@ model SkiSwap {
   skuCounters  SwapSkuCounter[]
   ticketRanges LegacyTicketRange[]
   receipts     Receipt[]
+  payoutRuns   PayoutRun[]
 
   @@unique([orgId, title])
   @@unique([orgId, activeSkuPrefix])
@@ -431,6 +434,7 @@ model SellerProfile {
   assignedPrinters SwapPrinter[]
   ticketRanges     LegacyTicketRange[]
   receipts         Receipt[]
+  payoutLines      PayoutLine[]
 }
 
 /// A block of pre-printed tickets issued to a business seller for one swap.
@@ -706,6 +710,13 @@ model SkiSwapSettings {
   /// decides what happens to items checked in from now on and never revisits
   /// what is already on the floor.
   requireConsignmentScan Boolean @default(false)
+
+  /// The org's cut, in hundredths of a percent. 2000 is 20%.
+  ///
+  /// An integer because a percent invites 20.5 and then a float, and float
+  /// arithmetic has no place in money. Nobody sees this number: it is set and
+  /// displayed as a percentage, converted only at the edges (Plan 25 §3).
+  commissionBasisPoints Int @default(0)
 
   /// The PIN that unlocks the admin sheet on a `ski_swap.staff_check_in` iPad.
   ///
@@ -1215,4 +1226,164 @@ model ReceiptDelivery {
   receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
 
   @@index([receiptId, createdAt])
+}
+
+/// A PayPal account that can send payouts, one per org (Plan 25 §6).
+///
+/// Shaped like `SquareConfig` deliberately — same encryption, same
+/// never-read-back secret, same audit row on every write.
+model PayPalConfig {
+  id             String @id
+  orgId          String @unique
+  clientId       String @db.Text
+  /// AES-256-GCM JSON: { iv, tag, ct }. Never returned by any endpoint.
+  clientSecretEnc String @db.Text
+  /// "sandbox" | "live"
+  environment    String @default("sandbox") @db.VarChar(8)
+  /// The webhook id registered with PayPal, needed to verify a delivery.
+  webhookId      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+/// One swap's payout run (Plan 25 §4).
+///
+/// A swap has at most one open run; closing it is what makes the amounts final.
+model PayoutRun {
+  id       String @id
+  orgId    String
+  swapId   String
+  /// DRAFT | REVIEW | CLOSED
+  status   String @db.VarChar(12)
+
+  /// The window the orders were read from, so a re-read is reproducible and a
+  /// sale after the run is visibly after it.
+  salesFrom DateTime
+  salesTo   DateTime
+
+  /// Copied from settings when the run opens. Changing the setting later must
+  /// not restate what a seller has already been told they would get.
+  commissionBasisPoints Int
+
+  /// Bumped every time a send is attempted. Half of `sender_batch_id`, which is
+  /// what stops PayPal paying a batch twice (§7).
+  sendAttempt Int @default(0)
+
+  createdAt DateTime  @default(now())
+  closedAt  DateTime?
+  closedBy  String?
+
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  swap  SkiSwap      @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  lines PayoutLine[]
+
+  @@index([orgId, createdAt])
+  @@index([swapId, status])
+}
+
+/// What one seller is owed in one run, and what happened to it.
+model PayoutLine {
+  id       String @id
+  runId    String
+  sellerId String
+
+  /// Frozen when the run was built, like a receipt's lines.
+  sellerName  String
+  /// PAYPAL | VENMO | CHECK | DONATE
+  method      String  @db.VarChar(8)
+  /// Resolved at build time, so a seller who changes their email mid-run
+  /// cannot redirect a payment somebody has already approved.
+  destination String?
+  /// The PayPal `recipient_type`: EMAIL | PHONE | PAYPAL_ID | USER_HANDLE.
+  destinationType String? @db.VarChar(12)
+
+  grossCents      Int
+  commissionCents Int
+  netCents        Int
+
+  /// PENDING | APPROVED | SENDING | SENT | UNCLAIMED | FAILED | RETURNED |
+  /// PAID_BY_CHECK | DONATED | BELOW_MINIMUM
+  status     String  @db.VarChar(16)
+  /// Why it is where it is: PayPal's failure reason, or that a held item is
+  /// under review.
+  statusNote String? @db.Text
+
+  /// PayPal's own ids, for reconciling against their dashboard.
+  payoutBatchId String?
+  payoutItemId  String?
+
+  /// Set when a person approved this line. Nothing sends without it.
+  approvedBy String?
+  approvedAt DateTime?
+  sentAt     DateTime?
+
+  /// Check tracking (§10). Null for every other method.
+  checkNumber String?
+  checkSentAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  run    PayoutRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  seller SellerProfile @relation(fields: [sellerId], references: [id])
+  items  PayoutLineItem[]
+  notices PayoutNotice[]
+
+  @@unique([runId, sellerId])
+  @@index([runId, status])
+  @@index([payoutBatchId])
+}
+
+/// The evidence. One row per item sold, as it was.
+model PayoutLineItem {
+  id     String  @id
+  lineId String
+  /// A pointer for staff tooling. The text beside it is the record, and no
+  /// foreign key, because deleting an item must not rewrite what somebody was
+  /// paid on.
+  itemId String?
+
+  name       String
+  sku        String
+  /// What the seller was owed on: `SwapItem.priceCents` at run time.
+  priceCents Int
+  quantity   Int
+  /// What Square actually took, which may be less. Recorded so the org can see
+  /// what a discount cost it; never what the seller is paid on.
+  collectedCents Int
+  /// The order this came from, and when. What makes the payout defensible.
+  squareOrderId String
+  soldAt        DateTime
+  refundedQty   Int @default(0)
+
+  line PayoutLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@index([lineId])
+}
+
+/// A nudge sent to a seller about an unclaimed payout (§9).
+///
+/// Recorded like `ReceiptDelivery`: a suppressed nudge is not a sent one, and a
+/// row per attempt is what stops day 7 being sent twice.
+model PayoutNotice {
+  id     String @id
+  lineId String
+  /// Which nudge this was: 7 or 21 days after the payout went unclaimed.
+  dayMark Int
+  /// EMAIL | SMS
+  channel     String @db.VarChar(8)
+  destination String
+  /// SENT | SUPPRESSED | FAILED
+  status      String  @db.VarChar(12)
+  error       String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  line PayoutLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@unique([lineId, dayMark])
+  @@index([lineId])
 }
