@@ -4,7 +4,7 @@ import { SkuService } from './sku.service';
 import { LabelRendererService } from './printing/label-renderer.service';
 import { PrintRecipeService } from './printing/print-recipe.service';
 import { LabelRenderService } from './printing/label-render.service';
-import { SquareCryptoService } from './square-crypto.service';
+import { CredentialCryptoService } from '../common/services/credential-crypto.service';
 import { SquareClientService } from './square-client.service';
 import { SquareConfigService } from './square-config.service';
 import { SquareConfigController } from './square-config.controller';
@@ -94,7 +94,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     LabelRendererService,
     PrintRecipeService,
     LabelRenderService,
-    SquareCryptoService,
+    CredentialCryptoService,
     SquareClientService,
     SquareConfigService,
     S3Service,
@@ -119,6 +119,6 @@ import { IdentityModule } from '../common/identity/identity.module';
     TaxonomyService,
     TaxonomyIconService,
   ],
-  exports: [SquareCryptoService, SquareClientService],
+  exports: [CredentialCryptoService, SquareClientService],
 })
 export class SkiSwapModule {}

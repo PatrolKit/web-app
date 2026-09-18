@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SquareCryptoService } from './square-crypto.service';
+import { CredentialCryptoService } from '../common/services/credential-crypto.service';
 import { SquareClientService } from './square-client.service';
 import { createId } from '@paralleldrive/cuid2';
 import type { SquareConfigResponse } from '../contracts/ski-swap.contracts';
@@ -9,7 +9,7 @@ import type { SquareConfigResponse } from '../contracts/ski-swap.contracts';
 export class SquareConfigService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly crypto: SquareCryptoService,
+    private readonly crypto: CredentialCryptoService,
     private readonly squareClient: SquareClientService,
   ) {}
 

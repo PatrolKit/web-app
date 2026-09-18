@@ -1,6 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { SquareClient, SquareEnvironment } from 'square';
-import { SquareCryptoService } from './square-crypto.service';
+import { CredentialCryptoService } from '../common/services/credential-crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 export const SQUARE_VERSION = '2026-07-16';
@@ -9,7 +9,7 @@ export const SQUARE_VERSION = '2026-07-16';
 export class SquareClientService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly crypto: SquareCryptoService,
+    private readonly crypto: CredentialCryptoService,
   ) {}
 
   async forOrg(orgId: string): Promise<SquareClient> {

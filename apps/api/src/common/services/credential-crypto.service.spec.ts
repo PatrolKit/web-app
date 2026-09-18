@@ -1,14 +1,14 @@
 import { ConfigService } from '@nestjs/config';
-import { SquareCryptoService } from './square-crypto.service';
+import { CredentialCryptoService } from './credential-crypto.service';
 
 const VALID_KEY = 'a'.repeat(64); // 32-byte hex key (all 'a' characters)
 
 function makeService(key: string) {
   const configService = { get: jest.fn().mockReturnValue(key) } as unknown as ConfigService;
-  return new SquareCryptoService(configService);
+  return new CredentialCryptoService(configService);
 }
 
-describe('SquareCryptoService', () => {
+describe('CredentialCryptoService', () => {
   it('encrypts and decrypts a round-trip correctly', () => {
     const svc = makeService(VALID_KEY);
     const plaintext = 'sandbox-access-token-abc123';

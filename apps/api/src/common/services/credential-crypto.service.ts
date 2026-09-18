@@ -9,7 +9,7 @@ interface EncryptedPayload {
 }
 
 @Injectable()
-export class SquareCryptoService {
+export class CredentialCryptoService {
   private readonly key: Buffer;
 
   constructor(private readonly config: ConfigService) {
