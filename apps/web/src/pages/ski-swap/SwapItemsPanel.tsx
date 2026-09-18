@@ -69,10 +69,11 @@ export interface SwapItemsPanelProps {
   /**
    * True on a seller's own "My Items" page, false on the staff Items page.
    *
-   * A seller may withdraw their own item until a tag has been printed for it;
-   * after that the gear is out under a numbered label and it has to be done at
-   * the counter, where somebody can see both. The server refuses either way —
-   * this stops the screen offering a button that would be.
+   * A seller may withdraw their own item until it is consigned — the moment it
+   * becomes sellable, and on every path the same moment it reaches Square.
+   * After that it has to be done at the counter, where somebody can see both
+   * the gear and the tag. The server refuses either way; this stops the screen
+   * offering a button that would be.
    */
   selfService?: boolean;
   showSearch?: boolean;
@@ -442,12 +443,13 @@ export default function SwapItemsPanel({
                 {canManage && (
                   <td className="py-2 flex gap-2 items-center">
                     <button onClick={() => openEdit(item)} className="text-xs text-brand-500 hover:underline">Edit</button>
-                    {selfService && item.hasPrintedTag ? (
+                    {selfService && item.consignedAt ? (
                       // Said rather than hidden. A button that quietly vanishes
-                      // once a tag prints reads as a bug; this reads as a rule.
+                      // once an item is accepted reads as a bug; this reads as
+                      // a rule.
                       <span
                         className="text-xs text-gray-600 cursor-not-allowed"
-                        title="This item has a printed tag on it. Ask at the counter to withdraw it."
+                        title="This item has been accepted for sale. Ask at the counter to withdraw it."
                       >Delete</span>
                     ) : (
                       <button

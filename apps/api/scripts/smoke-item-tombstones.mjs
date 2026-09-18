@@ -15,11 +15,13 @@
 //   - the deleted item's ticket number can be issued again, which is the
 //     unique index actually releasing it rather than a query pretending to;
 //   - a withdrawn tag scans as nothing;
-//   - a seller cannot withdraw an item once its tag is printed.
+//   - a seller can withdraw an item they have tagged but nobody has accepted,
+//     and cannot once it is consigned — which on every path is the same moment
+//     it becomes sellable in Square.
 //
 // Sign-in is throttled to five a minute and this script signs in twice — once
-// as staff, once as the seller, because the guard on withdrawing a tagged item
-// is only observable from the seller's own session. Two runs inside a minute
+// as staff, once as the seller, because the guard on withdrawing an accepted
+// item is only observable from the seller's own session. Two runs inside a minute
 // will therefore hit the limit; leave a minute between them.
 //
 // Everything below is about what happens to an item after it is deleted, so the
@@ -197,30 +199,62 @@ ok('the seller sees only what is left',
   Array.isArray(sellerItems) ? sellerItems.length === 1 : sellerItems.items?.length === 1,
   JSON.stringify(sellerItems).slice(0, 120));
 
-const untagged = await sellerApi(`/orgs/${org.id}/ski-swap/seller/me/items/${keeper.id}`, {
-  method: 'DELETE',
+// The case the guard actually exists for: a station self check-in at an org
+// that requires a scan. The seller has tagged their gear and is standing beside
+// it, and may take a row back out right up until a staff member accepts it.
+await prisma.skiSwapSettings.upsert({
+  where: { orgId: org.id },
+  update: { requireConsignmentScan: true },
+  create: { orgId: org.id, requireConsignmentScan: true },
 });
-ok('a seller may withdraw an item whose tag was never printed',
-  untagged.status === 204, `HTTP ${untagged.status}`);
 
-const tagged = await prisma.swapItem.create({
+const waiting = await prisma.swapItem.create({
   data: {
     id: createId(), swapId: swap.id, orgId: org.id, sellerId: sellerProfile.id,
-    name: 'Tagged board', sku: '77003', liveSku: '77003', priceCents: 9000,
-    originalQuantity: 1, consignedAt: new Date(), hasPrintedTag: true,
+    name: 'Waiting helmet', sku: '77004', liveSku: '77004', priceCents: 3500,
+    originalQuantity: 1,
+    // Null: tagged by the seller, not yet accepted by anybody.
+    consignedAt: null,
+    // Tagged already, which is what the old guard tested and why it was wrong:
+    // the tag prints during check-in, long before staff look at the gear.
+    hasPrintedTag: true,
   },
 });
-const refused = await sellerApi(`/orgs/${org.id}/ski-swap/seller/me/items/${tagged.id}`, {
+
+const withdrawn = await sellerApi(`/orgs/${org.id}/ski-swap/seller/me/items/${waiting.id}`, {
   method: 'DELETE',
 });
-ok('a seller may not withdraw one that has a tag on it',
+ok('a seller may withdraw an item that is tagged but not yet accepted',
+  withdrawn.status === 204, `HTTP ${withdrawn.status}`);
+ok('...which is the whole point: the tag prints before the scan',
+  (await prisma.swapItem.findUnique({ where: { id: waiting.id } }))?.deletedAt !== null);
+
+await prisma.skiSwapSettings.update({
+  where: { orgId: org.id },
+  data: { requireConsignmentScan: false },
+});
+
+// And once accepted, it is staff work.
+const accepted = await prisma.swapItem.create({
+  data: {
+    id: createId(), swapId: swap.id, orgId: org.id, sellerId: sellerProfile.id,
+    name: 'Accepted board', sku: '77003', liveSku: '77003', priceCents: 9000,
+    originalQuantity: 1, consignedAt: new Date(), hasPrintedTag: false,
+  },
+});
+const refused = await sellerApi(`/orgs/${org.id}/ski-swap/seller/me/items/${accepted.id}`, {
+  method: 'DELETE',
+});
+ok('a seller may not withdraw one that has been accepted for sale',
   refused.status === 409, `HTTP ${refused.status}`);
+ok('...even with no tag printed, because it is live at the register',
+  !accepted.hasPrintedTag);
 ok('...and is told where to go instead',
   /counter/i.test(JSON.stringify(await refused.json())));
 ok('...and the item is untouched',
-  (await prisma.swapItem.findUnique({ where: { id: tagged.id } }))?.deletedAt === null);
+  (await prisma.swapItem.findUnique({ where: { id: accepted.id } }))?.deletedAt === null);
 
-const staffRemoved = await api(`${ITEMS}/${tagged.id}`, { method: 'DELETE' });
+const staffRemoved = await api(`${ITEMS}/${accepted.id}`, { method: 'DELETE' });
 ok('staff at the counter can remove the very same item',
   staffRemoved.status === 204, `HTTP ${staffRemoved.status}`);
 

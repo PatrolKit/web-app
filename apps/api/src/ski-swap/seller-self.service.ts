@@ -217,31 +217,32 @@ export class SellerSelfService {
   /**
    * A seller withdrawing their own item.
    *
-   * Refused once a tag has been printed. Before that the gear is still in their
-   * hands and nothing physical points at the record; after it, there is a
-   * numbered label that a register can scan, and deleting the row underneath it
-   * leaves a tag nobody can account for.
+   * Allowed until the item is consigned, refused afterwards. `consignedAt` is
+   * the moment an item becomes sellable — it is set in the same breath as the
+   * push to Square on every path — so this is the line between gear the seller
+   * still effectively holds and gear that is live at a register.
    *
-   * The line is `hasPrintedTag` rather than `consignedAt`, which would have been
-   * the obvious reading of "already accepted". `consignedAt` is set at creation
-   * for every path except a station self check-in at an org running
-   * `requireConsignmentScan`, so testing it would have refused every seller on
-   * every ordinary org — which is not a guard, it is removing the feature.
-   * `hasPrintedTag` flips when paper actually comes out of a printer, and means
-   * the same thing on both kinds of org.
+   * Three paths stamp it at creation: a staff check-in, a station self check-in
+   * at an org that does not require a scan, and a business seller listing stock
+   * from their own desk, where there is no station and so nothing to wait for.
+   * The one path that leaves it null is a station self check-in at an org
+   * running `requireConsignmentScan`, which is exactly the case this guard is
+   * for: the seller has tagged their gear and is standing beside it, and may
+   * take a row back out until a staff member accepts it.
    *
-   * Staff keep the unconditional delete: somebody at the counter can see the
-   * gear and the tag, which is exactly what the seller on their phone cannot.
+   * After that it is staff work — rare, and done at the counter, where somebody
+   * can see both the gear and the tag. That is the thing a seller on their phone
+   * cannot do, which is the whole reason for the split.
    */
   async deleteItem(orgId: string, userId: string, itemId: string) {
     const seller = await this.getSellerRecord(orgId, userId);
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
 
-    if (item.hasPrintedTag) {
+    if (item.consignedAt !== null) {
       throw new ConflictException(
-        `${item.name} already has a printed tag, so it has to be withdrawn at the counter. ` +
-          'Ask a staff member and they can remove it for you.',
+        `${item.name} has already been accepted for sale, so it has to be withdrawn ` +
+          'at the counter. Ask a staff member and they can remove it for you.',
       );
     }
 
