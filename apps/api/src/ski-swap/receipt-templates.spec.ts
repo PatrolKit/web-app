@@ -15,6 +15,7 @@ const view = (over: Partial<ReceiptView> = {}): ReceiptView => ({
   createdAt: new Date('2026-09-17T13:42:00Z'),
   url: 'https://skiswap.patrolkit.io/r/Xk3abcdefghijklmnopqrstuvwxyz012',
   trackUrl: 'https://skiswap.patrolkit.io/s/seller123',
+  brandMarkUrl: 'https://skiswap.patrolkit.io/logo-mark.png',
   lines: [
     { name: 'Rossignol 172cm Red Skis', sku: 'ETR-E-0001', priceCents: 4500 },
     { name: 'Snowboard', sku: 'ETR-E-0002', priceCents: 9000 },
@@ -136,7 +137,12 @@ describe('receiptEmail', () => {
     it('never falls back to the stored data: URI', () => {
       const html = receiptEmail(view({ orgLogoUrl: 'data:image/png;base64,AAAA', logoImageUrl: null }));
       expect(html).not.toContain('data:image');
-      expect(html).not.toContain('<img');
+      // The PatrolKit mark at the foot is an image too, so "no <img> at all"
+      // is no longer the same claim. What matters is that the org's slot is
+      // empty rather than pointing at something a client will not render.
+      const images = html.match(/<img[^>]*>/g) ?? [];
+      expect(images).toHaveLength(1);
+      expect(images[0]).toContain(view().brandMarkUrl);
     });
   });
 
@@ -176,5 +182,18 @@ describe('receiptEmail', () => {
     it('is absent, not empty, when the seller never chose one', () => {
       expect(receiptEmail(view({ payoutLabel: null }))).not.toContain('Payment goes to');
     });
+  });
+
+  /**
+   * The club's name leads this email, so PatrolKit is attributed at the foot
+   * rather than competing with it at the top — the arrangement every
+   * seller-facing page already uses.
+   */
+  it('signs off with the PatrolKit mark', () => {
+    const html = receiptEmail(view());
+    expect(html).toContain('Powered by');
+    expect(html).toContain('https://skiswap.patrolkit.io/logo-mark.png');
+    // Below the receipt, not above it.
+    expect(html.indexOf('Powered by')).toBeGreaterThan(html.indexOf('Track your items'));
   });
 });

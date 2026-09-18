@@ -155,6 +155,20 @@ export function receiptEmail(view: ReceiptView): string {
                 <a href="${view.url}" class="muted" style="color: #9ca3af; word-break: break-all;">${view.url}</a>
               </p>
 
+              <!-- The club's name leads this email, so the attribution sits at
+                   the foot the way it does on every seller-facing page. The
+                   mark is a 128px asset rather than the 1254px one the web app
+                   uses at 14px: a client fetches this on every open. -->
+              <table role="presentation" width="100%" style="border-collapse: collapse; margin: 20px 0 0;">
+                <tr>
+                  <td align="center">
+                    <span class="muted" style="color: #9ca3af; font-size: 12px; vertical-align: middle;">Powered by</span>
+                    <img src="${view.brandMarkUrl}" alt="" width="14" height="14" style="display: inline-block; width: 14px; height: 14px; vertical-align: middle; margin: 0 5px; border-radius: 3px; border: 0;">
+                    <span class="muted" style="color: #9ca3af; font-size: 12px; vertical-align: middle;">PatrolKit</span>
+                  </td>
+                </tr>
+              </table>
+
             </td>
           </tr>
         </table>

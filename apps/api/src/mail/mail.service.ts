@@ -5,15 +5,31 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import type { SendOutcome } from '../common/messaging/send-outcome';
 import { emailShell } from './email-shell';
 
-function magicLinkTemplate(magicLinkUrl: string): string {
+/** Whose sign-in this is, when the person belongs to exactly one org. */
+export interface SignInBrand {
+  name: string;
+  logoUrl?: string | null;
+}
+
+function magicLinkTemplate(
+  magicLinkUrl: string,
+  brand: SignInBrand | undefined,
+  markUrl: string,
+): string {
   return emailShell({
-    title: 'Sign in to PatrolKit',
-    kicker: 'Sign in to your account',
+    title: brand ? `Sign in to ${brand.name}` : 'Sign in to PatrolKit',
+    // Led by the club where there is one, so the person sees the name they
+    // recognise rather than the name of the software their club runs.
+    brand,
+    kicker: brand ? undefined : 'Sign in to your account',
     heading: 'Your sign-in link',
     body: ['Use the button below to sign in. This link expires in <strong>15 minutes</strong>.'],
-    action: { label: 'Sign in to PatrolKit', url: magicLinkUrl },
+    action: { label: brand ? `Sign in to ${brand.name}` : 'Sign in to PatrolKit', url: magicLinkUrl },
     footnote: "If you didn't request this, you can safely ignore this email.",
     showRawLink: true,
+    // Only where somebody else's name is at the top; otherwise the header
+    // already says PatrolKit.
+    poweredByUrl: brand ? markUrl : null,
   });
 }
 
@@ -63,10 +79,27 @@ export class MailService {
 
   constructor(private readonly config: ConfigService) {}
 
-  async sendMagicLink(to: string, magicLinkUrl: string): Promise<SendOutcome> {
-    const subject = 'Your sign-in link for PatrolKit';
-    const html = magicLinkTemplate(magicLinkUrl);
-    return this.send(to, subject, html);
+  async sendMagicLink(
+    to: string,
+    magicLinkUrl: string,
+    brand?: SignInBrand,
+  ): Promise<SendOutcome> {
+    const subject = brand
+      ? `Your sign-in link for ${brand.name}`
+      : 'Your sign-in link for PatrolKit';
+    return this.send(to, subject, magicLinkTemplate(magicLinkUrl, brand, this.brandMarkUrl()));
+  }
+
+  /**
+   * The PatrolKit mark, absolute.
+   *
+   * 128px rather than the 1254px asset the web app uses at 14px: a mail client
+   * fetches this on every open, and half a megabyte for something rendered at
+   * fourteen pixels is a cost the recipient pays.
+   */
+  private brandMarkUrl(): string {
+    const base = this.config.get<string>('app.appUrl', 'http://localhost:3000');
+    return `${base.replace(/\/$/, '')}/logo-mark.png`;
   }
 
   async sendSellerInvite(to: string, inviteUrl: string, orgName: string): Promise<SendOutcome> {

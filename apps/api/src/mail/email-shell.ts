@@ -26,6 +26,15 @@
 export interface EmailShellOptions {
   /** The `<title>`, which some clients show in the preview line. */
   title: string;
+  /**
+   * Whose message this is, when it is not PatrolKit's own.
+   *
+   * A seller hears from their club, not from the software the club runs — so
+   * where we know which club, the club's name and mark lead and PatrolKit moves
+   * to the foot. `logoUrl` must be somewhere a mail client can fetch: a `data:`
+   * URI is stripped and there is nothing to fall back to but the name.
+   */
+  brand?: { name: string; logoUrl?: string | null };
   /** Under the wordmark. Omitted where the message is not about a swap. */
   kicker?: string;
   /** The bold line that says what happened. */
@@ -43,6 +52,13 @@ export interface EmailShellOptions {
    * only way through.
    */
   showRawLink?: boolean;
+  /**
+   * "Powered by PatrolKit" at the foot, with the mark.
+   *
+   * For a message that led with somebody else's name. On an email whose header
+   * already says PatrolKit in red it would be saying it twice.
+   */
+  poweredByUrl?: string | null;
 }
 
 export function emailShell(o: EmailShellOptions): string {
@@ -79,6 +95,37 @@ export function emailShell(o: EmailShellOptions): string {
     ? `\n    <p class="muted" style="color: #6b7280; margin: 0 0 28px; font-size: 14px;">${o.kicker}</p>`
     : '\n    <div style="height: 20px;"></div>';
 
+  // Either the club's name and mark, or the PatrolKit wordmark. Never both at
+  // the top — the second one belongs at the foot if it belongs anywhere.
+  const masthead = o.brand
+    ? `<table role="presentation" style="border-collapse: collapse;">
+      <tr>
+        ${o.brand.logoUrl ? `<td width="44" style="padding-right: 12px; vertical-align: middle;"><img src="${o.brand.logoUrl}" alt="" width="44" height="44" style="display: block; width: 44px; height: 44px; object-fit: contain; border: 0;"></td>` : ''}
+        <td style="vertical-align: middle;">
+          <span class="ink" style="color: #111827; font-size: 22px; font-weight: 700;">${o.brand.name}</span>
+        </td>
+      </tr>
+    </table>`
+    : `<h1 style="color: #dc2626; font-size: 24px; margin: 0 0 8px;">PatrolKit</h1>`;
+
+  /*
+   * The mark is a 128px asset, not the 1254px one the web app uses at 14px.
+   * A mail client fetches this on every open, and half a megabyte for
+   * something rendered at sixteen pixels is a cost somebody else pays.
+   */
+  const poweredBy = o.poweredByUrl
+    ? `
+    <table role="presentation" width="100%" style="border-collapse: collapse; margin: 24px 0 0;">
+      <tr>
+        <td align="center">
+          <span class="muted" style="color: #9ca3af; font-size: 12px; vertical-align: middle;">Powered by</span>
+          <img src="${o.poweredByUrl}" alt="" width="14" height="14" style="display: inline-block; width: 14px; height: 14px; vertical-align: middle; margin: 0 5px; border-radius: 3px; border: 0;">
+          <span class="muted" style="color: #9ca3af; font-size: 12px; vertical-align: middle;">PatrolKit</span>
+        </td>
+      </tr>
+    </table>`
+    : '';
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -105,9 +152,9 @@ export function emailShell(o: EmailShellOptions): string {
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="card" style="max-width: 520px; background: #ffffff; border-radius: 10px; padding: 36px; font-family: Inter, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
           <tr>
             <td>
-    <h1 style="color: #dc2626; font-size: 24px; margin: 0 0 8px;">PatrolKit</h1>${kicker}
+    ${masthead}${kicker}
     <p class="ink" style="color: #111827; margin: 0 0 12px; font-size: 18px; font-weight: 700;">${o.heading}</p>
-    ${paragraphs}${action}${footnote}${rawLink}
+    ${paragraphs}${action}${footnote}${rawLink}${poweredBy}
             </td>
           </tr>
         </table>

@@ -107,6 +107,7 @@ export class ContactChallengeService {
       purpose,
       orgName: params.orgName,
       context: params.context,
+      brand: await this.soleOrgOf(userId),
     });
 
     // Two independent conditions, deliberately. Suppression says nothing was
@@ -184,6 +185,37 @@ export class ContactChallengeService {
     };
   }
 
+  /**
+   * The org to put at the top of a sign-in email, or nothing.
+   *
+   * Only when the person belongs to exactly one. With none there is nothing to
+   * say, and with several there is no way to know which one they are signing in
+   * to from here — the link is the same either way, and guessing would put one
+   * club's name on a message about another's.
+   *
+   * Best-effort: a sign-in must not fail because branding could not be read.
+   */
+  private async soleOrgOf(userId: string): Promise<{ name: string; logoUrl: string | null } | undefined> {
+    try {
+      const memberships = await this.prisma.membership.findMany({
+        where: { userId, deletedAt: null, org: { status: 'active' } },
+        select: { org: { select: { name: true, logoUrl: true } } },
+        take: 2,
+      });
+      if (memberships.length !== 1) return undefined;
+      const org = memberships[0].org;
+      return {
+        name: org.name,
+        // A `data:` URI is stripped by mail clients, so it is no logo at all
+        // and the name stands on its own.
+        logoUrl: org.logoUrl && /^https?:\/\//i.test(org.logoUrl) ? org.logoUrl : null,
+      };
+    } catch (err) {
+      this.logger.error({ err, userId }, 'Could not resolve a sole org for sign-in branding');
+      return undefined;
+    }
+  }
+
   private async dispatch(params: {
     challengeId: string;
     channel: ChallengeChannel;
@@ -192,6 +224,7 @@ export class ContactChallengeService {
     purpose: ChallengePurpose;
     orgName?: string;
     context?: SignInContext;
+    brand?: { name: string; logoUrl?: string | null };
   }): Promise<void> {
     const { challengeId, channel, target, rawCode, purpose, orgName, context } = params;
 
@@ -223,7 +256,7 @@ export class ContactChallengeService {
     const send =
       purpose === 'invite' && orgName
         ? this.mail.sendSellerInvite(target, url, orgName)
-        : this.mail.sendMagicLink(target, url);
+        : this.mail.sendMagicLink(target, url, params.brand);
     send.catch((err) => this.logger.error({ err }, 'Challenge email delivery failed'));
   }
 }

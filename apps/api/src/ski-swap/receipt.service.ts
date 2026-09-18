@@ -45,6 +45,8 @@ export interface ReceiptView {
    * happened to it since.
    */
   trackUrl: string;
+  /** The PatrolKit mark, for the foot of an email led by somebody else's name. */
+  brandMarkUrl: string;
   lines: { name: string; sku: string; priceCents: number }[];
 }
 
@@ -387,6 +389,7 @@ export class ReceiptService {
       createdAt: receipt.createdAt,
       url: this.urlFor(receipt.token),
       trackUrl: this.sellerSite(`/s/${receipt.sellerId}`),
+      brandMarkUrl: this.sellerSite('/logo-mark.png'),
       lines,
     };
   }
