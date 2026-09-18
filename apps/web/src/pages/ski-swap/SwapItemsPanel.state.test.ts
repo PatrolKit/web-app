@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { itemState } from './SwapItemsPanel';
+import { ITEM_STATE_FILTERS, itemState } from './SwapItemsPanel';
 import type { ItemResponse } from '../../lib/api.types';
 
 /**
@@ -66,6 +66,27 @@ describe('itemState', () => {
     it('counts what went when they are all gone', () => {
       expect(itemState(item({ originalQuantity: 5, inStock: 0 })).label).toBe('Sold · 5 of 5');
     });
+  });
+
+  /**
+   * The filter beside this column selects on `key`. If a state existed that no
+   * option could reach, it would be a row nobody could search for — and the
+   * failed-push state is the one somebody most needs to find.
+   */
+  it('offers a filter for every state it can return', () => {
+    const reachable = [
+      itemState(item()),
+      itemState(item({ inStock: 0 })),
+      itemState(item({ consignedAt: null, squareSynced: false, inStock: 0 })),
+      itemState(item({ squareSynced: false, inStock: 0 })),
+    ].map((s) => s.key);
+
+    expect(new Set(reachable).size).toBe(4);
+    for (const key of reachable) {
+      expect(ITEM_STATE_FILTERS.some((f) => f.value === key)).toBe(true);
+    }
+    // And nothing offered that cannot happen.
+    expect(ITEM_STATE_FILTERS).toHaveLength(4);
   });
 
   it('gives every state a tone and an explanation', () => {

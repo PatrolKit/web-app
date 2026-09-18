@@ -110,7 +110,21 @@ function describeRanges(ranges: { startNumber: number; endNumber: number }[]): s
  * unscanned item is not also "not in Square" as far as anybody acting on this
  * screen is concerned, it is unscanned, and scanning it fixes both.
  */
-export function itemState(item: ItemResponse): { label: string; tone: string; title: string } {
+export type ItemStateKey = 'awaiting_scan' | 'not_in_square' | 'for_sale' | 'sold';
+
+export const ITEM_STATE_FILTERS: { value: ItemStateKey; label: string }[] = [
+  { value: 'awaiting_scan', label: 'Awaiting scan' },
+  { value: 'not_in_square', label: 'Not in Square' },
+  { value: 'for_sale', label: 'For sale' },
+  { value: 'sold', label: 'Sold' },
+];
+
+export function itemState(item: ItemResponse): {
+  key: ItemStateKey;
+  label: string;
+  tone: string;
+  title: string;
+} {
   const qty = item.originalQuantity;
   // Only where there is something to count. Nearly every row is one item, and
   // "1 of 1" on all of them buries the rows that are not.
@@ -118,6 +132,7 @@ export function itemState(item: ItemResponse): { label: string; tone: string; ti
 
   if (!item.consignedAt) {
     return {
+      key: 'awaiting_scan',
       label: 'Awaiting scan',
       tone: 'bg-gray-700/50 text-gray-300',
       title: 'A volunteer has not accepted this item yet. It is not in Square and cannot sell.',
@@ -128,6 +143,7 @@ export function itemState(item: ItemResponse): { label: string; tone: string; ti
   // `squareFailures`. It cannot sell, and nothing on this screen said so.
   if (!item.squareSynced) {
     return {
+      key: 'not_in_square',
       label: 'Not in Square',
       tone: 'bg-amber-900/40 text-amber-300',
       title: 'Accepted, but it never reached Square. It cannot sell until it does — re-push it from here.',
@@ -136,6 +152,7 @@ export function itemState(item: ItemResponse): { label: string; tone: string; ti
 
   if (item.inStock > 0) {
     return {
+      key: 'for_sale',
       label: `For sale${qty > 1 ? ` · ${item.inStock} of ${qty} left` : ''}`,
       tone: 'bg-green-900/40 text-green-400',
       title: 'In Square with stock on the floor.',
@@ -143,6 +160,7 @@ export function itemState(item: ItemResponse): { label: string; tone: string; ti
   }
 
   return {
+    key: 'sold',
     label: `Sold${of(item.soldCount)}`,
     tone: 'bg-blue-900/40 text-blue-300',
     title: 'In Square with nothing left.',
@@ -157,6 +175,7 @@ export default function SwapItemsPanel({
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
   const [printFilter, setPrintFilter] = useState<'' | 'not_printed' | 'printed'>('');
+  const [stateFilter, setStateFilter] = useState<'' | ItemStateKey>('');
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ItemResponse | null>(null);
   const [printingItem, setPrintingItem] = useState(false);
@@ -301,7 +320,11 @@ export default function SwapItemsPanel({
 
   const isFormOpen = showForm || editItem !== null;
   const items = (data?.items ?? [])
-    .filter((i) => printFilter === 'printed' ? i.hasPrintedTag : printFilter === 'not_printed' ? !i.hasPrintedTag : true);
+    .filter((i) => printFilter === 'printed' ? i.hasPrintedTag : printFilter === 'not_printed' ? !i.hasPrintedTag : true)
+    // Through `itemState`, not through the underlying fields again: a filter
+    // that decided for itself what "sold" meant could disagree with the column
+    // beside it, and the column is the one that had to be corrected.
+    .filter((i) => (stateFilter ? itemState(i).key === stateFilter : true));
 
   if (!swapId) return null;
   if (isLoading) return <p className="text-gray-400 text-sm">Loading…</p>;
@@ -319,6 +342,16 @@ export default function SwapItemsPanel({
               className="bg-surface-50 border border-gray-700 rounded px-3 py-1.5 text-sm text-white w-72"
             />
           )}
+          <select
+            value={stateFilter}
+            onChange={(e) => setStateFilter(e.target.value as '' | ItemStateKey)}
+            className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
+          >
+            <option value="">All states</option>
+            {ITEM_STATE_FILTERS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
           <select
             value={printFilter}
             onChange={(e) => setPrintFilter(e.target.value as '' | 'not_printed' | 'printed')}
