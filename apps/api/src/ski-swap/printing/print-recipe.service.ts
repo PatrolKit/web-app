@@ -56,7 +56,7 @@ export class PrintRecipeService {
       case 'item': {
         if (!recipe.itemId) throw new BadRequestException('An item tag needs an item');
         const item = await this.prisma.swapItem.findFirst({
-          where: { id: recipe.itemId, orgId },
+          where: { id: recipe.itemId, orgId, deletedAt: null },
         });
         if (!item) throw new NotFoundException('Item no longer exists');
         return [
@@ -92,7 +92,7 @@ export class PrintRecipeService {
           throw new BadRequestException('A receipt needs a seller and a swap');
         }
         const items = await this.prisma.swapItem.findMany({
-          where: { orgId, swapId: recipe.swapId, sellerId: recipe.sellerId },
+          where: { orgId, swapId: recipe.swapId, sellerId: recipe.sellerId, deletedAt: null },
           orderBy: { createdAt: 'asc' },
           select: { name: true, sku: true, priceCents: true },
         });

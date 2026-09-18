@@ -474,6 +474,16 @@ model SwapItem {
   description      String? @db.Text
   priceCents       Int
   sku              String
+  /// Mirror of `sku`, written only while the item is live.
+  ///
+  /// MySQL allows many NULLs in a unique index, so tombstones never collide —
+  /// which is what lets a deleted item's ticket go back in the pile. The same
+  /// trick `SkiSwap.activeSkuPrefix` uses, for the same reason: MySQL has no
+  /// partial unique index to say `WHERE deletedAt IS NULL` with.
+  ///
+  /// `sku` itself is never cleared. It is what the tag in somebody's hand says,
+  /// and a receipt or a payout line that names it has to keep meaning something.
+  liveSku          String?
   originalQuantity Int
 
   // Square sync state — null when Square is not configured
@@ -502,6 +512,15 @@ model SwapItem {
   /// by an importer that only had a name (Plan 19 D12).
   categoryId String?
 
+  /// Soft delete. The row stays so a delta can carry the removal to an iPad
+  /// that holds a copy — absence is not something `updatedSince` can express,
+  /// and a cache cannot be told about a row that is not there.
+  ///
+  /// Returned **only** to a caller passing `updatedSince`, exactly as sellers
+  /// are: a plain list is a screen, and a deleted item has no business on one.
+  /// Every other read filters it out, which the coverage test enforces.
+  deletedAt DateTime?
+
   createdBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -513,7 +532,11 @@ model SwapItem {
   category   TaxonomyNode?       @relation("ItemCategory", fields: [categoryId], references: [id], onDelete: Restrict)
   attributes SwapItemAttribute[]
 
-  @@unique([swapId, sku])
+  @@unique([swapId, liveSku])
+  /// The unique index used to serve these lookups too. It now covers only live
+  /// items, so scanning a tag needs its own.
+  @@index([swapId, sku])
+  @@index([orgId, sku])
   @@index([orgId])
   @@index([sellerId])
   @@index([swapId, consignedAt])

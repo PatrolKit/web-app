@@ -162,7 +162,7 @@ export class PrintQueueService {
 
   /** Re-queues one item's tags. The only path that deliberately prints twice. */
   async reprintItem(orgId: string, stationId: string, itemId: string): Promise<void> {
-    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId } });
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId, deletedAt: null } });
     if (!item) throw new NotFoundException('Item not found');
 
     const station = await this.station(orgId, stationId);

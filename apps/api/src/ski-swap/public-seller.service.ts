@@ -50,7 +50,7 @@ export class PublicSellerService {
 
     const activeSwapIds = activeSwaps.map((s) => s.id);
     const items = await this.prisma.swapItem.findMany({
-      where: { sellerId: seller.id, swapId: { in: activeSwapIds } },
+      where: { sellerId: seller.id, swapId: { in: activeSwapIds }, deletedAt: null },
       select: {
         id: true,
         swapId: true,

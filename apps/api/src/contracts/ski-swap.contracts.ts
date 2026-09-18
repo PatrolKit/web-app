@@ -362,6 +362,18 @@ export const ItemResponseSchema = z.object({
    * sees edits, not sales.
    */
   updatedAt: z.string().datetime(),
+  /**
+   * When this item was withdrawn, or null.
+   *
+   * Only ever set on an item returned to a caller passing `updatedSince`. A
+   * plain list has no tombstones in it, so a screen never sees this as anything
+   * but null; a client holding a local mirror deletes its copy on seeing it.
+   *
+   * Absence cannot be expressed by a cursor — `updatedSince` returns what
+   * changed, and a removed row has nothing to carry — so this exists to make a
+   * deletion something a delta can say.
+   */
+  deletedAt: z.string().datetime().nullable(),
 });
 
 export class CreateItemDto extends createZodDto(CreateItemSchema) {}

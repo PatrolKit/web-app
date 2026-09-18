@@ -344,6 +344,13 @@ export interface ItemResponse {
    * this is set — so null is also the answer to "can this be sold".
    */
   consignedAt: string | null;
+  /**
+   * When this item was withdrawn, or null.
+   *
+   * Only ever set on an item from a `updatedSince` delta. A plain list has no
+   * tombstones in it, so a screen never sees this as anything but null.
+   */
+  deletedAt: string | null;
   seller: { id: string; displayName: string; phone: string | null } | null;
   photos: { id: string; url: string }[];
   /**

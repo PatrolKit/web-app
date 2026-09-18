@@ -1149,7 +1149,8 @@ export class TaxonomyService {
       }),
       this.prisma.swapItem.groupBy({
         by: ['categoryId'],
-        where: { categoryId: { in: ids } },
+        // A withdrawn item does not hold a node in use.
+        where: { categoryId: { in: ids }, deletedAt: null },
         _count: { _all: true },
       }),
     ]);

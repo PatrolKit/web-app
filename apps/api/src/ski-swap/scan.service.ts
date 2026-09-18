@@ -49,7 +49,9 @@ export class ScanService {
      * not say which swap it belongs to.
      */
     const matches = await this.prisma.swapItem.findMany({
-      where: { orgId, sku: tag, swap: { active: true } },
+      // A tombstone keeps its `sku`, so a withdrawn tag has to find nothing
+      // here — otherwise scanning it would consign an item that is gone.
+      where: { orgId, sku: tag, swap: { active: true }, deletedAt: null },
       select: { id: true, swapId: true },
     });
 

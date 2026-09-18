@@ -30,6 +30,7 @@ interface Row {
   hasPrintedTag: boolean;
   consignedAt: Date | null;
   consignedBy: string | null;
+  deletedAt: Date | null;
   updatedAt: Date;
   seller: null;
   photos: never[];
@@ -74,6 +75,9 @@ function harness(opts: { requireConsignmentScan?: boolean } = {}) {
           squareItemId: null, squareVariationId: null,
           donateProceeds: false, hasPrintedTag: false,
           consignedAt: null, consignedBy: null,
+          // Every read filters on this, so a row without it is a row nothing
+          // can find — which is exactly what the database would do.
+          deletedAt: null,
           updatedAt: new Date(), seller: null, photos: [],
           ...(data as Partial<Row>),
         };
@@ -83,6 +87,11 @@ function harness(opts: { requireConsignmentScan?: boolean } = {}) {
       findFirst: async ({ where }: { where: Record<string, unknown> }) => find(where),
       findUnique: async ({ where }: { where: Record<string, unknown> }) => find(where),
       findUniqueOrThrow: async ({ where }: { where: Record<string, unknown> }) => {
+        const row = find(where);
+        if (!row) throw new Error('not found');
+        return row;
+      },
+      findFirstOrThrow: async ({ where }: { where: Record<string, unknown> }) => {
         const row = find(where);
         if (!row) throw new Error('not found');
         return row;

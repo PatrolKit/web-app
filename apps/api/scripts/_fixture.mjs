@@ -125,6 +125,17 @@ export const SMOKE_CODE = 'smoke-code-000000';
  * endpoint, the session, and the stamping are all the real thing.
  */
 export async function forceChallengeCode(prisma, challengeId) {
+  // Sign-in is throttled to five a minute. Over the limit the start call
+  // answers an error rather than a challenge, and the id arrives here as
+  // undefined — which used to surface as a Prisma validation dump about
+  // `ContactChallengeWhereUniqueInput`, several screens long, naming nothing a
+  // reader could act on.
+  if (!challengeId) {
+    throw new Error(
+      'No challenge to confirm. The sign-in was almost certainly throttled — ' +
+        'it allows five a minute. Wait a minute and run the script again.',
+    );
+  }
   await prisma.contactChallenge.update({
     where: { id: challengeId },
     data: { codeHash: createHash('sha256').update(SMOKE_CODE).digest('hex'), attempts: 0 },

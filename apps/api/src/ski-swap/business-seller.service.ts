@@ -178,7 +178,7 @@ export class BusinessSellerService {
     });
     if (!profile) throw new NotFoundException('Business seller not found');
 
-    const itemCount = await this.prisma.swapItem.count({ where: { sellerId: profile.id } });
+    const itemCount = await this.prisma.swapItem.count({ where: { sellerId: profile.id, deletedAt: null } });
     if (itemCount > 0) {
       throw new BadRequestException(
         'Cannot remove a business seller with items. Unassign their items first.',

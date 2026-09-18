@@ -336,7 +336,7 @@ export class SellerService {
   /** Soft removal — revokes the seller role, keeping the row as a tombstone. */
   async remove(orgId: string, sellerId: string): Promise<void> {
     const existing = await this.findOrThrow(orgId, sellerId);
-    const itemCount = await this.prisma.swapItem.count({ where: { sellerId } });
+    const itemCount = await this.prisma.swapItem.count({ where: { sellerId, deletedAt: null } });
     if (itemCount > 0) {
       throw new ConflictException(
         'Cannot remove a seller with active item mappings. Unassign all items first.',

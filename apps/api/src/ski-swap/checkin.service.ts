@@ -226,7 +226,7 @@ export class CheckinService {
 
 
     const items = await this.prisma.swapItem.findMany({
-      where: { orgId, swapId, sellerId: seller.id },
+      where: { orgId, swapId, sellerId: seller.id, deletedAt: null },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -316,7 +316,7 @@ export class CheckinService {
     if (!seller) throw new NotFoundException('You are not checked in at this swap');
 
     const items = await this.prisma.swapItem.findMany({
-      where: { orgId, swapId, sellerId: seller.id },
+      where: { orgId, swapId, sellerId: seller.id, deletedAt: null },
       orderBy: { createdAt: 'asc' },
       select: { id: true, name: true, sku: true, priceCents: true, hasPrintedTag: true },
     });

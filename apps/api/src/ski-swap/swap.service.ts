@@ -175,7 +175,7 @@ export class SwapService {
 
   async remove(orgId: string, swapId: string): Promise<void> {
     const swap = await this.findOrThrow(orgId, swapId);
-    const itemCount = await this.prisma.swapItem.count({ where: { swapId: swap.id } });
+    const itemCount = await this.prisma.swapItem.count({ where: { swapId: swap.id, deletedAt: null } });
     if (itemCount > 0) {
       throw new ConflictException(
         'Cannot delete a swap that has item mappings. Remove all items first.',

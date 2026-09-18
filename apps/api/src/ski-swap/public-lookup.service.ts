@@ -60,7 +60,7 @@ export class PublicLookupService {
 
     const activeSwapIds = activeSwaps.map((s) => s.id);
     const dbItems = await this.prisma.swapItem.findMany({
-      where: { sellerId: seller.id, swapId: { in: activeSwapIds }, orgId: org.id },
+      where: { sellerId: seller.id, swapId: { in: activeSwapIds }, orgId: org.id, deletedAt: null },
       select: { id: true, name: true, priceCents: true, originalQuantity: true, squareVariationId: true, swapId: true },
     });
     if (!dbItems.length) return { sellerName: seller.name, items: [] };

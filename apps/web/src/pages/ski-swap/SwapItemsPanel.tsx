@@ -66,6 +66,15 @@ export interface SwapItemsPanelProps {
     exhausted: boolean;
     onUsed: () => void;
   };
+  /**
+   * True on a seller's own "My Items" page, false on the staff Items page.
+   *
+   * A seller may withdraw their own item until a tag has been printed for it;
+   * after that the gear is out under a numbered label and it has to be done at
+   * the counter, where somebody can see both. The server refuses either way —
+   * this stops the screen offering a button that would be.
+   */
+  selfService?: boolean;
   showSearch?: boolean;
   sellers?: SellerResponse[];
   emptyMessage?: string;
@@ -168,7 +177,7 @@ export function itemState(item: ItemResponse): {
 }
 
 export default function SwapItemsPanel({
-  orgId, swapId, canManage, queryKeyPrefix, panelApi,
+  orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService,
   showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
   tickets, toolbarExtra,
 }: SwapItemsPanelProps) {
@@ -433,10 +442,19 @@ export default function SwapItemsPanel({
                 {canManage && (
                   <td className="py-2 flex gap-2 items-center">
                     <button onClick={() => openEdit(item)} className="text-xs text-brand-500 hover:underline">Edit</button>
-                    <button
-                      onClick={() => { if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id); }}
-                      className="text-xs text-red-500 hover:underline"
-                    >Delete</button>
+                    {selfService && item.hasPrintedTag ? (
+                      // Said rather than hidden. A button that quietly vanishes
+                      // once a tag prints reads as a bug; this reads as a rule.
+                      <span
+                        className="text-xs text-gray-600 cursor-not-allowed"
+                        title="This item has a printed tag on it. Ask at the counter to withdraw it."
+                      >Delete</span>
+                    ) : (
+                      <button
+                        onClick={() => { if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id); }}
+                        className="text-xs text-red-500 hover:underline"
+                      >Delete</button>
+                    )}
                     {/* Hidden two ways, for the same reason twice over.
                         `tickets` is a seller working off an issued stack, and
                         `legacyTicket` is a single item checked in against a

@@ -34,6 +34,7 @@ export default function BusinessSellerPage() {
       orgId={orgId}
       swapId={sellerSelectedSwapId}
       canManage={true}
+      selfService
       queryKeyPrefix="seller/items"
       labelsPerItem={labelsPerItem}
       emptyMessage="No items yet."

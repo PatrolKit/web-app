@@ -84,6 +84,15 @@ export class PayoutRunService {
     const sales = await adapter.listSales(swap.locationId, salesFrom, salesTo);
 
     const itemRows = await this.prisma.swapItem.findMany({
+      // Tombstones included, deliberately, and the only read in the codebase
+      // that does. An item can sell and be deleted afterwards — staff tidying
+      // up, or correcting a mistake — and the sale still happened. Filtering
+      // here would quietly stop paying a seller for gear that was sold, which
+      // is the one failure this whole plan exists to prevent.
+      //
+      // Safe because a run matches on `squareVariationId` against orders that
+      // actually completed: a deleted item that never sold matches nothing and
+      // produces no line.
       where: { swapId },
       select: {
         id: true, name: true, sku: true, priceCents: true,

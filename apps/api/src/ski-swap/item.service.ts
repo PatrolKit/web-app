@@ -60,8 +60,15 @@ export class ItemService {
 
   async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string; consigned?: boolean }): Promise<{ items: ItemResponse[]; total: number }> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
+    // Tombstones appear only in a delta. A client asking "what changed since"
+    // holds a local mirror and has to be told about a removal; a caller with no
+    // cursor is a screen, and a deleted item has no business on one.
+    //
+    // The same rule `list` on sellers follows, and for the same reason. It is
+    // the only read in the codebase allowed to see a tombstone.
     const where = {
       swapId, orgId,
+      ...(opts.updatedSince ? {} : { deletedAt: null }),
       ...(opts.query ? { OR: [
         { name: { contains: opts.query } },
         { sku: { contains: opts.query } },
@@ -93,7 +100,7 @@ export class ItemService {
 
   async get(orgId: string, swapId: string, itemId: string): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId }, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } } });
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId, deletedAt: null }, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } } });
     if (!item) throw new NotFoundException('Item not found');
     const [inventoryMap, descriptions] = await Promise.all([
       this.fetchInventoryMap(orgId, swap, [item]),
@@ -276,7 +283,9 @@ export class ItemService {
         ...(described && described.rows.length > 0
           ? { attributes: { create: described.rows.map((r) => ({ id: createId(), ...r })) } }
           : {}),
-        priceCents: data.priceCents, sku, originalQuantity: data.quantity,
+        // Both, always. `liveSku` is what the unique index watches; `sku` is
+        // what the tag says and is never cleared.
+        priceCents: data.priceCents, sku, liveSku: sku, originalQuantity: data.quantity,
         donateProceeds: data.donateProceeds ?? false,
         /**
          * The setting is read by the caller and answered here, once. An item
@@ -289,9 +298,9 @@ export class ItemService {
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true },
     }).catch((err: unknown) => {
       /**
-       * `@@unique([swapId, sku])` is the only thing standing between one
-       * physical ticket and two items, and it was reaching the client as a bare
-       * 500. Scanning a ticket that is already on something is the likeliest
+       * `@@unique([swapId, liveSku])` is the only thing standing between one
+       * physical ticket and two live items, and it was reaching the client as a
+       * bare 500. Scanning a ticket that is already on something is the likeliest
        * thing to happen at a counter — a re-scan, or two stations working the
        * same pile — and a volunteer holding an iPad needs to be told which
        * ticket, not "Internal server error".
@@ -315,7 +324,7 @@ export class ItemService {
 
     const refreshed = data.deferPos
       ? item
-      : await this.prisma.swapItem.findUniqueOrThrow({ where: { id: item.id }, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true } });
+      : await this.prisma.swapItem.findFirstOrThrow({ where: { id: item.id, deletedAt: null }, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true } });
     // Inventory is a Square read, so it goes with the write it belongs to.
     const inventoryMap = data.deferPos
       ? new Map<string, number>()
@@ -336,7 +345,7 @@ export class ItemService {
 
   async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; actorId?: string }): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId }, include: { attributes: true } });
+    const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId, deletedAt: null }, include: { attributes: true } });
     if (!existing) throw new NotFoundException('Item not found');
     if (data.sellerId) await this.sellerService.findOrThrow(orgId, data.sellerId);
 
@@ -421,9 +430,27 @@ export class ItemService {
     return this.taxonomy.resolveAnswers(orgId, categoryId, attributes, data.actorId);
   }
 
+  /**
+   * Removes an item, leaving a tombstone.
+   *
+   * The row stays because absence is not something a delta can carry: an iPad
+   * holding a copy learns of a deletion from a row that says it was deleted, or
+   * it learns of it by asking for every item in the swap and noticing what did
+   * not come back — which used to take about twenty-two minutes, and on a
+   * device relaunched between sellers could take the whole swap. Until then
+   * staff could print a tag for an item the server does not have.
+   *
+   * Everything outside the database still goes: the photo rows and their files,
+   * the Square catalogue entry, the Square images. A tombstone is a fact for a
+   * cache to read, not a reason to keep paying for storage or to leave
+   * something sellable on a register.
+   */
   async remove(orgId: string, swapId: string, itemId: string): Promise<void> {
     await this.findSwapOrThrow(orgId, swapId);
-    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId }, include: { photos: true } });
+    const item = await this.prisma.swapItem.findFirst({
+      where: { id: itemId, swapId, orgId, deletedAt: null },
+      include: { photos: true },
+    });
     if (!item) throw new NotFoundException('Item not found');
 
     for (const photo of item.photos) {
@@ -437,12 +464,23 @@ export class ItemService {
       const pos = await this.posFactory.forOrg(orgId);
       if (pos) await pos.deleteItem(item.squareItemId).catch(() => {});
     }
-    await this.prisma.swapItem.delete({ where: { id: itemId } });
+
+    await this.prisma.$transaction([
+      this.prisma.swapItemPhoto.deleteMany({ where: { itemId } }),
+      this.prisma.swapItem.update({
+        where: { id: itemId },
+        // `liveSku` goes to null and the ticket goes back in the pile, which is
+        // what happens physically. `sku` stays: it is what the tag says, and a
+        // receipt line naming it has to keep meaning something.
+        // `updatedAt` moves on its own, which is what puts this in the delta.
+        data: { deletedAt: new Date(), liveSku: null },
+      }),
+    ]);
   }
 
   async uploadPhoto(orgId: string, swapId: string, itemId: string, file: { buffer: Buffer; mimetype: string; originalname: string }): Promise<{ id: string; url: string }> {
     await this.findSwapOrThrow(orgId, swapId);
-    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId } });
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId, deletedAt: null } });
     if (!item) throw new NotFoundException('Item not found');
 
     // Resize to max 1200px on the longest side, JPEG 85% — keeps files well under
@@ -485,7 +523,7 @@ export class ItemService {
 
   async deletePhoto(orgId: string, swapId: string, itemId: string, photoId: string): Promise<void> {
     await this.findSwapOrThrow(orgId, swapId);
-    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId } });
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId, deletedAt: null } });
     if (!item) throw new NotFoundException('Item not found');
     const photo = await this.prisma.swapItemPhoto.findFirst({ where: { id: photoId, itemId } });
     if (!photo) throw new NotFoundException('Photo not found');
@@ -592,7 +630,9 @@ export class ItemService {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const tag = sku.trim();
     const item = await this.prisma.swapItem.findFirst({
-      where: { orgId, swapId, sku: tag },
+      // A tombstone keeps its `sku` — the tag in somebody's hand still says it
+      // — so scanning a withdrawn item must find nothing rather than find this.
+      where: { orgId, swapId, sku: tag, deletedAt: null },
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
     });
     if (!item) throw new NotFoundException(`No item in this swap has tag ${tag}.`);
@@ -614,7 +654,7 @@ export class ItemService {
     actorId: string | null,
   ): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId, swapId } });
+    const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId, swapId, deletedAt: null } });
     if (!existing) throw new NotFoundException('Item not found');
 
     if (existing.consignedAt === null) {
@@ -627,8 +667,8 @@ export class ItemService {
       await this.syncItemToPos(orgId, swap, accepted);
     }
 
-    const item = await this.prisma.swapItem.findUniqueOrThrow({
-      where: { id: itemId },
+    const item = await this.prisma.swapItem.findFirstOrThrow({
+      where: { id: itemId, deletedAt: null },
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
     });
     const inventoryMap = await this.fetchInventoryMap(orgId, swap, [item]);
@@ -641,7 +681,7 @@ export class ItemService {
    */
   async syncToPos(orgId: string, swapId: string, itemId: string): Promise<PosSyncResult> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, swapId } });
+    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, swapId, deletedAt: null } });
     return this.syncItemToPos(orgId, swap, item);
   }
 
@@ -739,7 +779,7 @@ export class ItemService {
     return this.taxonomy.describeItems(items);
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>, descriptions?: Map<string, ItemDescription>): ItemResponse {
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>, descriptions?: Map<string, ItemDescription>): ItemResponse {
     const inStock = item.squareVariationId ? (inventoryMap.get(item.squareVariationId) ?? 0) : 0;
     return {
       id: item.id, swapId: item.swapId, orgId: item.orgId,
@@ -754,6 +794,7 @@ export class ItemService {
       // here and a third in the web client.
       legacyTicket: ticketNumberOf(item.sku) !== null,
       consignedAt: item.consignedAt?.toISOString() ?? null,
+      deletedAt: item.deletedAt?.toISOString() ?? null,
       seller: item.seller
         ? {
             id: item.seller.id,

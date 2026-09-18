@@ -158,7 +158,7 @@ export class LegacyTicketService {
    * Issues a block to a seller.
    *
    * Overlap is checked across every seller in the swap, not just this one. The
-   * unique index on (swapId, sku) would catch two shops holding one number
+   * unique index on (swapId, liveSku) would catch two shops holding one number
    * eventually — but only when the second saves an item, mid-swap, at a counter.
    */
   async addRange(
@@ -267,7 +267,10 @@ export class LegacyTicketService {
 
   async usedNumbers(swapId: string): Promise<Set<number>> {
     const items = await this.prisma.swapItem.findMany({
-      where: { swapId },
+      // A withdrawn item's ticket goes back in the pile, which is what happens
+      // physically. Counting a tombstone here would tell the counter a number
+      // is spent on an item that was deleted an hour ago.
+      where: { swapId, deletedAt: null },
       select: { sku: true },
     });
     const used = new Set<number>();
@@ -328,7 +331,7 @@ export class LegacyTicketService {
     }
 
     const taken = await this.prisma.swapItem.findFirst({
-      where: { swapId, sku },
+      where: { swapId, sku, deletedAt: null },
       select: { id: true },
     });
     if (taken) throw new ConflictException(`Ticket ${n} is already on another item.`);

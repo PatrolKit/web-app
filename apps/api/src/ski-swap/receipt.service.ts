@@ -108,7 +108,7 @@ export class ReceiptService {
     if (!swap) throw new NotFoundException('Swap no longer exists');
 
     const items = await this.prisma.swapItem.findMany({
-      where: { orgId, swapId, sellerId },
+      where: { orgId, swapId, sellerId, deletedAt: null },
       orderBy: { createdAt: 'asc' },
       select: { id: true, name: true, sku: true, priceCents: true },
     });
@@ -175,7 +175,9 @@ export class ReceiptService {
    */
   private async stillDescribes(receipt: Receipt, lines: ReceiptLine[]): Promise<boolean> {
     const items = await this.prisma.swapItem.findMany({
-      where: { orgId: receipt.orgId, swapId: receipt.swapId, sellerId: receipt.sellerId },
+      // A withdrawn item is a change the seller can see, so a receipt listing
+      // one no longer describes them and has to be reissued.
+      where: { orgId: receipt.orgId, swapId: receipt.swapId, sellerId: receipt.sellerId, deletedAt: null },
       orderBy: { createdAt: 'asc' },
       select: { id: true, name: true, sku: true, priceCents: true },
     });

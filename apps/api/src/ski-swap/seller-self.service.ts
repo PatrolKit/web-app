@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ItemService } from './item.service';
 import type { SellerResponse } from '../contracts/ski-swap.contracts';
@@ -85,7 +85,7 @@ export class SellerSelfService {
 
   async getItem(orgId: string, userId: string, itemId: string) {
     const seller = await this.getSellerRecord(orgId, userId);
-    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId } });
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId, deletedAt: null } });
     if (!item) throw new NotFoundException('Item not found');
     if (item.sellerId !== seller.id) throw new ForbiddenException('Not your item');
     return this.itemService.get(orgId, item.swapId, itemId);
@@ -210,14 +210,41 @@ export class SellerSelfService {
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
     await this.requireOwnership(orgId, seller.id, itemId);
-    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId } });
+    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
     return this.itemService.patch(orgId, item.swapId, itemId, data);
   }
 
+  /**
+   * A seller withdrawing their own item.
+   *
+   * Refused once a tag has been printed. Before that the gear is still in their
+   * hands and nothing physical points at the record; after it, there is a
+   * numbered label that a register can scan, and deleting the row underneath it
+   * leaves a tag nobody can account for.
+   *
+   * The line is `hasPrintedTag` rather than `consignedAt`, which would have been
+   * the obvious reading of "already accepted". `consignedAt` is set at creation
+   * for every path except a station self check-in at an org running
+   * `requireConsignmentScan`, so testing it would have refused every seller on
+   * every ordinary org — which is not a guard, it is removing the feature.
+   * `hasPrintedTag` flips when paper actually comes out of a printer, and means
+   * the same thing on both kinds of org.
+   *
+   * Staff keep the unconditional delete: somebody at the counter can see the
+   * gear and the tag, which is exactly what the seller on their phone cannot.
+   */
   async deleteItem(orgId: string, userId: string, itemId: string) {
     const seller = await this.getSellerRecord(orgId, userId);
     await this.requireOwnership(orgId, seller.id, itemId);
-    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId } });
+    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
+
+    if (item.hasPrintedTag) {
+      throw new ConflictException(
+        `${item.name} already has a printed tag, so it has to be withdrawn at the counter. ` +
+          'Ask a staff member and they can remove it for you.',
+      );
+    }
+
     return this.itemService.remove(orgId, item.swapId, itemId);
   }
 
@@ -229,21 +256,21 @@ export class SellerSelfService {
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
     await this.requireOwnership(orgId, seller.id, itemId);
-    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId } });
+    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
     return this.itemService.uploadPhoto(orgId, item.swapId, itemId, file);
   }
 
   async deletePhoto(orgId: string, userId: string, itemId: string, photoId: string) {
     const seller = await this.getSellerRecord(orgId, userId);
     await this.requireOwnership(orgId, seller.id, itemId);
-    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId } });
+    const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
     return this.itemService.deletePhoto(orgId, item.swapId, itemId, photoId);
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private async requireOwnership(orgId: string, sellerId: string, itemId: string) {
-    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId } });
+    const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId, deletedAt: null } });
     if (!item) throw new NotFoundException('Item not found');
     if (item.sellerId !== sellerId) throw new ForbiddenException('Not your item');
   }

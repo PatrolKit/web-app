@@ -21,9 +21,9 @@ export class StatsService {
     if (!swap) throw new NotFoundException('Swap not found');
 
     const [totalItems, totalSellers, items] = await this.prisma.$transaction([
-      this.prisma.swapItem.count({ where: { swapId, orgId } }),
-      this.prisma.swapItem.findMany({ where: { swapId, orgId, sellerId: { not: null } }, distinct: ['sellerId'], select: { sellerId: true } }),
-      this.prisma.swapItem.findMany({ where: { swapId, orgId }, select: { squareVariationId: true, originalQuantity: true, priceCents: true } }),
+      this.prisma.swapItem.count({ where: { swapId, orgId, deletedAt: null } }),
+      this.prisma.swapItem.findMany({ where: { swapId, orgId, sellerId: { not: null }, deletedAt: null }, distinct: ['sellerId'], select: { sellerId: true } }),
+      this.prisma.swapItem.findMany({ where: { swapId, orgId, deletedAt: null }, select: { squareVariationId: true, originalQuantity: true, priceCents: true } }),
     ]);
 
     const syncedItems = items.filter((i) => i.squareVariationId);
