@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser, faBuilding, faPrint, faCheckCircle, faCircle } from '@fortawesome/free-solid-svg-icons';
+import { faUser, faBuilding, faReceipt, faCheckCircle, faCircle } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
@@ -589,10 +589,10 @@ export default function SellersPage() {
                     <button onClick={() => openEdit(s)} className="text-xs text-brand-500 hover:underline">Edit</button>
                     <button
                       onClick={() => setReceiptSeller(s)}
-                      title="Print receipt"
+                      title="Print or send this seller's receipt"
                       className="text-xs text-gray-400 hover:text-white flex items-center gap-1"
                     >
-                      <FontAwesomeIcon icon={faPrint} /> Receipt
+                      <FontAwesomeIcon icon={faReceipt} /> Receipt
                     </button>
                   </div>
                 </td>
