@@ -690,12 +690,33 @@ export const UpdateSkiSwapSettingsSchema = z
      * anything already on the floor is untouched.
      */
     requireConsignmentScan: z.boolean().optional(),
+    /**
+     * The org's cut, as a percentage — "20", "20.5", "20.5%".
+     *
+     * A percentage because that is what a patrol calls it (Plan 25 §3). Two
+     * decimal places, and the regex refuses the rest rather than quietly
+     * rounding a number and then showing somebody a different one back.
+     */
+    commissionPercent: z
+      .union([z.string().regex(/^\d{1,3}(\.\d{1,2})?%?$/), z.number().min(0).max(100)])
+      .optional(),
+    /** Below this, an electronic payout is held rather than sent. */
+    payoutMinimumCents: z.number().int().min(0).max(100_00).optional(),
   })
   .strict();
 
 export const SkiSwapSettingsResponseSchema = z.object({
   labelsPerItem: z.number().int(),
   requireConsignmentScan: z.boolean(),
+  /** "20%", "20.5%". The form this is edited and displayed in, everywhere. */
+  commissionPercent: z.string(),
+  /**
+   * The same number the arithmetic uses. Sent so a screen showing a
+   * calculation can do it the same way the server did rather than parsing the
+   * percentage back out of a string.
+   */
+  commissionBasisPoints: z.number().int(),
+  payoutMinimumCents: z.number().int(),
   /**
    * The version of this org's item-description tree, so a client can tell
    * whether its cached copy is stale without downloading one to find out.

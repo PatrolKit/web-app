@@ -73,6 +73,61 @@ function sellerInviteTemplate(inviteUrl: string, orgName: string): string {
   });
 }
 
+/** What a nudge needs to say. Assembled by `PayoutNudgeService` (Plan 25 §9). */
+export interface PayoutNudge {
+  orgName: string;
+  orgLogoUrl: string | null;
+  swapTitle: string;
+  /** Already formatted — "$252.00". */
+  amount: string;
+  firstName: string | null;
+  /** 7 or 21. Decides how much urgency the wording carries. */
+  dayMark: number;
+  claimUrl: string;
+}
+
+/**
+ * "Your money is waiting, and here is how long you have."
+ *
+ * Deliberately specific about the deadline. An unclaimed PayPal payout returns
+ * to the sender after thirty days, and a vague reminder that produces no action
+ * costs the reader their money — so the second nudge says the date out loud.
+ */
+function payoutNudgeTemplate(n: PayoutNudge, markUrl: string): string {
+  const daysLeft = Math.max(0, 30 - n.dayMark);
+  const greeting = n.firstName ? `${escapeHtml(n.firstName)}, your` : 'Your';
+
+  return emailShell({
+    title: `Your ${escapeHtml(n.orgName)} payout is waiting`,
+    brand: { name: n.orgName, logoUrl: n.orgLogoUrl },
+    heading: `${greeting} payout is waiting to be claimed`,
+    body: [
+      `<strong>${escapeHtml(n.orgName)}</strong> sent you <strong>${escapeHtml(n.amount)}</strong> ` +
+        `for what you sold at ${escapeHtml(n.swapTitle)}, but PayPal has not been able to deliver it.`,
+      // The cause, in the two words that make it fixable. Almost every unclaimed
+      // payout is an address with no PayPal account behind it, and the reader
+      // is the only person who can tell us the right one.
+      'This usually means the email address or phone number we have for you is not the one on your PayPal account.',
+      daysLeft > 0
+        ? `PayPal returns an unclaimed payment after 30 days. There are about <strong>${daysLeft} days</strong> left to collect this one.`
+        : 'PayPal returns an unclaimed payment after 30 days, so please collect this one now.',
+    ],
+    action: { label: 'Check your payout details', url: n.claimUrl },
+    footnote: `If the address is wrong, get in touch with ${escapeHtml(n.orgName)} and they can send it again.`,
+    showRawLink: true,
+    poweredByUrl: markUrl,
+  });
+}
+
+/** The org's name and the swap's are user input, and they land inside markup. */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
@@ -142,6 +197,14 @@ export class MailService {
    */
   async sendReceipt(to: string, orgName: string, html: string): Promise<SendOutcome> {
     return this.send(to, `Your ${orgName} ski swap receipt`, html);
+  }
+
+  async sendPayoutNudge(to: string, nudge: PayoutNudge): Promise<SendOutcome> {
+    // The amount is in the subject on purpose. This is a message about money
+    // the reader is owed, and it competes for attention with everything else in
+    // an inbox weeks after a swap they have stopped thinking about.
+    const subject = `${nudge.orgName}: your ${nudge.amount} payout is waiting`;
+    return this.send(to, subject, payoutNudgeTemplate(nudge, this.brandMarkUrl()));
   }
 
   private async send(to: string, subject: string, html: string): Promise<SendOutcome> {

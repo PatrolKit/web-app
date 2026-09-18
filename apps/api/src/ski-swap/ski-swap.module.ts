@@ -61,6 +61,7 @@ import { PayPalConfigService } from './payouts/paypal-config.service';
 import { PayPalConfigController } from './payouts/paypal-config.controller';
 import { PayoutRunService } from './payouts/payout-run.service';
 import { PayoutRunController } from './payouts/payout-run.controller';
+import { PayoutNudgeService } from './payouts/payout-nudge.service';
 import { PayoutWebhookController } from './payouts/payout-webhook.controller';
 import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
@@ -109,6 +110,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     { provide: PayPalClient, useClass: HttpPayPalClient },
     PayPalConfigService,
     PayoutRunService,
+    PayoutNudgeService,
     S3Service,
     { provide: PosAdapterFactory, useClass: SquarePosAdapterFactory },
     SwapService,

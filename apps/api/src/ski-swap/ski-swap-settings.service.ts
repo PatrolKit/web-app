@@ -1,9 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { SkiSwapSettingsResponse } from '../contracts/ski-swap.contracts';
 import type { DevicePinResponse } from '../contracts/devices.contracts';
+import { basisPointsToPercent, percentToBasisPoints } from './payouts/money';
 
 const DEFAULT_LABELS_PER_ITEM = 1;
+/** A dollar. Below it, the fee outweighs the payout (Plan 25 §7). */
+const DEFAULT_PAYOUT_MINIMUM_CENTS = 100;
 
 @Injectable()
 export class SkiSwapSettingsService {
@@ -19,6 +22,11 @@ export class SkiSwapSettingsService {
       // 1 for an org with no row, matching what the taxonomy service reports —
       // a client that has cached nothing compares against it and fetches.
       taxonomyVersion: row?.taxonomyVersion ?? 1,
+      // Zero for an org that has never set one: a patrol that has not said what
+      // its cut is takes nothing, rather than a number somebody guessed.
+      commissionPercent: basisPointsToPercent(row?.commissionBasisPoints ?? 0),
+      commissionBasisPoints: row?.commissionBasisPoints ?? 0,
+      payoutMinimumCents: row?.payoutMinimumCents ?? DEFAULT_PAYOUT_MINIMUM_CENTS,
     };
   }
 
@@ -28,8 +36,28 @@ export class SkiSwapSettingsService {
    */
   async upsert(
     orgId: string,
-    data: { labelsPerItem?: number; requireConsignmentScan?: boolean },
+    data: {
+      labelsPerItem?: number;
+      requireConsignmentScan?: boolean;
+      commissionPercent?: string | number;
+      payoutMinimumCents?: number;
+    },
+    actorId?: string,
   ): Promise<SkiSwapSettingsResponse> {
+    // Percent in, basis points stored. The only conversion, at the only edge.
+    let commissionBasisPoints: number | undefined;
+    if (data.commissionPercent !== undefined) {
+      const bps = percentToBasisPoints(data.commissionPercent);
+      if (bps === null) {
+        throw new BadRequestException(
+          'The commission must be a percentage between 0 and 100, with at most two decimal places',
+        );
+      }
+      commissionBasisPoints = bps;
+    }
+
+    const before = await this.prisma.skiSwapSettings.findUnique({ where: { orgId } });
+
     const row = await this.prisma.skiSwapSettings.upsert({
       where: { orgId },
       update: {
@@ -37,17 +65,45 @@ export class SkiSwapSettingsService {
         ...(data.requireConsignmentScan !== undefined
           ? { requireConsignmentScan: data.requireConsignmentScan }
           : {}),
+        ...(commissionBasisPoints !== undefined ? { commissionBasisPoints } : {}),
+        ...(data.payoutMinimumCents !== undefined
+          ? { payoutMinimumCents: data.payoutMinimumCents }
+          : {}),
       },
       create: {
         orgId,
         labelsPerItem: data.labelsPerItem ?? DEFAULT_LABELS_PER_ITEM,
         requireConsignmentScan: data.requireConsignmentScan ?? false,
+        commissionBasisPoints: commissionBasisPoints ?? 0,
+        payoutMinimumCents: data.payoutMinimumCents ?? DEFAULT_PAYOUT_MINIMUM_CENTS,
       },
     });
+
+    // Audited with both sides of the change. What the patrol's cut was on the
+    // day of a swap is the sort of question that gets asked a year later, by
+    // somebody who is already unhappy.
+    if (commissionBasisPoints !== undefined && commissionBasisPoints !== (before?.commissionBasisPoints ?? 0)) {
+      await this.prisma.auditLog.create({
+        data: {
+          actorType: 'user',
+          actorId: actorId ?? null,
+          orgId,
+          action: 'ski_swap.commission.updated',
+          metadata: {
+            from: basisPointsToPercent(before?.commissionBasisPoints ?? 0),
+            to: basisPointsToPercent(commissionBasisPoints),
+          },
+        },
+      });
+    }
+
     return {
       labelsPerItem: row.labelsPerItem,
       requireConsignmentScan: row.requireConsignmentScan,
       taxonomyVersion: row.taxonomyVersion,
+      commissionPercent: basisPointsToPercent(row.commissionBasisPoints),
+      commissionBasisPoints: row.commissionBasisPoints,
+      payoutMinimumCents: row.payoutMinimumCents,
     };
   }
 

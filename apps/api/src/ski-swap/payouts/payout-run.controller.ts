@@ -19,6 +19,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import { RequireModule } from '../../common/decorators/require-module.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PayoutRunService } from './payout-run.service';
+import { PayoutNudgeService } from './payout-nudge.service';
 import {
   ApproveLinesDto,
   CreatePayoutRunDto,
@@ -38,7 +39,10 @@ import {
 @UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireModule('ski_swap')
 export class PayoutRunController {
-  constructor(private readonly runs: PayoutRunService) {}
+  constructor(
+    private readonly runs: PayoutRunService,
+    private readonly nudges: PayoutNudgeService,
+  ) {}
 
   @Get('payout-runs')
   @RequirePermissions('ski_swap:report')
@@ -102,6 +106,43 @@ export class PayoutRunController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.runs.close(orgId, runId, user.userId);
+  }
+
+  /**
+   * Asks PayPal what happened to everything still moving (§8).
+   *
+   * Exposed as a button as well as run on a schedule, because the person
+   * staring at a line that has said SENDING for two days wants an answer now,
+   * not at the next sweep.
+   */
+  @Post('payout-runs/reconcile')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  reconcile(@Param('orgId') orgId: string) {
+    return this.runs.reconcileOrg(orgId);
+  }
+
+  /** Sends whichever unclaimed-payout nudges have come due (§9). */
+  @Post('payout-runs/nudge')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  nudge(@Param('orgId') orgId: string) {
+    return this.nudges.sweep(orgId);
+  }
+
+  /**
+   * Takes back an unclaimed payout now rather than waiting for PayPal's
+   * thirty-day return (§9).
+   */
+  @Post('payout-runs/:runId/lines/:lineId/cancel')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  cancelUnclaimed(
+    @Param('orgId') orgId: string,
+    @Param('lineId') lineId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.nudges.cancelUnclaimed(orgId, lineId, user.userId);
   }
 
   @Get('payout-runs/:runId/checks')

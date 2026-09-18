@@ -34,8 +34,12 @@ export class SkiSwapSettingsController {
 
   @Patch()
   @RequirePermissions('ski_swap:admin')
-  update(@Param('orgId') orgId: string, @Body() body: UpdateSkiSwapSettingsDto) {
-    return this.settingsService.upsert(orgId, body);
+  update(
+    @Param('orgId') orgId: string,
+    @Body() body: UpdateSkiSwapSettingsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.settingsService.upsert(orgId, body, user.userId);
   }
 
   /**
