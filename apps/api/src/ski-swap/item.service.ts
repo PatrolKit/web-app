@@ -707,17 +707,37 @@ export class ItemService {
     });
     if (!waiting.length) return { consigned: 0, pushing: 0 };
 
-    await this.prisma.swapItem.updateMany({
-      // `consignedAt: null` repeated in the update's own filter, not just the
-      // read above: two volunteers pressing this at once must not restamp what
-      // the first one accepted, or the second would move the time it happened.
-      where: { orgId, swapId, sellerId, consignedAt: null, deletedAt: null },
+    const ids = waiting.map((w) => w.id);
+
+    /**
+     * The same set, three times over: updated, pushed, and counted.
+     *
+     * This used to re-run the filter for the update instead of naming the rows
+     * it had just read. A row created in the gap — a shop adding one while a
+     * volunteer presses the button — then matched the update, was consigned,
+     * and was not in the list handed to Square. It went sellable-in-name-only
+     * and uncounted, so nothing on any screen said to go and look at it.
+     *
+     * Naming the ids makes the gap harmless in the other direction: a row that
+     * arrives late is simply not in this batch. It stays visibly waiting, and
+     * the next press takes it.
+     *
+     * `consignedAt: null` stays in the filter so two volunteers pressing at
+     * once cannot restamp each other's work, and `count` is what this call
+     * actually changed rather than what it hoped to.
+     */
+    const { count } = await this.prisma.swapItem.updateMany({
+      where: { id: { in: ids }, consignedAt: null },
       data: { consignedAt: new Date(), consignedBy: actorId },
     });
 
-    void this.pushConsignedBatch(orgId, swapId, waiting.map((w) => w.id));
+    // Pushed by the snapshot rather than by `count`, which does not say *which*
+    // rows it changed. Re-pushing one another press has already sent is an
+    // upsert — the same thing an edit does — so the overlap costs a call and
+    // nothing else.
+    void this.pushConsignedBatch(orgId, swapId, ids);
 
-    return { consigned: waiting.length, pushing: waiting.length };
+    return { consigned: count, pushing: ids.length };
   }
 
   /**
