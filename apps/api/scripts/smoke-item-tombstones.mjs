@@ -32,6 +32,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
+import argon2 from 'argon2';
 
 import { smokeOrg, smokeStaff, smokeSession } from './_fixture.mjs';
 
@@ -53,6 +54,9 @@ const prior = await prisma.skiSwap.findMany({
   where: { orgId: org.id, title: 'Tombstone smoke swap' }, select: { id: true },
 });
 for (const s of prior) await prisma.swapItem.deleteMany({ where: { swapId: s.id } });
+await prisma.device.deleteMany({
+  where: { orgId: org.id, name: { in: ['Tombstone smoke iPad', 'Tombstone smoke bridge'] } },
+});
 await prisma.skiSwap.deleteMany({ where: { orgId: org.id, title: 'Tombstone smoke swap' } });
 
 const SELLER_PHONE = '+15550197301';
@@ -370,6 +374,72 @@ ok('...and does not move when they were accepted',
 ok('a shop cannot delete what has now been accepted',
   (await sellerApi(`/orgs/${org.id}/ski-swap/seller/me/items/${shopRows[1]?.id}`,
     { method: 'DELETE' })).status === 409);
+
+console.log('\n── The staff iPad reaching the same button ──────────────');
+
+// `ItemController` carries `@RequireDeviceRole('ski_swap.staff_check_in')` on
+// the class, so every route on it — batch consign included — is already open
+// to a check-in iPad. That is inherited rather than written on the method, and
+// a reader of `consignAll` alone would conclude the opposite, so it is asserted
+// here rather than left to be discovered by whoever builds the iPad screen.
+const ipadSecret = createId();
+const ipadClientId = createId();
+await prisma.device.create({
+  data: {
+    id: createId(), orgId: org.id, name: 'Tombstone smoke iPad',
+    role: 'ski_swap.staff_check_in', clientId: ipadClientId,
+    secretHash: await argon2.hash(ipadSecret, { type: argon2.argon2id }),
+  },
+});
+const ipadToken = await fetch(`${BASE}/auth/device/token`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ clientId: ipadClientId, clientSecret: ipadSecret }),
+}).then(unwrap);
+
+const ipadWaiting = await prisma.swapItem.create({
+  data: {
+    id: createId(), swapId: swap.id, orgId: org.id, sellerId: sellerProfile.id,
+    name: 'For the iPad to accept', sku: '78500', liveSku: '78500',
+    priceCents: 4000, originalQuantity: 1, consignedAt: null,
+  },
+});
+
+const fromIpad = await fetch(`${BASE}${ITEMS}/consign`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${ipadToken.accessToken}`, 'content-type': 'application/json' },
+  body: JSON.stringify({ sellerId: sellerProfile.id }),
+});
+ok('a check-in iPad can accept a seller\'s items', fromIpad.status === 200,
+  `HTTP ${fromIpad.status}`);
+
+const acceptedByIpad = await prisma.swapItem.findUnique({ where: { id: ipadWaiting.id } });
+ok('...and is recorded as the one that did it',
+  acceptedByIpad?.consignedAt !== null && acceptedByIpad?.consignedBy !== null &&
+  acceptedByIpad?.consignedBy !== staff.id,
+  `consignedBy ${acceptedByIpad?.consignedBy}`);
+
+// A device of the wrong role is still refused, so the role is doing work.
+const bridgeSecret = createId();
+const bridgeClientId = createId();
+await prisma.device.create({
+  data: {
+    id: createId(), orgId: org.id, name: 'Tombstone smoke bridge',
+    role: 'ski_swap.print_bridge', clientId: bridgeClientId,
+    secretHash: await argon2.hash(bridgeSecret, { type: argon2.argon2id }),
+  },
+});
+const bridgeToken = await fetch(`${BASE}/auth/device/token`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ clientId: bridgeClientId, clientSecret: bridgeSecret }),
+}).then(unwrap);
+
+const fromBridge = await fetch(`${BASE}${ITEMS}/consign`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${bridgeToken.accessToken}`, 'content-type': 'application/json' },
+  body: JSON.stringify({ sellerId: sellerProfile.id }),
+});
+ok('a print bridge is refused, so the role is doing work',
+  fromBridge.status === 403, `HTTP ${fromBridge.status}`);
 
 await finish();
 

@@ -93,9 +93,15 @@ export class ItemController {
    * rows at a time and filters what it has, so a button acting on "what you can
    * see" would leave the rest of a shop's inventory behind without saying so.
    *
-   * Staff only, and no device role — a batch acceptance is a decision about a
-   * pile of goods somebody has looked at, which is the scanner's whole job to
-   * do one at a time.
+   * Reachable by a check-in iPad as well as from the web: the class carries
+   * `@RequireDeviceRole('ski_swap.staff_check_in')` and this does not override
+   * it. Worth saying out loud, because the role is inherited rather than
+   * written here, and a reader of this method alone would conclude the
+   * opposite. `consignedBy` then holds the device id rather than a user id,
+   * which is what `SwapItem.consignedBy` already documents.
+   *
+   * A print bridge is still refused — a scanner accepts one tag at a time, and
+   * a batch is a decision about a pile somebody has looked at.
    */
   @Post('consign')
   @HttpCode(200)
