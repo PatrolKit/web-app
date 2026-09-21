@@ -23,7 +23,7 @@ export interface SwapItemsPanelApi {
    */
   fetchItems: (swapId: string, opts?: { query?: string; sellerId?: string }) => Promise<{ items: ItemResponse[]; total: number }>;
   /** Accepts every item this seller is still waiting on. Staff pages only. */
-  consignAllForSeller?: (swapId: string, sellerId: string) => Promise<{ consigned: number; pushing: number }>;
+  consignAllForSeller?: (swapId: string, sellerId: string) => Promise<{ consigned: number }>;
   createItem: (swapId: string, data: CreateItemInput) => Promise<ItemResponse>;
   patchItem: (itemId: string, data: PatchItemInput) => Promise<ItemResponse>;
   deleteItem: (itemId: string) => Promise<void>;
@@ -155,7 +155,7 @@ function ConsignAllButton({
   waiting: number;
   total: number;
   pending: boolean;
-  result?: { consigned: number; pushing: number };
+  result?: { consigned: number };
   error: unknown;
   onConsign: () => void;
 }) {

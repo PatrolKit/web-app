@@ -12,3 +12,16 @@ export const DEVICE_ROLES_KEY = 'deviceRoles';
  * refuses device tokens outright, so reachability is opt-in rather than assumed.
  */
 export const RequireDeviceRole = (...roles: DeviceRole[]) => SetMetadata(DEVICE_ROLES_KEY, roles);
+
+/**
+ * Closes one route to devices on a controller whose class opens them all.
+ *
+ * `@RequireDeviceRole` resolves with `getAllAndOverride([handler, class])`, so
+ * a class-level role reaches every method that does not override it. Overriding
+ * with an empty `@RequireDeviceRole()` would do the job and read as the exact
+ * opposite of its effect, which is how the next person gets it wrong.
+ *
+ * `PermissionsGuard` refuses a device token wherever no role is named, so this
+ * is the same mechanism said plainly rather than a second one.
+ */
+export const NoDeviceAccess = () => SetMetadata(DEVICE_ROLES_KEY, []);

@@ -698,14 +698,14 @@ export class ItemService {
     swapId: string,
     sellerId: string,
     actorId: string | null,
-  ): Promise<{ consigned: number; pushing: number }> {
+  ): Promise<{ consigned: number }> {
     await this.findSwapOrThrow(orgId, swapId);
 
     const waiting = await this.prisma.swapItem.findMany({
       where: { orgId, swapId, sellerId, consignedAt: null, deletedAt: null },
       select: { id: true },
     });
-    if (!waiting.length) return { consigned: 0, pushing: 0 };
+    if (!waiting.length) return { consigned: 0 };
 
     const ids = waiting.map((w) => w.id);
 
@@ -737,7 +737,7 @@ export class ItemService {
     // nothing else.
     void this.pushConsignedBatch(orgId, swapId, ids);
 
-    return { consigned: count, pushing: ids.length };
+    return { consigned: count };
   }
 
   /**

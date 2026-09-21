@@ -375,13 +375,16 @@ ok('a shop cannot delete what has now been accepted',
   (await sellerApi(`/orgs/${org.id}/ski-swap/seller/me/items/${shopRows[1]?.id}`,
     { method: 'DELETE' })).status === 409);
 
-console.log('\n── The staff iPad reaching the same button ──────────────');
+console.log('\n── What the staff iPad may and may not do ────────────');
 
-// `ItemController` carries `@RequireDeviceRole('ski_swap.staff_check_in')` on
-// the class, so every route on it — batch consign included — is already open
-// to a check-in iPad. That is inherited rather than written on the method, and
-// a reader of `consignAll` alone would conclude the opposite, so it is asserted
-// here rather than left to be discovered by whoever builds the iPad screen.
+// `ItemController` opens every route to a check-in iPad at the class level, and
+// batch consign overrides that with `@NoDeviceAccess()` — accepting a whole
+// delivery in one press is a decision for a screen showing the list, until the
+// iPad has a mode built around it.
+//
+// Both halves are asserted, because an override is easy to write and easy to
+// write too widely: the batch is refused, and the one-at-a-time route the
+// scanner and the iPad actually use is not.
 const ipadSecret = createId();
 const ipadClientId = createId();
 await prisma.device.create({
@@ -409,11 +412,24 @@ const fromIpad = await fetch(`${BASE}${ITEMS}/consign`, {
   headers: { authorization: `Bearer ${ipadToken.accessToken}`, 'content-type': 'application/json' },
   body: JSON.stringify({ sellerId: sellerProfile.id }),
 });
-ok('a check-in iPad can accept a seller\'s items', fromIpad.status === 200,
+ok('a check-in iPad is refused the batch', fromIpad.status === 403,
   `HTTP ${fromIpad.status}`);
 
+const untouched = await prisma.swapItem.findUnique({ where: { id: ipadWaiting.id } });
+ok('...and nothing moved', untouched?.consignedAt === null,
+  `consignedAt ${untouched?.consignedAt}`);
+
+// The class-level role still reaches the routes that want it, so this is one
+// method overriding it rather than the iPad being locked out of items.
+const oneTag = await fetch(`${BASE}${ITEMS}/${ipadWaiting.id}/consign`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${ipadToken.accessToken}`, 'content-type': 'application/json' },
+});
+ok('...while it still accepts one item at a time', oneTag.status === 200,
+  `HTTP ${oneTag.status}`);
+
 const acceptedByIpad = await prisma.swapItem.findUnique({ where: { id: ipadWaiting.id } });
-ok('...and is recorded as the one that did it',
+ok('...recorded as the device that did it',
   acceptedByIpad?.consignedAt !== null && acceptedByIpad?.consignedBy !== null &&
   acceptedByIpad?.consignedBy !== staff.id,
   `consignedBy ${acceptedByIpad?.consignedBy}`);
@@ -438,8 +454,7 @@ const fromBridge = await fetch(`${BASE}${ITEMS}/consign`, {
   headers: { authorization: `Bearer ${bridgeToken.accessToken}`, 'content-type': 'application/json' },
   body: JSON.stringify({ sellerId: sellerProfile.id }),
 });
-ok('a print bridge is refused, so the role is doing work',
-  fromBridge.status === 403, `HTTP ${fromBridge.status}`);
+ok('a print bridge is refused too', fromBridge.status === 403, `HTTP ${fromBridge.status}`);
 
 await finish();
 

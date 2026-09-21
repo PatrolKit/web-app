@@ -549,7 +549,7 @@ export const api = {
      * the list is a page of fifty, and a shop's inventory is not.
      */
     consignAllForSeller: (orgId: string, swapId: string, sellerId: string) =>
-      request<{ consigned: number; pushing: number }>(
+      request<{ consigned: number }>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/consign`,
         { method: 'POST', body: JSON.stringify({ sellerId }) },
       ),

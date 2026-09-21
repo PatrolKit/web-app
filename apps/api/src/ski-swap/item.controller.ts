@@ -9,7 +9,7 @@ import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
-import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
+import { NoDeviceAccess, RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
@@ -93,18 +93,18 @@ export class ItemController {
    * rows at a time and filters what it has, so a button acting on "what you can
    * see" would leave the rest of a shop's inventory behind without saying so.
    *
-   * Reachable by a check-in iPad as well as from the web: the class carries
-   * `@RequireDeviceRole('ski_swap.staff_check_in')` and this does not override
-   * it. Worth saying out loud, because the role is inherited rather than
-   * written here, and a reader of this method alone would conclude the
-   * opposite. `consignedBy` then holds the device id rather than a user id,
-   * which is what `SwapItem.consignedBy` already documents.
+   * Web only, for now. The class opens every route to a check-in iPad, and this
+   * one overrides that: accepting a shop's whole delivery in one press is a
+   * decision we would rather see made on a screen showing the list, until the
+   * iPad has a batch mode built around it. The scanner's job — one tag at a
+   * time, with the goods in hand — is untouched.
    *
-   * A print bridge is still refused — a scanner accepts one tag at a time, and
-   * a batch is a decision about a pile somebody has looked at.
+   * Nothing about the service is device-specific, so this is one decorator to
+   * remove when that lands.
    */
   @Post('consign')
   @HttpCode(200)
+  @NoDeviceAccess()
   @RequirePermissions('ski_swap:manage')
   consignAll(
     @Param('orgId') orgId: string,

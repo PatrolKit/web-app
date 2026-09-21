@@ -166,6 +166,6 @@ describe('accepting everything a seller is waiting on', () => {
     for (const r of rows) r.consignedAt = new Date();
 
     expect(await service.consignAllForSeller('org-1', 'swap-1', 'seller-1', 'staff-1'))
-      .toEqual({ consigned: 0, pushing: 0 });
+      .toEqual({ consigned: 0 });
   });
 });
