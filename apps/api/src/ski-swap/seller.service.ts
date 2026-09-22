@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { isUniqueViolation } from '../common/util/prisma-errors';
 import { IdempotencyService } from '../common/services/idempotency.service';
 import { PersonService } from '../common/identity/person.service';
 import { MembershipTouchService } from '../common/identity/membership-touch.service';
@@ -564,6 +565,15 @@ export class SellerService {
       where: { membershipId },
       update: { deletedAt: null, ...(businessName !== null ? { businessName } : {}) },
       create: { id: id ?? createId(), membershipId, businessName },
+    }).catch((err: unknown) => {
+      /*
+       * The one way a caller-supplied id still collides here: it belongs to
+       * another membership in this org, so the upsert misses on `membershipId`
+       * and tries to insert under an id that is taken. Rare, and the client's
+       * to resolve, but a raw constraint violation would reach it as a 500.
+       */
+      if (isUniqueViolation(err)) throw new ConflictException('That id is already in use.');
+      throw err;
     });
     await this.touch.touch(membershipId);
     return profile;
@@ -588,6 +598,20 @@ export class SellerService {
     if (existing.membership.orgId !== orgId) {
       throw new ConflictException('That id is already in use.');
     }
+    /*
+     * A removed seller is not an answer, it is a row to bring back.
+     *
+     * Falling through puts this on the ordinary create path, where
+     * `upsertSellerProfile` clears `deletedAt` — which is already what
+     * re-adding a removed seller does when no id is involved. Returning the
+     * tombstone here instead told the client its create had succeeded and
+     * handed it a row with `deletedAt` set.
+     *
+     * Items go the other way and refuse: a withdrawn item's tag is out of
+     * circulation and its SKU may have been re-issued, so there is nothing to
+     * restore it into. A person can simply be a seller again.
+     */
+    if (existing.deletedAt) return null;
     return toSellerResponse(existing);
   }
 

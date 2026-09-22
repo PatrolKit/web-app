@@ -12,8 +12,13 @@
 //   D  the cursor a list hands back was read before the query, not after;
 //   E  a walk pages by a cursor and cannot drop a row off the end.
 //
-// Sign-in is throttled to five a minute; this script signs in twice, once as
-// staff in each of two organizations. Leave a minute between runs.
+// Sign-in is throttled to five a minute and this script signs in twice — once
+// as staff in each of two organizations, because the sharp edge in ask A is a
+// create from a caller who is legitimately allowed to create somewhere else.
+//
+// Two per run against a budget of five means a retry loop tighter than about a
+// minute and a half never drains the bucket; it just keeps topping it up. Leave
+// ninety seconds between runs.
 //
 // Everything below is about ids, so the first thing asserted is that the row
 // really was created under the id that was asked for. A server quietly minting
@@ -160,6 +165,42 @@ ok('creating it again answers with the same row', itemAgain.status < 300,
   `HTTP ${itemAgain.status}`);
 ok('...and there is still exactly one',
   (await prisma.swapItem.count({ where: { id: itemId } })) === 1);
+
+// A removed seller, re-created under the id it had. Restored rather than
+// handed back as a tombstone — which is what re-adding a removed seller does
+// when no id is involved, so the two paths agree.
+const goneId = randomUUID();
+const goneEmail = `gone-${goneId}@patrolkit.invalid`;
+await api(SELLERS, {
+  method: 'POST',
+  body: JSON.stringify({ id: goneId, firstName: 'Removed', lastName: 'Seller', email: goneEmail }),
+}).then(unwrap);
+const removed = await api(`${SELLERS}/${goneId}`, { method: 'DELETE' });
+ok('a seller can be removed', removed.status < 300, `HTTP ${removed.status}`);
+ok('...and is a tombstone',
+  !!(await prisma.sellerProfile.findUnique({ where: { id: goneId } }))?.deletedAt);
+
+const restored = await api(SELLERS, {
+  method: 'POST',
+  body: JSON.stringify({ id: goneId, firstName: 'Removed', lastName: 'Seller', email: goneEmail }),
+}).then(unwrap);
+ok("creating under a removed seller's id brings them back",
+  restored.id === goneId && !restored.deletedAt,
+  `${restored.id} deletedAt ${restored.deletedAt}`);
+
+// Items go the other way: a withdrawn tag is out of circulation and its SKU
+// may already be on something else, so there is nothing to restore into.
+//
+// Its own item, not the one above — that one is still needed for the photo
+// upload, and deleting it made every later check 404 on a missing row.
+const doomedId = randomUUID();
+const doomedBody = JSON.stringify({ id: doomedId, categoryId: category?.id, priceCents: 2500, quantity: 1, sellerId });
+await api(ITEMS, { method: 'POST', body: doomedBody }).then(unwrap);
+await api(`${ITEMS}/${doomedId}`, { method: 'DELETE' });
+const reCreate = await api(ITEMS, { method: 'POST', body: doomedBody });
+ok('...while a withdrawn item is refused instead', reCreate.status === 409,
+  `HTTP ${reCreate.status}`);
+
 
 console.log('\n── B · a retry does the work once ────────────────────────────');
 
