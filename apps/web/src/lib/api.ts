@@ -626,9 +626,17 @@ export const api = {
       // stated once and the list cannot disagree with the dashboard count.
       if (incompleteOnly) qs.set('incomplete', 'true');
       const suffix = qs.toString() ? `?${qs}` : '';
-      return request<import('./api.types').SellerResponse[]>(
+      /*
+       * Unwrapped here rather than at every screen.
+       *
+       * The response carries `syncedAt` beside the list now, for clients that
+       * hold a mirror and need a cursor the server's clock chose. The web holds
+       * no mirror — it refetches — so the three screens that read this go on
+       * seeing an array.
+       */
+      return request<{ sellers: import('./api.types').SellerResponse[]; syncedAt: string }>(
         `/orgs/${orgId}/ski-swap/sellers${suffix}`,
-      );
+      ).then((r) => r.sellers);
     },
     createSeller: (orgId: string, data: SellerWrite) =>
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers`, {

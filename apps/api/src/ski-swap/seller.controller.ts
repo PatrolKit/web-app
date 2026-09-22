@@ -111,8 +111,12 @@ export class SellerController {
     @Param('orgId') orgId: string,
     @Param('sellerId') sellerId: string,
     @Body() body: PatchSellerDto,
+    // The offline queue retries, and a retried patch is a retried conflict
+    // once `baseUpdatedAt` is in play: the first attempt moves the watermark,
+    // so the second would be refused for having been overtaken by itself.
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.sellerService.patch(orgId, sellerId, body);
+    return this.sellerService.patch(orgId, sellerId, body, idempotencyKey);
   }
 
   @Delete(':sellerId')

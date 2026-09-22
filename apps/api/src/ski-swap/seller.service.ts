@@ -163,7 +163,7 @@ export class SellerService {
     query?: string,
     updatedSince?: string,
     incompleteOnly?: boolean,
-  ): Promise<SellerResponse[]> {
+  ): Promise<{ sellers: SellerResponse[]; syncedAt: string }> {
     // Tombstones appear only in a delta. A client asking "what changed since"
     // has a local mirror and needs to be told about a removal; a caller with no
     // cursor is a screen, and a removed seller has no business on it.
@@ -171,6 +171,18 @@ export class SellerService {
     // The roster includes them unconditionally and leaves the filtering to its
     // callers. That is not worth copying: this endpoint backs the staff Sellers
     // page directly.
+    /*
+     * Read before the query, not after (iOS Plan 17 D).
+     *
+     * This is what a client sets its next `updatedSince` to. Taken after the
+     * read, a row committed while the query ran would sit between this answer
+     * and the next one's filter — missing from both, and gone until somebody
+     * edits it again. Sellers have no periodic full pass to catch that, so it
+     * would simply be lost. Taken before, the row comes back twice instead,
+     * and an upsert does not mind.
+     */
+    const syncedAt = new Date();
+
     const live = updatedSince ? {} : { deletedAt: null };
     const liveMembership = updatedSince ? {} : { deletedAt: null };
 
@@ -222,9 +234,12 @@ export class SellerService {
     // Filtered after mapping rather than in SQL: the rule spans four address
     // columns and two payout ones, and is stated once here so the list and the
     // dashboard count cannot drift apart.
-    return incompleteOnly
-      ? all.filter((x) => !x.deletedAt && SellerService.isIncomplete(x))
-      : all;
+    return {
+      sellers: incompleteOnly
+        ? all.filter((x) => !x.deletedAt && SellerService.isIncomplete(x))
+        : all,
+      syncedAt: syncedAt.toISOString(),
+    };
   }
 
   async get(orgId: string, sellerId: string): Promise<SellerResponse> {
@@ -271,6 +286,7 @@ export class SellerService {
   async create(
     orgId: string,
     data: {
+      id?: string;
       firstName?: string | null; lastName?: string | null;
       phone?: string | null; email?: string | null;
       businessName?: string | null;
@@ -284,6 +300,16 @@ export class SellerService {
       if (cached) return cached as unknown as SellerResponse;
     }
 
+    /*
+     * A create under an id this org already has is that same create arriving
+     * twice — the offline queue retrying after a lost response. For creates the
+     * id is the idempotency key, so this answers before anything is written.
+     */
+    if (data.id) {
+      const already = await this.assertIdUsable(orgId, data.id);
+      if (already) return already;
+    }
+
     const { user } = await this.people.resolveOrCreate({
       email: data.email,
       phone: data.phone,
@@ -293,7 +319,11 @@ export class SellerService {
 
     await this.writeUserFields(user.id, data);
     const membership = await this.people.upsertMembership(user.id, orgId);
-    const profile = await this.upsertSellerProfile(membership.id, data.businessName ?? null);
+    const profile = await this.upsertSellerProfile(
+      membership.id,
+      data.businessName ?? null,
+      data.id,
+    );
 
     const response = toSellerResponse(await this.findByIdOrThrow(profile.id));
 
@@ -316,9 +346,45 @@ export class SellerService {
       businessName?: string | null;
       street?: string | null; city?: string | null; state?: string | null; zip?: string | null;
       payoutMethod?: string | null; payoutTarget?: string | null; payoutHandle?: string | null;
+      baseUpdatedAt?: string;
     },
+    idempotencyKey?: string,
   ): Promise<SellerResponse> {
+    if (idempotencyKey) {
+      const cached = await this.idempotency.getCached(`seller-patch:${orgId}`, idempotencyKey);
+      if (cached) return cached as unknown as SellerResponse;
+    }
+
     const existing = await this.findOrThrow(orgId, sellerId);
+
+    /*
+     * Refused if somebody else has written since this client last looked
+     * (iOS Plan 17 C).
+     *
+     * The scenario is two people editing one seller during a swap: an iPad at
+     * the counter correcting a phone while it is offline, an administrator
+     * fixing the address on the web. A whole-record patch put the old address
+     * back when the iPad came online, and told nobody.
+     *
+     * The comparison is `>`, not `>=`: a client that sends back the exact
+     * watermark it was given has seen everything, and two writes inside the
+     * same millisecond are the one case this cannot separate either way.
+     *
+     * The current seller rides along on the refusal so the client can show
+     * both versions and ask, rather than making somebody go and look.
+     */
+    if (data.baseUpdatedAt) {
+      const seen = new Date(data.baseUpdatedAt);
+      if (existing.membership.updatedAt > seen) {
+        throw new ConflictException({
+          message: 'This seller was changed by somebody else while you were editing.',
+          code: 'SELLER_MODIFIED',
+          // Under `details` because that is what the error envelope carries;
+          // `message` and `code` are the only other fields it keeps.
+          details: { seller: toSellerResponse(await this.findByIdOrThrow(sellerId)) },
+        });
+      }
+    }
 
     await this.writeUserFields(existing.membership.userId, data, { overwrite: true });
 
@@ -330,7 +396,15 @@ export class SellerService {
     }
     await this.touch.touch(existing.membership.id);
 
-    return toSellerResponse(await this.findByIdOrThrow(sellerId));
+    const response = toSellerResponse(await this.findByIdOrThrow(sellerId));
+    if (idempotencyKey) {
+      await this.idempotency.save(
+        `seller-patch:${orgId}`,
+        idempotencyKey,
+        response as unknown as Record<string, unknown>,
+      );
+    }
+    return response;
   }
 
   /** Soft removal — revokes the seller role, keeping the row as a tombstone. */
@@ -472,14 +546,49 @@ export class SellerService {
     });
   }
 
-  private async upsertSellerProfile(membershipId: string, businessName: string | null) {
+  private async upsertSellerProfile(
+    membershipId: string,
+    businessName: string | null,
+    /**
+     * An id the caller minted, used only if a row is actually created.
+     *
+     * A membership that already has a profile keeps the id it has. That is the
+     * `resolveOrCreate` case iOS calls out: the person was matched by contact,
+     * so this is a draft merging into somebody who already exists, and telling
+     * the client its chosen id won that argument would be a lie it would then
+     * have to unpick.
+     */
+    id?: string,
+  ) {
     const profile = await this.prisma.sellerProfile.upsert({
       where: { membershipId },
       update: { deletedAt: null, ...(businessName !== null ? { businessName } : {}) },
-      create: { id: createId(), membershipId, businessName },
+      create: { id: id ?? createId(), membershipId, businessName },
     });
     await this.touch.touch(membershipId);
     return profile;
+  }
+
+  /**
+   * Whether a client-minted id is free to use, refusing if it is not ours.
+   *
+   * A create under an id that already exists answers with that row — that is
+   * what makes a retried offline create safe. But a primary key is unique
+   * across the database rather than per org, so answering unconditionally would
+   * hand a caller another organization's seller for the price of a guessed
+   * UUID. Somebody else's row is a conflict, and the message says nothing about
+   * whose it is.
+   */
+  private async assertIdUsable(orgId: string, id: string): Promise<SellerResponse | null> {
+    const existing = await this.prisma.sellerProfile.findUnique({
+      where: { id },
+      include: SELLER_INCLUDE,
+    });
+    if (!existing) return null;
+    if (existing.membership.orgId !== orgId) {
+      throw new ConflictException('That id is already in use.');
+    }
+    return toSellerResponse(existing);
   }
 
   /**

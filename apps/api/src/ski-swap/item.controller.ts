@@ -13,7 +13,7 @@ import { NoDeviceAccess, RequireDeviceRole } from '../common/decorators/require-
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
-import { ItemService } from './item.service';
+import { ItemService, decodeCursor } from './item.service';
 import { LegacyTicketService } from './legacy-ticket.service';
 import { CreateItemDto, PatchItemDto } from '../contracts/ski-swap.contracts';
 import type { Request } from 'express';
@@ -39,7 +39,21 @@ export class ItemController {
     @Query('take') take?: string,
     @Query('updatedSince') updatedSince?: string,
     @Query('consigned') consigned?: string,
+    /**
+     * A stable walk of every item, for the client that mirrors them all
+     * (iOS Plan 17 E).
+     *
+     * Orders by `(updatedAt, id)` and pages by a cursor instead of an offset,
+     * so an item inserted by another station mid-walk cannot shift a live one
+     * off the end of a page — which a client that deletes whatever did not come
+     * back then deletes locally.
+     */
+    @Query('walk') walk?: string,
+    @Query('after') after?: string,
   ) {
+    const cursor = after ? decodeCursor(after) : null;
+    if (after && !cursor) throw new BadRequestException('That page cursor is not one of ours.');
+
     return this.itemService.list(orgId, swapId, {
       query,
       sellerId,
@@ -47,6 +61,10 @@ export class ItemController {
       take: take ? parseInt(take, 10) : undefined,
       updatedSince,
       consigned: consigned === undefined ? undefined : consigned === 'true',
+      // A cursor implies the walk it came from, so a client paging through one
+      // cannot accidentally drop back to offset order on page two.
+      walk: walk === 'true' || !!cursor,
+      ...(cursor ? { after: cursor } : {}),
     });
   }
 
@@ -175,8 +193,14 @@ export class ItemController {
 
   @Patch(':itemId')
   @RequirePermissions('ski_swap:manage')
-  patch(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @Param('itemId') itemId: string, @Body() body: PatchItemDto) {
-    return this.itemService.patch(orgId, swapId, itemId, body);
+  patch(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Param('itemId') itemId: string,
+    @Body() body: PatchItemDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.itemService.patch(orgId, swapId, itemId, body, idempotencyKey);
   }
 
   @Delete(':itemId')
@@ -194,8 +218,13 @@ export class ItemController {
     @Param('swapId') swapId: string,
     @Param('itemId') itemId: string,
     @UploadedFile() file: Express.Multer.File,
+    /*
+     * The one where a lost response costs something visible: a retried upload
+     * is a second copy of the same photo on the item, in S3 and in Square.
+     */
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.itemService.uploadPhoto(orgId, swapId, itemId, file);
+    return this.itemService.uploadPhoto(orgId, swapId, itemId, file, idempotencyKey);
   }
 
   @Delete(':itemId/photos/:photoId')

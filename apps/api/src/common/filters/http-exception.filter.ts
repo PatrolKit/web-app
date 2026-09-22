@@ -12,6 +12,8 @@ interface ErrorResponse {
   success: false;
   error: string;
   code?: string;
+  /** See `details` below. Present only where an error offered some. */
+  details?: unknown;
 }
 
 @Catch()
@@ -26,6 +28,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
     let code: string | undefined;
+    /**
+     * Structured detail an error wants to hand back, where a sentence is not
+     * enough for the client to act.
+     *
+     * Named explicitly rather than spread from the exception: Nest's own
+     * exceptions carry fields of their own, and "include everything" would put
+     * whatever they happen to hold into a public response.
+     */
+    let details: unknown;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -42,6 +53,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
               ? (obj['message'] as string[]).join(', ')
               : message;
         code = typeof obj['code'] === 'string' ? obj['code'] : undefined;
+        details = obj['details'];
       }
     }
 
@@ -58,6 +70,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const body: ErrorResponse = { success: false, error: message };
     if (code) body.code = code;
+    if (details !== undefined) body.details = details;
 
     response.status(status).json(body);
   }

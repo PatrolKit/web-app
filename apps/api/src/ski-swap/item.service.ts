@@ -39,6 +39,34 @@ function idempotencyScope(orgId: string, swapId: string): string {
 /** What a Square push did: landed, was not configured, or errored. */
 export type PosSyncResult = 'synced' | 'skipped' | 'failed';
 
+/**
+ * A place in a keyset walk: the `(updatedAt, id)` of the last row handed out.
+ *
+ * Base64 rather than the two values in the open, so a client treats it as a
+ * bookmark it received rather than as two fields it may compose. What it is
+ * made of is ours to change; that it round-trips is the contract.
+ */
+export function encodeCursor(updatedAt: Date, id: string): string {
+  return Buffer.from(`${updatedAt.toISOString()}|${id}`).toString('base64url');
+}
+
+export function decodeCursor(cursor: string): { updatedAt: Date; id: string } | null {
+  try {
+    const raw = Buffer.from(cursor, 'base64url').toString('utf8');
+    // The first separator, not every one. An id containing a `|` would
+    // otherwise come back truncated, and seek to a different row than the one
+    // the walk stopped at — quietly, since a shorter id is still a valid id.
+    const at = raw.indexOf('|');
+    if (at < 0) return null;
+    const updatedAt = new Date(raw.slice(0, at));
+    const id = raw.slice(at + 1);
+    if (!id || Number.isNaN(updatedAt.getTime())) return null;
+    return { updatedAt, id };
+  } catch {
+    return null;
+  }
+}
+
 /** A collision on `@@unique([swapId, sku])` — one number, two items. */
 function isDuplicateSku(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
@@ -61,7 +89,17 @@ export class ItemService {
     private readonly taxonomy: TaxonomyService,
   ) {}
 
-  async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string; consigned?: boolean }): Promise<{ items: ItemResponse[]; total: number }> {
+  async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string; consigned?: boolean; walk?: boolean; after?: { updatedAt: Date; id: string } }): Promise<{ items: ItemResponse[]; total: number; syncedAt: string; nextAfter?: string }> {
+    /*
+     * Read before the query, not after (iOS Plan 17 D).
+     *
+     * This is the watermark a client sets its next `updatedSince` to. Taken
+     * after the read, a row committed while the query was running would sit
+     * between the result set and the new cursor — absent from this answer and
+     * excluded from the next one, so gone until somebody edits it again. Taken
+     * before, that row is simply returned twice, and an upsert does not mind.
+     */
+    const syncedAt = new Date();
     const swap = await this.findSwapOrThrow(orgId, swapId);
     // Tombstones appear only in a delta. A client asking "what changed since"
     // holds a local mirror and has to be told about a removal; a caller with no
@@ -83,6 +121,26 @@ export class ItemService {
       ] } : {}),
       ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
       ...(opts.updatedSince ? { updatedAt: { gt: new Date(opts.updatedSince) } } : {}),
+      /*
+       * Keyset paging for the full pass (iOS Plan 17 E).
+       *
+       * `skip`/`take` walks a moving list: an item inserted by another station
+       * between two pages shifts a live one off the end of a page, and the
+       * client — which deletes whatever did not come back — deletes it. A
+       * cursor of `(updatedAt, id)` cannot skip a row that way, because it
+       * names where it got to rather than how far along it was.
+       *
+       * `id` breaks the tie: `updatedAt` is not unique, and a cursor on it
+       * alone would either repeat or skip the rows sharing a millisecond.
+       */
+      ...(opts.after
+        ? {
+            OR: [
+              { updatedAt: { gt: opts.after.updatedAt } },
+              { updatedAt: opts.after.updatedAt, id: { gt: opts.after.id } },
+            ],
+          }
+        : {}),
       // What a staff member still has to look through, or what has been taken.
       ...(opts.consigned === undefined
         ? {}
@@ -90,15 +148,46 @@ export class ItemService {
           ? { consignedAt: { not: null } }
           : { consignedAt: null }),
     };
+    /*
+     * One transaction, so `total` describes the page beside it rather than a
+     * list that moved between the two statements.
+     *
+     * A keyset walk orders by the cursor's own columns; anything else would
+     * page over one order while seeking in another. Offset paging keeps the
+     * newest-first order the screens read.
+     */
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.swapItem.findMany({ where, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } }, orderBy: { createdAt: 'desc' }, skip: opts.skip ?? 0, take: opts.take ?? 50 }),
+      this.prisma.swapItem.findMany({
+        where,
+        include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
+        orderBy: opts.walk ? [{ updatedAt: 'asc' }, { id: 'asc' }] : [{ createdAt: 'desc' }],
+        ...(opts.walk ? {} : { skip: opts.skip ?? 0 }),
+        take: opts.take ?? 50,
+      }),
       this.prisma.swapItem.count({ where }),
     ]);
     const [inventoryMap, descriptions] = await Promise.all([
       this.fetchInventoryMap(orgId, swap, items),
       this.fetchDescriptions(items),
     ]);
-    return { total, items: items.map((i) => this.toResponse(i, inventoryMap, descriptions)) };
+    /*
+     * Where to carry on from, handed back rather than left to be assembled.
+     *
+     * Absent on the last page, which is how a walk knows it is done — a count
+     * comparison would be the thing this mode exists to stop relying on.
+     */
+    const last = items[items.length - 1];
+    const nextAfter =
+      opts.walk && last && items.length === (opts.take ?? 50)
+        ? encodeCursor(last.updatedAt, last.id)
+        : undefined;
+
+    return {
+      total,
+      syncedAt: syncedAt.toISOString(),
+      ...(nextAfter ? { nextAfter } : {}),
+      items: items.map((i) => this.toResponse(i, inventoryMap, descriptions)),
+    };
   }
 
   async get(orgId: string, swapId: string, itemId: string): Promise<ItemResponse> {
@@ -129,6 +218,8 @@ export class ItemService {
        * tickets can still list one the tree says nothing about — the description
        * is on the paper tag — and then `fallbackName` supplies the name.
        */
+      /** An id the client minted. See `ClientMintedId`. */
+      id?: string;
       categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string;
       /** What the client already printed. Honoured only with `alreadyPrinted`. */
       name?: string;
@@ -261,10 +352,39 @@ export class ItemService {
    * finish (D17) — and an item that is not on the floor yet cannot be sold at
    * the register in the meantime.
    */
-  async create(orgId: string, swapId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
+  async create(orgId: string, swapId: string, data: { id?: string; categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(idempotencyScope(orgId, swapId), idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
+    }
+
+    /*
+     * A create under an id this swap already has is the same create arriving
+     * twice — an offline queue retrying after a lost response. For creates the
+     * id is the idempotency key, so this answers before anything is written.
+     *
+     * Scoped to the swap. A primary key is unique across the database, not per
+     * org, so answering unconditionally would hand back another organization's
+     * item for the price of a guessed UUID. Anybody else's row is a conflict,
+     * and the message says nothing about whose.
+     */
+    if (data.id) {
+      const already = await this.prisma.swapItem.findUnique({
+        where: { id: data.id },
+        select: { id: true, orgId: true, swapId: true, deletedAt: true },
+      });
+      if (already) {
+        if (already.orgId !== orgId || already.swapId !== swapId) {
+          throw new ConflictException('That id is already in use.');
+        }
+        // A withdrawn item is not something to resurrect by re-creating it: the
+        // tombstone is what tells every cache it went, and handing it back as
+        // though the create succeeded would undo that.
+        if (already.deletedAt) {
+          throw new ConflictException('That item was withdrawn. Create it under a new id.');
+        }
+        return this.get(orgId, swapId, data.id);
+      }
     }
 
     const swap = await this.findSwapOrThrow(orgId, swapId);
@@ -301,7 +421,9 @@ export class ItemService {
 
     const item = await this.prisma.swapItem.create({
       data: {
-        id: createId(), swapId, orgId, sellerId: data.sellerId ?? null,
+        // The client's, when it brought one (iOS Plan 17 A). Checked against
+        // this swap before we get here, so by now it is either free or ours.
+        id: data.id ?? createId(), swapId, orgId, sellerId: data.sellerId ?? null,
         name, description: data.description ?? null,
         categoryId: described?.categoryId ?? null,
         ...(described && described.rows.length > 0
@@ -367,7 +489,11 @@ export class ItemService {
     return response;
   }
 
-  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; actorId?: string }): Promise<ItemResponse> {
+  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
+    if (idempotencyKey) {
+      const cached = await this.idempotency.getCached(`item-patch:${orgId}:${swapId}`, idempotencyKey);
+      if (cached) return cached as unknown as ItemResponse;
+    }
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId, deletedAt: null }, include: { attributes: true } });
     if (!existing) throw new NotFoundException('Item not found');
@@ -425,7 +551,15 @@ export class ItemService {
       this.fetchInventoryMap(orgId, swap, [updated]),
       this.fetchDescriptions([updated]),
     ]);
-    return this.toResponse(updated, inventoryMap, descriptions);
+    const response = this.toResponse(updated, inventoryMap, descriptions);
+    if (idempotencyKey) {
+      await this.idempotency.save(
+        `item-patch:${orgId}:${swapId}`,
+        idempotencyKey,
+        response as unknown as Record<string, unknown>,
+      );
+    }
+    return response;
   }
 
   /**
@@ -502,7 +636,18 @@ export class ItemService {
     ]);
   }
 
-  async uploadPhoto(orgId: string, swapId: string, itemId: string, file: { buffer: Buffer; mimetype: string; originalname: string }): Promise<{ id: string; url: string }> {
+  async uploadPhoto(orgId: string, swapId: string, itemId: string, file: { buffer: Buffer; mimetype: string; originalname: string }, idempotencyKey?: string): Promise<{ id: string; url: string }> {
+    /*
+     * Checked before a byte is resized or uploaded (iOS Plan 17 B).
+     *
+     * A retried upload is the costliest of the three to get wrong: it is a
+     * second copy of the same picture on the item, in S3 and in Square, and
+     * nothing about the item says the two are the same photograph.
+     */
+    if (idempotencyKey) {
+      const cached = await this.idempotency.getCached(`item-photo:${orgId}:${swapId}`, idempotencyKey);
+      if (cached) return cached as unknown as { id: string; url: string };
+    }
     await this.findSwapOrThrow(orgId, swapId);
     const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId, deletedAt: null } });
     if (!item) throw new NotFoundException('Item not found');
@@ -542,7 +687,11 @@ export class ItemService {
     const photo = await this.prisma.swapItemPhoto.create({
       data: { id: createId(), itemId, s3Key: s3KeyStored, url, squareImageId, displayOrder },
     });
-    return { id: photo.id, url: photo.url };
+    const response = { id: photo.id, url: photo.url };
+    if (idempotencyKey) {
+      await this.idempotency.save(`item-photo:${orgId}:${swapId}`, idempotencyKey, response);
+    }
+    return response;
   }
 
   async deletePhoto(orgId: string, swapId: string, itemId: string, photoId: string): Promise<void> {

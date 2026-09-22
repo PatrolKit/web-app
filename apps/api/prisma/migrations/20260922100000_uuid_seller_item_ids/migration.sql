@@ -1,0 +1,11 @@
+-- Seller and item ids become UUIDs that the creator mints (iOS Plan 17 ask A).
+--
+-- No column change: both are already opaque strings, and every reader treats
+-- them as such. Only the default moves, from cuid to uuid, and the create
+-- endpoints now accept an id from the client. Rows made before this keep their
+-- cuids and go on working — ids are compared, never parsed.
+--
+-- Prisma generates uuids in the client rather than in the database, so there is
+-- no DDL to run. This migration exists to record the decision and to keep the
+-- migration history aligned with the schema.
+SELECT 1;

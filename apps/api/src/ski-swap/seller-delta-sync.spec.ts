@@ -148,7 +148,7 @@ describe('tombstones', () => {
     ]);
     const found = await service(prisma).list('org-1', undefined, '2026-08-30T00:00:00.000Z', true);
 
-    expect(found).toHaveLength(0);
+    expect(found.sellers).toHaveLength(0);
   });
 });
 

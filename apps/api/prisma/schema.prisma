@@ -418,7 +418,18 @@ model SkiSwap {
 /// SwapItem.sellerId, SwapPrinter.assignedSellerId and the public /s/:sellerId
 /// URL — and `deletedAt`, which grants and revokes the role.
 model SellerProfile {
-  id           String @id @default(cuid())
+  /// A UUID, and the client may choose it (iOS Plan 17 A).
+  ///
+  /// The iPad creates sellers offline, so it has to name a row before the
+  /// server can. It used to name one with its own id, get a cuid back, and
+  /// rewrite the id everywhere it had been used — the row, its items, its
+  /// photos, every queued payload, and an alias table for screens still
+  /// holding the old one. Three field bugs came out of that machinery. One id,
+  /// minted by whoever creates the row, removes all of it.
+  ///
+  /// Also what makes printed paper right: a receipt QR encodes `/s/<id>`, and
+  /// before this it encoded an id that would never resolve.
+  id           String @id @default(uuid())
   membershipId String @unique
 
   /// Set ⇒ this membership sells on behalf of a business; null ⇒ individual.
@@ -466,7 +477,9 @@ model LegacyTicketRange {
 }
 
 model SwapItem {
-  id               String  @id @default(cuid())
+  /// A UUID, and the client may choose it (iOS Plan 17 A). See
+  /// `SellerProfile.id` — same reason, same rule.
+  id               String  @id @default(uuid())
   swapId           String
   orgId            String
   sellerId         String?

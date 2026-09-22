@@ -113,8 +113,23 @@ const PersonFields = {
   zip: z.string().max(20).nullable().optional(),
 };
 
+/**
+ * An id the client minted, for a row it is creating (iOS Plan 17 A).
+ *
+ * The offline client names a row before the server can, and one id means it
+ * never has to rename one afterwards. Absent, the server mints it.
+ *
+ * Creating under an id that is already taken answers with the row that has it
+ * — but only when that row is one the caller could already read. A primary key
+ * is unique across the whole database, not per org, so "return what is there"
+ * would otherwise hand somebody another organization's record for the cost of a
+ * guess. The other org's row is a conflict, never an answer.
+ */
+export const ClientMintedId = z.string().uuid().optional();
+
 export const CreateSellerSchema = z
   .object({
+    id: ClientMintedId,
     ...PersonFields,
     /// Set ⇒ business seller. Null or absent ⇒ individual.
     businessName: z.string().trim().min(1).max(100).nullable().optional(),
@@ -130,6 +145,20 @@ export const PatchSellerSchema = z
     ...PersonFields,
     businessName: z.string().trim().min(1).max(100).nullable().optional(),
     ...PayoutFields,
+    /**
+     * The `updatedAt` this client last saw for the seller (iOS Plan 17 C).
+     *
+     * Present, the write is refused with 409 and `SELLER_MODIFIED` if the row
+     * has moved since — an iPad correcting a phone offline must not put back
+     * an address an administrator fixed on the web in the meantime, which is
+     * what a whole-record patch did, silently, to whoever saved first.
+     *
+     * Absent means no check, so a caller that does not track a watermark is
+     * unaffected. The comparison is against the membership's `updatedAt`, the
+     * same watermark the delta is filtered on — a person's fields live on
+     * `User` and the profile's own column would not move when one changed.
+     */
+    baseUpdatedAt: z.string().datetime().optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field must be provided' });
@@ -232,6 +261,8 @@ export const ItemAttributeInputSchema = z
 
 export const CreateItemSchema = z
   .object({
+    /** See `ClientMintedId`. Absent, the server mints one. */
+    id: ClientMintedId,
     /**
      * The CATEGORY node this item is described under. The name is derived from
      * it and the answers below, so nothing sends a name any more.
