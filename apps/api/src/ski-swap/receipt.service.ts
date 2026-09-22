@@ -156,14 +156,25 @@ export class ReceiptService {
    * items for proxy and business sellers, and those have no `finish()` in their
    * history, but the sellers list still needs a working button.
    */
-  async currentFor(orgId: string, swapId: string, sellerId: string): Promise<Receipt> {
+  async currentFor(
+    orgId: string,
+    swapId: string,
+    sellerId: string,
+    /**
+     * Where it is being minted, used only if one has to be. A receipt that
+     * already describes the seller keeps whichever station it was made at —
+     * the counter it happened at does not change because somebody looked at it
+     * again from the sellers list.
+     */
+    stationId?: string | null,
+  ): Promise<Receipt> {
     const latest = await this.prisma.receipt.findFirst({
       where: { orgId, swapId, sellerId },
       orderBy: { createdAt: 'desc' },
       include: { lines: { orderBy: { position: 'asc' } } },
     });
     if (latest && (await this.stillDescribes(latest, latest.lines))) return latest;
-    return this.snapshot(orgId, swapId, sellerId);
+    return this.snapshot(orgId, swapId, sellerId, stationId ?? undefined);
   }
 
   /**

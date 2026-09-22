@@ -209,6 +209,8 @@ export const api = {
         squareFailures: number;
         /** How many of them are waiting for a staff member to accept them. */
         awaitingConsignment: number;
+        /** Where the receipt was emailed, or null if it was not sent. */
+        emailedTo: string | null;
       }>(
         `/orgs/${orgId}/ski-swap/checkin/finish`,
         { method: 'POST', body: JSON.stringify({ swapId, stationId }) },

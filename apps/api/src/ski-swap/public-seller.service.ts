@@ -24,6 +24,8 @@ export class PublicSellerService {
       orgId: profile.membership.orgId,
       name: displayName(profile.membership.user, profile.businessName),
       org: profile.membership.org,
+      payoutMethod: (profile.membership.user.payoutMethod ??
+        null) as PublicSellerDetailResponse['payoutMethod'],
     };
 
     const orgModule = await this.prisma.orgModule.findUnique({
@@ -43,6 +45,7 @@ export class PublicSellerService {
         sellerName: seller.name,
         orgName: seller.org.name,
         orgLogoUrl: seller.org.logoUrl ?? null,
+        payoutMethod: seller.payoutMethod,
         swaps: [],
         payouts,
       };
@@ -77,6 +80,7 @@ export class PublicSellerService {
       sellerName: seller.name,
       orgName: seller.org.name,
       orgLogoUrl: seller.org.logoUrl ?? null,
+      payoutMethod: seller.payoutMethod,
       payouts,
       swaps: Array.from(swapMap.values()).map((s) => ({
         swapId: s.swapId,

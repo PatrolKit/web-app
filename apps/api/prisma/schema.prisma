@@ -1184,7 +1184,15 @@ model Receipt {
   /// Denormalised so the public page renders without joining a live tree, and
   /// so an org rename does not rewrite history.
   orgName     String
-  orgLogoUrl  String?
+  /// A copy of `Organization.logoUrl`, and the same type as it.
+  ///
+  /// Not `VARCHAR(191)`. That column was widened to MediumText so an org
+  /// without S3 could keep its mark as a data URI, and this copy was left
+  /// behind — so every receipt for such an org failed to snapshot on
+  /// "value too long for orgLogoUrl". Silently, because snapshotting is
+  /// best-effort, which meant those orgs simply had no receipts and nothing
+  /// said why.
+  orgLogoUrl  String? @db.MediumText
   swapTitle   String
   sellerName  String
   /// Where the money was going, as it was then.

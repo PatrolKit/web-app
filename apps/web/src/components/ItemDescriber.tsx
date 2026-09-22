@@ -887,7 +887,13 @@ export default function ItemDescriber({
           improving as answers go in, so saying that here as well would be
           explaining what the screen is busy demonstrating. */}
       {topLevel.length > 0 && (
-        <p className="text-xs text-gray-500">
+        /* A size larger on a phone than at the desk.
+           
+           `stacked` is self check-in: a member of the public, on their own
+           phone, part way through describing a pair of skis and wondering
+           whether they are allowed to stop. Staff at the desk have read this
+           sentence a hundred times by mid-morning and want the room back. */
+        <p className={`text-gray-500 ${layout === 'stacked' ? 'text-sm' : 'text-xs'}`}>
           Answer what you know —{' '}
           {/* Weighted and lifted out of the grey, because this is the half of
               the sentence someone skims for when they do not know a model year

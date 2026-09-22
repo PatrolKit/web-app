@@ -41,7 +41,9 @@ export default function CheckinPage() {
    * to wait with their items only when some of them are actually waiting, and
    * that is the only place the count is available.
    */
-  const [finished, setFinished] = useState<{ awaitingConsignment: number } | null>(null);
+  const [finished, setFinished] = useState<
+    { awaitingConsignment: number; emailedTo: string | null } | null
+  >(null);
 
   const { data: context, error: contextError, isLoading } = useQuery({
     queryKey: ['checkin/context', swapId, stationId],
@@ -110,6 +112,7 @@ export default function CheckinPage() {
       <FinishStep
         context={context}
         awaitingConsignment={finished.awaitingConsignment}
+        emailedTo={finished.emailedTo}
         // Which verified contact they have decides whether a copy can be sent
         // at all, and what the button is allowed to promise.
         verifiedEmail={joined.profile.verifiedEmail}

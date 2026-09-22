@@ -21,12 +21,21 @@ import type { CheckinContext, CheckinSummary } from '../../lib/api.types';
 export default function FinishStep({
   context,
   awaitingConsignment,
+  emailedTo,
   verifiedEmail,
   verifiedPhone,
 }: {
   context: CheckinContext;
   /** How many of this seller's items still need a staff member to accept them. */
   awaitingConsignment: number;
+  /**
+   * Where finishing already emailed the receipt, or null if it did not.
+   *
+   * Null covers no verified email, outbound messaging off, and a refusal by
+   * the provider. This screen treats them alike — it offers the button — and
+   * the only thing it must not do is claim an email that never went.
+   */
+  emailedTo: string | null;
   /** The proven contacts. Either one is somewhere a copy can be sent. */
   verifiedEmail: string | null;
   verifiedPhone: string | null;
@@ -39,14 +48,18 @@ export default function FinishStep({
   const waiting = awaitingConsignment > 0;
 
   /*
-   * A copy, if there is anywhere to send one.
+   * A copy, if there is anywhere to send one and finishing did not already.
    *
    * Nothing is offered when neither contact is verified: the seller cannot fix
    * that from this screen, and an explanation with no remedy is noise. Email
    * wins when both exist — it carries the receipt itself rather than a link.
+   *
+   * `emailedTo` seeds `sentTo`, so an email that went out on finish reads the
+   * same as one the seller asked for. Offering a button for something already
+   * done invites a second copy and makes the first look like it failed.
    */
   const [sending, setSending] = useState(false);
-  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState<string | null>(emailedTo);
   const [sendError, setSendError] = useState('');
   const destination = verifiedEmail ?? verifiedPhone;
   const byEmail = !!verifiedEmail;
@@ -97,7 +110,7 @@ export default function FinishStep({
           {sentTo ? (
             <p className="flex items-center justify-center gap-2 text-sm text-green-400 py-2">
               <FontAwesomeIcon icon={faCheckDuo} />
-              Sent to {sentTo}
+              Receipt sent to {sentTo}
             </p>
           ) : (
             <button

@@ -794,6 +794,16 @@ export const PublicSellerDetailResponseSchema = z.object({
   sellerName: z.string(),
   orgName: z.string(),
   orgLogoUrl: z.string().nullable(),
+  /**
+   * How this seller chose to be paid, so the page can say roughly when.
+   *
+   * The method and not the destination. "Check" tells somebody they are
+   * waiting on the post; the address it goes to is nobody else's business,
+   * and this page needs no sign-in.
+   *
+   * Null for a seller who has not been asked yet — nothing is promised then.
+   */
+  payoutMethod: z.enum(['PAYPAL', 'VENMO', 'CHECK', 'DONATE']).nullable(),
   swaps: z.array(PublicSellerDetailSwapSchema),
   /** Newest first. Empty until a payout run has been built. */
   payouts: z.array(PublicSellerPayoutSchema),

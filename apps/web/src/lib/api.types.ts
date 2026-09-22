@@ -725,6 +725,11 @@ export interface PublicSellerDetailResponse {
   orgName: string;
   orgLogoUrl: string | null;
   swaps: PublicSellerDetailSwap[];
+  /**
+   * How this seller chose to be paid, so the page can say roughly when.
+   * Null for a seller who has not been asked yet.
+   */
+  payoutMethod: PayoutMethod | null;
   /** Newest first. Empty until a payout run has been built (Plan 25 §8). */
   payouts: PublicSellerPayout[];
 }

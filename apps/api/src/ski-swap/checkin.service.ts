@@ -241,18 +241,64 @@ export class CheckinService {
     });
 
     /*
-     * The record, frozen here because here is where it is true. Nothing is sent
-     * — that needs a button (Plan 24 §4) — but the seller is standing at the
-     * counter with the items they just described, and every later edit makes
-     * this moment harder to reconstruct.
+     * The record, frozen here because here is where it is true. The seller is
+     * standing at the counter with the items they just described, and every
+     * later edit makes this moment harder to reconstruct.
      *
-     * Best-effort, like the Square push below and for the same reason: a seller
-     * who has done everything right must not be held at the counter because a
-     * row could not be written. The sellers list can mint one on demand.
+     * Best-effort, like the email and the Square push below and for the same
+     * reason: a seller who has done everything right must not be held at the
+     * counter because a row could not be written. The sellers list can mint one
+     * on demand.
      */
-    await this.receipts.snapshot(orgId, swapId, seller.id, station.id).catch((err) => {
+    // `currentFor` rather than `snapshot`: finishing has no guard against being
+    // called twice, and minting unconditionally gave a seller who double-tapped
+    // Done two receipts for one pile of items — two live tokens, and only one
+    // of them revoked if anybody ever revoked it.
+    await this.receipts.currentFor(orgId, swapId, seller.id, station.id).catch((err) => {
       this.logger.error({ err, swapId, sellerId: seller.id }, 'Could not snapshot the receipt');
     });
+
+    /*
+     * And emailed, wherever there is a proved address to email.
+     *
+     * It used to need a button. Everybody pressed it, and the ones who did not
+     * were the ones who walked away with only the paper — which is the copy
+     * most likely to be lost, and the only one carrying the link they need in
+     * three weeks to find out what sold.
+     *
+     * Email only. A text is a link rather than the receipt itself and costs
+     * money per message, so it stays behind the button on the finish screen
+     * for sellers who have no email.
+     */
+    const emailedTo = person.verifiedEmail
+      ? await this.receipts
+          .send({
+            orgId,
+            swapId,
+            sellerId: seller.id,
+            channel: 'EMAIL',
+            actorUserId: userId,
+            /*
+             * Keyed on what is being sent, not on the attempt.
+             *
+             * `finish` has no guard against being called twice — a double tap,
+             * or a retry after a dropped response — and each call snapshots a
+             * fresh receipt, so keying on the receipt id would let a double tap
+             * through as two emails. The item count and total are the same for
+             * a repeat and different for a seller who came back with more, so
+             * they dedupe the first and let the second through.
+             */
+            idempotencyKey: `checkin-finish:${swapId}:${seller.id}:${items.length}:${items.reduce((sum, i) => sum + i.priceCents, 0)}`,
+          })
+          // Only a real send. `SUPPRESSED` is a deployment with outbound
+          // messaging off, and reporting it as sent would leave the finish
+          // screen promising an email that is never coming.
+          .then((res) => (res.status === 'SENT' ? res.destination : null))
+          .catch((err: unknown) => {
+            this.logger.error({ err, swapId, sellerId: seller.id }, 'Could not email the receipt');
+            return null;
+          })
+      : null;
 
     /**
      * Only what has been accepted. An item still waiting for a staff member to
@@ -288,6 +334,15 @@ export class CheckinService {
        * screen decide what to say without knowing about the setting.
        */
       awaitingConsignment: awaiting,
+      /**
+       * Where the receipt was emailed, or null if it was not.
+       *
+       * Null covers three different things — no verified email, messaging off,
+       * a provider that refused — and the finish screen treats them alike: it
+       * offers the button instead. Claiming an email that did not go is the one
+       * outcome worth avoiding, and that is the only distinction it needs.
+       */
+      emailedTo,
     };
   }
 

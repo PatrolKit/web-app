@@ -3,10 +3,46 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { PoweredByFooter } from './PoweredByFooter';
 import { PublicPageHeader } from './PublicPageHeader';
-import type { PublicSellerPayout } from '../../lib/api.types';
+import type { PayoutMethod, PublicSellerPayout } from '../../lib/api.types';
 
 function formatPrice(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * Roughly when the money turns up.
+ *
+ * The question every seller asks a volunteer a fortnight after a swap, and the
+ * one thing the tracking page could answer without anybody being asked. Shown
+ * from their chosen method alone, so it is there from check-in rather than
+ * only once a payout run exists — which is weeks later, and long after they
+ * started wondering.
+ *
+ * Counted from the end of the swap rather than from today, because that is
+ * when the work starts: nothing can be totalled until the last sale is in.
+ *
+ * Deliberately vague. These are estimates given to somebody who will remember
+ * the number, so they say "about" and lean long.
+ */
+function payoutTiming(method: PayoutMethod): string | null {
+  switch (method) {
+    case 'CHECK':
+      return 'Checks are written and posted about four weeks after the swap ends.';
+    case 'PAYPAL':
+      return 'PayPal payouts usually go out about a week after the swap ends.';
+    case 'VENMO':
+      return 'Venmo payouts usually go out about a week after the swap ends.';
+    case 'DONATE':
+      // Nothing is coming, and saying when would be strange.
+      return null;
+  }
+}
+
+/** True once nothing is outstanding, so the estimate stops being useful. */
+function allSettled(payouts: PublicSellerPayout[]): boolean {
+  return payouts.length > 0 && payouts.every(
+    (p) => p.status === 'SENT' || p.status === 'PAID_BY_CHECK' || p.status === 'DONATED',
+  );
 }
 
 /**
@@ -25,6 +61,21 @@ function PayoutsSection({ payouts }: { payouts: PublicSellerPayout[] }) {
           <PayoutCard key={`${payout.swapTitle}-${i}`} payout={payout} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function PayoutTiming({ method }: { method: PayoutMethod }) {
+  const line = payoutTiming(method);
+  if (!line) return null;
+
+  return (
+    <div className="rounded-lg border border-gray-800 bg-surface-50 px-4 py-3">
+      <p className="text-xs text-gray-400">{line}</p>
+      <p className="text-xs text-gray-500 mt-1">
+        This page is the place to check — it updates on its own, so there is no need to ring
+        round.
+      </p>
     </div>
   );
 }
@@ -236,6 +287,13 @@ export default function SellerItemsPage() {
             a cached bundle, or an older API in front of it, should see their
             items rather than a blank screen. */}
         {!!data.payouts?.length && <PayoutsSection payouts={data.payouts} />}
+
+        {/* Under the payouts where there are any, in their place where there
+            are none. Either way it is the last thing on the page, which is
+            where somebody who has finished reading their items looks next. */}
+        {data.payoutMethod && !allSettled(data.payouts ?? []) && (
+          <PayoutTiming method={data.payoutMethod} />
+        )}
 
         <PoweredByFooter />
       </div>

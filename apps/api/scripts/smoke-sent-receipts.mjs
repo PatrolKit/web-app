@@ -111,6 +111,7 @@ const finished = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/finish`, {
   method: 'POST', headers: mailer.H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
 });
 ok('check-in finishes', finished.ok, String(finished.status));
+const finishBody = await finished.json().then((b) => b?.data ?? b);
 
 const snap = await prisma.receipt.findFirst({
   where: { swapId: swap.id, sellerId: mailer.sellerId },
@@ -118,8 +119,37 @@ const snap = await prisma.receipt.findFirst({
 });
 ok('finishing froze a receipt', !!snap, snap ? snap.id : 'none');
 ok('its lines are the items', snap?.lines.length === 3 && snap.itemCount === 3, `${snap?.lines.length}`);
-ok('and nothing was sent by finishing', snap?.deliveries.length === 0, `${snap?.deliveries.length}`);
 ok('it carries a token for the public link', (snap?.token ?? '').length === 32, `${snap?.token?.length}`);
+
+// Finishing emails the receipt now. It used to need a button, and the sellers
+// who did not press it walked away with only the paper — the copy most likely
+// to be lost, and the only one carrying the link they need weeks later.
+ok('finishing emailed it, without anybody pressing anything',
+  snap?.deliveries.length === 1 && snap.deliveries[0].channel === 'EMAIL',
+  `${snap?.deliveries.length} deliveries, ${snap?.deliveries[0]?.channel}`);
+ok('...to the verified address',
+  snap?.deliveries[0]?.destination === 'receipt-smoke@patrolkit.invalid',
+  `${snap?.deliveries[0]?.destination}`);
+
+// `emailedTo` is what the finish screen believes. It must be null unless a
+// message actually left, or the seller is told to wait for one that is not
+// coming — which on a box with OUTBOUND_NOTIFICATIONS off is every time.
+const reallySent = snap?.deliveries[0]?.status === 'SENT';
+ok('...and the finish screen is told only what actually happened',
+  reallySent
+    ? finishBody.emailedTo === 'receipt-smoke@patrolkit.invalid'
+    : finishBody.emailedTo === null,
+  `delivery ${snap?.deliveries[0]?.status}, emailedTo ${JSON.stringify(finishBody.emailedTo)}`);
+
+// A dropped response, or a seller double-tapping Done. The items have not
+// changed, so this must not put a second copy in their inbox.
+await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/finish`, {
+  method: 'POST', headers: mailer.H, body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
+});
+const afterTwice = await prisma.receiptDelivery.count({
+  where: { receipt: { swapId: swap.id, sellerId: mailer.sellerId } },
+});
+ok('finishing twice does not email twice', afterTwice === 1, `${afterTwice} deliveries`);
 
 // Staff send.
 const staff = await smokeStaff(prisma, org, ['ski_swap:manage']);
@@ -140,16 +170,21 @@ ok('a suppressed send says so rather than claiming delivery',
 ok('sending reuses the snapshot rather than minting a second',
    sent.receiptId === snap?.id, `${sent.receiptId} vs ${snap?.id}`);
 
-const deliveries = await prisma.receiptDelivery.findMany({ where: { receiptId: snap.id } });
-ok('the attempt is written down', deliveries.length === 1, `${deliveries.length}`);
+// Two now: the one finishing sent, and the one staff just asked for. Ordered,
+// so "the staff one" is a position rather than a guess.
+const deliveries = await prisma.receiptDelivery.findMany({
+  where: { receiptId: snap.id }, orderBy: { createdAt: 'asc' },
+});
+ok('the attempt is written down', deliveries.length === 2,
+   `${deliveries.length} — finishing's email, then the staff send`);
 // SUPPRESSED alone does not say which suppression: a box with messaging
 // switched off and a product with no registered number look identical months
 // later, and they are not the same problem.
 ok('a suppressed row records why nothing went',
-   deliveries[0]?.status !== 'SUPPRESSED' || !!deliveries[0]?.error,
-   `${deliveries[0]?.status}: ${deliveries[0]?.error}`);
-ok('with who pressed it', deliveries[0]?.actorUserId === staff.user.id,
-   `${deliveries[0]?.actorUserId}`);
+   deliveries[1]?.status !== 'SUPPRESSED' || !!deliveries[1]?.error,
+   `${deliveries[1]?.status}: ${deliveries[1]?.error}`);
+ok('with who pressed it', deliveries[1]?.actorUserId === staff.user.id,
+   `${deliveries[1]?.actorUserId}`);
 
 // ─── The public page ─────────────────────────────────────────────────────────
 const pub = await fetch(`${BASE}/public/receipts/${snap.token}`);
