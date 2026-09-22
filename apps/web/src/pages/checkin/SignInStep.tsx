@@ -188,7 +188,8 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
           // registration, so this wording and the wording filed with AWS must match.
           <p className="text-xs text-gray-500 leading-relaxed">
             By tapping Text me a code you agree to receive a sign-in code from
-            PatrolKit. Message frequency varies. Message and data rates may apply.
+            PatrolKit. This instance of PatrolKit is operated by OVRENGINEERED LLC.
+            Message frequency varies. Message and data rates may apply.
             Reply STOP to unsubscribe, HELP for help, or contact{' '}
             <a href="mailto:support@patrolkit.io" className="underline hover:text-gray-300">
               support@patrolkit.io

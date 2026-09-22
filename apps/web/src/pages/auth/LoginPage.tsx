@@ -207,7 +207,8 @@ export default function LoginPage() {
             // registration, so the wording here and the wording filed with AWS must match.
             <p className="text-xs text-gray-500 leading-relaxed">
               By tapping Send code you agree to receive a sign-in code from PatrolKit.
-              Message frequency varies. Message and data rates may apply. Reply STOP to
+              This instance of PatrolKit is operated by OVRENGINEERED LLC. Message
+              frequency varies. Message and data rates may apply. Reply STOP to
               unsubscribe, HELP for help, or contact{' '}
               <a href="mailto:support@patrolkit.io" className="underline hover:text-gray-300">
                 support@patrolkit.io
