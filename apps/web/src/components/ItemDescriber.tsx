@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faChevronDown as faChevronDownDuo,
   faChevronRight as faChevronRightDuo,
+  faCircleInfo as faCircleInfoDuo,
   faPlus as faPlusDuo,
   faTag as faTagDuo,
   faXmark as faXmarkDuo,
@@ -886,21 +887,42 @@ export default function ItemDescriber({
           One idea, not two: the preview underneath already shows the name
           improving as answers go in, so saying that here as well would be
           explaining what the screen is busy demonstrating. */}
-      {topLevel.length > 0 && (
-        /* A size larger on a phone than at the desk.
+      {topLevel.length > 0 &&
+        /* Two treatments, because two readers.
            
            `stacked` is self check-in: a member of the public, on their own
            phone, part way through describing a pair of skis and wondering
-           whether they are allowed to stop. Staff at the desk have read this
-           sentence a hundred times by mid-morning and want the room back. */
-        <p className={`text-gray-500 ${layout === 'stacked' ? 'text-sm' : 'text-xs'}`}>
-          Answer what you know —{' '}
-          {/* Weighted and lifted out of the grey, because this is the half of
-              the sentence someone skims for when they do not know a model year
-              and are wondering whether they are stuck. */}
-          <strong className="font-semibold text-gray-300">none of it is required</strong>.
-        </p>
-      )}
+           whether they are allowed to stop. They get a box — bordered and set
+           apart, so it reads as the screen speaking rather than as a caption on
+           the question below it, which is what a loose line of grey looked
+           like next to a column of fields.
+           
+           Staff at the desk have read this sentence a hundred times by
+           mid-morning. A box there would take room from a dense form to say
+           something nobody there is still wondering, so it stays a line. */
+        (layout === 'stacked' ? (
+          <div className="flex items-start gap-2.5 rounded-lg border border-gray-700/70 bg-surface-100/50 px-3 py-2.5">
+            <FontAwesomeIcon
+              icon={faCircleInfoDuo}
+              // Not amber, not red. Nothing is wrong and nothing needs doing —
+              // this is permission to move on, and a warning color would say
+              // the opposite of the sentence beside it.
+              className="mt-0.5 h-4 w-4 shrink-0 text-gray-500"
+            />
+            <p className="text-sm text-gray-400">
+              Answer what you know —{' '}
+              <strong className="font-semibold text-gray-200">none of it is required</strong>.
+            </p>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">
+            Answer what you know —{' '}
+            {/* Weighted and lifted out of the grey, because this is the half of
+                the sentence someone skims for when they do not know a model
+                year and are wondering whether they are stuck. */}
+            <strong className="font-semibold text-gray-300">none of it is required</strong>.
+          </p>
+        ))}
 
       {/* Two densities of the same form, as before. The desk has room to show
           every question at once and staff enter items all day, so nothing there

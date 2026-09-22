@@ -73,8 +73,8 @@ function PayoutTiming({ method }: { method: PayoutMethod }) {
     <div className="rounded-lg border border-gray-800 bg-surface-50 px-4 py-3">
       <p className="text-xs text-gray-400">{line}</p>
       <p className="text-xs text-gray-500 mt-1">
-        This page is the place to check — it updates on its own, so there is no need to ring
-        round.
+        This page is the place to check — it updates on its own, so there is no need to call
+        and ask.
       </p>
     </div>
   );
