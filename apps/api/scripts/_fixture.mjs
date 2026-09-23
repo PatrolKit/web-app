@@ -101,12 +101,33 @@ export async function smokeStaff(prisma, org, permissions) {
   return { user, membership };
 }
 
+/**
+ * A super admin, for scripts that read Platform Admin — the Server health page.
+ *
+ * Its own user rather than a flag on the shared staff user: every script signs
+ * that one in, and a super admin behind all of them would pass permission
+ * checks nothing was meant to pass. Deleted by `dropSmokeAdmin`, and by
+ * `dropSmokeOrg`.
+ */
+export async function smokeSuperAdmin(prisma) {
+  const email = 'smoke-admin@patrolkit.invalid';
+  return await prisma.user.findFirst({ where: { email } })
+    ?? await prisma.user.create({
+      data: { id: createId(), email, firstName: 'Smoke', lastName: 'Admin', isSuperAdmin: true },
+    });
+}
+
+export async function dropSmokeAdmin(prisma) {
+  await prisma.user.deleteMany({ where: { email: 'smoke-admin@patrolkit.invalid' } });
+}
+
 /** Cascades take everything the scripts made with it. */
 export async function dropSmokeOrg(prisma) {
   const org = await prisma.organization.findUnique({ where: { slug: SMOKE_SLUG } });
   if (!org) return;
   await prisma.organization.delete({ where: { id: org.id } });
   await prisma.user.deleteMany({ where: { email: 'smoke-staff@patrolkit.invalid' } });
+  await dropSmokeAdmin(prisma);
 }
 
 import { createHash } from 'crypto';
@@ -125,15 +146,25 @@ export const SMOKE_CODE = 'smoke-code-000000';
  * endpoint, the session, and the stamping are all the real thing.
  */
 export async function forceChallengeCode(prisma, challengeId) {
-  // Sign-in is throttled to five a minute. Over the limit the start call
-  // answers an error rather than a challenge, and the id arrives here as
-  // undefined — which used to surface as a Prisma validation dump about
-  // `ContactChallengeWhereUniqueInput`, several screens long, naming nothing a
-  // reader could act on.
+  // Over a limit the start call answers an error rather than a challenge, and
+  // the id arrives here as undefined — which used to surface as a Prisma
+  // validation dump about `ContactChallengeWhereUniqueInput`, several screens
+  // long, naming nothing a reader could act on.
   if (!challengeId) {
     throw new Error(
-      'No challenge to confirm. The sign-in was almost certainly throttled — ' +
-        'it allows five a minute. Wait a minute and run the script again.',
+      'No challenge to confirm. The sign-in was almost certainly refused by a ' +
+        'limit — see the response above, and Plan 26.',
+    );
+  }
+  // A sign-in over the per-destination limit answers with a decoy: an id that
+  // was never stored. `update` would fail on it with a Prisma error naming a
+  // missing record; say what it actually means instead.
+  const exists = await prisma.contactChallenge.findUnique({ where: { id: challengeId }, select: { id: true } });
+  if (!exists) {
+    throw new Error(
+      'That challenge was never stored — the sign-in was answered with a decoy, ' +
+        'which is what a destination over its code limit gets. Clear its codes ' +
+        'with forgetSentCodes() first.',
     );
   }
   await prisma.contactChallenge.update({
@@ -143,8 +174,20 @@ export async function forceChallengeCode(prisma, challengeId) {
   return SMOKE_CODE;
 }
 
+/**
+ * Forgets every code sent to a destination, so a script that signs the same
+ * person in on every run does not meet the limit of five in 15 minutes.
+ *
+ * Only the smoke scripts do this, and only because they can write to the
+ * database — a strictly higher privilege than anything the API offers.
+ */
+export async function forgetSentCodes(prisma, target) {
+  await prisma.contactChallenge.deleteMany({ where: { target } });
+}
+
 /** Signs a user in over HTTP, bypassing only the delivery of the code. */
 export async function smokeSession(prisma, base, user, unwrap) {
+  await forgetSentCodes(prisma, user.email);
   const start = await fetch(`${base}/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

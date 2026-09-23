@@ -4,9 +4,8 @@
 //   node apps/api/scripts/smoke-throttle.mjs
 //
 // Caddy forwards every request from loopback, so without `trust proxy` the
-// throttle saw one address for the whole site: a hundred requests a minute
-// for everybody combined, and five sign-in requests a minute for the entire
-// world. One busy check-in table would have locked out every other.
+// throttle saw one address for the whole site: one sign-in budget for the
+// entire world. One busy check-in table would have locked out every other.
 //
 // This drives the sign-in endpoint from two forwarded addresses and asserts
 // that exhausting one leaves the other alone. It sends from loopback with an
@@ -37,12 +36,21 @@ const signIn = (from) =>
     body: JSON.stringify({ email: 'throttle-smoke@patrolkit.invalid' }),
   });
 
+// The number comes from the server rather than from here, so this does not
+// drift when the limit does (Plan 26 keeps them all in one registry).
 const fromA = [];
-for (let i = 0; i < 7; i++) fromA.push((await signIn(A)).status);
+let limit = Infinity;
+for (let i = 0; i <= Math.min(limit, 500); i++) {
+  const res = await signIn(A);
+  fromA.push(res.status);
+  if (i === 0) limit = Number(res.headers.get('x-ratelimit-limit'));
+  if (res.status === 429) break;
+}
+const allowed = fromA.filter((s) => s < 400).length;
 
-ok('one client is allowed its five sign-in attempts',
-  fromA.slice(0, 5).every((s) => s < 400), fromA.join(' '));
-ok('...and refused the sixth', fromA[5] === 429, fromA.join(' '));
+ok('one client is allowed its full limit of sign-in attempts',
+  Number.isFinite(limit) && allowed === limit, `${allowed} allowed of ${limit}`);
+ok('...and refused the next', fromA.at(-1) === 429, `last HTTP ${fromA.at(-1)}`);
 
 // The half that was broken. Before the fix this was 429: B had never asked
 // for anything, and was locked out because A had.

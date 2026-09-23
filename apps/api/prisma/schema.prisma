@@ -201,6 +201,10 @@ model ContactChallenge {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, channel, usedAt])
+  /// Codes per destination (Plan 26 §5) — counted whoever asked for them.
+  @@index([target, createdAt])
+  /// Texts per hour, site-wide (Plan 26 §7).
+  @@index([channel, createdAt])
   @@index([expiresAt])
 }
 
@@ -1270,6 +1274,10 @@ model ReceiptDelivery {
   receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
 
   @@index([receiptId, createdAt])
+  /// Receipts per destination (Plan 26 §6).
+  @@index([destination, createdAt])
+  /// Texts per hour, site-wide (Plan 26 §7).
+  @@index([channel, createdAt])
 }
 
 /// A PayPal account that can send payouts, one per org (Plan 25 §6).
@@ -1439,4 +1447,31 @@ model PayoutNotice {
 
   @@unique([lineId, dayMark])
   @@index([lineId])
+}
+
+/// How close traffic came to each limit, by the hour (Plan 26 §11).
+///
+/// Counts, never keys: no IP address, user, device, phone number or email is
+/// written here — only how far the busiest of them got.
+model LimitUsage {
+  /// An id from the registry in `common/limits/limits.ts`.
+  limitId      String   @db.VarChar(64)
+  hourStart    DateTime
+  /// `''` for platform-wide, never NULL. This is the primary key, and a key
+  /// that allowed NULL would let two flushes of the same hour land as two rows.
+  orgId        String   @default("") @db.VarChar(64)
+  swapId       String   @default("") @db.VarChar(64)
+  /// The most any single key reached within one window of the limit.
+  peakHits     Int
+  /// The limit in force when that peak was reached. Limits change; a peak means
+  /// something only against the number it was measured against.
+  limitValue   Int
+  /// How many keys crossed half.
+  nearCount    Int      @default(0)
+  /// How many requests were refused.
+  refusedCount Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@id([limitId, hourStart, orgId, swapId])
+  @@index([hourStart])
 }

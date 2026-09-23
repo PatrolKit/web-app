@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createId } from '@paralleldrive/cuid2';
 import { randomBytes } from 'crypto';
@@ -10,6 +10,8 @@ import { SmsService } from '../sms/sms.service';
 import { displayName } from '../common/util/person';
 import type { SendOutcome } from '../common/messaging/send-outcome';
 import { receiptEmail, receiptSms } from './receipt-templates';
+import { LIMITS } from '../common/limits/limits';
+import { LimitUsageService } from '../common/limits/limit-usage.service';
 
 /** What a seller's receipt is worth putting in front of them. */
 export interface ReceiptView {
@@ -83,6 +85,7 @@ export class ReceiptService {
     private readonly sms: SmsService,
     private readonly config: ConfigService,
     private readonly idempotency: IdempotencyService,
+    private readonly usage: LimitUsageService,
   ) {}
 
   /**
@@ -213,6 +216,12 @@ export class ReceiptService {
     channel?: ReceiptChannel | null;
     actorUserId?: string | null;
     idempotencyKey?: string;
+    /**
+     * For a seller sending their own copy (Plan 26 §6): at most a few an hour
+     * to one destination. Staff sends are not limited — staff are accountable
+     * for them — and are not counted.
+     */
+    limitPerDestination?: boolean;
   }): Promise<SendResult> {
     const { orgId, swapId, sellerId } = params;
 
@@ -245,6 +254,7 @@ export class ReceiptService {
 
     const channel = resolveChannel(params.channel ?? null, user);
     const destination = (channel === 'EMAIL' ? user.verifiedEmail : user.verifiedPhone)!;
+    if (params.limitPerDestination) await this.assertDestinationNotLimited(destination, swapId);
 
     let outcome: SendOutcome;
     try {
@@ -302,6 +312,39 @@ export class ReceiptService {
     }
 
     return result;
+  }
+
+  /**
+   * Refuses a seller's own send once their destination has had its share.
+   *
+   * Per destination rather than per account: a seller with two accounts could
+   * otherwise point both at one inbox. Counts only sends nobody pressed on the
+   * seller's behalf — `actorUserId` null — which are exactly this route's.
+   * After the idempotency replay, so a retried request is not a second send.
+   */
+  private async assertDestinationNotLimited(destination: string, swapId: string): Promise<void> {
+    const { limit, windowMs } = LIMITS['receipts.perDestination'];
+    const sent = await this.prisma.receiptDelivery.count({
+      where: { destination, actorUserId: null, createdAt: { gte: new Date(Date.now() - windowMs) } },
+    });
+    const refused = sent >= limit;
+    this.usage.record({
+      limitId: 'receipts.perDestination',
+      hits: sent + 1,
+      refused,
+      keyKind: 'destination',
+      where: 'ReceiptService.send',
+      attribution: { swapId },
+    });
+    if (refused) {
+      throw new HttpException(
+        {
+          message: 'This receipt has been sent a few times already. Try again in an hour.',
+          code: 'TOO_MANY_RECEIPTS',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
   }
 
   /**

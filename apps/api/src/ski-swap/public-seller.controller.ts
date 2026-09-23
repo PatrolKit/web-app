@@ -1,9 +1,9 @@
 import { Controller, Get, Param } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Limit } from '../common/limits/limit.decorator';
 import { PublicSellerService } from './public-seller.service';
 
 @Controller('public/sellers')
-@Throttle({ default: { ttl: 60_000, limit: 20 } })
+@Limit('public.reads')
 export class PublicSellerController {
   constructor(private readonly publicSellerService: PublicSellerService) {}
 

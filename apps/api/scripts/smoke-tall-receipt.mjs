@@ -6,7 +6,8 @@
 //   PORT=4001 node apps/api/dist/src/main.js &
 //   node apps/api/scripts/smoke-tall-receipt.mjs
 //
-// Sign-in is throttled to five attempts a minute; leave a minute between runs.
+// Its seller is deleted before each run, codes and all, so back-to-back runs do
+// not meet the limit of five codes per destination in 15 minutes.
 
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';

@@ -3,6 +3,9 @@ import type { PrismaService } from '../prisma/prisma.service';
 import type { MailService } from '../mail/mail.service';
 import type { SmsService } from '../sms/sms.service';
 import type { ConfigService } from '@nestjs/config';
+import type { LimitUsageService } from '../common/limits/limit-usage.service';
+
+const usage = { record: jest.fn() } as unknown as LimitUsageService;
 
 /**
  * `devCode` echoes a freshly-issued code straight back to the caller. That is a
@@ -14,6 +17,7 @@ describe('ContactChallengeService — devCode exposure', () => {
     const prisma = {
       contactChallenge: {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        count: jest.fn().mockResolvedValue(0),
         create: jest.fn().mockResolvedValue({ id: 'c1' }),
       },
     } as unknown as PrismaService;
@@ -36,7 +40,7 @@ describe('ContactChallengeService — devCode exposure', () => {
     } as unknown as MailService;
     const sms = { send: jest.fn().mockResolvedValue(suppressed) } as unknown as SmsService;
 
-    return new ContactChallengeService(prisma, mail, sms, config);
+    return new ContactChallengeService(prisma, mail, sms, config, usage);
   }
 
   const issue = (svc: ContactChallengeService) =>
@@ -76,6 +80,7 @@ describe('ContactChallengeService — link origin', () => {
     const prisma = {
       contactChallenge: {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        count: jest.fn().mockResolvedValue(0),
         create: jest.fn().mockImplementation(({ data }: { data: unknown }) => {
           created.push(data);
           return Promise.resolve({ id: 'c1' });
@@ -102,7 +107,7 @@ describe('ContactChallengeService — link origin', () => {
     } as unknown as MailService;
     const sms = { send: jest.fn().mockResolvedValue(undefined) } as unknown as SmsService;
 
-    return { svc: new ContactChallengeService(prisma, mail, sms, config), sent, created };
+    return { svc: new ContactChallengeService(prisma, mail, sms, config, usage), sent, created };
   }
 
   const base = { userId: 'u1', channel: 'email' as const, target: 'a@b.com', purpose: 'login' as const };

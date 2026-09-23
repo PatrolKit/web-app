@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TimeClockFoldService } from './fold.service';
 import { PersonService } from '../common/identity/person.service';
 import { MembershipTouchService } from '../common/identity/membership-touch.service';
-import { ContactChallengeService } from '../auth/contact-challenge.service';
+import { ContactChallengeService, isTooManyCodes } from '../auth/contact-challenge.service';
 import { displayName, normalizeNamePart, normalizeNspId, normalizePhone } from '../common/util/person';
 import { createId } from '@paralleldrive/cuid2';
 import { parse as parseCsv } from 'csv-parse/sync';
@@ -203,12 +203,19 @@ export class PatrollerService {
       const channel = u.email ? 'email' : u.phone ? 'phone' : null;
       if (!channel) { skipped++; continue; }
 
-      await this.challenges.issue({
-        userId: row.membership.userId,
-        channel,
-        target: (channel === 'email' ? u.email : u.phone)!,
-        purpose: 'verify',
-      });
+      try {
+        await this.challenges.issue({
+          userId: row.membership.userId,
+          channel,
+          target: (channel === 'email' ? u.email : u.phone)!,
+          purpose: 'verify',
+        });
+      } catch (err) {
+        // One person who has had their share of codes is one skipped, not a
+        // failed batch that leaves everybody after them unsent.
+        if (isTooManyCodes(err)) { skipped++; continue; }
+        throw err;
+      }
       sent++;
     }
     return { sent, skipped };

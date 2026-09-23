@@ -64,6 +64,7 @@ export class AuthService {
       target: (email ?? phone)!,
       purpose: 'login',
       context: input.context,
+      whenLimited: 'decoy',
     });
   }
 

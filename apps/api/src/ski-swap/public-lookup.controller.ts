@@ -1,9 +1,9 @@
 import { BadRequestException, Controller, Get, Param, Query } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Limit } from '../common/limits/limit.decorator';
 import { PublicLookupService } from './public-lookup.service';
 
 @Controller('public/:orgSlug/ski-swap')
-@Throttle({ default: { ttl: 60_000, limit: 20 } })
+@Limit('public.reads')
 export class PublicLookupController {
   constructor(private readonly lookupService: PublicLookupService) {}
 

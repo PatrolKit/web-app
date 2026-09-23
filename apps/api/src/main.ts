@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { json, urlencoded } from 'express';
 import type { IncomingMessage } from 'http';
 import { AppModule } from './app.module';
+import { attributionMiddleware } from './common/limits/request-attribution';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
@@ -28,6 +29,14 @@ async function bootstrap() {
    * bucket.
    */
   app.set('trust proxy', 'loopback');
+
+  // Which org and swap each request is about, for the Server health page. First,
+  // so that everything after it runs inside the request's own record.
+  app.use(attributionMiddleware);
+
+  // A pm2 restart sends a signal; without this Nest exits without running its
+  // shutdown hooks, and the last minute of limit usage goes with it.
+  app.enableShutdownHooks();
 
   // Derive the S3 hostname from PHOTO_BASE_URL so img-src stays in sync with config.
   const photoBaseUrl = process.env.PHOTO_BASE_URL ?? '';

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Limit } from '../common/limits/limit.decorator';
 import { JwtAuthGuard, type AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
 import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
@@ -109,9 +109,11 @@ export class ReceiptController {
 /**
  * A seller asking for their own copy.
  *
- * Throttled where the staff route is not: this one is reachable by anyone who
- * can sign in as a seller, and every press costs an email or a text. The seller
- * comes from the guard, never from the path — there is no id here to get wrong.
+ * Limited where the staff route is not: this one is reachable by anyone who can
+ * sign in as a seller, and every press costs an email or a text. The limit is
+ * per destination, in `ReceiptService.send` — per account, a seller with two
+ * accounts could still point both at one inbox. The seller comes from the
+ * guard, never from the path — there is no id here to get wrong.
  */
 @Controller('orgs/:orgId/ski-swap/seller/me')
 @UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, SellerProfileGuard)
@@ -120,7 +122,6 @@ export class SellerReceiptController {
   constructor(private readonly receipts: ReceiptService) {}
 
   @Post('receipts/send')
-  @Throttle({ default: { ttl: 3_600_000, limit: 3 } })
   send(
     @Param('orgId') orgId: string,
     @Body() body: SendReceiptDto,
@@ -138,6 +139,7 @@ export class SellerReceiptController {
       // Nobody pressed it on their behalf.
       actorUserId: null,
       idempotencyKey,
+      limitPerDestination: true,
     });
   }
 }
@@ -150,7 +152,7 @@ export class SellerReceiptController {
  * worth rate-limiting whether or not the token is guessable.
  */
 @Controller('public/receipts')
-@Throttle({ default: { ttl: 60_000, limit: 20 } })
+@Limit('public.reads')
 export class PublicReceiptController {
   constructor(private readonly receipts: ReceiptService) {}
 

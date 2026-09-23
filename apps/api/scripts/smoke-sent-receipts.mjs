@@ -3,11 +3,9 @@
 //   PORT=4001 node apps/api/dist/src/main.js &
 //   node apps/api/scripts/smoke-sent-receipts.mjs
 //
-// Sign-in endpoints are throttled to five attempts a minute, and this script
-// registers three sellers and signs a staff user in. Leave a minute between
-// runs — and note that everything needing a sign-in happens first for the same
-// reason: the device and idempotency checks at the foot need neither, so they
-// must not sit between two registrations and push one over the limit.
+// Everything needing a sign-in happens first: the device and idempotency checks
+// at the foot need neither, and keeping the sign-ins together keeps them well
+// clear of any limit on how many a minute one address may make.
 //
 // Everything below is about how a receipt is snapshotted, chosen a channel for,
 // and recorded — so the first thing asserted is that the sellers have items at

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Limit } from '../common/limits/limit.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ModuleEnabledGuard } from '../common/guards/module-enabled.guard';
 import { RequireModule } from '../common/decorators/require-module.decorator';
@@ -12,11 +12,12 @@ import { CheckinContextDto, CheckinRegisterDto } from '../contracts/ski-swap.con
  * The unauthenticated half of check-in: what a station QR resolves to, and how
  * someone who has never sold here gets a code.
  *
- * Throttled hard. These are the only reachable-without-a-session endpoints in
- * the module, and `register` creates a row and sends a message.
+ * Limited per IP, and sized for a venue: at a swap every phone in the building
+ * shares one address. What `register` sends is limited per destination instead,
+ * in `ContactChallengeService.issue`, which is where the real protection is.
  */
 @Controller('public/checkin/:swapId')
-@Throttle({ default: { ttl: 60_000, limit: 20 } })
+@Limit('checkin.page')
 export class PublicCheckinController {
   constructor(private readonly checkin: CheckinService) {}
 
@@ -27,7 +28,7 @@ export class PublicCheckinController {
 
   @Post('register')
   @HttpCode(200)
-  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @Limit('checkin.register')
   async register(
     @Param('swapId') swapId: string,
     @Query('station') stationId: string,

@@ -6,8 +6,9 @@
 //   node apps/api/scripts/smoke-checkin.mjs
 //
 //
-// Sign-in endpoints are throttled to five attempts a minute, so back-to-back
-// runs return 429 and look like a regression. Leave a minute between them.
+// Codes are limited to five per destination in 15 minutes. The number below
+// belongs to a user this script deletes before it starts, and the codes go with
+// it, so back-to-back runs are fine.
 // On a host with delivery switched on, the register step really does hand a
 // message to SNS. The number below is inside +1 555-01xx, reserved for
 // fictional use and not routable to a person, so the send fails at the carrier

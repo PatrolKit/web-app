@@ -21,10 +21,9 @@
 //   - one press accepts everything a shop was waiting on, and pressing it twice
 //     accepts nothing.
 //
-// Sign-in is throttled to five a minute and this script signs in twice — once
-// as staff, once as the seller, because the guard on withdrawing an accepted
-// item is only observable from the seller's own session. Two runs inside a minute
-// will therefore hit the limit; leave a minute between them.
+// This script signs in twice — once as staff, once as the seller, because the
+// guard on withdrawing an accepted item is only observable from the seller's
+// own session.
 //
 // Everything below is about what happens to an item after it is deleted, so the
 // first thing asserted is that the item existed and was found before the delete.

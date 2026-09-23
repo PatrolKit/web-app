@@ -1,5 +1,5 @@
 import { Controller, Headers, HttpCode, Logger, Param, Post, Req } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Limit } from '../../common/limits/limit.decorator';
 import type { Request } from 'express';
 import { PayPalClient } from './paypal.client';
 import { PayoutRunService } from './payout-run.service';
@@ -17,12 +17,12 @@ import { PayoutRunService } from './payout-run.service';
  * was busy earns a retry storm from PayPal and tells them nothing useful; what
  * we failed to record is recovered by the sweep, not by their retries.
  */
-// Every delivery from PayPal arrives from PayPal, so the default hundred a
-// minute per address is a batch of a hundred and one payouts silently losing
-// its tail. Raised rather than skipped: verification costs an outbound call to
-// PayPal per request, so an unbounded public route here would be a way to make
-// this server do work on someone else's say-so.
-@Throttle({ default: { limit: 600, ttl: 60_000 } })
+// Every delivery from PayPal arrives from PayPal, so the default per address is
+// a batch of payouts silently losing its tail. Raised rather than skipped:
+// verification costs an outbound call to PayPal per request, so an unbounded
+// public route here would be a way to make this server do work on someone
+// else's say-so.
+@Limit('webhooks.paypal')
 @Controller('webhooks/paypal')
 export class PayoutWebhookController {
   private readonly logger = new Logger(PayoutWebhookController.name);

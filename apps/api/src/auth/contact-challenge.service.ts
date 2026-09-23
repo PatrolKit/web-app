@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
 import { createId } from '@paralleldrive/cuid2';
@@ -7,6 +7,8 @@ import { MailService } from '../mail/mail.service';
 import { SmsService } from '../sms/sms.service';
 import { isUniqueViolation } from '../common/util/prisma-errors';
 import type { SignInContext } from '../contracts/auth.contracts';
+import { LIMITS } from '../common/limits/limits';
+import { LimitUsageService } from '../common/limits/limit-usage.service';
 
 export type ChallengeChannel = 'email' | 'phone';
 /** `login` mints a session on confirm; `verify` only stamps; `invite` does both. */
@@ -18,8 +20,22 @@ const TTL_SECONDS: Record<ChallengePurpose, number> = {
   invite: 30 * 24 * 60 * 60,
 };
 
-/** A 6-digit OTP is guessable; the IP throttle alone does not bound a distributed attempt. */
+/**
+ * Wrong guesses allowed per challenge. A new challenge starts a new count, so
+ * this bounds guessing only together with the per-destination limit on issuing
+ * them: 5 codes × 5 guesses per 15 minutes, from any number of addresses.
+ */
 const MAX_ATTEMPTS = 5;
+
+/** The refusal registration and staff verification give at the limit. */
+export const TOO_MANY_CODES = 'TOO_MANY_CODES';
+
+/** Whether an error is `issue` refusing a destination that has had its share. */
+export function isTooManyCodes(err: unknown): boolean {
+  if (!(err instanceof HttpException)) return false;
+  const body = err.getResponse();
+  return typeof body === 'object' && body !== null && (body as { code?: unknown }).code === TOO_MANY_CODES;
+}
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -54,6 +70,7 @@ export class ContactChallengeService {
     private readonly mail: MailService,
     private readonly sms: SmsService,
     private readonly config: ConfigService,
+    private readonly usage: LimitUsageService,
   ) {}
 
   /**
@@ -72,8 +89,32 @@ export class ContactChallengeService {
      * about it.
      */
     context?: SignInContext;
+    /**
+     * What to do when this destination has had its share of codes.
+     *
+     * `refuse` is a 429 the caller can show. `decoy` is for sign-in, which must
+     * never refuse visibly: unknown contacts create no rows and so are never
+     * limited, and an honest refusal would announce that the account exists.
+     * It answers exactly as an unknown contact is answered, and sends nothing.
+     */
+    whenLimited?: 'refuse' | 'decoy';
   }): Promise<IssuedChallenge> {
     const { userId, channel, target, purpose } = params;
+
+    // Before superseding anything: a refused request must not also cancel the
+    // code the person is holding.
+    if (await this.destinationIsLimited(target, params.context)) {
+      if (params.whenLimited === 'decoy') return { challengeId: createId(), channel };
+      throw new HttpException(
+        {
+          message:
+            `Too many codes have been sent to this ${channel === 'phone' ? 'number' : 'address'} ` +
+            'recently. Try again in a few minutes.',
+          code: TOO_MANY_CODES,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
 
     await this.prisma.contactChallenge.updateMany({
       where: { userId, channel, purpose, usedAt: null },
@@ -122,6 +163,46 @@ export class ContactChallengeService {
       channel,
       ...(suppressed && !isProduction ? { devCode: rawCode } : {}),
     };
+  }
+
+  /**
+   * Whether one more code to this destination would pass a limit (Plan 26 §5).
+   *
+   * Per destination rather than per address, because that is what bounds both
+   * attacks: flooding one person, from however many addresses; and guessing
+   * their code, where every new code brings five new guesses. Counted across
+   * purposes, superseded codes included — they were sent.
+   *
+   * Counting then inserting is not atomic, so requests arriving together can
+   * overshoot by however many arrive together. The limit bounds volume, not an
+   * exact count.
+   */
+  private async destinationIsLimited(target: string, context?: SignInContext): Promise<boolean> {
+    const now = Date.now();
+    const checks = [
+      { id: 'codes.perDestination', ...LIMITS['codes.perDestination'] },
+      { id: 'codes.perDestinationDaily', ...LIMITS['codes.perDestinationDaily'] },
+    ] as const;
+
+    let limited = false;
+    for (const check of checks) {
+      const sent = await this.prisma.contactChallenge.count({
+        where: { target, createdAt: { gte: new Date(now - check.windowMs) } },
+      });
+      const refused = sent >= check.limit;
+      this.usage.record({
+        limitId: check.id,
+        hits: sent + 1,
+        refused,
+        keyKind: 'destination',
+        where: 'ContactChallengeService.issue',
+        // A sign-in names the swap it is for in its context, which the route
+        // (`/auth/login`) does not.
+        attribution: { swapId: context?.swapId },
+      });
+      limited ||= refused;
+    }
+    return limited;
   }
 
   /**

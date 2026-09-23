@@ -17,8 +17,7 @@
 //   - a line leaves SENDING only through a verified webhook or the sweep;
 //   - a forged webhook aimed at a line in flight changes nothing.
 //
-// Sign-in endpoints are throttled to five a minute and this script signs in
-// once, at the top, before anything else.
+// This script signs in once, at the top, before anything else.
 //
 // Everything below is about how sales become lines, so the first thing asserted
 // is that the run has lines at all. A run with none approves, sends and

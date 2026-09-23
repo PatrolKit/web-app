@@ -27,6 +27,7 @@ import { RequireDeviceRole } from '../common/decorators/require-device-role.deco
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { SellerService } from './seller.service';
 import { ContactChallengeService } from '../auth/contact-challenge.service';
+import { NOT_NORTH_AMERICAN, SmsService } from '../sms/sms.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { AddTicketRangeDto, CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto } from '../contracts/ski-swap.contracts';
@@ -40,6 +41,7 @@ export class SellerController {
   constructor(
     private readonly sellerService: SellerService,
     private readonly challenges: ContactChallengeService,
+    private readonly sms: SmsService,
     private readonly tickets: LegacyTicketService,
   ) {}
 
@@ -144,6 +146,20 @@ export class SellerController {
     const seller = await this.sellerService.findOrThrow(orgId, sellerId);
     const target = channel === 'email' ? seller.membership.user.email : seller.membership.user.phone;
     if (!target) throw new BadRequestException(`Seller has no ${channel} on record`);
+    // Said at the counter, where somebody can do something about it, rather
+    // than a code that silently never arrives while staff wait for it.
+    if (channel === 'phone') {
+      const text = await this.sms.canText(target);
+      if (!text.ok) {
+        throw new BadRequestException({
+          message:
+            text.reason === NOT_NORTH_AMERICAN
+              ? 'We can only text US and Canadian numbers. Verify their email instead.'
+              : 'Texting is paused right now. Verify their email instead.',
+          code: 'CANNOT_TEXT',
+        });
+      }
+    }
 
     // The challenge id goes back to staff so they can confirm an OTP the seller
     // reads out to them at the counter.

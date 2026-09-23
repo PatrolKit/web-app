@@ -12,13 +12,10 @@
 //   D  the cursor a list hands back was read before the query, not after;
 //   E  a walk pages by a cursor and cannot drop a row off the end.
 //
-// Sign-in is throttled to five a minute and this script signs in twice — once
-// as staff in each of two organizations, because the sharp edge in ask A is a
-// create from a caller who is legitimately allowed to create somewhere else.
-//
-// Two per run against a budget of five means a retry loop tighter than about a
-// minute and a half never drains the bucket; it just keeps topping it up. Leave
-// ninety seconds between runs.
+// This script signs in twice — once as staff in each of two organizations,
+// because the sharp edge in ask A is a create from a caller who is legitimately
+// allowed to create somewhere else. `smokeSession` clears the codes it sent last
+// time, so reruns do not meet the per-destination limit on codes.
 //
 // Everything below is about ids, so the first thing asserted is that the row
 // really was created under the id that was asked for. A server quietly minting

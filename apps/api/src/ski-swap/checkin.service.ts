@@ -10,6 +10,7 @@ import { ReceiptService } from './receipt.service';
 import { displayName } from '../common/util/person';
 import { isUniqueViolation } from '../common/util/prisma-errors';
 import type { SignInContext } from '../contracts/auth.contracts';
+import { NOT_NORTH_AMERICAN, SmsService } from '../sms/sms.service';
 
 /**
  * Self-service check-in.
@@ -30,6 +31,7 @@ export class CheckinService {
     private readonly recipes: PrintRecipeService,
     private readonly items: ItemService,
     private readonly receipts: ReceiptService,
+    private readonly sms: SmsService,
   ) {}
 
   // ─── Public: before anyone is signed in ─────────────────────────────────────
@@ -81,9 +83,7 @@ export class CheckinService {
     if (!normalized.email && !normalized.phone) {
       throw new BadRequestException('An email address or phone number is required');
     }
-    // One channel, chosen here: phone leads, because an SMS code offers itself
-    // in the iOS keyboard bar and an emailed link does not.
-    const channel = normalized.phone ? 'phone' : 'email';
+    const channel = await this.channelFor(normalized);
 
     const { user } = await this.people.resolveOrCreate(input);
 
@@ -93,6 +93,29 @@ export class CheckinService {
       target: (channel === 'phone' ? normalized.phone : normalized.email)!,
       purpose: 'login',
       context: { swapId: ctx.swapId, stationId: ctx.stationId } satisfies SignInContext,
+    });
+  }
+
+  /**
+   * One channel, chosen here: phone leads, because an SMS code offers itself in
+   * the iOS keyboard bar and an emailed link does not.
+   *
+   * But only a number we can text (Plan 26 §7): a US or Canadian one, while
+   * texting is not paused. Otherwise email, when there is one; and when there
+   * is not, a refusal that says what to do, rather than a code that never
+   * arrives.
+   */
+  private async channelFor(contact: { email?: string | null; phone?: string | null }): Promise<'phone' | 'email'> {
+    if (!contact.phone) return 'email';
+    const text = await this.sms.canText(contact.phone);
+    if (text.ok) return 'phone';
+    if (contact.email) return 'email';
+    throw new BadRequestException({
+      message:
+        text.reason === NOT_NORTH_AMERICAN
+          ? 'We can only text US and Canadian numbers. Use an email address instead.'
+          : 'We cannot send texts right now. Use an email address instead.',
+      code: 'CANNOT_TEXT',
     });
   }
 

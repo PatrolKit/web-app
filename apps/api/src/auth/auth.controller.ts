@@ -11,7 +11,8 @@ import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginRequestDto, ChallengeConfirmDto, DeviceTokenRequestDto } from '../contracts/auth.contracts';
 import type { AuthTokenResponse, LoginResponse } from '../contracts/auth.contracts';
-import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import { SkipThrottle } from '@nestjs/throttler';
+import { Limit } from '../common/limits/limit.decorator';
 import type { DeviceTokenResponse } from '../contracts/devices.contracts';
 
 @Controller('auth')
@@ -22,7 +23,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Limit('auth.login')
   async login(@Body() body: LoginRequestDto): Promise<LoginResponse> {
     const issued = await this.authService.requestLogin(body);
     // Identical shape whether or not the account exists: an absent person still
@@ -37,7 +38,7 @@ export class AuthController {
 
   @Post('challenges/:id/confirm')
   @HttpCode(200)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Limit('auth.confirm')
   async confirmChallenge(
     @Param('id') challengeId: string,
     @Body() body: ChallengeConfirmDto,
@@ -54,7 +55,7 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(200)
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Limit('auth.refresh')
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
@@ -76,7 +77,7 @@ export class AuthController {
 
   @Post('device/token')
   @HttpCode(200)
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Limit('auth.deviceToken')
   deviceToken(@Body() body: DeviceTokenRequestDto): Promise<DeviceTokenResponse> {
     return this.authService.getDeviceToken(body.clientId, body.clientSecret);
   }

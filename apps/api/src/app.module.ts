@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE, APP_GUARD } from '@nestjs/core';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { ZodValidationPipe } from 'nestjs-zod';
@@ -29,6 +29,9 @@ import { AuditModule } from './common/audit/audit.module';
 import { SkiSwapModule } from './ski-swap/ski-swap.module';
 import { TimeClockModule } from './time-clock/time-clock.module';
 import { SmsModule } from './sms/sms.module';
+import { LimitsModule } from './common/limits/limits.module';
+import { KeyedThrottlerGuard } from './common/limits/keyed-throttler.guard';
+import { LIMITS } from './common/limits/limits';
 import appConfig from './config/app.config';
 
 @Module({
@@ -80,7 +83,15 @@ import appConfig from './config/app.config';
     AuditModule,
     SkiSwapModule,
     TimeClockModule,
-    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
+    LimitsModule,
+    // The numbers here are placeholders the guard never reads: it takes every
+    // limit from `LIMITS`, by route and by who is asking. One throttler is
+    // still needed, because the guard runs once per throttler configured.
+    ThrottlerModule.forRoot([{
+      name: 'default',
+      ttl: LIMITS['requests.anonymous'].windowMs,
+      limit: LIMITS['requests.anonymous'].limit,
+    }]),
     HealthModule,
     CommonModule,
   ],
@@ -88,7 +99,7 @@ import appConfig from './config/app.config';
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_PIPE, useClass: ZodValidationPipe },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: KeyedThrottlerGuard },
   ],
 })
 export class AppModule {}

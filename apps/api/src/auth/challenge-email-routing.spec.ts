@@ -36,6 +36,7 @@ describe('which email a challenge sends', () => {
       mail as unknown as never,
       { send: async () => ({ status: 'sent' }) } as unknown as never,
       { get: (k: string, d?: unknown) => (k === 'app.appUrl' ? 'https://patrolkit.io' : d) } as unknown as never,
+      { record: () => undefined } as unknown as never,
     );
 
     /** `dispatch` is private to the service and public to its behaviour. */
