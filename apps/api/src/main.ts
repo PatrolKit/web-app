@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -7,9 +8,26 @@ import type { IncomingMessage } from 'http';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
 
   app.useLogger(app.get(Logger));
+
+  /*
+   * Caddy sits in front of this on the same box, so every connection Node sees
+   * comes from loopback. Without this line `req.ip` was Caddy's address for
+   * every request in production — `::ffff:127.0.0.1`, the only value in the
+   * logs — and the throttle, which keys on `req.ip`, was one bucket for the
+   * whole site: a hundred requests a minute across every user and device
+   * combined, and five sign-in requests a minute for everybody in the world.
+   * One busy check-in table would have locked out the next.
+   *
+   * `'loopback'` rather than `true` or a hop count: trust the forwarding header
+   * only when the connection itself came from this machine. If Node were ever
+   * reachable directly, a client's own `X-Forwarded-For` would be ignored
+   * rather than believed, so the fix cannot become a way to pick your own
+   * bucket.
+   */
+  app.set('trust proxy', 'loopback');
 
   // Derive the S3 hostname from PHOTO_BASE_URL so img-src stays in sync with config.
   const photoBaseUrl = process.env.PHOTO_BASE_URL ?? '';
