@@ -68,7 +68,7 @@ export default function UsersTab() {
       <div>
         <h2 className="text-white font-medium">Users</h2>
         <p className="text-xs text-gray-500">
-          Everyone on the platform, including people who belong to no organisation yet — a
+          Everyone on the platform, including people who belong to no organization yet — a
           seller partway through a check-in, or someone who signed in before being added
           anywhere.
         </p>
@@ -95,7 +95,7 @@ export default function UsersTab() {
           className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
         >
           <option value={ANY}>All users</option>
-          <option value={NONE}>No organisation</option>
+          <option value={NONE}>No organization</option>
           {orgs.map((o: PlatformOrg) => (
             <option key={o.id} value={o.id}>{o.name}</option>
           ))}
@@ -224,10 +224,10 @@ function UserRow({
           <OrgChip key={m.id} membership={m} />
         ))}
         {current.length === 0 && former.length === 0 && (
-          <span className="text-xs text-amber-500">Belongs to no organisation</span>
+          <span className="text-xs text-amber-500">Belongs to no organization</span>
         )}
         {current.length === 0 && former.length > 0 && (
-          <span className="text-xs text-amber-500">No current organisation</span>
+          <span className="text-xs text-amber-500">No current organization</span>
         )}
       </div>
 
@@ -238,7 +238,7 @@ function UserRow({
             onChange={(e) => { if (e.target.value) { onAdd(e.target.value); setAdding(false); } }}
             className="bg-surface-100 border border-gray-700 rounded px-2 py-1 text-xs text-white"
           >
-            <option value="" disabled>Pick an organisation</option>
+            <option value="" disabled>Pick an organization</option>
             {orgs
               .filter((o) => !current.some((m) => m.orgId === o.id))
               .map((o) => (
@@ -277,7 +277,7 @@ function OrgChip({
       className={`text-xs px-2 py-0.5 rounded-full inline-flex items-center gap-1.5 ${
         membership.removed ? 'bg-surface-100 text-gray-500 line-through' : 'bg-surface-100 text-gray-300'
       }`}
-      title={membership.removed ? 'Removed from this organisation' : undefined}
+      title={membership.removed ? 'Removed from this organization' : undefined}
     >
       {membership.orgName}
       {onRemove && (

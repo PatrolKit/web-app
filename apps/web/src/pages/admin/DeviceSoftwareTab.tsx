@@ -410,7 +410,7 @@ function Profiles({
       <div>
         <h2 className="text-white font-medium">What each device role runs</h2>
         <p className="text-xs text-gray-500 max-w-3xl">
-          One answer per role, for every organisation. A device asks on a schedule and installs
+          One answer per role, for every organization. A device asks on a schedule and installs
           what it is told inside its update window, so a change here reaches the whole fleet
           without anyone touching a device.
         </p>

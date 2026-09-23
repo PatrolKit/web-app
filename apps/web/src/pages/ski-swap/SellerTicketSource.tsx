@@ -16,7 +16,7 @@ function tabClass(active: boolean): string {
 
 /**
  * Where this seller's tags come from: a printer of their own, or a block of
- * tickets the organisation issued them.
+ * tickets the organization issued them.
  *
  * Tabs rather than two sections, because these are alternatives — a seller with
  * both would have two SKUs competing for one item, and the server refuses the

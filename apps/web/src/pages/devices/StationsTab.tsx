@@ -549,7 +549,7 @@ function RetireModal({
           <p>
             Its code <span className="font-mono text-gray-200">{station.code}</span> stays
             claimed, so tags already printed here keep meaning what they say. No new station
-            can use that letter — an organisation has 32 and they are never reused.
+            can use that letter — an organization has 32 and they are never reused.
           </p>
           {station.attendantDeviceId && (
             <p>Its iPad is revoked at the same time and will stop being able to check anyone in.</p>

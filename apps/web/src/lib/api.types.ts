@@ -1014,3 +1014,41 @@ export interface SellerReceiptRow {
     createdAt: string;
   }[];
 }
+
+// ─── Server health (Plan 26 §11) ─────────────────────────────────────────────
+
+export type HealthRange = '24h' | '7d' | '30d' | '90d';
+
+/** What a limit counts per. */
+export type LimitKeyedBy = 'ip' | 'caller' | 'destination' | 'site';
+
+export interface HealthPlace {
+  org: { id: string; name: string } | null;
+  swap: { id: string; title: string } | null;
+}
+
+export interface LimitSummary {
+  id: string;
+  label: string;
+  keyedBy: LimitKeyedBy;
+  limit: number;
+  windowSeconds: number;
+  /** The closest any key came in the range, or null when nothing was counted. */
+  peak: (HealthPlace & { percent: number; hits: number; limit: number; hourStart: string }) | null;
+  nearCount: number;
+  refusedCount: number;
+}
+
+export interface LimitsHealth {
+  range: HealthRange;
+  generatedAt: string;
+  limits: LimitSummary[];
+}
+
+export interface LimitSeries {
+  id: string;
+  range: HealthRange;
+  bucket: 'hour' | 'day';
+  points: { at: string; percent: number | null; refusedCount: number }[];
+  top: (HealthPlace & { percent: number; refusedCount: number; nearCount: number })[];
+}

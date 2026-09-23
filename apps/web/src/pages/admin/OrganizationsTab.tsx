@@ -4,7 +4,7 @@ import { api } from '../../lib/api';
 import { MutationError } from '../devices/DeviceCredentials';
 import type { PlatformOrg } from '../../lib/api.types';
 
-/** Every organisation on the platform, and the form that adds one. */
+/** Every organization on the platform, and the form that adds one. */
 export default function OrganizationsTab() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
@@ -33,7 +33,7 @@ export default function OrganizationsTab() {
       <div>
         <h2 className="text-white font-medium">Organizations</h2>
         <p className="text-xs text-gray-500">
-          Every organisation on the platform. Creating one also creates its first owner, who
+          Every organization on the platform. Creating one also creates its first owner, who
           gets every permission and can invite the rest from the org&apos;s own Members page.
         </p>
       </div>

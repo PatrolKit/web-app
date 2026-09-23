@@ -35,12 +35,16 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
   const [challengeId, setChallengeId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState<string | undefined>();
+  /** Codes texted so far. The third is the second re-send. */
+  const [textsSent, setTextsSent] = useState(0);
 
   const contact = useEmail ? email.trim() : phone.trim();
 
   async function sendCode() {
     setBusy(true);
     setError('');
+    setErrorCode(undefined);
     try {
       // Contact only. Who this is gets settled by the lookup on the server, and
       // a name — if we turn out not to have one — is asked for after.
@@ -51,9 +55,11 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
       // Dev convenience: with delivery switched off the server hands the code
       // back so the flow can be walked without a phone.
       if (res.devCode) setCode(res.devCode);
+      if (res.channel === 'phone') setTextsSent((n) => n + 1);
       setMode(res.channel === 'phone' ? 'code' : 'sent');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not send a code');
+      setErrorCode(err instanceof ApiError ? err.code : undefined);
     } finally {
       setBusy(false);
     }
@@ -73,6 +79,21 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
       setBusy(false);
     }
   }
+
+  /** Somewhere to go when texts are not arriving, before the server says no. */
+  function switchToEmail() {
+    setUseEmail(true);
+    setError('');
+    setErrorCode(undefined);
+    setCode('');
+    setMode('contact');
+  }
+
+  const useEmailButton = (
+    <button className={secondaryButtonClass} disabled={busy} onClick={switchToEmail}>
+      Use an email address instead
+    </button>
+  );
 
   if (mode === 'sent') {
     return (
@@ -118,6 +139,13 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
         <button className={primaryButtonClass} disabled={busy || code.length < 6} onClick={confirmCode}>
           {busy ? 'Checking…' : 'Continue'}
         </button>
+        <button className={secondaryButtonClass} disabled={busy} onClick={sendCode}>
+          Text me a new code
+        </button>
+        {/* After the second re-send, a way out beside it. A seller in a dead zone
+            in the lodge, or behind a slow carrier, gets somewhere to go on the
+            third tap rather than meeting the server's limit on the sixth. */}
+        {textsSent >= 3 && useEmailButton}
         <button className={secondaryButtonClass} disabled={busy} onClick={() => setMode('contact')}>
           Use a different number
         </button>
@@ -177,6 +205,7 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
         )}
 
         <ErrorNote>{error}</ErrorNote>
+        {!useEmail && (errorCode === 'CANNOT_TEXT' || errorCode === 'TOO_MANY_CODES') && useEmailButton}
 
         <button className={primaryButtonClass} disabled={busy || contact.length < 5} onClick={sendCode}>
           {busy ? 'Sending…' : useEmail ? 'Email me a link' : 'Text me a code'}

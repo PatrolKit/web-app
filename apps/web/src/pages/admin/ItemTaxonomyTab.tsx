@@ -21,7 +21,7 @@ import type { TaxonomyAdminNode, TaxonomySuggestion } from '../../lib/api.types'
  * The shared item-description tree (Plan 19 §6.4).
  *
  * A tree editor and a promotion inbox. Editing here changes what every
- * organisation sees, which is why it is super-admin only and why a rename warns
+ * organization sees, which is why it is super-admin only and why a rename warns
  * rather than just saving: an org asks for a global change, it does not make
  * one.
  */
@@ -711,7 +711,7 @@ export default function ItemTaxonomyTab() {
           <div>
             <h2 className="text-white font-semibold">The shared list</h2>
             <p className="text-sm text-gray-400 mt-0.5">
-              What every organisation sees. Click a label to rename it. Renaming
+              What every organization sees. Click a label to rename it. Renaming
               changes what new items say and leaves every existing item’s name
               exactly as it was printed.
             </p>

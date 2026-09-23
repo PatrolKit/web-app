@@ -363,6 +363,14 @@ export const api = {
       request<void>(`/admin/users/${userId}/memberships/${membershipId}`, { method: 'DELETE' }),
     deleteUser: (userId: string) =>
       request<void>(`/admin/users/${userId}`, { method: 'DELETE' }),
+
+    /** How close traffic has come to each limit (Plan 26 §11). */
+    healthLimits: (range: import('./api.types').HealthRange) =>
+      request<import('./api.types').LimitsHealth>(`/admin/health/limits?range=${range}`),
+    healthLimitSeries: (limitId: string, range: import('./api.types').HealthRange) =>
+      request<import('./api.types').LimitSeries>(
+        `/admin/health/limits/${encodeURIComponent(limitId)}/series?range=${range}`,
+      ),
   },
 
   /**
