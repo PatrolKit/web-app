@@ -249,14 +249,31 @@ export class ContactChallengeService {
     const origin = context?.stationId
       ? this.config.get<string>('app.sellerSiteUrl', 'http://localhost:3000')
       : this.config.get<string>('app.appUrl', 'http://localhost:3000');
-    const url = `${origin.replace(/\/$/, '')}/app/auth/verify?c=${challengeId}&t=${rawCode}`;
+    /*
+     * `p` is for the page's wording, and for nothing else.
+     *
+     * The verify page cannot tell a sign-in from a confirmation until it has
+     * spent the challenge, so without this it greets everybody with "Sign in"
+     * and only afterwards admits that some of them were confirming an address.
+     * Tampering with it changes the sentence and nothing else: the server reads
+     * the purpose off the challenge, and the outcome screen says what actually
+     * happened.
+     */
+    const url =
+      `${origin.replace(/\/$/, '')}/app/auth/verify?c=${challengeId}&t=${rawCode}` +
+      (purpose === 'verify' ? '&p=verify' : '');
 
     // Fire-and-forget: delivery failure must never surface as an auth error,
     // which would leak whether the account exists.
+    //
+    // One branch per purpose. `verify` used to fall through to the sign-in
+    // email, which promised a session it was never going to mint.
     const send =
       purpose === 'invite' && orgName
         ? this.mail.sendSellerInvite(target, url, orgName)
-        : this.mail.sendMagicLink(target, url, params.brand);
+        : purpose === 'verify'
+          ? this.mail.sendVerificationEmail(target, url, params.brand)
+          : this.mail.sendMagicLink(target, url, params.brand);
     send.catch((err) => this.logger.error({ err }, 'Challenge email delivery failed'));
   }
 }

@@ -34,6 +34,19 @@ export default function VerifyPage() {
   const token = searchParams.get('t');
   const malformed = !challengeId || !token;
 
+  /*
+   * What this link was for, so the screen can say it before spending the code.
+   *
+   * The challenge decides what actually happens; this only decides the wording.
+   * Without it everybody was greeted with "Sign in", including the people who
+   * were confirming an address and would never get a session — they found out
+   * after tapping, which is the wrong order to learn it in.
+   *
+   * Tampering with it changes a sentence. The outcome screen below reports what
+   * the server actually did.
+   */
+  const confirmingContact = searchParams.get('p') === 'verify';
+
   async function confirm() {
     if (malformed) return;
     setBusy(true);
@@ -51,7 +64,11 @@ export default function VerifyPage() {
       }
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Sign-in failed');
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : confirmingContact ? 'Could not confirm your email' : 'Sign-in failed',
+      );
     } finally {
       setBusy(false);
     }
@@ -63,23 +80,42 @@ export default function VerifyPage() {
         {/* The server's sentence where there is one: an expired link and a link
             already used are different problems, and only it knows which. */}
         <p className="text-center text-sm text-gray-400">
-          {error || 'This sign-in link is missing part of itself. An email client that wraps long lines can break one.'}
+          {error ||
+            (confirmingContact
+              ? 'This confirmation link is missing part of itself. An email client that wraps long lines can break one.'
+              : 'This sign-in link is missing part of itself. An email client that wraps long lines can break one.')}
         </p>
 
         {/* Here, not on the page before it. This is the screen where somebody
             has actually been stopped, and the explanation is the difference
-            between "the app is broken" and "ask for another one". */}
+            between "the app is broken" and "ask for another one".
+            
+            Who to ask differs. A sign-in link is one the reader asks for
+            themselves; a confirmation was sent on their behalf by somebody at a
+            counter, and pointing them at the login page would send them
+            somewhere that cannot issue another. */}
         <p className="my-4 rounded-lg border border-gray-700 bg-surface-100 px-4 py-2.5 text-center text-sm text-gray-300">
-          Sign-in links work <span className="text-white font-medium">once</span> and expire after
-          15 minutes. Getting another takes a moment.
+          {confirmingContact ? (
+            <>
+              Confirmation links work <span className="text-white font-medium">once</span> and
+              expire after 15 minutes. Ask whoever sent it to send another.
+            </>
+          ) : (
+            <>
+              Sign-in links work <span className="text-white font-medium">once</span> and expire
+              after 15 minutes. Getting another takes a moment.
+            </>
+          )}
         </p>
 
-        <a
-          href="/auth/login"
-          className="block w-full rounded-lg bg-brand-600 hover:bg-brand-700 py-3 text-center text-white font-medium"
-        >
-          Send me a new link
-        </a>
+        {!confirmingContact && (
+          <a
+            href="/auth/login"
+            className="block w-full rounded-lg bg-brand-600 hover:bg-brand-700 py-3 text-center text-white font-medium"
+          >
+            Send me a new link
+          </a>
+        )}
       </Shell>
     );
   }
@@ -101,9 +137,15 @@ export default function VerifyPage() {
   }
 
   return (
-    <Shell icon={faShieldCheckDuo} tone="brand" title="Confirm it's you">
+    <Shell
+      icon={faShieldCheckDuo}
+      tone="brand"
+      title={confirmingContact ? 'Confirm your email address' : "Confirm it's you"}
+    >
       <p className="text-center text-sm text-gray-400">
-        Tap below to finish signing in.
+        {confirmingContact
+          ? 'Tap below to confirm this address belongs to you. It will not sign you in.'
+          : 'Tap below to finish signing in.'}
       </p>
 
       {/* Nothing here about links expiring or working once.
@@ -120,7 +162,9 @@ export default function VerifyPage() {
         disabled={busy}
         className="w-full py-3 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white font-medium rounded-lg"
       >
-        {busy ? 'Signing you in…' : 'Sign in'}
+        {confirmingContact
+          ? (busy ? 'Confirming…' : 'Confirm my email')
+          : (busy ? 'Signing you in…' : 'Sign in')}
       </button>
       </div>
     </Shell>

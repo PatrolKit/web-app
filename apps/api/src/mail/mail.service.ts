@@ -33,15 +33,42 @@ function magicLinkTemplate(
   });
 }
 
-function sellerVerificationTemplate(verifyUrl: string): string {
+/**
+ * Confirming an address, which is not signing in.
+ *
+ * Both used to go out as the sign-in email, because `dispatch` only branched on
+ * `invite` — so somebody asked to confirm an address received "Your sign-in
+ * link", tapped "Sign in", and was told their contact was verified. This
+ * template existed the whole time and nothing called it.
+ *
+ * Branded like the sign-in one, and for the same reason: staff at a counter ask
+ * a seller to confirm an address, and the seller is expecting to hear from the
+ * club rather than from the software the club runs.
+ */
+function verificationTemplate(
+  verifyUrl: string,
+  brand: SignInBrand | undefined,
+  markUrl: string,
+): string {
   return emailShell({
-    title: 'Verify your email with PatrolKit',
-    kicker: 'Ski swap management',
-    heading: 'Verify your email address',
-    body: ['Confirm your email with the button below. This link expires in <strong>15 minutes</strong>.'],
-    action: { label: 'Verify email', url: verifyUrl },
+    title: brand ? `Confirm your email for ${brand.name}` : 'Confirm your email with PatrolKit',
+    brand,
+    kicker: brand ? undefined : 'Ski swap management',
+    heading: 'Confirm your email address',
+    body: [
+      brand
+        ? `<strong>${escapeHtml(brand.name)}</strong> needs to check this address belongs to you. ` +
+          'Use the button below. This link expires in <strong>15 minutes</strong>.'
+        : 'Use the button below to confirm this address belongs to you. This link expires in <strong>15 minutes</strong>.',
+      // Said because the button is about to look exactly like a sign-in one,
+      // and somebody who thinks they are signing in will wonder where they
+      // ended up.
+      'It only confirms the address — it does not sign you in.',
+    ],
+    action: { label: 'Confirm my email', url: verifyUrl },
     footnote: "If you weren't expecting this, you can safely ignore this email.",
     showRawLink: true,
+    poweredByUrl: brand ? markUrl : null,
   });
 }
 
@@ -163,10 +190,15 @@ export class MailService {
     return this.send(to, subject, html);
   }
 
-  async sendVerificationEmail(to: string, verifyUrl: string): Promise<SendOutcome> {
-    const subject = 'Verify your email address — PatrolKit';
-    const html = sellerVerificationTemplate(verifyUrl);
-    return this.send(to, subject, html);
+  async sendVerificationEmail(
+    to: string,
+    verifyUrl: string,
+    brand?: SignInBrand,
+  ): Promise<SendOutcome> {
+    const subject = brand
+      ? `Confirm your email for ${brand.name}`
+      : 'Confirm your email address — PatrolKit';
+    return this.send(to, subject, verificationTemplate(verifyUrl, brand, this.brandMarkUrl()));
   }
 
   async sendSellerAddedNotification(to: string, orgName: string): Promise<SendOutcome> {
