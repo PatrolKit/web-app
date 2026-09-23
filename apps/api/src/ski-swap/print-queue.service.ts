@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createId } from '@paralleldrive/cuid2';
 import { Prisma } from '@prisma/client';
 import type { PrintJob } from '@prisma/client';
@@ -50,8 +50,17 @@ export interface ClaimedJob {
   id: string;
   kind: PrintJobKind;
   seq: number;
-  /** The rendered raster, base64-encoded. */
-  payload: string;
+  /**
+   * The rendered raster, base64-encoded. Absent when the claim asked for
+   * `payload=omit`: the bridge then fetches the bytes from `raster()`.
+   */
+  payload?: string;
+  /**
+   * The raster's length in bytes — exactly what `raster()` returns for this
+   * job. A bridge with no room to spare decides from this, before downloading
+   * anything, whether it can take the job at all.
+   */
+  rasterBytes: number;
   /**
    * Bytes per raster row, which is how the bridge knows the label's width.
    *
@@ -87,6 +96,28 @@ export class PrintQueueService {
    * assumption safe to be wrong about rather than something to be right about.
    */
   private readonly waiting = new Map<string, Set<() => void>>();
+
+  /**
+   * Each claimed job's raster, kept for the life of its claim.
+   *
+   * A job holds a recipe, not bytes, and is rendered when claimed. A bridge
+   * that fetches the raster separately (`raster()`) may fetch it more than
+   * once — a TLS session drops mid-body — and every fetch has to be the same
+   * bytes the claim promised by length. Rendering again would usually agree,
+   * but an item edited or a printer swapped between the two would not, so the
+   * claim's own render is kept and served.
+   *
+   * In memory, like `waiting`: production is one process. After a restart a
+   * live claim is rendered again; if that disagrees with the length the claim
+   * gave, the bridge sees a mismatch and nacks, which is the safe failure.
+   */
+  private readonly rasters = new Map<string, { claimToken: string; bytes: Buffer; until: number }>();
+
+  private keepRaster(jobId: string, claimToken: string, bytes: Buffer): void {
+    const now = Date.now();
+    for (const [id, kept] of this.rasters) if (kept.until < now) this.rasters.delete(id);
+    this.rasters.set(jobId, { claimToken, bytes, until: now + CLAIM_SECONDS * 1000 });
+  }
 
   /** Tells anything holding a claim for this station to look again now. */
   private wake(stationId: string): void {
@@ -281,6 +312,13 @@ export class PrintQueueService {
      * diagnostic or a test, asks for zero.
      */
     holdMs = HOLD_MS,
+    /**
+     * `omitPayload` leaves the base64 out of the response. A bridge with no
+     * PSRAM cannot hold a 62 × 100 label as base64 inside JSON — ~75 KB against
+     * a largest free block of 72 KB — so it takes the size here and the bytes
+     * from `raster()`.
+     */
+    options: { omitPayload?: boolean } = {},
   ): Promise<{
     stationId: string;
     backoffMs: number;
@@ -424,13 +462,16 @@ export class PrintQueueService {
     for (const job of claimed) {
       try {
         const rows = await this.render(job, target);
+        // A bare raster, not a finished job: the firmware wraps it in ESC/POS
+        // itself and adds its own feed rows.
+        const raster = this.renderer.toRaster(rows);
+        this.keepRaster(job.id, token, raster);
         jobs.push({
           id: job.id,
           kind: job.kind as PrintJobKind,
           seq: job.seq,
-          // A bare raster, not a finished job: the firmware wraps it in ESC/POS
-          // itself and adds its own feed rows.
-          payload: this.renderer.toRaster(rows).toString('base64'),
+          ...(options.omitPayload ? {} : { payload: raster.toString('base64') }),
+          rasterBytes: raster.length,
           // Taken from the raster rather than the target, so it cannot disagree
           // with the bytes beside it.
           widthBytes: Math.ceil((rows[0]?.length ?? 0) / 8),
@@ -463,6 +504,7 @@ export class PrintQueueService {
    */
   async ack(deviceId: string, jobId: string): Promise<void> {
     const job = await this.ownedJob(deviceId, jobId);
+    this.rasters.delete(job.id);
     if (job.status === 'printed') return; // idempotent: a retried ack is safe
 
     await this.prisma.printJob.update({
@@ -486,6 +528,7 @@ export class PrintQueueService {
   /** Returns a job to the queue, or abandons it once it has failed enough. */
   async nack(deviceId: string, jobId: string, error?: string): Promise<void> {
     const job = await this.ownedJob(deviceId, jobId);
+    this.rasters.delete(job.id);
     const abandon = job.attempts >= MAX_ATTEMPTS;
     await this.prisma.printJob.update({
       where: { id: job.id },
@@ -496,6 +539,40 @@ export class PrintQueueService {
         lastError: error?.slice(0, 500) ?? null,
       },
     });
+  }
+
+  /**
+   * A claimed job's raster, as the bytes themselves.
+   *
+   * For a bridge that cannot hold the raster as base64 inside a claim. Only the
+   * bridge holding the claim may fetch it, and only while the claim is live;
+   * fetching changes nothing — not the job, not its attempts, not the lease —
+   * and every fetch within one claim returns the same bytes.
+   *
+   * 404 for a job that does not exist, is not on this bridge's station, or was
+   * never claimed: which of those it was is nobody's business. 410 for a claim
+   * that has expired or been settled, which tells the bridge to drop the job
+   * rather than retry.
+   */
+  async raster(deviceId: string, jobId: string): Promise<Buffer> {
+    const job = await this.prisma.printJob.findFirst({
+      where: { id: jobId, station: { bridgeDeviceId: deviceId, deletedAt: null } },
+      include: { station: { include: { bridge: { include: { bridgedPrinter: true } } } } },
+    });
+    if (!job || !job.claimedAt) throw new NotFoundException('Job not found for this device');
+
+    const live = job.status === 'claimed' && !!job.claimToken && !!job.claimUntil && job.claimUntil > new Date();
+    if (!live) throw new GoneException('This job is no longer claimed');
+
+    const kept = this.rasters.get(job.id);
+    if (kept && kept.claimToken === job.claimToken) return kept.bytes;
+
+    // Claimed before a restart. Rendered again and kept, so the next fetch in
+    // this claim is the same bytes as this one.
+    const rows = await this.render(job, printTargetFor(job.station.bridge?.bridgedPrinter ?? null));
+    const bytes = this.renderer.toRaster(rows);
+    this.keepRaster(job.id, job.claimToken!, bytes);
+    return bytes;
   }
 
   // ─── Staff view ─────────────────────────────────────────────────────────────

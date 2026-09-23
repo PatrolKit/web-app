@@ -950,8 +950,16 @@ export const ClaimedJobSchema = z.object({
   id: z.string(),
   kind: z.string(),
   seq: z.number().int(),
-  /** The base64 raster. The bridge wraps it in ESC/POS and adds its own feed. */
-  payload: z.string(),
+  /**
+   * The base64 raster. The bridge wraps it in ESC/POS and adds its own feed.
+   * Absent when the claim asked for `payload=omit`.
+   */
+  payload: z.string().optional(),
+  /**
+   * The raster's length in bytes, and exactly what `GET :jobId/raster` returns.
+   * Sent on every claim.
+   */
+  rasterBytes: z.number().int().nonnegative(),
   /**
    * Bytes per raster row — how the bridge knows the label's width, and with the
    * payload's length, its height.

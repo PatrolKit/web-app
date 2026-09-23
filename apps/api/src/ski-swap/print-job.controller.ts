@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { SkipThrottle } from '@nestjs/throttler';
 import { DeviceAuthGuard } from '../common/guards/device-auth.guard';
@@ -32,6 +32,10 @@ export class PrintJobController {
     @Query('limit') limit?: string,
     @Query('wait') wait?: string,
     @Res({ passthrough: true }) res?: Response,
+    // `omit` leaves the base64 out and sends `rasterBytes` in its place; the
+    // bytes then come from `GET :jobId/raster`. Anything else, or nothing, is
+    // the inline claim every deployed bridge already speaks.
+    @Query('payload') payload?: string,
   ) {
     // `limit=0` is a heartbeat: a bridge with a downed printer has nowhere to
     // put a job but still needs to say it is alive, or staff cannot tell a dead
@@ -55,7 +59,33 @@ export class PrintJobController {
       },
       res,
       Number.isFinite(held) ? held : undefined,
+      { omitPayload: payload === 'omit' },
     );
+  }
+
+  /**
+   * A claimed job's raster as raw bytes, for a bridge with no room to hold it
+   * as base64 inside JSON.
+   *
+   * Written straight to the socket rather than returned, so it bypasses the
+   * `{ success, data }` envelope. `Content-Length` is exact and set up front:
+   * the bridge allocates that many bytes before reading. Nothing on the path
+   * may compress it — inflating needs a window the bridge does not have — so
+   * the response says `no-transform`, and Caddy here has no `encode`.
+   */
+  @Get(':jobId/raster')
+  async raster(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('jobId') jobId: string,
+    @Res() res: Response,
+  ) {
+    const bytes = await this.queue.raster(device.deviceId, jobId);
+    res.status(200).set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(bytes.length),
+      'Cache-Control': 'no-store, no-transform',
+    });
+    res.end(bytes);
   }
 
   @Post(':jobId/ack')
