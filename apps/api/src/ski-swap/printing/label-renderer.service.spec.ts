@@ -306,4 +306,19 @@ describe('LabelRendererService', () => {
       expect(await renderer.tallReceipt(RECEIPT, [], TARGETS['62x100'])).toHaveLength(1);
     });
   });
+
+  // A bridge fetching a raster in pieces relies on every piece coming from the
+  // same bytes. The claim's render is kept for that, but a restart renders
+  // again, and this is what makes that second render agree with the first when
+  // nothing about the label has changed.
+  describe('determinism', () => {
+    it('renders the same label to the same bytes every time', async () => {
+      for (const target of Object.values(TARGETS)) {
+        const item = { name: 'Volkl Kendo 88 skis, 177cm', priceCents: 24900, sku: 'SS26-A-0001' };
+        const first = renderer.toRaster(await renderer.itemTag(item, target));
+        const second = renderer.toRaster(await renderer.itemTag(item, target));
+        expect(second.equals(first)).toBe(true);
+      }
+    });
+  });
 });

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { createHash } from 'crypto';
 import type { Response } from 'express';
 import { SkipThrottle } from '@nestjs/throttler';
 import { DeviceAuthGuard } from '../common/guards/device-auth.guard';
@@ -8,6 +9,7 @@ import { CurrentDevice } from '../common/decorators/current-device.decorator';
 import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import { PrintQueueService } from './print-queue.service';
 import { ClaimJobsDto, NackJobDto } from '../contracts/ski-swap.contracts';
+import { parseByteRange } from '../common/util/byte-range';
 
 /**
  * The contract an ESP-32 bridge implements.
@@ -72,20 +74,52 @@ export class PrintJobController {
    * the bridge allocates that many bytes before reading. Nothing on the path
    * may compress it — inflating needs a window the bridge does not have — so
    * the response says `no-transform`, and Caddy here has no `encode`.
+   *
+   * **Ranges**, because a TLS record can be no larger than what is being sent.
+   * A bridge that decrypts a whole record at a time cannot hold a 16 KB one
+   * beside its raster buffer, and asking for 4 KB pieces caps every record at
+   * that, whatever the connection's history. One range per request; anything
+   * the parser does not take is answered with the whole raster.
+   *
+   * **`ETag`** is a digest of the bytes, the same on every response in a claim.
+   * The bytes are the claim's own render, kept for the lease — except after a
+   * restart, when the job is rendered again, and a label whose item or printer
+   * changed meanwhile would come out different. A bridge assembling pieces
+   * compares the tags and nacks on a mismatch rather than print half of each.
    */
   @Get(':jobId/raster')
   async raster(
     @CurrentDevice() device: AuthenticatedDevice,
     @Param('jobId') jobId: string,
+    @Headers('range') rangeHeader: string | undefined,
     @Res() res: Response,
   ) {
     const bytes = await this.queue.raster(device.deviceId, jobId);
-    res.status(200).set({
-      'Content-Type': 'application/octet-stream',
-      'Content-Length': String(bytes.length),
+    const range = parseByteRange(rangeHeader, bytes.length);
+    res.set({
+      'Accept-Ranges': 'bytes',
       'Cache-Control': 'no-store, no-transform',
+      ETag: `"${createHash('sha256').update(bytes).digest('base64url').slice(0, 27)}"`,
     });
-    res.end(bytes);
+
+    if (range.kind === 'unsatisfiable') {
+      res.status(416).set({
+        'Content-Range': `bytes */${bytes.length}`,
+        'Content-Type': 'application/json; charset=utf-8',
+      });
+      res.end(JSON.stringify({ success: false, error: 'Range not satisfiable' }));
+      return;
+    }
+
+    const body = range.kind === 'part' ? bytes.subarray(range.start, range.end + 1) : bytes;
+    res.status(range.kind === 'part' ? 206 : 200).set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(body.length),
+      ...(range.kind === 'part'
+        ? { 'Content-Range': `bytes ${range.start}-${range.end}/${bytes.length}` }
+        : {}),
+    });
+    res.end(body);
   }
 
   @Post(':jobId/ack')

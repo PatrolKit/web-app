@@ -89,6 +89,52 @@ ok('...a whole number of rows', body.length % job.widthBytes === 0, `${body.leng
 const again = Buffer.from(await (await raster(job.id)).arrayBuffer());
 ok('a second fetch in the same claim is the same bytes', again.equals(body));
 
+// ─── In pieces ───────────────────────────────────────────────────────────────
+// A TLS record is no larger than what is sent, so 4 KB pieces cap every record
+// at 4 KB whatever the connection has been doing — which is what lets a bridge
+// with 17 KB to spare decrypt them.
+const ranged = (id, range) => fetch(`${BASE}/devices/me/print-jobs/${id}/raster`, {
+  headers: { ...H, range, 'accept-encoding': 'gzip, deflate, br' },
+});
+ok('a whole fetch says ranges are welcome', res.headers.get('accept-ranges') === 'bytes', String(res.headers.get('accept-ranges')));
+const tag = res.headers.get('etag');
+ok('...and carries a tag for the render', !!tag, String(tag));
+
+const PIECE = 4096;
+const assembled = Buffer.alloc(job.rasterBytes);
+const statuses = [];
+let piecesOk = true;
+for (let start = 0; start < job.rasterBytes; start += PIECE) {
+  const end = Math.min(start + PIECE, job.rasterBytes) - 1;
+  const part = await ranged(job.id, `bytes=${start}-${start + PIECE - 1}`);
+  const bytes = Buffer.from(await part.arrayBuffer());
+  statuses.push(part.status);
+  piecesOk &&= part.status === 206 &&
+    part.headers.get('content-range') === `bytes ${start}-${end}/${job.rasterBytes}` &&
+    Number(part.headers.get('content-length')) === end - start + 1 && bytes.length === end - start + 1 &&
+    !part.headers.get('transfer-encoding') && !part.headers.get('content-encoding') &&
+    part.headers.get('etag') === tag && part.headers.get('content-type') === 'application/octet-stream';
+  bytes.copy(assembled, start);
+}
+ok(`the raster comes in ${statuses.length} pieces of 206, each exactly the part asked for`, piecesOk,
+  statuses.join(' '));
+ok('...which put together are the whole raster, byte for byte', assembled.equals(body));
+
+const lastPiece = await ranged(job.id, `bytes=53248-57343`);
+ok('a range past the end is clamped to the last byte, not refused',
+  lastPiece.status === 206 && lastPiece.headers.get('content-range') === `bytes 53248-56447/${job.rasterBytes}` &&
+    Number(lastPiece.headers.get('content-length')) === 3200,
+  `${lastPiece.status} ${lastPiece.headers.get('content-range')} ${lastPiece.headers.get('content-length')}`);
+
+const beyond = await ranged(job.id, `bytes=${job.rasterBytes}-${job.rasterBytes + 4095}`);
+ok('a range that starts past the end is 416, naming the size',
+  beyond.status === 416 && beyond.headers.get('content-range') === `bytes */${job.rasterBytes}`,
+  `${beyond.status} ${beyond.headers.get('content-range')}`);
+
+const several = await ranged(job.id, 'bytes=0-99,200-299');
+ok('several ranges at once get the whole raster', several.status === 200 &&
+  Buffer.from(await several.arrayBuffer()).equals(body), `HTTP ${several.status}`);
+
 const after = await prisma.printJob.findUnique({ where: { id: job.id } });
 ok('fetching changes nothing about the job — attempts, lease, status',
   after.attempts === before.attempts && after.claimUntil.getTime() === before.claimUntil.getTime() &&
@@ -111,6 +157,8 @@ await prisma.printJob.delete({ where: { id: unclaimed.id } });
 await fetch(`${BASE}/devices/me/print-jobs/${job.id}/ack`, { method: 'POST', headers: H });
 const settled = await raster(job.id);
 ok('once acknowledged it is 410 — drop it, do not retry', settled.status === 410, `HTTP ${settled.status}`);
+const settledPiece = await ranged(job.id, 'bytes=0-4095');
+ok('...and so is a piece of it', settledPiece.status === 410, `HTTP ${settledPiece.status}`);
 
 // ─── The inline claim is unchanged ───────────────────────────────────────────
 await prisma.printJob.create({ data: { orgId: org.id, stationId: station.id, kind: 'calibration' } });
