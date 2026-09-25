@@ -90,7 +90,7 @@ export const PRINTER_MODEL: Record<PrinterModelId, PrinterModel> = {
 
 // ─── Stock ────────────────────────────────────────────────────────────────────
 
-export const PAPER_SIZES = ['50x30', '62x100'] as const;
+export const PAPER_SIZES = ['50x30', '62x100', '25x67'] as const;
 export type PaperSize = (typeof PAPER_SIZES)[number];
 
 /**
@@ -107,7 +107,13 @@ export interface LabelSize {
   label: string;
   widthMm: number;
   heightMm: number;
-  tier: LabelTier;
+  /**
+   * Null for stock the server never draws on. The iPad prints to it directly
+   * over Bluetooth with its own layouts; here it exists only so a printer can be
+   * set up with it and synced. Every render refuses it — see
+   * `LabelRendererService`.
+   */
+  tier: LabelTier | null;
   /** Models this stock runs on. Media wider than the head is unprintable. */
   models: PrinterModelId[];
   /**
@@ -143,6 +149,23 @@ export const LABEL_SIZE: Record<PaperSize, LabelSize> = {
     // ever the inset.
     defaultMargins: { marginTop: 16, marginBottom: 16, marginLeft: 16, marginRight: 16 },
   },
+  /*
+   * Temporary, and the iPad's alone: it prints to this stock directly over
+   * Bluetooth, and nothing here — item tags, receipts, printer or QR labels —
+   * is drawn on it. Declared after 62 × 100 so the M221's default stays the
+   * one the server can render.
+   */
+  '25x67': {
+    id: '25x67',
+    label: '25 × 67 mm',
+    widthMm: 25,
+    heightMm: 67,
+    tier: null,
+    models: ['m221'],
+    // The M221's other stock's inset. The iPad reads these from the printer row,
+    // and anyone who needs different can override them there.
+    defaultMargins: { marginTop: 16, marginBottom: 16, marginLeft: 16, marginRight: 16 },
+  },
 };
 
 // ─── The compact tier's branding strip ────────────────────────────────────────
@@ -169,7 +192,7 @@ export interface TargetGeometry {
   mediaOffsetDots: number;
   /** Canvas height, feed rows excluded. */
   canvasHeightDots: number;
-  tier: LabelTier;
+  tier: LabelTier | null;
 }
 
 export function geometryOf(target: PrintTarget): TargetGeometry {

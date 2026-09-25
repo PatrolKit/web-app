@@ -80,17 +80,21 @@ export const PRINTER_MODEL_LABELS: Record<PrinterModelId, string> = {
   m221: 'Phomemo M221',
 };
 
-export const PAPER_SIZES = ['50x30', '62x100'] as const;
+export const PAPER_SIZES = ['50x30', '62x100', '25x67'] as const;
 export type PaperSize = typeof PAPER_SIZES[number];
 
 export const PAPER_SIZE_LABELS: Record<PaperSize, string> = {
   '50x30': '50 × 30 mm',
   '62x100': '62 × 100 mm',
+  // The iPad prints to this stock directly; the server draws nothing on it, so
+  // printing from the web to a printer set to it is refused.
+  '25x67': '25 × 67 mm (iPad only)',
 };
 
 const PAPER_SIZE_MODELS: Record<PaperSize, readonly PrinterModelId[]> = {
   '50x30': ['m110'],
   '62x100': ['m221'],
+  '25x67': ['m221'],
 };
 
 /** The stock this model can take, in declaration order. */

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { createCanvas, type SKRSContext2D } from '@napi-rs/canvas';
 import { ensureLabelFonts } from './fonts';
 import { buildPrintJob } from './escpos.util';
@@ -34,6 +34,20 @@ type DrawFn = (ctx: SKRSContext2D, w: number, h: number) => void | Promise<void>
  * a margin change ships as a server deploy instead of a firmware rollout, and
  * there is no second renderer to drift out of agreement with this one.
  */
+/**
+ * Refuses stock the server never draws on (`tier: null`) — today 25 × 67, which
+ * the iPad prints to directly. A 400 from a web request; from a bridge claim,
+ * the job fails with this message rather than printing a layout meant for
+ * something else.
+ */
+function assertServerDraws(target: PrintTarget): void {
+  if (target.size.tier === null) {
+    throw new BadRequestException(
+      `${target.size.label} labels are printed from the iPad only. Printing them from here is not supported.`,
+    );
+  }
+}
+
 @Injectable()
 export class LabelRendererService {
   constructor() {
@@ -118,6 +132,9 @@ export class LabelRendererService {
     items: { name: string; sku: string; priceCents: number }[],
     target: PrintTarget = DEFAULT_TARGET,
   ): Promise<boolean[][][]> {
+    // Here as well as in `compose`: an empty list never reaches it, and would
+    // otherwise answer "no pages" for stock that cannot take any.
+    assertServerDraws(target);
     const pages: boolean[][][] = [];
     let offset = 0;
     let isFirst = true;
@@ -137,6 +154,7 @@ export class LabelRendererService {
   }
 
   calibration(target: PrintTarget = DEFAULT_TARGET): boolean[][] {
+    assertServerDraws(target);
     return calibrationPattern(target);
   }
 
@@ -209,6 +227,7 @@ export class LabelRendererService {
    * margins until it looked right, which is why `40x30` was a size in name only.
    */
   private async compose(draw: DrawFn, target: PrintTarget): Promise<boolean[][]> {
+    assertServerDraws(target);
     const { margins } = target;
     const { headWidthDots, mediaWidthDots, mediaOffsetDots, canvasHeightDots, tier } =
       geometryOf(target);
