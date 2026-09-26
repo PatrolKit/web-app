@@ -14,9 +14,12 @@ interface SwapForm {
   locationId: string;
   legacyTicketsEnabled: boolean;
   legacyTicketsOnly: boolean;
+  printLegacyHelperLabels: boolean;
+  labelsPerItem: number;
 }
 const emptyForm: SwapForm = {
   title: '', locationId: '', legacyTicketsEnabled: false, legacyTicketsOnly: false,
+  printLegacyHelperLabels: false, labelsPerItem: 1,
 };
 
 export default function SwapsPage() {
@@ -66,6 +69,9 @@ export default function SwapsPage() {
         form.legacyTicketsEnabled !== s.legacyTicketsEnabled ? form.legacyTicketsEnabled : undefined,
       legacyTicketsOnly:
         form.legacyTicketsOnly !== s.legacyTicketsOnly ? form.legacyTicketsOnly : undefined,
+      printLegacyHelperLabels:
+        form.printLegacyHelperLabels !== s.printLegacyHelperLabels ? form.printLegacyHelperLabels : undefined,
+      labelsPerItem: form.labelsPerItem !== s.labelsPerItem ? form.labelsPerItem : undefined,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] }); qc.invalidateQueries({ queryKey: ['ski-swap/swaps-all', orgId] });
@@ -94,6 +100,8 @@ export default function SwapsPage() {
       locationId: s.locationId,
       legacyTicketsEnabled: s.legacyTicketsEnabled,
       legacyTicketsOnly: s.legacyTicketsOnly,
+      printLegacyHelperLabels: s.printLegacyHelperLabels,
+      labelsPerItem: s.labelsPerItem,
     });
     setShowForm(true);
   }
@@ -191,6 +199,7 @@ export default function SwapsPage() {
                   ...form,
                   legacyTicketsEnabled: e.target.checked,
                   legacyTicketsOnly: e.target.checked ? form.legacyTicketsOnly : false,
+                  printLegacyHelperLabels: e.target.checked ? form.printLegacyHelperLabels : false,
                 })}
                 className="mt-0.5"
               />
@@ -214,7 +223,11 @@ export default function SwapsPage() {
               <input
                 type="checkbox"
                 checked={form.legacyTicketsOnly}
-                onChange={(e) => setForm({ ...form, legacyTicketsOnly: e.target.checked })}
+                onChange={(e) => setForm({
+                  ...form,
+                  legacyTicketsOnly: e.target.checked,
+                  printLegacyHelperLabels: e.target.checked ? form.printLegacyHelperLabels : false,
+                })}
                 className="mt-0.5"
               />
               <span>
@@ -225,6 +238,51 @@ export default function SwapsPage() {
                 </span>
               </span>
             </label>
+          )}
+
+          {/* One level further in, by the same rule: helper labels only mean
+              anything on a swap that takes tickets and nothing else. */}
+          {editSwap && form.legacyTicketsEnabled && form.legacyTicketsOnly && (
+            <label className="flex items-start gap-3 pl-14">
+              <input
+                type="checkbox"
+                checked={form.printLegacyHelperLabels}
+                onChange={(e) => setForm({ ...form, printLegacyHelperLabels: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block text-sm text-white">Print legacy helper labels</span>
+                <span className="block text-gray-500 text-xs mt-0.5">
+                  The staff iPad prints a helper label to go with each legacy ticket.
+                </span>
+              </span>
+            </label>
+          )}
+
+          {/* Edit only, like the ticket settings: a new swap starts with its
+              org's last swap's number, which is what a patrol usually wants. */}
+          {editSwap && (
+            <div className="flex items-center justify-between gap-4">
+              <span>
+                <span className="block text-sm text-white">Labels per item</span>
+                <span className="block text-gray-500 text-xs mt-0.5">
+                  Price tags printed each time an item's tag is printed, for this swap.
+                </span>
+              </span>
+              <span className="flex items-center gap-2" role="group" aria-label="Labels per item">
+                {[1, 2, 3].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    aria-pressed={form.labelsPerItem === n}
+                    onClick={() => setForm({ ...form, labelsPerItem: n })}
+                    className={`w-9 h-9 rounded text-sm font-medium transition ${form.labelsPerItem === n ? 'bg-brand-600 text-white' : 'bg-surface-100 text-gray-300 hover:bg-surface-200'}`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </span>
+            </div>
           )}
 
           <div className="flex gap-2">

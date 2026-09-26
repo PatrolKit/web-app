@@ -34,6 +34,9 @@ export const PatchSwapSchema = z
     locationId: z.string().min(1).optional(),
     legacyTicketsEnabled: z.boolean().optional(),
     legacyTicketsOnly: z.boolean().optional(),
+    /** Refused unless the swap is, or is being made, legacy-tickets-only. */
+    printLegacyHelperLabels: z.boolean().optional(),
+    labelsPerItem: z.number().int().min(1).max(3).optional(),
   })
   .strict()
   // Counted rather than named, so a field added above cannot be silently
@@ -69,6 +72,14 @@ export const SwapResponseSchema = z.object({
    * Absent reads as off.
    */
   legacyTicketsOnly: z.boolean(),
+  /**
+   * Whether the staff iPad prints a helper label with each legacy ticket. The
+   * iPad decides what one looks like and prints it; the server keeps the
+   * switch. Only ever true alongside `legacyTicketsOnly`, which clears it.
+   */
+  printLegacyHelperLabels: z.boolean(),
+  /** Price tags printed each time an item's tag is printed, 1 to 3. */
+  labelsPerItem: z.number().int(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -727,7 +738,6 @@ export type SwapScannerResponse = z.infer<typeof SwapScannerResponseSchema>;
  */
 export const UpdateSkiSwapSettingsSchema = z
   .object({
-    labelsPerItem: z.number().int().min(1).max(3).optional(),
     /**
      * Whether a self check-in item waits for a staff member to scan it before
      * it can be sold. Decides what happens to items checked in from now on;
@@ -748,6 +758,11 @@ export const UpdateSkiSwapSettingsSchema = z
   .strict();
 
 export const SkiSwapSettingsResponseSchema = z.object({
+  /**
+   * Deprecated: labels per item is a swap's setting now (`SwapResponse`).
+   * Still sent, as the org's running swap's value, for iPads that read it
+   * from here; no longer written through here.
+   */
   labelsPerItem: z.number().int(),
   requireConsignmentScan: z.boolean(),
   /** "20%", "20.5%". The form this is edited and displayed in, everywhere. */

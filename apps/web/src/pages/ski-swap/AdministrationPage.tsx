@@ -62,7 +62,6 @@ export default function AdministrationPage() {
         deviceLabel="check-in iPads"
       />
 
-      <LabelsPerItemSection orgId={orgId} />
 
       <AcceptingItemsSection orgId={orgId} />
 
@@ -160,47 +159,6 @@ export default function AdministrationPage() {
         </label>
         <ResetButton orgId={orgId} disabled={resetConfirm !== 'RESET'} onDone={() => { setResetConfirm(''); qc.invalidateQueries(); }} />
       </div>
-      </div>
-    </div>
-  );
-}
-
-function LabelsPerItemSection({ orgId }: { orgId: string }) {
-  const qc = useQueryClient();
-  const { data: settings } = useQuery({
-    queryKey: ['ski-swap/settings', orgId],
-    queryFn: () => api.skiSwap.getSettings(orgId),
-    enabled: !!orgId,
-    staleTime: 60_000,
-  });
-  const mutation = useMutation({
-    mutationFn: (labelsPerItem: number) => api.skiSwap.updateSettings(orgId, { labelsPerItem }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/settings', orgId] }),
-  });
-  const current = settings?.labelsPerItem ?? 1;
-
-  return (
-    <div className="space-y-3">
-      <h2 className="text-white font-semibold">Printing</h2>
-      <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-white">Labels per item</p>
-            <p className="text-xs text-gray-500 mt-0.5">Number of price tag labels printed each time an item is printed</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {[1, 2, 3].map((n) => (
-              <button
-                key={n}
-                onClick={() => mutation.mutate(n)}
-                disabled={mutation.isPending}
-                className={`w-9 h-9 rounded text-sm font-medium transition ${current === n ? 'bg-brand-600 text-white' : 'bg-surface-100 text-gray-300 hover:bg-surface-200'} disabled:opacity-40`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );

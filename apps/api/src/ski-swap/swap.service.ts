@@ -51,6 +51,14 @@ export class SwapService {
     const parentCategoryId = await this.findOrCreatePatrolKitCategory(client);
     const squareCategoryId = await this.findOrCreateSwapCategory(client, parentCategoryId, title);
 
+    // A new swap prints as many tags as the org's last one did, until somebody
+    // says otherwise: a patrol that tags skis at both ends does it every year.
+    const previous = await this.prisma.skiSwap.findFirst({
+      where: { orgId },
+      orderBy: { createdAt: 'desc' },
+      select: { labelsPerItem: true },
+    });
+
     const swap = await this.prisma.skiSwap.create({
       data: {
         id: createId(),
@@ -60,6 +68,7 @@ export class SwapService {
         locationId,
         active: false,
         skuPrefix,
+        labelsPerItem: previous?.labelsPerItem ?? 1,
         createdBy: actorId,
       },
     });
@@ -73,9 +82,18 @@ export class SwapService {
     data: {
       title?: string; active?: boolean; locationId?: string;
       legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean;
+      printLegacyHelperLabels?: boolean; labelsPerItem?: number;
     },
   ): Promise<SwapResponse> {
     const swap = await this.findOrThrow(orgId, swapId);
+
+    // What "tickets only" will be once this patch lands: turning acceptance
+    // off clears it, below.
+    const willBeTicketsOnly =
+      data.legacyTicketsEnabled === false ? false : (data.legacyTicketsOnly ?? swap.legacyTicketsOnly);
+    if (data.printLegacyHelperLabels === true && !willBeTicketsOnly) {
+      throw new BadRequestException('Helper labels apply only to a swap that takes legacy tickets only');
+    }
 
     let newSkuPrefix = swap.skuPrefix;
     let squareCategoryId = swap.squareCategoryId;
@@ -156,6 +174,13 @@ export class SwapService {
             : data.legacyTicketsOnly !== undefined
               ? { legacyTicketsOnly: data.legacyTicketsOnly }
               : {}),
+          // And helper labels cannot outlive "tickets only", by the same rule.
+          ...(!willBeTicketsOnly
+            ? { printLegacyHelperLabels: false }
+            : data.printLegacyHelperLabels !== undefined
+              ? { printLegacyHelperLabels: data.printLegacyHelperLabels }
+              : {}),
+          ...(data.labelsPerItem !== undefined ? { labelsPerItem: data.labelsPerItem } : {}),
           activeSkuPrefix: willBeActive ? newSkuPrefix : null,
         },
       })
@@ -312,6 +337,8 @@ export class SwapService {
     skuPrefix: string;
     legacyTicketsEnabled: boolean;
     legacyTicketsOnly: boolean;
+    printLegacyHelperLabels: boolean;
+    labelsPerItem: number;
     createdAt: Date;
     updatedAt: Date;
   }): SwapResponse {
@@ -325,6 +352,8 @@ export class SwapService {
       skuPrefix: swap.skuPrefix,
       legacyTicketsEnabled: swap.legacyTicketsEnabled,
       legacyTicketsOnly: swap.legacyTicketsOnly,
+      printLegacyHelperLabels: swap.printLegacyHelperLabels,
+      labelsPerItem: swap.labelsPerItem,
       createdAt: swap.createdAt.toISOString(),
       updatedAt: swap.updatedAt.toISOString(),
     };

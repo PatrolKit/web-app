@@ -45,7 +45,7 @@ export class SkiSwapSettingsController {
   /**
    * The PIN is a sub-resource rather than a field on the settings response
    * because the two have different readers. Settings is read at `:report` level
-   * — `SkiSwapLayout` fetches it for `labelsPerItem` on every ski-swap page —
+   * — `SkiSwapLayout` fetches it for `requireConsignmentScan` on every ski-swap page —
    * and a PIN stored in the clear (Plan 14 D4) has no business travelling to
    * all of them. A separate route puts the rule in a decorator instead of in a
    * response shape that varies by caller.

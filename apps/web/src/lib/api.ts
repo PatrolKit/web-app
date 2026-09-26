@@ -533,6 +533,7 @@ export const api = {
       data: {
         title?: string; active?: boolean; locationId?: string;
         legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean;
+        printLegacyHelperLabels?: boolean; labelsPerItem?: number;
       },
     ) =>
       request<import('./api.types').SwapResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}`, {
@@ -848,7 +849,7 @@ export const api = {
         method: 'PATCH', body: JSON.stringify(data),
       }),
     sellerListSwaps: (orgId: string) =>
-      request<{ id: string; title: string }[]>(`/orgs/${orgId}/ski-swap/seller/me/swaps`),
+      request<{ id: string; title: string; labelsPerItem: number }[]>(`/orgs/${orgId}/ski-swap/seller/me/swaps`),
     sellerListItems: (orgId: string, swapId?: string) =>
       request<{ items: import('./api.types').ItemResponse[]; total: number }>(
         `/orgs/${orgId}/ski-swap/seller/me/items${swapId ? `?swapId=${swapId}` : ''}`
@@ -1022,7 +1023,6 @@ export const api = {
       orgId: string,
       // A patch: sending one setting must not clear the other.
       data: {
-        labelsPerItem?: number;
         requireConsignmentScan?: boolean;
         /** A percentage, as typed: "20", "20.5", "20.5%". Never basis points. */
         commissionPercent?: string;

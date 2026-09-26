@@ -7,7 +7,8 @@ import SwapItemsPanel from './SwapItemsPanel';
 import TicketItemImportModal from './TicketItemImportModal';
 
 export default function BusinessSellerPage() {
-  const { orgId, sellerSelectedSwapId, setSellerSelectedSwapId, labelsPerItem } = useOutletContext<SkiSwapContext>();
+  const { orgId, sellerSelectedSwapId, setSellerSelectedSwapId, sellerSwaps } = useOutletContext<SkiSwapContext>();
+  const labelsPerItem = sellerSwaps.find((s) => s.id === sellerSelectedSwapId)?.labelsPerItem ?? 1;
   void setSellerSelectedSwapId; // consumed by SkiSwapLayout
   const qc = useQueryClient();
 

@@ -51,10 +51,12 @@ export class SellerSelfService {
 
   // ─── Active swaps (for swap selector) ────────────────────────────────────
 
-  async listActiveSwaps(orgId: string): Promise<{ id: string; title: string }[]> {
+  async listActiveSwaps(orgId: string): Promise<{ id: string; title: string; labelsPerItem: number }[]> {
     const swaps = await this.prisma.skiSwap.findMany({
       where: { orgId, active: true },
-      select: { id: true, title: true },
+      // `labelsPerItem` because a business seller prints its own tags, as
+      // many per item as the swap asks for.
+      select: { id: true, title: true, labelsPerItem: true },
       orderBy: { createdAt: 'desc' },
     });
     return swaps;

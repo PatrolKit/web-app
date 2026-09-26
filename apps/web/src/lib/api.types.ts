@@ -246,6 +246,13 @@ export interface SwapResponse {
    * when that goes off, so the two can never contradict each other.
    */
   legacyTicketsOnly: boolean;
+  /**
+   * Whether the staff iPad prints a helper label with each legacy ticket.
+   * Only ever true alongside `legacyTicketsOnly`; the server clears it with that.
+   */
+  printLegacyHelperLabels: boolean;
+  /** Price tags printed each time an item's tag is printed, 1 to 3. */
+  labelsPerItem: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -534,6 +541,7 @@ export interface SwapScanner {
 }
 
 export interface SkiSwapSettings {
+  /** Deprecated: read the swap's `labelsPerItem`. Still sent for older iPads. */
   labelsPerItem: number;
   /**
    * Whether a self check-in item waits for a staff member to scan it before it

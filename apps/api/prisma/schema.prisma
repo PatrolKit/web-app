@@ -407,6 +407,19 @@ model SkiSwap {
   /// none. Nothing enforces it yet; it is read by the staff iPad to decide what
   /// it offers.
   legacyTicketsOnly    Boolean  @default(false)
+  /// Whether the staff iPad prints a helper label to go with each legacy
+  /// ticket. The iPad decides what one is and prints it itself; the server
+  /// only keeps the switch.
+  ///
+  /// Meaningful only with `legacyTicketsOnly`, and cleared whenever that goes
+  /// off, for the same reason that one is cleared with `legacyTicketsEnabled`.
+  printLegacyHelperLabels Boolean @default(false)
+  /// Price tags printed each time an item's tag is printed, 1 to 3.
+  ///
+  /// Per swap rather than per org: one swap's tags go on skis that get a tag
+  /// at each end, another's on a single hang tag. It used to be an org setting
+  /// (`SkiSwapSettings`), and each swap took that value when it moved here.
+  labelsPerItem        Int      @default(1)
   createdBy            String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -746,7 +759,6 @@ model SwapSkuCounter {
 model SkiSwapSettings {
   id            String @id @default(cuid())
   orgId         String @unique
-  labelsPerItem Int    @default(1)
 
   /// Whether a self check-in item waits for a staff member to scan it before
   /// it can be sold. Off by default: an org that has not asked for the extra

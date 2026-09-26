@@ -8,7 +8,8 @@ import SwapItemsPanel from './SwapItemsPanel';
 import ProxyItemImportModal from './ProxyItemImportModal';
 
 export default function ItemsPage() {
-  const { orgId, perms, selectedSwap, labelsPerItem } = useOutletContext<SkiSwapContext>();
+  const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
+  const labelsPerItem = selectedSwap?.labelsPerItem ?? 1;
   const canManage = perms.has('ski_swap:manage');
   const swapId = selectedSwap?.id ?? null;
   const qc = useQueryClient();

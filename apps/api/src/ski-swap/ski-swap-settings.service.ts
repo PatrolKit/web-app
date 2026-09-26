@@ -13,7 +13,7 @@ export class SkiSwapSettingsService {
   async get(orgId: string): Promise<SkiSwapSettingsResponse> {
     const row = await this.prisma.skiSwapSettings.findUnique({ where: { orgId } });
     return {
-      labelsPerItem: row?.labelsPerItem ?? DEFAULT_LABELS_PER_ITEM,
+      labelsPerItem: await this.runningSwapLabelsPerItem(orgId),
       // Off for an org that has never said otherwise: the extra step belongs to
       // organisations that asked for it.
       requireConsignmentScan: row?.requireConsignmentScan ?? false,
@@ -28,13 +28,32 @@ export class SkiSwapSettingsService {
   }
 
   /**
-   * A patch, not a replacement — the two settings are edited from different
-   * controls and neither should clear the other by being saved.
+   * A patch, not a replacement — the settings are edited from different
+   * controls and none should clear another by being saved.
    */
+  /**
+   * Labels per item moved to the swap. It is still answered here, for iPads
+   * that read it from settings: the value of the org's running swap — the most
+   * recently changed, if more than one is — or of its newest swap otherwise.
+   */
+  private async runningSwapLabelsPerItem(orgId: string): Promise<number> {
+    const swap =
+      (await this.prisma.skiSwap.findFirst({
+        where: { orgId, active: true },
+        orderBy: { updatedAt: 'desc' },
+        select: { labelsPerItem: true },
+      })) ??
+      (await this.prisma.skiSwap.findFirst({
+        where: { orgId },
+        orderBy: { createdAt: 'desc' },
+        select: { labelsPerItem: true },
+      }));
+    return swap?.labelsPerItem ?? DEFAULT_LABELS_PER_ITEM;
+  }
+
   async upsert(
     orgId: string,
     data: {
-      labelsPerItem?: number;
       requireConsignmentScan?: boolean;
       commissionPercent?: string | number;
     },
@@ -57,7 +76,6 @@ export class SkiSwapSettingsService {
     const row = await this.prisma.skiSwapSettings.upsert({
       where: { orgId },
       update: {
-        ...(data.labelsPerItem !== undefined ? { labelsPerItem: data.labelsPerItem } : {}),
         ...(data.requireConsignmentScan !== undefined
           ? { requireConsignmentScan: data.requireConsignmentScan }
           : {}),
@@ -65,7 +83,6 @@ export class SkiSwapSettingsService {
       },
       create: {
         orgId,
-        labelsPerItem: data.labelsPerItem ?? DEFAULT_LABELS_PER_ITEM,
         requireConsignmentScan: data.requireConsignmentScan ?? false,
         commissionBasisPoints: commissionBasisPoints ?? 0,
       },
@@ -90,7 +107,7 @@ export class SkiSwapSettingsService {
     }
 
     return {
-      labelsPerItem: row.labelsPerItem,
+      labelsPerItem: await this.runningSwapLabelsPerItem(orgId),
       requireConsignmentScan: row.requireConsignmentScan,
       taxonomyVersion: row.taxonomyVersion,
       commissionPercent: basisPointsToPercent(row.commissionBasisPoints),

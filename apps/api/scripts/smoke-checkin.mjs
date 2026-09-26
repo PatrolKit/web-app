@@ -177,8 +177,8 @@ const retry = await addItem('Volkl Kendo 88 skis, 177cm', 24900, `${runKey}-1`);
 ok('a retried save returns the same item, not a second one', retry.id === item1.id,
    `${retry.id} vs ${item1.id}`);
 
-const settings = await prisma.skiSwapSettings.findUnique({ where: { orgId: org.id } });
-const perItem = settings?.labelsPerItem ?? 1;
+// The swap's own setting, since labels per item moved there from the org.
+const perItem = (await prisma.skiSwap.findUnique({ where: { id: swap.id } })).labelsPerItem;
 let jobs = await prisma.printJob.count({ where: { stationId: station.id, kind: 'item' } });
 ok('saving queued a tag per item', jobs === perItem * 2, `${jobs} jobs for 2 items @ ${perItem}`);
 

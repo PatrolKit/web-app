@@ -17,8 +17,7 @@ export interface SkiSwapContext {
   swaps: SwapResponse[];
   sellerSelectedSwapId: string | null;
   setSellerSelectedSwapId: (id: string) => void;
-  sellerSwaps: { id: string; title: string }[];
-  labelsPerItem: number;
+  sellerSwaps: { id: string; title: string; labelsPerItem: number }[];
   /** Whether self check-in items wait for a staff member to scan them. */
   requireConsignmentScan: boolean;
 }
@@ -55,7 +54,6 @@ export default function SkiSwapLayout() {
     enabled: !!orgId && perms.has('ski_swap:report'),
     staleTime: 60_000,
   });
-  const labelsPerItem = skiSwapSettings?.labelsPerItem ?? 1;
   const requireConsignmentScan = skiSwapSettings?.requireConsignmentScan ?? false;
 
   const squareConfigured = status?.squareConfigured;
@@ -237,7 +235,7 @@ export default function SkiSwapLayout() {
         )}
       </nav>
 
-      <Outlet context={{ orgId, perms, selectedSwap, setSelectedSwapId, swaps, sellerSelectedSwapId, setSellerSelectedSwapId, sellerSwaps, labelsPerItem, requireConsignmentScan } satisfies SkiSwapContext} />
+      <Outlet context={{ orgId, perms, selectedSwap, setSelectedSwapId, swaps, sellerSelectedSwapId, setSellerSelectedSwapId, sellerSwaps, requireConsignmentScan } satisfies SkiSwapContext} />
     </div>
   );
 }

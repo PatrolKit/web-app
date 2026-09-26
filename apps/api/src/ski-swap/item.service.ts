@@ -319,7 +319,12 @@ export class ItemService {
     // Nothing to queue when the tag is already on the item, and nothing to queue
     // through a station that has no bridge — the client printed it itself.
     if (station?.bridgeDeviceId && !data.alreadyPrinted) {
-      const { labelsPerItem } = await this.settings.get(orgId);
+      // The swap's own setting: one swap's tags go on skis that take one at
+      // each end, another's on a single hang tag.
+      const { labelsPerItem } = await this.prisma.skiSwap.findUniqueOrThrow({
+        where: { id: swapId },
+        select: { labelsPerItem: true },
+      });
       await this.printQueue.enqueueItemTags({
         orgId,
         stationId: station.id,
