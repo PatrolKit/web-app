@@ -371,6 +371,20 @@ export const api = {
       request<import('./api.types').LimitSeries>(
         `/admin/health/limits/${encodeURIComponent(limitId)}/series?range=${range}`,
       ),
+
+    /** Print bridge telemetry (webprinter_esp32 Plan 4). */
+    telemetryBridges: () =>
+      request<import('./api.types').TelemetryBridge[]>('/admin/telemetry/bridges'),
+    telemetryFleet: (range: import('./api.types').TelemetryRange) =>
+      request<import('./api.types').TelemetryFleet>(`/admin/telemetry/bridges/summary?range=${range}`),
+    telemetryBridge: (deviceId: string, range: import('./api.types').TelemetryRange) =>
+      request<import('./api.types').TelemetryBridgeHistory>(
+        `/admin/telemetry/bridges/${encodeURIComponent(deviceId)}?range=${range}`,
+      ),
+    setTelemetryInterval: (deviceId: string, intervalS: number | null) =>
+      request<{ intervalS: number }>(`/admin/telemetry/bridges/${encodeURIComponent(deviceId)}/interval`, {
+        method: 'PATCH', body: JSON.stringify({ intervalS }),
+      }),
   },
 
   /**

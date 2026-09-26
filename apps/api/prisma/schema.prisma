@@ -285,6 +285,10 @@ model Device {
   /// is happening and going nowhere: a `ready` link with a depth climbing off
   /// zero is an operator working normally whose work is not landing.
   scanQueueDepth Int?
+  /// How often this device sends telemetry, in seconds; null is the firmware's
+  /// default of 300. Turned up for one bridge during an investigation, without
+  /// reflashing it. Kept within 60–3600, which the firmware clamps to anyway.
+  telemetryIntervalS Int?
 
   /// The resort this terminal clocks people in at. Meaningful only for
   /// `time_clock.terminal`, the way `printerLink` is meaningful only for a
@@ -305,6 +309,8 @@ model Device {
   /// The printer this bridge drives. Only a bridge ever has one.
   bridgedPrinter  SwapPrinter?    @relation("BridgedPrinter")
   bridgedScanner  SwapScanner?    @relation("BridgedScanner")
+  telemetry       DeviceTelemetry[]
+  outages         DeviceOutage[]
 
   /// What an image-based device last told us about itself, from the headers on
   /// its bootstrap check-in. Meaningful only for devices running the PatrolKit
@@ -1474,4 +1480,66 @@ model LimitUsage {
 
   @@id([limitId, hourStart, orgId, swapId])
   @@index([hourStart])
+}
+
+/// One telemetry report from a device, as it was sent (webprinter_esp32 Plan 4).
+///
+/// `body` is the report verbatim, fields we do not know included: telemetry
+/// gains fields more often than anything else the firmware sends, and a server
+/// that refused unknown ones is how a bridge was once taken offline. The
+/// columns beside it are copied out of the body for querying, and are null
+/// wherever the body left a value out or sent it with the wrong type.
+model DeviceTelemetry {
+  id               String   @id @default(cuid())
+  deviceId         String
+  /// Our clock. The device only counts from boot.
+  receivedAt       DateTime @default(now())
+  body             Json
+  /// Known fields that arrived with the wrong type, by path. Kept as sent in
+  /// `body`; left out of the columns.
+  malformedFields  Json?
+
+  v                Int?
+  firmwareVersion  String?  @db.VarChar(64)
+  board            String?  @db.VarChar(64)
+  bootCount        Int?
+  resetReason      String?  @db.VarChar(32)
+  uptimeMs         BigInt?
+  /// `receivedAt - uptimeMs`: when this boot happened, by our clock.
+  bootAt           DateTime?
+  /// Boots since this device's previous report — usually 0; 1 on the first
+  /// report after a reboot; more when reports were missed during a crash loop.
+  bootsSincePrevious Int    @default(0)
+  /// A new boot whose reason was a crash or a power fault. See `UNPLANNED_RESETS`.
+  unplannedReboot  Boolean  @default(false)
+  memFree          Int?
+  memLargestBlock  Int?
+  memMinFreeEver   Int?
+  psram            Boolean?
+  wifiRssi         Int?
+  printerLink      String?  @db.VarChar(16)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, receivedAt])
+  @@index([receivedAt])
+}
+
+/// A stretch when a bridge stopped checking in, measured from its claims.
+///
+/// A bridge claims every one to eleven seconds, so a gap longer than the
+/// twenty-second offline rule is an outage. Recorded when the bridge comes
+/// back; one still going is read from `Device.lastSeenAt` instead.
+model DeviceOutage {
+  id        String   @id @default(cuid())
+  deviceId  String
+  /// When the bridge was last seen before the gap.
+  startedAt DateTime
+  /// When it checked in again.
+  endedAt   DateTime
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, startedAt])
+  @@index([endedAt])
 }

@@ -7,6 +7,7 @@ import { LabelRendererService } from './printing/label-renderer.service';
 import { PrintRecipeService, printTargetFor, type PrintRecipeKind } from './printing/print-recipe.service';
 import type { PrintTarget } from './printing/geometry';
 import type { StationQueueResponse } from '../contracts/ski-swap.contracts';
+import { TelemetryService } from '../telemetry/telemetry.service';
 
 /** How long a claimed job is held before it returns to the queue. */
 const CLAIM_SECONDS = 90;
@@ -151,6 +152,7 @@ export class PrintQueueService {
     private readonly prisma: PrismaService,
     private readonly renderer: LabelRendererService,
     private readonly recipes: PrintRecipeService,
+    private readonly telemetry: TelemetryService,
   ) {}
 
   // ─── Enqueue ────────────────────────────────────────────────────────────────
@@ -331,10 +333,17 @@ export class PrintQueueService {
     // it. Recording this after the 404 meant an unbound bridge could never
     // report its printer link at all, and one sitting there connected to a
     // printer read "printer unconfirmed" indefinitely.
+    // When it was seen before this, so a long enough gap can be recorded as
+    // an outage once we know whether it serves a station.
+    const seenBefore = await this.prisma.device.findUnique({
+      where: { id: deviceId },
+      select: { lastSeenAt: true },
+    });
+    const now = new Date();
     await this.prisma.device.update({
       where: { id: deviceId },
       data: {
-        lastSeenAt: new Date(),
+        lastSeenAt: now,
         // Only when reported. A bridge that says nothing leaves the previous
         // answer standing, and its age is what makes it readable.
         ...(printerLink ? { printerLink, printerLinkAt: new Date() } : {}),
@@ -348,6 +357,10 @@ export class PrintQueueService {
       where: { bridgeDeviceId: deviceId, deletedAt: null },
       include: { bridge: { include: { bridgedPrinter: true, bridgedScanner: true } } },
     });
+    // Best-effort: a claim must never fail over bookkeeping about the bridge.
+    await this.telemetry
+      .recordCheckIn(deviceId, seenBefore?.lastSeenAt ?? null, now, !!station)
+      .catch((err) => this.logger.error({ err, deviceId }, 'Could not record a bridge outage'));
     if (!station) throw new NotFoundException('This device is not bound to a station');
 
     /**

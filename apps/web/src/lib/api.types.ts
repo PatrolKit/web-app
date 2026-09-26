@@ -1052,3 +1052,80 @@ export interface LimitSeries {
   points: { at: string; percent: number | null; refusedCount: number }[];
   top: (HealthPlace & { percent: number; refusedCount: number; nearCount: number })[];
 }
+
+// ─── Device telemetry (webprinter_esp32 Plan 4) ─────────────────────────────
+
+export type TelemetryRange = '24h' | '7d' | '30d' | '90d';
+
+export interface TelemetryBridge {
+  id: string;
+  name: string;
+  clientId: string;
+  org: { id: string; name: string };
+  station: string | null;
+  lastSeenAt: string | null;
+  online: boolean;
+}
+
+export interface TelemetryLatest {
+  receivedAt: string;
+  firmwareVersion: string | null;
+  board: string | null;
+  psram: boolean | null;
+  bootCount: number | null;
+  resetReason: string | null;
+  bootAt: string | null;
+  memFree: number | null;
+  memLargestBlock: number | null;
+  memMinFreeEver: number | null;
+  wifiRssi: number | null;
+  printerLink: string | null;
+}
+
+export interface TelemetryTotals {
+  reboots: number;
+  unplannedReboots: number;
+  outages: number;
+  disconnectedMs: number;
+  lowestMemory: number | null;
+  reports: number;
+}
+
+export interface TelemetryFleet {
+  range: TelemetryRange;
+  generatedAt: string;
+  totals: {
+    bridges: number;
+    online: number;
+    reporting: number;
+    reboots: number;
+    unplannedReboots: number;
+    disconnectedMs: number;
+    lowestMemory: number | null;
+  };
+  firmware: { version: string; bridges: number }[];
+  resetReasons: { reason: string; reboots: number; unplanned: boolean }[];
+  bridges: (TelemetryBridge & TelemetryTotals & { latest: TelemetryLatest | null })[];
+}
+
+export interface TelemetryBridgeHistory {
+  range: TelemetryRange;
+  generatedAt: string;
+  bridge: TelemetryBridge & { intervalS: number; intervalIsDefault: boolean };
+  latest: (TelemetryLatest & { body: unknown; malformedFields: string[] | null }) | null;
+  totals: TelemetryTotals;
+  memory: {
+    bucketMs: number;
+    points: { at: string; free: number | null; minFreeEver: number | null; largestBlock: number | null }[];
+  };
+  reboots: {
+    at: string;
+    reason: string | null;
+    unplanned: boolean;
+    crash: boolean;
+    bootCount: number | null;
+    missed: number;
+    firmwareVersion: string | null;
+  }[];
+  outages: { startedAt: string; endedAt: string | null; ms: number }[];
+}

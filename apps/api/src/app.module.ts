@@ -29,6 +29,7 @@ import { AuditModule } from './common/audit/audit.module';
 import { SkiSwapModule } from './ski-swap/ski-swap.module';
 import { TimeClockModule } from './time-clock/time-clock.module';
 import { SmsModule } from './sms/sms.module';
+import { TelemetryModule } from './telemetry/telemetry.module';
 import { LimitsModule } from './common/limits/limits.module';
 import { KeyedThrottlerGuard } from './common/limits/keyed-throttler.guard';
 import { LIMITS } from './common/limits/limits';
@@ -84,6 +85,7 @@ import appConfig from './config/app.config';
     SkiSwapModule,
     TimeClockModule,
     LimitsModule,
+    TelemetryModule,
     // The numbers here are placeholders the guard never reads: it takes every
     // limit from `LIMITS`, by route and by who is asking. One throttler is
     // still needed, because the guard runs once per throttler configured.

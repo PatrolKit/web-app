@@ -20,7 +20,7 @@ function harness(jobs: Job[]) {
   let renders = 0;
   const writes: unknown[] = [];
   const prisma = {
-    device: { update: async () => ({}) },
+    device: { update: async () => ({}), findUnique: async () => ({ lastSeenAt: new Date() }) },
     checkinStation: {
       findFirst: async () => ({ id: 'station-1', bridge: { bridgedPrinter: null, bridgedScanner: null } }),
     },
@@ -48,7 +48,7 @@ function harness(jobs: Job[]) {
   // Every render is different, so a test can tell a kept raster from a new one.
   const renderer = { toRaster: () => Buffer.from(`raster-${++renders}-`.padEnd(64, '#')) };
   const recipes = { resolve: async () => [[[true, false, true, false, true, false, true, false]]] };
-  const queue = new PrintQueueService(prisma as never, renderer as never, recipes as never);
+  const queue = new PrintQueueService(prisma as never, renderer as never, recipes as never, { recordCheckIn: async () => undefined } as never);
   return { queue, writes, renders: () => renders };
 }
 

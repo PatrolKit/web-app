@@ -18,6 +18,8 @@ import TimeTrackingSettingsPage from './pages/time-tracking/SettingsPage';
 import DeviceSoftwareTab from './pages/admin/DeviceSoftwareTab';
 import ItemTaxonomyTab from './pages/admin/ItemTaxonomyTab';
 import ServerHealthTab from './pages/admin/ServerHealthTab';
+import TelemetryLayout from './pages/admin/telemetry/TelemetryLayout';
+import PrintBridgeTelemetry from './pages/admin/telemetry/PrintBridgeTelemetry';
 import SignageLayout, { SignagePlaceholder } from './pages/signage/SignageLayout';
 import SignageDevicesPage from './pages/signage/DevicesPage';
 import SkiSwapDashboard from './pages/ski-swap/SkiSwapDashboard';
@@ -112,6 +114,10 @@ export default function App() {
             <Route path="device-software" element={<DeviceSoftwareTab />} />
             <Route path="item-taxonomy" element={<ItemTaxonomyTab />} />
             <Route path="health" element={<ServerHealthTab />} />
+            <Route path="telemetry" element={<TelemetryLayout />}>
+              <Route index element={<Navigate to="bridges" replace />} />
+              <Route path="bridges" element={<PrintBridgeTelemetry />} />
+            </Route>
           </Route>
           {/* Modules used to be its own nav item; keep old links working. */}
           <Route path="modules" element={<Navigate to="/dashboard/org-admin/modules" replace />} />
