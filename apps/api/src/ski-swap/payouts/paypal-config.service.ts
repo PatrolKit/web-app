@@ -57,6 +57,10 @@ export class PayPalConfigService {
     const clientSecretEnc = this.crypto.encrypt(data.clientSecret);
     const webhookId = data.webhookId ?? null;
 
+    // Whatever token the old credentials earned is no good for the new ones,
+    // and it would otherwise be used for up to nine hours.
+    this.paypal.forget(orgId);
+
     const config = await this.prisma.payPalConfig.upsert({
       where: { orgId },
       update: {
@@ -98,6 +102,7 @@ export class PayPalConfigService {
     if (!existing) throw new NotFoundException('PayPal is not configured for this organization');
 
     await this.prisma.payPalConfig.delete({ where: { orgId } });
+    this.paypal.forget(orgId);
     await this.prisma.auditLog.create({
       data: {
         actorType: 'user',

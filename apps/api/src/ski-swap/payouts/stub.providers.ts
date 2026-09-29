@@ -95,6 +95,10 @@ export class StubPayPalClient extends PayPalClient {
     return ok;
   }
 
+  forget(): void {
+    // Nothing held: the stub has no tokens.
+  }
+
   async testConnection(): Promise<{ success: boolean; message: string }> {
     return { success: true, message: 'Stub PayPal client — nothing was contacted' };
   }

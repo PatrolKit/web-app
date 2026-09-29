@@ -52,16 +52,15 @@ export abstract class PayPalClient {
   abstract cancelItem(orgId: string, payoutItemId: string): Promise<void>;
   abstract verifyWebhook(orgId: string, headers: Record<string, string>, rawBody: string): Promise<boolean>;
   abstract testConnection(orgId: string): Promise<{ success: boolean; message: string }>;
+  /** Drops anything held for this org's credentials, because they just changed. */
+  abstract forget(orgId: string): void;
 }
 
 /**
- * The scope PayPal grants an app that is allowed to pay people.
- *
- * Checked at configuration time rather than discovered at send time, because
- * the failure it prevents is a batch that authenticates, is accepted, and then
- * pays nobody.
+ * A payout batch id that cannot exist, for asking PayPal whether this app may
+ * read payouts at all. See `testConnection`.
  */
-const PAYOUTS_SCOPE = 'https://uri.paypal.com/services/payments/payouts';
+const PROBE_BATCH_ID = 'PATROLKIT-CONNECTION-TEST';
 
 const HOSTS = {
   sandbox: 'https://api-m.sandbox.paypal.com',
@@ -71,8 +70,11 @@ const HOSTS = {
 @Injectable()
 export class HttpPayPalClient extends PayPalClient {
   private readonly logger = new Logger(HttpPayPalClient.name);
-  /** Short-lived, and re-fetched rather than refreshed. */
-  private tokens = new Map<string, { token: string; expiresAt: number; scopes: string[] }>();
+  /**
+   * Short-lived, and re-fetched rather than refreshed. Dropped when the org's
+   * credentials change: a token outlives them by up to nine hours otherwise.
+   */
+  private tokens = new Map<string, { token: string; expiresAt: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -148,26 +150,63 @@ export class HttpPayPalClient extends PayPalClient {
    *
    * Two different questions. A client id and secret from an app that was never
    * granted Payouts will fetch a token quite happily and then fail at the only
-   * moment that matters, so the granted scopes are read here while somebody is
-   * still looking at the settings screen.
+   * moment that matters, so it is asked here, while somebody is still looking at
+   * the settings screen.
+   *
+   * Asked by trying, not by reading the token's scopes. PayPal names the Payouts
+   * scope differently from its own documentation — a live app with Payouts on
+   * is granted `https://uri.paypal.com/payments/payouts` — and a check that
+   * matched the documented name told an org with Payouts enabled that it was
+   * not. So this looks up a payout batch that cannot exist: an app allowed to
+   * use Payouts is told it was not found, and one that is not is refused.
+   *
+   * Always with a fresh token, so a test straight after changing the app's
+   * permissions answers about the app as it is now.
    */
   async testConnection(orgId: string): Promise<{ success: boolean; message: string }> {
+    this.forget(orgId);
+
+    let host: string;
+    let token: string;
     try {
-      const { scopes, host } = await this.authorise(orgId);
-      const where = host.includes('sandbox') ? 'sandbox' : 'live';
-      if (scopes.length && !scopes.includes(PAYOUTS_SCOPE)) {
-        return {
-          success: false,
-          message:
-            `These credentials work, but this PayPal app is not approved for Payouts. ` +
-            `Enable Payouts on the app in your PayPal developer dashboard, then test again.`,
-        };
-      }
-      return { success: true, message: `Connected to PayPal (${where}) with Payouts enabled` };
+      ({ host, token } = await this.authorise(orgId));
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      return { success: false, message };
+      if (err instanceof PayPalError && err.status === 401) {
+        return { success: false, message: 'PayPal did not accept this Client ID and Secret. Check both, and that the environment matches the app.' };
+      }
+      return { success: false, message: err instanceof Error ? err.message : 'Unknown error' };
     }
+    const where = host.includes('sandbox') ? 'sandbox' : 'live';
+
+    // Fetched here rather than through `call`, which logs every non-2xx as a
+    // failure — and the answer this is hoping for is a 404.
+    let status: number;
+    try {
+      status = (await fetch(`${host}/v1/payments/payouts/${PROBE_BATCH_ID}`, {
+        headers: { authorization: `Bearer ${token}` },
+      })).status;
+    } catch {
+      return { success: false, message: 'Could not reach PayPal' };
+    }
+
+    if (status === 404 || status === 200) {
+      return { success: true, message: `Connected to PayPal (${where}) with Payouts enabled` };
+    }
+    if (status === 401 || status === 403) {
+      return {
+        success: false,
+        message:
+          `These credentials work, but PayPal refused to let this app use Payouts. ` +
+          `Check that Payouts is enabled on the app in your PayPal developer dashboard, and that ` +
+          `PayPal has approved Payouts for this ${where} account, then test again.`,
+      };
+    }
+    this.logger.warn({ orgId, status }, 'Unexpected answer to the Payouts connection probe');
+    return { success: false, message: `PayPal answered the Payouts check with HTTP ${status}. Try again in a minute.` };
+  }
+
+  forget(orgId: string): void {
+    this.tokens.delete(orgId);
   }
 
   // ─── Plumbing ──────────────────────────────────────────────────────────────
@@ -220,14 +259,14 @@ export class HttpPayPalClient extends PayPalClient {
     return text ? JSON.parse(text) : {};
   }
 
-  private async authorise(orgId: string): Promise<{ host: string; token: string; scopes: string[] }> {
+  private async authorise(orgId: string): Promise<{ host: string; token: string }> {
     const config = await this.prisma.payPalConfig.findUnique({ where: { orgId } });
     if (!config) throw new PayPalError('PayPal is not configured for this organization', 412);
 
     const host = HOSTS[config.environment === 'live' ? 'live' : 'sandbox'];
     const cached = this.tokens.get(orgId);
     if (cached && cached.expiresAt > Date.now() + 30_000) {
-      return { host, token: cached.token, scopes: cached.scopes };
+      return { host, token: cached.token };
     }
 
     const secret = this.crypto.decrypt(config.clientSecretEnc);
@@ -243,18 +282,12 @@ export class HttpPayPalClient extends PayPalClient {
     if (!res.ok) {
       throw new PayPalError(`PayPal auth failed: ${res.status}`, res.status);
     }
-    const json = (await res.json()) as {
-      access_token: string;
-      expires_in: number;
-      scope?: string;
-    };
-    const scopes = (json.scope ?? '').split(' ').filter(Boolean);
+    const json = (await res.json()) as { access_token: string; expires_in: number };
     this.tokens.set(orgId, {
       token: json.access_token,
       expiresAt: Date.now() + json.expires_in * 1000,
-      scopes,
     });
-    return { host, token: json.access_token, scopes };
+    return { host, token: json.access_token };
   }
 }
 
