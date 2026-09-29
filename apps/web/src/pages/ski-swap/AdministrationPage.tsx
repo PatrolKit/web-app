@@ -333,6 +333,111 @@ function PayoutsSection({ orgId }: { orgId: string }) {
  * this screen can say whether one is stored and nothing more — changing it
  * means typing a new one, which is the same bargain Square's token makes.
  */
+/**
+ * How to connect a PayPal account, step by step, for whoever is sitting in
+ * front of the PayPal dashboard with this page open beside it.
+ *
+ * The order matters, and it is the part people get wrong: the webhook can only
+ * be registered on the app whose credentials are saved here, and its ID only
+ * saved once the credentials are, because the form needs the secret again.
+ */
+function PayPalSetupGuide({ orgId }: { orgId: string }) {
+  const webhookUrl = `${window.location.origin}/api/v1/webhooks/paypal/${orgId}`;
+
+  return (
+    <div className="bg-surface-50 border border-brand-900/60 rounded-lg p-4 space-y-4 text-sm text-gray-300">
+      <GuideStep n={1} title="Get the app's credentials from PayPal">
+        <li>
+          Sign in at{' '}
+          <a href="https://developer.paypal.com/dashboard/applications" target="_blank" rel="noreferrer" className="text-brand-500 hover:underline">
+            developer.paypal.com
+          </a>{' '}
+          with the organization's PayPal business account, and switch the toggle at the top to{' '}
+          <strong className="text-white">Live</strong>. Sandbox has its own apps, credentials and webhooks.
+        </li>
+        <li>Under <strong className="text-white">Apps &amp; Credentials</strong>, create an app (say “PatrolKit”) or open the existing one.</li>
+        <li>
+          Make sure <strong className="text-white">Payouts</strong> is ticked in the app's features. On a live account,
+          PayPal may also need to approve Payouts for the business first.
+        </li>
+        <li>Copy the app's <strong className="text-white">Client ID</strong> and <strong className="text-white">Secret</strong>.</li>
+      </GuideStep>
+
+      <GuideStep n={2} title="Save them here">
+        <li>Enter the Client ID and Secret below, choose <strong className="text-white">Live</strong>, and save.</li>
+        <li>Press <strong className="text-white">Test connection</strong>. It checks that the app is allowed to send payouts, not just that the password works.</li>
+      </GuideStep>
+
+      <GuideStep n={3} title="Register the webhook in the same PayPal app">
+        <li>In the app, scroll to <strong className="text-white">Webhooks</strong> and choose <strong className="text-white">Add webhook</strong>.</li>
+        <li>
+          Paste this as the webhook URL:
+          <CopyableValue value={webhookUrl} />
+        </li>
+        <li>
+          Tick every <strong className="text-white">Payouts</strong> event — the ones whose names start with{' '}
+          <code className="text-xs text-gray-200">PAYMENT.PAYOUTSBATCH</code> or{' '}
+          <code className="text-xs text-gray-200">PAYMENT.PAYOUTS-ITEM</code>. Anything else you tick is ignored.
+        </li>
+        <li>Save it, and copy the <strong className="text-white">Webhook ID</strong> PayPal shows — a short string, not the URL.</li>
+      </GuideStep>
+
+      <GuideStep n={4} title="Save the webhook ID here">
+        <li>
+          Choose <strong className="text-white">Update credentials</strong>, paste the Webhook ID, and enter the Client ID
+          and Secret again — the secret is never shown back, so the form needs it to save.
+        </li>
+        <li>Save. <strong className="text-white">Webhook</strong> should now show the ID instead of “Not registered”.</li>
+      </GuideStep>
+
+      <div className="border-t border-gray-800 pt-3 space-y-1.5 text-xs text-gray-400">
+        <p>
+          <strong className="text-gray-300">Testing it:</strong> PayPal's webhook simulator sends made-up payouts, which are
+          checked and then match nothing here. The real test is a small payout in the first run.
+        </p>
+        <p>
+          <strong className="text-gray-300">If results never arrive:</strong> the webhook ID almost always came from a
+          different app, or from Sandbox instead of Live. Moving to another app or environment means registering the
+          webhook there too, and saving its ID again.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function GuideStep({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-white font-medium">
+        <span className="inline-flex items-center justify-center w-5 h-5 mr-2 rounded-full bg-brand-600 text-white text-xs">{n}</span>
+        {title}
+      </p>
+      <ul className="list-disc pl-12 space-y-1">{children}</ul>
+    </div>
+  );
+}
+
+function CopyableValue({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="mt-1.5 flex items-center gap-2 bg-surface-100 border border-gray-700 rounded px-2.5 py-1.5">
+      <span className="font-mono text-xs text-gray-200 break-all flex-1">{value}</span>
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard
+            .writeText(value)
+            .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })
+            .catch(() => undefined);
+        }}
+        className="shrink-0 text-xs text-brand-500 hover:underline"
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </span>
+  );
+}
+
 function PayPalSection({ orgId }: { orgId: string }) {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
@@ -341,6 +446,7 @@ function PayPalSection({ orgId }: { orgId: string }) {
   const [webhookId, setWebhookId] = useState('');
   const [environment, setEnvironment] = useState<'sandbox' | 'live'>('sandbox');
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
 
   const { data: config } = useQuery({
     queryKey: ['ski-swap/paypal-config', orgId],
@@ -382,7 +488,20 @@ function PayPalSection({ orgId }: { orgId: string }) {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-white font-semibold">PayPal Payouts</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-white font-semibold">PayPal Payouts</h2>
+        <button
+          type="button"
+          aria-expanded={showGuide}
+          onClick={() => setShowGuide((v) => !v)}
+          className="inline-flex items-center gap-1.5 text-sm text-brand-500 hover:underline"
+        >
+          <span aria-hidden className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-current text-[10px] font-semibold">i</span>
+          {showGuide ? 'Hide setup guide' : 'Setup guide'}
+        </button>
+      </div>
+
+      {showGuide && <PayPalSetupGuide orgId={orgId} />}
 
       {config && !showForm && (
         <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3">
@@ -414,7 +533,10 @@ function PayPalSection({ orgId }: { orgId: string }) {
               Without a webhook, payout results have to be fetched by hand. Register one in your
               PayPal dashboard pointing at{' '}
               <span className="font-mono break-all">{`${window.location.origin}/api/v1/webhooks/paypal/${orgId}`}</span>{' '}
-              and paste its ID here.
+              and paste its ID here.{' '}
+              <button type="button" onClick={() => setShowGuide(true)} className="underline hover:text-amber-200">
+                Show me how
+              </button>
             </p>
           )}
 
