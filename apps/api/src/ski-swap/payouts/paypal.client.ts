@@ -59,8 +59,12 @@ export abstract class PayPalClient {
 /**
  * A payout batch id that cannot exist, for asking PayPal whether this app may
  * read payouts at all. See `testConnection`.
+ *
+ * Letters and digits only, shaped like a real one. PayPal answers an id with a
+ * hyphen in it with 400 — malformed — before it gets as far as saying whether
+ * the app is allowed, which is the only thing this is for.
  */
-const PROBE_BATCH_ID = 'PATROLKIT-CONNECTION-TEST';
+const PROBE_BATCH_ID = 'PATROLKITPROBE0000';
 
 const HOSTS = {
   sandbox: 'https://api-m.sandbox.paypal.com',
