@@ -917,6 +917,11 @@ export const StationResponseSchema = z.object({
    * when the bridge is this station's alone, or there is none.
    */
   bridgeSharedWith: z.array(z.string()),
+  /**
+   * The bridge's printer holds 25 × 67, so it prints legacy helper labels and
+   * nothing else (Plan 28).
+   */
+  helperLabelsOnly: z.boolean(),
   createdAt: z.string(),
 });
 
@@ -930,8 +935,10 @@ export const StationQueueResponseSchema = z.object({
   claimed: z.number().int(),
   /** A recipe that no longer resolves — the item was deleted mid-print. */
   failed: z.number().int(),
-  /** Retried to the cap and given up on. */
+  /** Retried to the cap and given up on, or a helper pair not printed within its minute. */
   abandoned: z.number().int(),
+  /** Why the most recent of those was given up on. Null when there are none. */
+  lastAbandonedReason: z.string().nullable(),
   /** The bridge's last word on its printer link: ready | down, or null. */
   printerLink: z.enum(['ready', 'down']).nullable(),
   printerLinkAt: z.string().nullable(),
@@ -1064,3 +1071,29 @@ export const RenderLabelResponseSchema = z.object({
 
 export class RenderLabelDto extends createZodDto(RenderLabelSchema) {}
 export type RenderLabelResponse = z.infer<typeof RenderLabelResponseSchema>;
+
+// ─── Legacy helper labels through a bridge (Plan 28) ─────────────────────────
+
+/**
+ * A legacy ticket's two helper stickers, as the iPad would have printed them
+ * itself. The text is taken as sent, so a sticker from a bridge says word for
+ * word what one from the iPad says.
+ */
+export const HelperLabelsRequestSchema = z
+  .object({
+    swapId: z.string().min(1),
+    /** Absent while the item is still in the iPad's offline queue. */
+    itemId: z.string().min(1).nullish(),
+    /** The legacy ticket number, for the job record. */
+    ticket: z.string().min(1).max(20),
+    /** The whole name, size and all — the office sticker's. */
+    name: z.string().min(1).max(200),
+    /** The item sticker's name, without the size when the size has its own line. */
+    itemName: z.string().min(1).max(200),
+    size: z.string().min(1).max(40).nullable(),
+    priceCents: z.number().int().positive().max(100_000_000),
+    sellerName: z.string().min(1).max(200),
+  })
+  .strict();
+
+export class HelperLabelsRequestDto extends createZodDto(HelperLabelsRequestSchema) {}

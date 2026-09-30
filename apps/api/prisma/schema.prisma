@@ -734,6 +734,11 @@ model PrintJob {
   /// Claim expiry. A job past this with status=claimed returns to the queue.
   claimUntil DateTime?
   printedAt  DateTime?
+  /// Dropped, not printed, if no bridge has taken it by then. Helper labels
+  /// only (Plan 28): they are wanted while the ticket is in the volunteer's
+  /// hand, and a pair printed an hour late is for a ticket long gone. Null for
+  /// every other kind, which waits however long it takes.
+  notAfter   DateTime?
   attempts   Int       @default(0)
   lastError  String?   @db.VarChar(500)
 

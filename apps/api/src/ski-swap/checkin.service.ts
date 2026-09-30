@@ -256,12 +256,17 @@ export class CheckinService {
     // Header plus one job per page of the item list. Page count comes from the
     // renderer rather than a guess about how many fit.
     const target = printTargetFor(station.bridge?.bridgedPrinter ?? null);
-    const pageCount = await this.recipes.receiptPageCount(orgId, swapId, seller.id, target);
-    await this.queue.enqueueReceipt({
-      orgId, stationId: station.id, swapId, sellerId: seller.id, pageCount,
-      // The tall tier's page one carries the masthead itself.
-      withHeader: target.size.tier !== 'tall',
-    });
+    // A printer loaded with 25 × 67 helper labels prints nothing else (Plan 28),
+    // so a finish there queues no receipt pages. The emailed one still goes.
+    const noPrintedReceipt = target.size.tier === 'strip';
+    const pageCount = noPrintedReceipt ? 0 : await this.recipes.receiptPageCount(orgId, swapId, seller.id, target);
+    if (!noPrintedReceipt) {
+      await this.queue.enqueueReceipt({
+        orgId, stationId: station.id, swapId, sellerId: seller.id, pageCount,
+        // The tall tier's page one carries the masthead itself.
+        withHeader: target.size.tier !== 'tall',
+      });
+    }
 
     /*
      * The record, frozen here because here is where it is true. The seller is
@@ -344,7 +349,7 @@ export class CheckinService {
       // Labels queued, which is the item pages plus a masthead only where the
       // tier prints one. The tall tier folds its masthead into page one, so
       // `+ 1` there reported a label nobody enqueued.
-      receiptPages: pageCount + (target.size.tier !== 'tall' ? 1 : 0),
+      receiptPages: noPrintedReceipt ? 0 : pageCount + (target.size.tier !== 'tall' ? 1 : 0),
       /**
        * Reported, not thrown. The items exist and their tags are printed; staff
        * can re-push from the items table, and failing the finish would strand a

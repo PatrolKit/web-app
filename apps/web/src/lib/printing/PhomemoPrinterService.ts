@@ -86,9 +86,9 @@ export type PaperSize = typeof PAPER_SIZES[number];
 export const PAPER_SIZE_LABELS: Record<PaperSize, string> = {
   '50x30': '50 × 30 mm',
   '62x100': '62 × 100 mm',
-  // The iPad prints to this stock directly; the server draws nothing on it, so
-  // printing from the web to a printer set to it is refused.
-  '25x67': '25 × 67 mm (iPad only)',
+  // Legacy helper labels, and nothing else: printed by the iPad directly, or
+  // by a bridge whose printer holds it (Plan 28). The web prints nothing on it.
+  '25x67': '25 × 67 mm (helper labels)',
 };
 
 const PAPER_SIZE_MODELS: Record<PaperSize, readonly PrinterModelId[]> = {

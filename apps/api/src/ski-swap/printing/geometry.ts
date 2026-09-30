@@ -100,7 +100,7 @@ export type PaperSize = (typeof PAPER_SIZES)[number];
  * different compositions rather than one scaled — so sizes name a tier and
  * templates implement one per tier. A new size in an existing tier is free.
  */
-export type LabelTier = 'compact' | 'tall';
+export type LabelTier = 'compact' | 'tall' | 'strip';
 
 export interface LabelSize {
   id: PaperSize;
@@ -108,12 +108,12 @@ export interface LabelSize {
   widthMm: number;
   heightMm: number;
   /**
-   * Null for stock the server never draws on. The iPad prints to it directly
-   * over Bluetooth with its own layouts; here it exists only so a printer can be
-   * set up with it and synced. Every render refuses it — see
-   * `LabelRendererService`.
+   * `strip` is 25 × 67, and it draws exactly one thing: the helper labels that
+   * fill in a legacy ticket's handwriting (Plan 28). Item tags, receipts and QR
+   * labels all refuse it, and helper labels refuse every other tier. The iPad
+   * names the tier the same.
    */
-  tier: LabelTier | null;
+  tier: LabelTier;
   /** Models this stock runs on. Media wider than the head is unprintable. */
   models: PrinterModelId[];
   /**
@@ -150,17 +150,16 @@ export const LABEL_SIZE: Record<PaperSize, LabelSize> = {
     defaultMargins: { marginTop: 16, marginBottom: 16, marginLeft: 16, marginRight: 16 },
   },
   /*
-   * Temporary, and the iPad's alone: it prints to this stock directly over
-   * Bluetooth, and nothing here — item tags, receipts, printer or QR labels —
-   * is drawn on it. Declared after 62 × 100 so the M221's default stays the
-   * one the server can render.
+   * Helper labels only (Plan 28), printed by the iPad over Bluetooth or through
+   * a bridge. Declared after 62 × 100 so the M221's default stays stock that
+   * takes item tags.
    */
   '25x67': {
     id: '25x67',
     label: '25 × 67 mm',
     widthMm: 25,
     heightMm: 67,
-    tier: null,
+    tier: 'strip',
     models: ['m221'],
     // The M221's other stock's inset. The iPad reads these from the printer row,
     // and anyone who needs different can override them there.
@@ -192,7 +191,7 @@ export interface TargetGeometry {
   mediaOffsetDots: number;
   /** Canvas height, feed rows excluded. */
   canvasHeightDots: number;
-  tier: LabelTier | null;
+  tier: LabelTier;
 }
 
 export function geometryOf(target: PrintTarget): TargetGeometry {

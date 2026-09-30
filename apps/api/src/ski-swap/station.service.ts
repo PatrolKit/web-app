@@ -5,6 +5,7 @@ import { SkuService } from './sku.service';
 import type { DeviceRole } from '../contracts/devices.contracts';
 import type { StationResponse } from '../contracts/ski-swap.contracts';
 import { BRIDGED_STATIONS_SELECT } from './bridge-stations.util';
+import { LABEL_SIZE, isPaperSize } from './printing/geometry';
 
 /** Which slot a device occupies is decided by what kind of device it is. */
 const ATTENDANT_ROLE: DeviceRole = 'ski_swap.staff_check_in';
@@ -28,7 +29,7 @@ type StationRow = {
   bridge: {
     name: string;
     lastSeenAt: Date | null;
-    bridgedPrinter: { id: string; name: string } | null;
+    bridgedPrinter: { id: string; name: string; paperSize: string } | null;
     bridgedStations: { id: string; name: string }[];
   } | null;
 };
@@ -251,8 +252,14 @@ function toResponse(s: StationRow): StationResponse {
     bridgeSharedWith: (s.bridge?.bridgedStations ?? [])
       .filter((o) => o.id !== s.id)
       .map((o) => o.name),
+    helperLabelsOnly: helperOnlyStock(s.bridge?.bridgedPrinter?.paperSize),
     createdAt: s.createdAt.toISOString(),
   };
+}
+
+/** A printer loaded with 25 × 67 prints legacy helper labels and nothing else (Plan 28). */
+function helperOnlyStock(paperSize: string | undefined): boolean {
+  return !!paperSize && isPaperSize(paperSize) && LABEL_SIZE[paperSize].tier === 'strip';
 }
 
 /** "A", "A and B", "A, B and C". */

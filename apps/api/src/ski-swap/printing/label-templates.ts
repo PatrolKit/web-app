@@ -965,3 +965,152 @@ export function calibrationPattern(target: PrintTarget): boolean[][] {
 
   return rows;
 }
+
+// ─── Legacy helper labels (Plan 28) ───────────────────────────────────────────
+
+/**
+ * What goes on a legacy ticket's two helper stickers.
+ *
+ * The iPad works this out (`HelperLabelContent`) and sends it as it is, so a
+ * sticker from a bridge says word for word what one from the iPad says.
+ */
+export interface HelperLabelData {
+  /** The whole name, size and all: the office label's, which has no Size line. */
+  name: string;
+  /** The item label's name — without the size when the size has a line of its own. */
+  itemName: string;
+  /** The size as the name would show it — `176cm`, `M` — or null. */
+  size: string | null;
+  priceCents: number;
+  sellerName: string;
+}
+
+/**
+ * The helper stickers are a line-for-line port of the iPad's
+ * `HelperLabelTemplate`, so the two printers' stickers match. The numbers below
+ * are the iPad's; change them there and here together.
+ *
+ * The stock is 25 mm across the head and 67 along the feed, but a sticker lies
+ * across the ticket, so its text runs along the 67 mm: each is laid out in a
+ * landscape frame and turned a quarter into the strip the printer burns.
+ */
+/** Which way the frame turns. The iPad's was set from a test print; copied, not re-derived. */
+const HELPER_ROTATION = Math.PI / 2;
+/** The smallest a line shrinks to before it is cut, on both stickers: 28 dots, 3.5 mm. */
+const HELPER_MIN_SIZE = 28;
+/** The item sticker's price, at the size it has always had. */
+const HELPER_PRICE_SIZE = 67;
+/** Between the size line's row and the top of the price's ink. */
+const HELPER_PRICE_GAP = 4;
+/** The Size line with no size, so the row is not mistaken for one the printer skipped. */
+const HELPER_NO_SIZE = '---';
+
+/** `$45`, or `$19.99` for a price that still has cents. */
+export function helperPrice(cents: number): string {
+  return cents % 100 === 0
+    ? `$${cents / 100}`
+    : `$${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
+}
+
+/** How far a string's ink reaches above and below its baseline, rounded up — CoreText's glyph-path bounds, on the iPad. */
+function inkExtent(ctx: SKRSContext2D, text: string): { above: number; below: number } {
+  if (!text) return { above: 0, below: 0 };
+  const m = ctx.measureText(text);
+  return { above: Math.ceil(m.actualBoundingBoxAscent), below: Math.ceil(Math.max(0, m.actualBoundingBoxDescent)) };
+}
+
+/**
+ * Shrinks `text` to the floor, then cuts it and marks the cut, and leaves the
+ * font set to the size it is to be drawn at. Never wider than `maxWidth`: the
+ * cut is made until the text *and its ellipsis* fit.
+ */
+function helperLine(ctx: SKRSContext2D, text: string, preferred: number, maxWidth: number): string {
+  const size = fitSize(ctx, text, preferred, Math.min(preferred, HELPER_MIN_SIZE), maxWidth);
+  ctx.font = labelFont(size, 'bold');
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let cut = text;
+  while (cut.length > 0 && ctx.measureText(`${cut}…`).width > maxWidth) cut = cut.slice(0, -1);
+  return `${cut.trim()}…`;
+}
+
+/**
+ * The item sticker: name, size and price, for the ticket's Item, Size and Price
+ * lines. The price keeps its size and sits on the foot, placed by its ink; the
+ * two lines above share what is left.
+ *
+ * The station's letter sits at the right-hand end of the price row, which is
+ * always short, so it never costs the name any room.
+ */
+export function drawHelperItem(
+  ctx: SKRSContext2D, W: number, H: number, data: HelperLabelData, stationCode: string | null,
+): void {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+
+  // Turned, the strip's length is the line length and its width the label's height.
+  const lineLength = H;
+  const height = W;
+
+  const price = helperPrice(data.priceCents);
+  ctx.font = labelFont(HELPER_PRICE_SIZE, 'bold');
+  const ink = inkExtent(ctx, price);
+  const rowPitch = (height - ink.above - ink.below - HELPER_PRICE_GAP) / 2;
+  const preferred = Math.floor(rowPitch / 1.2);
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.rotate(HELPER_ROTATION);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  [data.itemName, data.size ?? HELPER_NO_SIZE].forEach((text, i) => {
+    const shown = helperLine(ctx, text, preferred, lineLength);
+    ctx.fillText(shown, -lineLength / 2, -height / 2 + rowPitch * (i + 0.5));
+  });
+
+  ctx.font = labelFont(HELPER_PRICE_SIZE, 'bold');
+  ctx.textBaseline = 'alphabetic';
+  const baseline = height / 2 - ink.below;
+  ctx.fillText(price, -lineLength / 2, baseline);
+
+  if (stationCode) {
+    const size = ink.above + ink.below;
+    drawStationBadge(ctx, lineLength / 2 - size, baseline - ink.above, size, stationCode);
+  }
+  ctx.restore();
+}
+
+/**
+ * The office sticker: name, price and seller, one to a row, for the office
+ * stub. The station's letter sits at the right-hand end of the price row.
+ */
+export function drawHelperOffice(
+  ctx: SKRSContext2D, W: number, H: number, data: HelperLabelData, stationCode: string | null,
+): void {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+
+  const lines = [data.name, helperPrice(data.priceCents), data.sellerName];
+  // Turned, the strip's length is the line length and its width is shared by the rows.
+  const lineLength = H;
+  const rowPitch = W / lines.length;
+  const preferred = Math.floor(rowPitch / 1.25);
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.rotate(HELPER_ROTATION);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  lines.forEach((text, i) => {
+    const shown = helperLine(ctx, text, preferred, lineLength);
+    ctx.fillText(shown, -lineLength / 2, -W / 2 + rowPitch * (i + 0.5));
+  });
+
+  if (stationCode) {
+    const size = Math.round(rowPitch * 0.8);
+    const rowCentre = -W / 2 + rowPitch * 1.5;
+    drawStationBadge(ctx, lineLength / 2 - size, rowCentre - size / 2, size, stationCode);
+  }
+  ctx.restore();
+}

@@ -14,6 +14,9 @@ import {
   type ReceiptHeaderData,
   type ReceiptItemLine,
   calibrationPattern,
+  type HelperLabelData,
+  drawHelperItem,
+  drawHelperOffice,
   drawItemTag,
   drawLargeItemTag,
   drawPrinterLabel,
@@ -34,17 +37,22 @@ type DrawFn = (ctx: SKRSContext2D, w: number, h: number) => void | Promise<void>
  * a margin change ships as a server deploy instead of a firmware rollout, and
  * there is no second renderer to drift out of agreement with this one.
  */
+/** What prints on 25 × 67, and all that does (Plan 28). */
+export const STRIP_STOCK_MESSAGE =
+  'This printer is loaded with 25 × 67 helper labels, and prints nothing else.';
+
 /**
- * Refuses stock the server never draws on (`tier: null`) — today 25 × 67, which
- * the iPad prints to directly. A 400 from a web request; from a bridge claim,
+ * Refuses a job its stock cannot take. 25 × 67 — the `strip` tier — holds the
+ * helper labels that fill in a legacy ticket and nothing else, and a helper
+ * label fits no other stock. A 400 from a web request; from a bridge claim,
  * the job fails with this message rather than printing a layout meant for
  * something else.
  */
-function assertServerDraws(target: PrintTarget): void {
-  if (target.size.tier === null) {
-    throw new BadRequestException(
-      `${target.size.label} labels are printed from the iPad only. Printing them from here is not supported.`,
-    );
+function assertStockTakes(target: PrintTarget, helper: boolean): void {
+  const strip = target.size.tier === 'strip';
+  if (strip && !helper) throw new BadRequestException(STRIP_STOCK_MESSAGE);
+  if (!strip && helper) {
+    throw new BadRequestException(`Helper labels print on 25 × 67 stock, and this printer holds ${target.size.label}.`);
   }
 }
 
@@ -67,6 +75,18 @@ export class LabelRendererService {
         : (ctx, w, h) => drawItemTag(ctx, w, h, item),
       target,
     );
+  }
+
+  /**
+   * A legacy ticket's two helper stickers, item then office (Plan 28). 25 × 67
+   * only. `stationCode` is the letter of the station that asked for them: a
+   * ticket number carries none of its own.
+   */
+  async helperLabels(data: HelperLabelData, stationCode: string | null, target: PrintTarget): Promise<boolean[][][]> {
+    return [
+      await this.compose((ctx, w, h) => drawHelperItem(ctx, w, h, data, stationCode), target, true),
+      await this.compose((ctx, w, h) => drawHelperOffice(ctx, w, h, data, stationCode), target, true),
+    ];
   }
 
   printerLabel(
@@ -134,7 +154,7 @@ export class LabelRendererService {
   ): Promise<boolean[][][]> {
     // Here as well as in `compose`: an empty list never reaches it, and would
     // otherwise answer "no pages" for stock that cannot take any.
-    assertServerDraws(target);
+    assertStockTakes(target, false);
     const pages: boolean[][][] = [];
     let offset = 0;
     let isFirst = true;
@@ -154,7 +174,7 @@ export class LabelRendererService {
   }
 
   calibration(target: PrintTarget = DEFAULT_TARGET): boolean[][] {
-    assertServerDraws(target);
+    assertStockTakes(target, false);
     return calibrationPattern(target);
   }
 
@@ -226,8 +246,8 @@ export class LabelRendererService {
    * narrower than the head could only be kept on the label by someone typing
    * margins until it looked right, which is why `40x30` was a size in name only.
    */
-  private async compose(draw: DrawFn, target: PrintTarget): Promise<boolean[][]> {
-    assertServerDraws(target);
+  private async compose(draw: DrawFn, target: PrintTarget, helper = false): Promise<boolean[][]> {
+    assertStockTakes(target, helper);
     const { margins } = target;
     const { headWidthDots, mediaWidthDots, mediaOffsetDots, canvasHeightDots, tier } =
       geometryOf(target);

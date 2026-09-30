@@ -1,4 +1,4 @@
-import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createId } from '@paralleldrive/cuid2';
 import { Prisma } from '@prisma/client';
 import type { PrintJob } from '@prisma/client';
@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LabelRendererService } from './printing/label-renderer.service';
 import { PrintRecipeService, printTargetFor, type PrintRecipeKind } from './printing/print-recipe.service';
 import type { PrintTarget } from './printing/geometry';
+import type { HelperLabelData } from './printing/label-templates';
 import type { StationQueueResponse } from '../contracts/ski-swap.contracts';
 import { TelemetryService } from '../telemetry/telemetry.service';
 
@@ -45,7 +46,36 @@ const HOLD_MS = 10_000;
  */
 const RECHECK_MS = 2_000;
 
-export type PrintJobKind = 'item' | 'receipt_header' | 'receipt_items' | 'qr' | 'calibration';
+export type PrintJobKind =
+  | 'item' | 'receipt_header' | 'receipt_items' | 'qr' | 'calibration'
+  | 'helper_item' | 'helper_office';
+
+/**
+ * How long a helper-label pair may wait for its bridge (Plan 28). They are wanted
+ * while the ticket is in the volunteer's hand; a pair a bridge only picks up an
+ * hour later is stickers for tickets long since handed over, so it is dropped.
+ */
+export const HELPER_LABEL_TTL_MS = 60_000;
+
+/** A bridge counts as online within this — the web's offline rule. */
+const BRIDGE_ONLINE_MS = 20_000;
+
+/** The text for a legacy ticket's helper stickers, as the iPad sent it. */
+export interface HelperLabelRequest {
+  swapId: string;
+  itemId?: string | null;
+  ticket: string;
+  name: string;
+  itemName: string;
+  size: string | null;
+  priceCents: number;
+  sellerName: string;
+}
+
+/** A refusal the iPad shows after "helper labels didn't print:". */
+function helperRefusal(code: string, message: string): ConflictException {
+  return new ConflictException({ message, code });
+}
 
 export interface ClaimedJob {
   id: string;
@@ -186,6 +216,10 @@ export class PrintQueueService {
     if (existing > 0) return 0;
 
     const station = await this.station(params.orgId, params.stationId);
+    // Queued as a side effect of saving an item, so it is skipped rather than
+    // refused: the item matters more than its tag, and it stays untagged
+    // (`hasPrintedTag: false`) for printing somewhere that can.
+    if (this.helperOnly(station)) return 0;
     await this.prisma.printJob.createMany({
       data: Array.from({ length: params.count }, (_, i) => ({
         id: createId(),
@@ -209,6 +243,8 @@ export class PrintQueueService {
     if (!item) throw new NotFoundException('Item not found');
 
     const station = await this.station(orgId, stationId);
+    // Asked for by someone, so they are told why not.
+    if (this.helperOnly(station)) throw this.stockRefusal(station.name);
     await this.prisma.printJob.create({
       data: {
         id: createId(),
@@ -241,6 +277,9 @@ export class PrintQueueService {
     withHeader: boolean;
   }): Promise<void> {
     const station = await this.station(params.orgId, params.stationId);
+    // A side effect of finishing a check-in: skipped, never refused. The
+    // emailed receipt still goes.
+    if (this.helperOnly(station)) return;
     const base = {
       orgId: params.orgId,
       stationId: station.id,
@@ -269,6 +308,18 @@ export class PrintQueueService {
   /** Exercises the whole chain: server, bridge, BLE link, printer. */
   async enqueueCalibration(orgId: string, stationId: string): Promise<void> {
     const station = await this.station(orgId, stationId);
+    // A helper-only bridge cannot print a calibration label, so its test is a
+    // sample pair of helper stickers — still the whole chain, end to end.
+    if (this.helperOnly(station)) {
+      await this.queueHelperPair(orgId, station.id, station.bridge?.bridgedPrinter?.id ?? null, {
+        swapId: null, itemId: null,
+        content: {
+          ticket: 'TEST', name: 'Test sticker 176cm', itemName: 'Test sticker', size: '176cm',
+          priceCents: 4500, sellerName: station.name,
+        },
+      });
+      return;
+    }
     await this.prisma.printJob.create({
       data: {
         id: createId(),
@@ -280,6 +331,102 @@ export class PrintQueueService {
       },
     });
     this.wake(station.id);
+  }
+
+  /**
+   * A legacy ticket's helper stickers, printed now through the station's bridge
+   * (Plan 28), for an iPad with no 25 × 67 printer of its own.
+   *
+   * Everything is checked before anything is queued, so the answer comes back
+   * while the volunteer is at the counter. Success means the bridge is online,
+   * its printer is online, and the pair is queued; a pair its bridge does not
+   * pick up within a minute is dropped rather than printed late.
+   *
+   * Only the tablet bound to this station may ask. The text is taken as sent:
+   * it is what the iPad would have printed itself, so the two printers agree
+   * word for word.
+   */
+  async printHelperLabels(
+    deviceId: string,
+    orgId: string,
+    stationId: string,
+    request: HelperLabelRequest,
+  ): Promise<{ jobIds: string[]; notAfter: string }> {
+    const station = await this.prisma.checkinStation.findFirst({
+      where: { id: stationId, orgId, deletedAt: null, attendantDeviceId: deviceId },
+      include: { bridge: { include: { bridgedPrinter: true } } },
+    });
+    if (!station) throw new NotFoundException('Station not found');
+
+    const swap = await this.prisma.skiSwap.findFirst({
+      where: { id: request.swapId, orgId },
+      select: { printLegacyHelperLabels: true },
+    });
+    if (!swap?.printLegacyHelperLabels) {
+      throw helperRefusal('HELPER_LABELS_OFF', 'this swap does not print helper labels.');
+    }
+
+    const bridge = station.bridge;
+    if (!bridge) {
+      throw helperRefusal('NO_BRIDGE', `${station.name} has no print bridge.`);
+    }
+    if (!bridge.lastSeenAt || Date.now() - bridge.lastSeenAt.getTime() > BRIDGE_ONLINE_MS) {
+      throw helperRefusal('BRIDGE_OFFLINE', `the print bridge at ${station.name} is offline.`);
+    }
+    const printer = bridge.bridgedPrinter;
+    if (!printer) {
+      throw helperRefusal('NO_PRINTER', `the print bridge at ${station.name} has no printer.`);
+    }
+    if (!this.helperOnly(station)) {
+      throw helperRefusal('PRINTER_STOCK', `the printer at ${station.name} isn't loaded with 25 × 67 labels.`);
+    }
+    // Online is a report of `ready`. A printer never reported, or reported down,
+    // is not known to be able to print.
+    if (bridge.printerLink !== 'ready') {
+      throw helperRefusal('PRINTER_OFFLINE', `the printer at ${station.name} is offline.`);
+    }
+
+    // An item the iPad has not synced yet is still a ticket in someone's hand,
+    // so a missing one is recorded as absent rather than refused.
+    const item = request.itemId
+      ? await this.prisma.swapItem.findFirst({ where: { id: request.itemId, orgId, deletedAt: null }, select: { id: true } })
+      : null;
+
+    return this.queueHelperPair(orgId, station.id, printer.id, {
+      swapId: request.swapId,
+      itemId: item?.id ?? null,
+      content: {
+        ticket: request.ticket, name: request.name, itemName: request.itemName, size: request.size,
+        priceCents: request.priceCents, sellerName: request.sellerName,
+      },
+    });
+  }
+
+  /** The pair, as one batch that expires together. */
+  private async queueHelperPair(
+    orgId: string,
+    stationId: string,
+    printerId: string | null,
+    job: { swapId: string | null; itemId: string | null; content: Omit<HelperLabelRequest, 'swapId' | 'itemId'> },
+  ): Promise<{ jobIds: string[]; notAfter: string }> {
+    const notAfter = new Date(Date.now() + HELPER_LABEL_TTL_MS);
+    const jobIds = [createId(), createId()];
+    await this.prisma.printJob.createMany({
+      data: (['helper_item', 'helper_office'] as const).map((kind, i) => ({
+        id: jobIds[i],
+        orgId,
+        stationId,
+        printerId,
+        swapId: job.swapId,
+        itemId: job.itemId,
+        kind,
+        params: job.content as unknown as Prisma.InputJsonValue,
+        seq: i,
+        notAfter,
+      })),
+    });
+    this.wake(stationId);
+    return { jobIds, notAfter: notAfter.toISOString() };
   }
 
   // ─── Claim / ack / nack ─────────────────────────────────────────────────────
@@ -376,11 +523,12 @@ export class PrintQueueService {
       include: {
         bridgedPrinter: true,
         bridgedScanner: true,
-        bridgedStations: { where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } },
+        bridgedStations: { where: { deletedAt: null }, select: { id: true, name: true, code: true }, orderBy: { name: 'asc' } },
       },
     });
     const stations = bridge.bridgedStations;
     const stationIds = stations.map((s) => s.id);
+    const codeOf = new Map(stations.map((s) => [s.id, s.code]));
     // Best-effort: a claim must never fail over bookkeeping about the bridge.
     await this.telemetry
       .recordCheckIn(deviceId, seenBefore?.lastSeenAt ?? null, now, stations.length > 0)
@@ -411,7 +559,8 @@ export class PrintQueueService {
          SET status = 'abandoned',
              claimToken = NULL,
              claimUntil = NULL,
-             lastError = COALESCE(lastError, 'Claimed but never acknowledged')
+             lastError = COALESCE(lastError, 'Claimed but never acknowledged'),
+             updatedAt = NOW(3)
        WHERE stationId IN (${Prisma.join(stationIds)})
          AND status = 'claimed'
          AND claimUntil < NOW(3)
@@ -421,6 +570,23 @@ export class PrintQueueService {
         { stationIds, abandoned },
         'Abandoned print jobs that were claimed but never acknowledged',
       );
+    }
+
+    // Drop what was wanted at the counter and not printed in time (Plan 28):
+    // queued, or claimed by a bridge that never came back, past its `notAfter`.
+    const expired = await this.prisma.$executeRaw`
+      UPDATE PrintJob
+         SET status = 'abandoned',
+             claimToken = NULL,
+             claimUntil = NULL,
+             lastError = 'Not printed within a minute of being asked for',
+             updatedAt = NOW(3)
+       WHERE stationId IN (${Prisma.join(stationIds)})
+         AND notAfter IS NOT NULL
+         AND notAfter < NOW(3)
+         AND (status = 'queued' OR (status = 'claimed' AND claimUntil < NOW(3)))`;
+    if (expired > 0) {
+      this.logger.warn({ stationIds, expired }, 'Dropped helper labels that were not printed in time');
     }
 
     const token = createId();
@@ -435,6 +601,7 @@ export class PrintQueueService {
                attempts = attempts + 1
          WHERE stationId IN (${Prisma.join(stationIds)})
            AND attempts < ${MAX_ATTEMPTS}
+           AND (notAfter IS NULL OR notAfter >= NOW(3))
            AND (status = 'queued' OR (status = 'claimed' AND claimUntil < NOW(3)))
          ORDER BY createdAt, seq
          LIMIT ${limit}`;
@@ -504,7 +671,7 @@ export class PrintQueueService {
     const jobs: ClaimedJob[] = [];
     for (const job of claimed) {
       try {
-        const rows = await this.render(job, target);
+        const rows = await this.render(job, target, codeOf.get(job.stationId) ?? null);
         // A bare raster, not a finished job: the firmware wraps it in ESC/POS
         // itself and adds its own feed rows.
         const raster = this.renderer.toRaster(rows);
@@ -613,7 +780,7 @@ export class PrintQueueService {
 
     // Claimed before a restart. Rendered again and kept, so the next fetch in
     // this claim is the same bytes as this one.
-    const rows = await this.render(job, printTargetFor(job.station.bridge?.bridgedPrinter ?? null));
+    const rows = await this.render(job, printTargetFor(job.station.bridge?.bridgedPrinter ?? null), job.station.code);
     const bytes = this.renderer.toRaster(rows);
     this.keepRaster(job.id, job.claimToken!, bytes);
     return bytes;
@@ -630,11 +797,16 @@ export class PrintQueueService {
    */
   async stationQueue(orgId: string, stationId: string): Promise<StationQueueResponse> {
     const station = await this.station(orgId, stationId);
-    const [queued, claimed, failed, abandoned, oldest, bridge, attendant] = await Promise.all([
+    const [queued, claimed, failed, abandoned, lastAbandoned, oldest, bridge, attendant] = await Promise.all([
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'queued' } }),
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'claimed' } }),
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'failed' } }),
       this.prisma.printJob.count({ where: { stationId: station.id, status: 'abandoned' } }),
+      this.prisma.printJob.findFirst({
+        where: { stationId: station.id, status: 'abandoned' },
+        orderBy: { updatedAt: 'desc' },
+        select: { lastError: true },
+      }),
       this.prisma.printJob.findFirst({
         where: { stationId: station.id, status: 'queued' },
         orderBy: { createdAt: 'asc' },
@@ -663,6 +835,7 @@ export class PrintQueueService {
       claimed,
       failed,
       abandoned,
+      lastAbandonedReason: lastAbandoned ? lastAbandoned.lastError ?? 'Gave up after repeated tries' : null,
       oldestQueuedAt: oldest?.createdAt.toISOString() ?? null,
       bridgeLastSeenAt: bridge?.lastSeenAt?.toISOString() ?? null,
       attendantLastSeenAt: attendant?.lastSeenAt?.toISOString() ?? null,
@@ -695,6 +868,22 @@ export class PrintQueueService {
     return station;
   }
 
+  /**
+   * Whether a station's bridge prints helper labels only: its printer holds
+   * 25 × 67 (Plan 28). Such a bridge takes nothing else.
+   */
+  private helperOnly(station: { bridge?: { bridgedPrinter?: { model: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number } | null } | null }): boolean {
+    const printer = station.bridge?.bridgedPrinter;
+    return !!printer && printTargetFor(printer).size.tier === 'strip';
+  }
+
+  private stockRefusal(stationName: string): ConflictException {
+    return helperRefusal(
+      'PRINTER_STOCK',
+      `${stationName}'s printer is loaded with 25 × 67 helper labels, and prints nothing else.`,
+    );
+  }
+
   private async ownedJob(deviceId: string, jobId: string) {
     const job = await this.prisma.printJob.findFirst({
       where: { id: jobId, station: { bridgeDeviceId: deviceId } },
@@ -712,7 +901,15 @@ export class PrintQueueService {
   private async render(
     job: { orgId: string; kind: string; itemId: string | null; sellerId: string | null; swapId: string | null; params: Prisma.JsonValue },
     target: PrintTarget,
+    /** The code of the station that queued the job — a helper sticker's letter. */
+    stationCode: string | null,
   ): Promise<boolean[][]> {
+    // Helper stickers carry their own text, as the iPad sent it (Plan 28), and
+    // the letter of the station that asked: a legacy ticket number has none.
+    if (job.kind === 'helper_item' || job.kind === 'helper_office') {
+      const [item, office] = await this.renderer.helperLabels(job.params as unknown as HelperLabelData, stationCode, target);
+      return job.kind === 'helper_item' ? item : office;
+    }
     const pages = await this.recipes.resolve(
       job.orgId,
       {

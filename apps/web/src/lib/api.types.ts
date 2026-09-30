@@ -512,6 +512,8 @@ export interface CheckinStationRecord {
   printerName: string | null;
   /** The other stations printing through this station's bridge (Plan 27). */
   bridgeSharedWith: string[];
+  /** Its bridge's printer holds 25 × 67: legacy helper labels only (Plan 28). */
+  helperLabelsOnly: boolean;
   createdAt: string;
 }
 
@@ -521,8 +523,10 @@ export interface StationQueueStatus {
   claimed: number;
   /** A recipe that no longer resolves — the item was deleted mid-print. */
   failed: number;
-  /** Retried to the cap and given up on. */
+  /** Retried to the cap and given up on, or a helper pair not printed within its minute. */
   abandoned: number;
+  /** Why the most recent of those was given up on. */
+  lastAbandonedReason: string | null;
   /** The bridge's last word on its link to the printer. */
   printerLink: 'ready' | 'down' | null;
   printerLinkAt: string | null;

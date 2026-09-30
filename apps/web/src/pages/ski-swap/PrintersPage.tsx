@@ -41,6 +41,10 @@ import BridgePeripherals from './BridgePeripherals';
 import ScannersSection from './ScannersSection';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
+/** What 25 × 67 stock means for a printer (Plan 28). */
+const HELPER_STOCK_NOTE =
+  'Legacy helper labels only. A bridge driving this printer prints the stickers its stations’ iPads ask for, and refuses tags and receipts.';
+
 /** A bridge is the printer's network adapter, so it is managed alongside them. */
 const BRIDGE_ROLE: DeviceRole = 'ski_swap.print_bridge';
 
@@ -298,6 +302,7 @@ export default function PrintersPage() {
                   <option key={size} value={size}>{PAPER_SIZE_LABELS[size]}</option>
                 ))}
               </select>
+              {printerPaperSize === '25x67' && <p className="text-xs text-gray-500">{HELPER_STOCK_NOTE}</p>}
               {printerFormError && <p className="text-red-400 text-xs">{printerFormError}</p>}
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={() => { setShowPrinterForm(false); scannedDeviceRef.current = null; setPrinterFormError(null); }} className="text-sm text-gray-400 hover:text-white px-3 py-2">Cancel</button>
@@ -363,6 +368,7 @@ export default function PrintersPage() {
                       <option key={size} value={size}>{PAPER_SIZE_LABELS[size]}</option>
                     ))}
                   </select>
+                  {editingPrinter.paperSize === '25x67' && <p className="text-xs text-gray-500 mt-1">{HELPER_STOCK_NOTE}</p>}
                 </div>
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">Margins (dots)</label>

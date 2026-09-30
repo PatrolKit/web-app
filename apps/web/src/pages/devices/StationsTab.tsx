@@ -369,6 +369,11 @@ function BridgeCell({
           Shared with {namesList(station.bridgeSharedWith)}
         </span>
       )}
+      {station.helperLabelsOnly && (
+        <span className="block text-xs text-gray-500 mt-1" title="Its printer holds 25 × 67 stock. It prints the legacy helper labels this station's iPad asks for, and no tags or receipts.">
+          Helper labels only
+        </span>
+      )}
       {/* Bridges are set up on the Printers page, where the Bluetooth handshake
           lives; here they are only chosen. */}
       {canAdmin && required && !station.bridgeDeviceId && (
@@ -535,7 +540,9 @@ function RowActions({
         className={actionClass}
         disabled={test.isPending || !station.bridgeDeviceId}
         onClick={() => test.mutate()}
-        title="Queues a calibration label — exercises server, bridge, BLE, and printer"
+        title={station.helperLabelsOnly
+          ? 'Queues a sample pair of helper labels — exercises server, bridge, BLE, and printer'
+          : 'Queues a calibration label — exercises server, bridge, BLE, and printer'}
       >
         <FontAwesomeIcon icon={faPrintDuo} /> {test.isPending ? 'Queued' : 'Test'}
       </button>
@@ -705,6 +712,7 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): Hardw
       icon: faCircleExclamationDuo,
       label: `${queue.abandoned} label${queue.abandoned === 1 ? '' : 's'} gave up`,
       tone: 'warn',
+      title: queue.lastAbandonedReason ?? undefined,
     };
   }
 
