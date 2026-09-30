@@ -405,10 +405,15 @@ export class ItemService {
     /**
      * The name is composed here, from the tree, and then frozen (Plan 19 D5).
      *
-     * A category is the ordinary path. Without one — a ticket seller listing
-     * something the tree does not describe — the caller's fallback stands in,
-     * because `SwapItem.name` is non-null and Square requires a name.
+     * A category is the ordinary path. Without one the item is named by its tag
+     * number, `Item #<sku>` (iOS Plan 20), whoever adds it — unless the caller
+     * has a name of its own, like a row of an imported file. `SwapItem.name` is
+     * non-null and Square requires a name. Giving the item a category later
+     * derives a real one in its place.
      */
+    if (!data.categoryId && data.attributes?.length) {
+      throw new BadRequestException('Pick what the item is before describing it');
+    }
     const described = data.categoryId
       ? await this.taxonomy.resolveAnswers(orgId, data.categoryId, data.attributes ?? [], data.actorId)
       : null;
@@ -421,8 +426,8 @@ export class ItemService {
      * The attributes are still validated and still stored either way — this
      * decides one column, not what the item is.
      */
-    const name = data.printedName?.trim() || described?.name || data.fallbackName?.trim();
-    if (!name) throw new BadRequestException('An item needs a category or a name');
+    const name =
+      data.printedName?.trim() || described?.name || data.fallbackName?.trim() || uncategorisedName(sku);
 
     const item = await this.prisma.swapItem.create({
       data: {
@@ -773,16 +778,13 @@ export class ItemService {
     const results = await this.tickets.checkImportRows(swapId, sellerId, rows);
     if (results.some((r) => r.outcome === 'error')) return results;
 
-    const fallback = await this.tickets.fallbackName(sellerId, '');
-
     for (let i = 0; i < rows.length; i++) {
       const sku = rows[i].sku.trim();
       const item = await this.create(orgId, swapId, {
         // The CSV importer has a name column and no taxonomy (Plan 19 D12), so
-        // items it creates are named, not described. A blank becomes the shop
-        // and the number: `SwapItem.name` is non-null and Square needs
-        // something to call it.
-        fallbackName: rows[i].name?.trim() || `${fallback.trim()} ${sku}`,
+        // items it creates are named, not described. A blank name is left to
+        // `create`, which calls it by its number like any uncategorised item.
+        ...(rows[i].name?.trim() ? { fallbackName: rows[i].name!.trim() } : {}),
         description: rows[i].description?.trim() || undefined,
         priceCents: rows[i].priceCents,
         quantity: 1,
@@ -1089,4 +1091,13 @@ export class ItemService {
       updatedAt: item.updatedAt.toISOString(),
     };
   }
+}
+
+/**
+ * What an item nobody described is called: its tag number (iOS Plan 20). The
+ * same on the tag the iPad prints, in the web, and in Square, so an item can be
+ * found by the one thing written on it.
+ */
+export function uncategorisedName(sku: string): string {
+  return `Item #${sku}`;
 }

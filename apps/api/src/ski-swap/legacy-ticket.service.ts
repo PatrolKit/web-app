@@ -376,24 +376,6 @@ export class LegacyTicketService {
     }
   }
 
-  // ─── Helpers ───────────────────────────────────────────────────────────────
-
-  /**
-   * The name an item gets when the seller did not give one (D12).
-   *
-   * Built from `displayName`, which falls through business name to person to
-   * contact, so the result is never blank — `SwapItem.name` is non-null and
-   * Square requires a name.
-   */
-  async fallbackName(sellerId: string, sku: string): Promise<string> {
-    const seller = await this.prisma.sellerProfile.findUnique({
-      where: { id: sellerId },
-      include: { membership: { include: { user: true } } },
-    });
-    if (!seller) return sku;
-    return `${displayName(seller.membership.user, seller.businessName)} ${sku}`;
-  }
-
   // ─── CSV import ────────────────────────────────────────────────────────────
 
   /**

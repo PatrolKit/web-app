@@ -42,10 +42,12 @@ describe('CreateItemSchema', () => {
     expect(printedNameFor(parsed)).toBeUndefined();
   });
 
-  it('still requires a category, so the attributes are always checkable', () => {
-    // The name decides one column. It does not buy a way past describing the
-    // item, because the pointers are what reporting groups by.
-    expect(() => CreateItemSchema.parse({ priceCents: 1000, quantity: 1, name: 'A thing' })).toThrow();
+  it('takes an item with no category at all (iOS Plan 20)', () => {
+    // Choosing what an item is became optional at the counter. Such an item is
+    // named by its number and carries no answers; `ItemService.create` refuses
+    // answers that arrive without a category, so none can go unchecked.
+    expect(CreateItemSchema.parse({ priceCents: 1000, quantity: 1 })).not.toHaveProperty('categoryId');
+    expect(() => CreateItemSchema.parse({ priceCents: 1000, quantity: 1, categoryId: '' })).toThrow();
   });
 
   it('bounds the name to what the column holds', () => {

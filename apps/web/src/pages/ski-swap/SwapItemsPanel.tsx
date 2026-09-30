@@ -34,8 +34,11 @@ export interface SwapItemsPanelApi {
 export interface CreateItemInput {
   /** A ticket number, for a seller on issued tickets. Absent otherwise. */
   sku?: string;
-  /** What the item is. The name is derived from this and the answers (Plan 19). */
-  categoryId: string;
+  /**
+   * What the item is. The name is derived from this and the answers (Plan 19).
+   * Optional: without one the server calls the item by its number, `Item #<sku>`.
+   */
+  categoryId?: string;
   attributes?: ItemAttributeInput[];
   description?: string;
   priceCents: number;
@@ -283,8 +286,11 @@ export default function SwapItemsPanel({
 
   const createMutation = useMutation({
     mutationFn: () => panelApi.createItem(swapId!, {
-      categoryId: form.describer.categoryId!,
-      attributes: toAttributeInputs(form.describer),
+      // Optional: an item nobody described is named by its number on the
+      // server, `Item #<sku>`, and carries no answers.
+      ...(form.describer.categoryId
+        ? { categoryId: form.describer.categoryId, attributes: toAttributeInputs(form.describer) }
+        : {}),
       description: form.description || undefined,
       priceCents: Math.round(parseFloat(form.priceDollars) * 100),
       quantity: 1,

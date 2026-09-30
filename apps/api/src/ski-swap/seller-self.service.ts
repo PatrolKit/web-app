@@ -150,9 +150,8 @@ export class SellerSelfService {
     }
 
     // Described through the tree is the ordinary path now (Plan 19). A ticket
-    // seller may still list something it says nothing about, and then the
-    // number and the shop's name stand in — `SwapItem.name` is non-null.
-    let fallbackName: string | undefined;
+    // seller may still list something it says nothing about, and then it is
+    // called by its number, `Item #<sku>`, like any uncategorised item.
     let sku: string | undefined;
 
     if (onTickets) {
@@ -172,7 +171,6 @@ export class SellerSelfService {
         sku = String(suggested);
         await this.tickets.assertUsable(data.swapId, seller.id, sku);
       }
-      if (!data.categoryId) fallbackName = await this.tickets.fallbackName(seller.id, sku);
     } else if (!data.categoryId) {
       throw new BadRequestException('Pick what the item is.');
     }
@@ -182,7 +180,6 @@ export class SellerSelfService {
       data.swapId,
       {
         ...data,
-        ...(fallbackName ? { fallbackName } : {}),
         sellerId: seller.id,
         // Whoever typed a new value owns it in the approval queue.
         actorId: userId,

@@ -277,8 +277,12 @@ export const CreateItemSchema = z
     /**
      * The CATEGORY node this item is described under. The name is derived from
      * it and the answers below, so nothing sends a name any more.
+     *
+     * Optional (iOS Plan 20): an item nobody described is named by its tag
+     * number, `Item #<sku>`, and carries no answers — `attributes` with no
+     * category is refused. Omit the key rather than sending an empty string.
      */
-    categoryId: z.string().min(1),
+    categoryId: z.string().min(1).optional(),
     attributes: z.array(ItemAttributeInputSchema).max(24).default([]),
     /**
      * The name the client already printed on the tag.
