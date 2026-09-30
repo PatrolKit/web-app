@@ -155,12 +155,16 @@ Every item tag shows its station's letter, prominently, on the 50 × 30 and the
 
 **Layout.**
 - A filled square with the letter reversed out of it:
-  - compact tier: in the lower half, beside the price;
-  - tall tier: in the foot, beside the barcode's number.
+  - compact tier: 38 dots square, in the lower half at the left, beside the
+    price;
+  - tall tier: 13% of the content width, at the head of the price column, and
+    turned with the price so the letter reads upright alongside it.
 - It must not narrow the barcode. The widest SKU (13 characters) already needs the
   full width at 2 dots per module.
-- The exact size and position are to be settled on a printed sample of each
-  stock. The renderer spec gains a golden-raster fixture for each once they are.
+- The golden rasters were re-baselined with the letter.
+- The first try put the tall tier's letter in the foot, beside the SKU. At the
+  height of that line it was too small to sort by, so it moved into the empty
+  corner of the price column.
 
 **Everywhere a tag is drawn:**
 - the server renderer, which serves bridges and the web;
@@ -279,7 +283,7 @@ at deploy time.
 
 ## 12. Open questions
 
-- **The letter's size and position** on each stock (§6), to be settled on a
-  printed sample.
+- **The letter's size and position** (§6) come from rendered samples, not
+  printed ones. Worth checking on paper.
 - **`stationId` for a shared bridge:** it's the first by name (§4). If the
   firmware console should show something more useful, it can read `stationIds`.
