@@ -305,7 +305,9 @@ model Device {
   /// else.
   resort          Resort?         @relation(fields: [resortId], references: [id], onDelete: SetNull)
   attendedStation CheckinStation? @relation("StationAttendant")
-  bridgedStation  CheckinStation? @relation("StationBridge")
+  /// The stations this bridge prints for: one self-service station, or any
+  /// number of staffed ones (Plan 27). Never a mix — see `StationService`.
+  bridgedStations CheckinStation[] @relation("StationBridge")
   /// The printer this bridge drives. Only a bridge ever has one.
   bridgedPrinter  SwapPrinter?    @relation("BridgedPrinter")
   bridgedScanner  SwapScanner?    @relation("BridgedScanner")
@@ -680,7 +682,10 @@ model CheckinStation {
   /// mid-swap, and queued jobs survive because they belong to the station, not
   /// the bridge. Required for self-service, where a seller has no other way to
   /// get a tag; optional for staffed, where the tablet can print over Bluetooth.
-  bridgeDeviceId    String?   @unique
+  ///
+  /// Not unique (Plan 27): several staffed stations may share one bridge and
+  /// its printer. A self-service station keeps its bridge to itself.
+  bridgeDeviceId    String?
   deletedAt         DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -692,6 +697,7 @@ model CheckinStation {
 
   @@unique([orgId, code])
   @@index([orgId, deletedAt])
+  @@index([bridgeDeviceId])
 }
 
 /// A label waiting to print. Holds a recipe rather than bytes: the raster is

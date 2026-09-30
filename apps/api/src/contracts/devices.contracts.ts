@@ -92,11 +92,14 @@ export const DeviceListItemSchema = z.object({
    */
   printerName: z.string().nullable(),
   /**
-   * The station this bridge serves. Null when nothing routes work to it — which
-   * also changes how often it calls in, since the firmware backs off to a slow
-   * retry while unbound rather than heartbeating.
+   * The stations this bridge serves, joined — "Station 1, Station 2" (Plan 27).
+   * Null when nothing routes work to it — which also changes how often it calls
+   * in, since the firmware backs off to a slow retry while unbound rather than
+   * heartbeating.
    */
   stationName: z.string().nullable(),
+  /** The same stations, one name each. */
+  stationNames: z.array(z.string()),
   /**
    * The resort this device is bound to. Null for a kind of device that has no
    * resort, and for one nobody has placed yet. Carried here so the Devices page
@@ -145,6 +148,12 @@ export const DeviceMeResponseSchema = z.object({
   station: z
     .object({ id: z.string(), name: z.string(), code: z.string() })
     .nullable(),
+  /**
+   * Every station this device serves (Plan 27). A tablet serves one; a print
+   * bridge may serve several staffed stations, and `station` is then the first
+   * of them by name.
+   */
+  stations: z.array(z.object({ id: z.string(), name: z.string(), code: z.string() })),
   /**
    * The resort this terminal clocks people in at, or null when nobody has
    * placed it yet. Null is the answer a client needs to distinguish "no resort

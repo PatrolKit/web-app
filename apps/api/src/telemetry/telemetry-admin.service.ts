@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { BRIDGED_STATIONS_SELECT, bridgedStationNames } from '../ski-swap/bridge-stations.util';
 import { CRASH_RESETS } from './telemetry-report';
 import {
   DEFAULT_INTERVAL_S, MAX_INTERVAL_S, MIN_INTERVAL_S, OFFLINE_AFTER_MS, OFFLINE_AFTER_UNBOUND_MS,
@@ -21,7 +22,9 @@ export interface BridgeIdentity {
   name: string;
   clientId: string;
   org: { id: string; name: string };
+  /** Every station this bridge serves, joined — several when shared (Plan 27). */
   station: string | null;
+  stations: string[];
   lastSeenAt: string | null;
   online: boolean;
 }
@@ -295,13 +298,13 @@ export class TelemetryAdminService {
       select: {
         id: true, name: true, clientId: true, lastSeenAt: true, telemetryIntervalS: true,
         org: { select: { id: true, name: true } },
-        bridgedStation: { select: { name: true, deletedAt: true } },
+        bridgedStations: BRIDGED_STATIONS_SELECT,
       },
     });
   }
 
   private identity(d: Awaited<ReturnType<TelemetryAdminService['bridgeRows']>>[number], now: number): BridgeIdentity {
-    const station = d.bridgedStation && !d.bridgedStation.deletedAt ? d.bridgedStation.name : null;
+    const { stationName: station, stationNames: stations } = bridgedStationNames(d.bridgedStations);
     const limit = station ? OFFLINE_AFTER_MS : OFFLINE_AFTER_UNBOUND_MS;
     return {
       id: d.id,
@@ -309,6 +312,7 @@ export class TelemetryAdminService {
       clientId: d.clientId,
       org: d.org,
       station,
+      stations,
       lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
       online: !!d.lastSeenAt && now - d.lastSeenAt.getTime() <= limit,
     };

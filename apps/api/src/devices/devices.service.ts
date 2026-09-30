@@ -1,3 +1,4 @@
+import { BRIDGED_STATIONS_SELECT, bridgedStationNames } from '../ski-swap/bridge-stations.util';
 import {
   BadRequestException,
   ForbiddenException,
@@ -183,7 +184,7 @@ export class DevicesService {
     const devices = await this.prisma.device.findMany({
       where: { orgId, OR: modules.map((m) => ({ role: { startsWith: `${m}.` } })) },
       orderBy: { createdAt: 'desc' },
-      include: { bridgedPrinter: true, bridgedStation: true, resort: true },
+      include: { bridgedPrinter: true, bridgedStations: BRIDGED_STATIONS_SELECT, resort: true },
     });
 
     return devices.map((d) => ({
@@ -196,7 +197,7 @@ export class DevicesService {
       printerLink: (d.printerLink as 'ready' | 'down' | null) ?? null,
       printerLinkAt: d.printerLinkAt,
       printerName: d.bridgedPrinter?.name ?? null,
-      stationName: d.bridgedStation && !d.bridgedStation.deletedAt ? d.bridgedStation.name : null,
+      ...bridgedStationNames(d.bridgedStations),
       // A retired resort reads as unbound, the same way a retired station does.
       resortId: d.resort && !d.resort.deletedAt ? d.resort.id : null,
       resortName: d.resort && !d.resort.deletedAt ? d.resort.name : null,
@@ -385,7 +386,7 @@ export class DevicesService {
       include: {
         org: true,
         attendedStation: { select: { id: true, name: true, code: true, deletedAt: true } },
-        bridgedStation: { select: { id: true, name: true, code: true, deletedAt: true } },
+        bridgedStations: BRIDGED_STATIONS_SELECT,
         resort: { select: { id: true, name: true, timeZone: true, deletedAt: true } },
       },
     });
@@ -401,10 +402,12 @@ export class DevicesService {
 
     // A device is bound through one slot or the other, never both. Which one it
     // is depends on what kind of device it is, and neither caller needs to care.
-    const bound = device.attendedStation ?? device.bridgedStation;
-    const station = bound && !bound.deletedAt
-      ? { id: bound.id, name: bound.name, code: bound.code }
-      : null;
+    // A bridge may serve several staffed stations (Plan 27); `station` is then
+    // the first by name, and `stations` has them all.
+    const stations = (
+      device.attendedStation && !device.attendedStation.deletedAt ? [device.attendedStation] : device.bridgedStations
+    ).map((s) => ({ id: s.id, name: s.name, code: s.code }));
+    const station = stations[0] ?? null;
 
     return {
       id: device.id,
@@ -415,6 +418,7 @@ export class DevicesService {
       /// Null until bound. A client that mints SKUs itself cannot do so without
       /// a station, and should say so rather than failing at the first item.
       station,
+      stations,
       /**
        * Null until someone places it. A retired resort reads as unbound rather
        * than as a name nobody can act on — the tablet is genuinely somewhere

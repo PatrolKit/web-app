@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SkuService } from './sku.service';
 import type { DeviceRole } from '../contracts/devices.contracts';
 import type { StationResponse } from '../contracts/ski-swap.contracts';
+import { BRIDGED_STATIONS_SELECT } from './bridge-stations.util';
 
 /** Which slot a device occupies is decided by what kind of device it is. */
 const ATTENDANT_ROLE: DeviceRole = 'ski_swap.staff_check_in';
@@ -13,7 +14,7 @@ const BRIDGE_ROLE: DeviceRole = 'ski_swap.print_bridge';
 // drives it, so there is one place recording which printer is where.
 const INCLUDE = {
   attendant: true,
-  bridge: { include: { bridgedPrinter: true } },
+  bridge: { include: { bridgedPrinter: true, bridgedStations: BRIDGED_STATIONS_SELECT } },
 } as const;
 
 type StationRow = {
@@ -28,6 +29,7 @@ type StationRow = {
     name: string;
     lastSeenAt: Date | null;
     bridgedPrinter: { id: string; name: string } | null;
+    bridgedStations: { id: string; name: string }[];
   } | null;
 };
 
@@ -86,10 +88,16 @@ export class StationService {
     const station = await this.find(orgId, stationId);
 
     if (data.attendantDeviceId) {
-      await this.assertDeviceFree(orgId, data.attendantDeviceId, ATTENDANT_ROLE, station.id);
+      await this.assertAttendantFree(orgId, data.attendantDeviceId, station.id);
     }
-    if (data.bridgeDeviceId) {
-      await this.assertDeviceFree(orgId, data.bridgeDeviceId, BRIDGE_ROLE, station.id);
+
+    // Staffed is having an attendant, so this is what the station will be once
+    // the patch lands — the sharing rule is about that, not about now.
+    const willBeStaffed =
+      data.attendantDeviceId !== undefined ? !!data.attendantDeviceId : !!station.attendantDeviceId;
+    const bridgeId = data.bridgeDeviceId !== undefined ? data.bridgeDeviceId : station.bridgeDeviceId;
+    if (bridgeId && (data.bridgeDeviceId || !willBeStaffed)) {
+      await this.assertBridgeShareable(orgId, bridgeId, station.id, station.name, willBeStaffed);
     }
 
     const updated = await this.prisma.checkinStation.update({
@@ -148,26 +156,67 @@ export class StationService {
 
   // ─── Guards ────────────────────────────────────────────────────────────────
 
-  /** A device serves one station, in the slot its role decides. */
-  private async assertDeviceFree(
-    orgId: string,
-    deviceId: string,
-    expectedRole: DeviceRole,
-    stationId: string,
-  ): Promise<void> {
+  /** A tablet serves one station. */
+  private async assertAttendantFree(orgId: string, deviceId: string, stationId: string): Promise<void> {
     const device = await this.prisma.device.findFirst({
       where: { id: deviceId, orgId },
-      include: { attendedStation: true, bridgedStation: true },
+      include: { attendedStation: true },
     });
     if (!device) throw new NotFoundException('Device not found');
-    if (device.role !== expectedRole) {
-      throw new BadRequestException(`That slot takes a "${expectedRole}" device`);
+    if (device.role !== ATTENDANT_ROLE) {
+      throw new BadRequestException(`That slot takes a "${ATTENDANT_ROLE}" device`);
     }
-
-    const held = device.attendedStation ?? device.bridgedStation;
+    const held = device.attendedStation;
     if (held && held.id !== stationId && !held.deletedAt) {
       throw new ConflictException(
         `That device already serves station "${held.name}". Release it there first.`,
+      );
+    }
+  }
+
+  /**
+   * Whether this station may print through this bridge (Plan 27).
+   *
+   * A bridge serves either one self-service station or any number of staffed
+   * ones, never a mix. A self-service seller is standing at the QR code with
+   * nobody to fetch tags from anywhere else, so their tags must come out where
+   * they are; a staffed counter has somebody who can walk to a shared printer.
+   *
+   * Checked when a bridge is bound, and when a station sharing one is about to
+   * stop being staffed — which would otherwise make it a self-service station
+   * printing somewhere else.
+   */
+  private async assertBridgeShareable(
+    orgId: string,
+    deviceId: string,
+    stationId: string,
+    stationName: string,
+    willBeStaffed: boolean,
+  ): Promise<void> {
+    const device = await this.prisma.device.findFirst({
+      where: { id: deviceId, orgId },
+      include: { bridgedStations: { where: { deletedAt: null, id: { not: stationId } } } },
+    });
+    if (!device) throw new NotFoundException('Device not found');
+    if (device.role !== BRIDGE_ROLE) {
+      throw new BadRequestException(`That slot takes a "${BRIDGE_ROLE}" device`);
+    }
+
+    const others = device.bridgedStations;
+    if (others.length === 0) return;
+    const names = listOf(others.map((o) => o.name));
+
+    if (!willBeStaffed) {
+      throw new ConflictException(
+        `"${stationName}" would be a self-service station sharing its bridge with ${names}. ` +
+          'A self-service station keeps its bridge to itself: give it its own bridge, or keep a tablet at it.',
+      );
+    }
+    const selfService = others.find((o) => !o.attendantDeviceId);
+    if (selfService) {
+      throw new ConflictException(
+        `That bridge serves the self-service station "${selfService.name}". ` +
+          'A self-service station keeps its bridge to itself.',
       );
     }
   }
@@ -197,6 +246,17 @@ function toResponse(s: StationRow): StationResponse {
     bridgeLastSeenAt: s.bridge?.lastSeenAt?.toISOString() ?? null,
     printerId: s.bridge?.bridgedPrinter?.id ?? null,
     printerName: s.bridge?.bridgedPrinter?.name ?? null,
+    // The other stations printing through the same bridge, so the list can say
+    // "also serves Station 1" rather than leave staff to work it out.
+    bridgeSharedWith: (s.bridge?.bridgedStations ?? [])
+      .filter((o) => o.id !== s.id)
+      .map((o) => o.name),
     createdAt: s.createdAt.toISOString(),
   };
+}
+
+/** "A", "A and B", "A, B and C". */
+function listOf(names: string[]): string {
+  const quoted = names.map((n) => `"${n}"`);
+  return quoted.length <= 1 ? (quoted[0] ?? '') : `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1)}`;
 }

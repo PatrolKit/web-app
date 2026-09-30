@@ -1,6 +1,7 @@
 import { createCanvas, loadImage, type SKRSContext2D, type Image } from '@napi-rs/canvas';
 import QRCode from 'qrcode';
 import { code128BModules } from './code128.util';
+import { stationCodeOf } from '../sku.util';
 import { labelFont } from './fonts';
 import { BRAND_MARK_PNG } from './brand-mark';
 import {
@@ -288,6 +289,39 @@ export function drawItemTag(ctx: SKRSContext2D, W: number, H: number, item: Item
   // and 15 — the size this used to be fixed at — is the floor, so nothing gets
   // smaller than it was, only bigger when there is room.
   ctx.fillText(fitted(ctx, item.name, 24, 15, W), CX, halfH + 90);
+
+  // The station's letter, beside the price and clear of the name below it.
+  // The widest price the tag prints is a little over 200 dots, which leaves
+  // more than this square either side of it.
+  const letter = stationCodeOf(item.sku);
+  if (letter) drawStationBadge(ctx, 0, halfH + 22, COMPACT_BADGE, letter);
+}
+
+/** The station badge on the compact tag, in dots. */
+const COMPACT_BADGE = 38;
+
+/**
+ * The station's letter, reversed out of a filled square (Plan 27).
+ *
+ * Several counters can print to one bridge, and a tag says nothing else about
+ * where it came from. The letter is already in the SKU, but as one character in
+ * the middle of a number; this is the same letter, big enough to sort a pile of
+ * tags by at arm's length.
+ */
+function drawStationBadge(
+  ctx: SKRSContext2D, x: number, y: number, size: number, letter: string, rotation = 0,
+): void {
+  ctx.save();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x, y, size, size);
+  ctx.translate(x + size / 2, y + size / 2);
+  ctx.rotate(rotation);
+  ctx.fillStyle = '#fff';
+  ctx.font = labelFont(Math.round(size * 0.78), 'bold');
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(letter, 0, 1);
+  ctx.restore();
 }
 
 /**
@@ -404,6 +438,13 @@ export async function drawLargeItemTag(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillText(item.sku, barcodeW / 2, footTop + barsH + GAP);
+
+  // ── Station letter, at the head of the price column ───────────────────────
+  // In the corner the rotated price leaves empty — the price is centred in a
+  // column far wider than its type is tall — and turned with it, so the letter
+  // reads upright alongside the price and comes before it.
+  const letter = stationCodeOf(item.sku);
+  if (letter) drawStationBadge(ctx, 0, 0, Math.round(W * 0.13), letter, ROTATION);
 
   // ── Branding, rotated in the foot's right column ──────────────────────────
   await drawBrandingIn(ctx, barcodeW + GAP, footTop, brandColW, footH);

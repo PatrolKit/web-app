@@ -127,22 +127,32 @@ export class PrintQueueService {
     for (const notify of [...listeners]) notify();
   }
 
-  /** Resolves when work is signalled for this station, or after `ms`. */
-  private waitForWork(stationId: string, ms: number): Promise<void> {
+  /**
+   * Resolves when work is signalled for any of these stations, or after `ms`.
+   *
+   * Several, because a bridge may print for several staffed stations (Plan 27)
+   * and an enqueue at any one of them is work for it.
+   */
+  private waitForWork(stationIds: string[], ms: number): Promise<void> {
     return new Promise((resolve) => {
       let settled = false;
       const finish = () => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        listeners.delete(finish);
-        if (listeners.size === 0) this.waiting.delete(stationId);
+        for (const stationId of stationIds) {
+          const listeners = this.waiting.get(stationId);
+          listeners?.delete(finish);
+          if (listeners?.size === 0) this.waiting.delete(stationId);
+        }
         resolve();
       };
       const timer = setTimeout(finish, ms);
-      const listeners = this.waiting.get(stationId) ?? new Set<() => void>();
-      this.waiting.set(stationId, listeners);
-      listeners.add(finish);
+      for (const stationId of stationIds) {
+        const listeners = this.waiting.get(stationId) ?? new Set<() => void>();
+        this.waiting.set(stationId, listeners);
+        listeners.add(finish);
+      }
     });
   }
 
@@ -322,7 +332,10 @@ export class PrintQueueService {
      */
     options: { omitPayload?: boolean } = {},
   ): Promise<{
+    /** The first of `stationIds` by name. Kept for firmware that shows it. */
     stationId: string;
+    /** Every station this bridge prints for (Plan 27). */
+    stationIds: string[];
     backoffMs: number;
     jobs: ClaimedJob[];
     printer: { bluetoothName: string } | null;
@@ -353,15 +366,26 @@ export class PrintQueueService {
       },
     });
 
-    const station = await this.prisma.checkinStation.findFirst({
-      where: { bridgeDeviceId: deviceId, deletedAt: null },
-      include: { bridge: { include: { bridgedPrinter: true, bridgedScanner: true } } },
+    /*
+     * Every station this bridge prints for. One, usually; several when staffed
+     * counters share it (Plan 27). Its printer and scanner are the bridge's
+     * own, whichever station a job came from.
+     */
+    const bridge = await this.prisma.device.findUniqueOrThrow({
+      where: { id: deviceId },
+      include: {
+        bridgedPrinter: true,
+        bridgedScanner: true,
+        bridgedStations: { where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } },
+      },
     });
+    const stations = bridge.bridgedStations;
+    const stationIds = stations.map((s) => s.id);
     // Best-effort: a claim must never fail over bookkeeping about the bridge.
     await this.telemetry
-      .recordCheckIn(deviceId, seenBefore?.lastSeenAt ?? null, now, !!station)
+      .recordCheckIn(deviceId, seenBefore?.lastSeenAt ?? null, now, stations.length > 0)
       .catch((err) => this.logger.error({ err, deviceId }, 'Could not record a bridge outage'));
-    if (!station) throw new NotFoundException('This device is not bound to a station');
+    if (stations.length === 0) throw new NotFoundException('This device is not bound to a station');
 
     /**
      * What this bridge should be holding, on every claim.
@@ -372,12 +396,8 @@ export class PrintQueueService {
      * why these are always present rather than omitted when empty.
      */
     const peripherals = {
-      printer: station.bridge?.bridgedPrinter
-        ? { bluetoothName: station.bridge.bridgedPrinter.bluetoothName }
-        : null,
-      scanner: station.bridge?.bridgedScanner
-        ? { bluetoothName: station.bridge.bridgedScanner.bluetoothName }
-        : null,
+      printer: bridge.bridgedPrinter ? { bluetoothName: bridge.bridgedPrinter.bluetoothName } : null,
+      scanner: bridge.bridgedScanner ? { bluetoothName: bridge.bridgedScanner.bluetoothName } : null,
     };
 
     // Give up on expired claims that have already had their attempts.
@@ -392,13 +412,13 @@ export class PrintQueueService {
              claimToken = NULL,
              claimUntil = NULL,
              lastError = COALESCE(lastError, 'Claimed but never acknowledged')
-       WHERE stationId = ${station.id}
+       WHERE stationId IN (${Prisma.join(stationIds)})
          AND status = 'claimed'
          AND claimUntil < NOW(3)
          AND attempts >= ${MAX_ATTEMPTS}`;
     if (abandoned > 0) {
       this.logger.warn(
-        { stationId: station.id, abandoned },
+        { stationIds, abandoned },
         'Abandoned print jobs that were claimed but never acknowledged',
       );
     }
@@ -413,16 +433,26 @@ export class PrintQueueService {
                claimedAt = NOW(3),
                claimUntil = DATE_ADD(NOW(3), INTERVAL ${CLAIM_SECONDS} SECOND),
                attempts = attempts + 1
-         WHERE stationId = ${station.id}
+         WHERE stationId IN (${Prisma.join(stationIds)})
            AND attempts < ${MAX_ATTEMPTS}
            AND (status = 'queued' OR (status = 'claimed' AND claimUntil < NOW(3)))
-         ORDER BY seq, createdAt
+         ORDER BY createdAt, seq
          LIMIT ${limit}`;
       return this.prisma.printJob.findMany({
         where: { claimToken: token },
-        orderBy: [{ seq: 'asc' }, { createdAt: 'asc' }],
+        orderBy: [{ createdAt: 'asc' }, { seq: 'asc' }],
       });
     };
+
+    /*
+     * First queued, first printed, each batch whole (Plan 27).
+     *
+     * A batch is written by one `createMany`, and MySQL gives every row of one
+     * statement the same NOW(3), so ordering by time and then `seq` keeps each
+     * batch together and in its own order. It used to be `seq` first, which
+     * put every batch's first job ahead of any batch's second — harmless with
+     * one busy counter, and an interleaved pile of tags with several.
+     */
 
     // Hold the request rather than answering "nothing" straight away.
     //
@@ -448,17 +478,17 @@ export class PrintQueueService {
       claimed.length > 0
         ? 1
         : await this.prisma.printJob.count({
-            where: { stationId: station.id, status: 'claimed' },
+            where: { stationId: { in: stationIds }, status: 'claimed' },
           });
 
     if (claimed.length === 0 && outstanding === 0 && limit > 0 && res && hold > 0) {
       let clientGone = false;
-      const onClose = () => { clientGone = true; this.wake(station.id); };
+      const onClose = () => { clientGone = true; stationIds.forEach((id) => this.wake(id)); };
       res.on('close', onClose);
       try {
         const deadline = Date.now() + hold;
         while (claimed.length === 0 && !clientGone && Date.now() < deadline) {
-          await this.waitForWork(station.id, Math.min(RECHECK_MS, deadline - Date.now()));
+          await this.waitForWork(stationIds, Math.min(RECHECK_MS, deadline - Date.now()));
           if (clientGone) break;
           claimed = await take();
         }
@@ -470,7 +500,7 @@ export class PrintQueueService {
     // Rendering happens after the claim has committed, never inside it: holding
     // write locks across a canvas render would serialise stations against each
     // other for no reason.
-    const target = printTargetFor(station.bridge?.bridgedPrinter ?? null);
+    const target = printTargetFor(bridge.bridgedPrinter ?? null);
     const jobs: ClaimedJob[] = [];
     for (const job of claimed) {
       try {
@@ -503,7 +533,8 @@ export class PrintQueueService {
     }
 
     return {
-      stationId: station.id,
+      stationId: stationIds[0],
+      stationIds,
       backoffMs: jobs.length ? BACKOFF_ACTIVE : BACKOFF_IDLE,
       jobs,
       ...peripherals,
@@ -612,7 +643,10 @@ export class PrintQueueService {
       station.bridgeDeviceId
         ? this.prisma.device.findUnique({
             where: { id: station.bridgeDeviceId },
-            select: { lastSeenAt: true, printerLink: true, printerLinkAt: true },
+            select: {
+              lastSeenAt: true, printerLink: true, printerLinkAt: true,
+              bridgedStations: { where: { deletedAt: null, id: { not: station.id } }, select: { name: true }, orderBy: { name: 'asc' } },
+            },
           })
         : null,
       station.attendantDeviceId
@@ -634,6 +668,9 @@ export class PrintQueueService {
       attendantLastSeenAt: attendant?.lastSeenAt?.toISOString() ?? null,
       printerLink: (bridge?.printerLink as 'ready' | 'down' | null) ?? null,
       printerLinkAt: bridge?.printerLinkAt?.toISOString() ?? null,
+      // The other counters printing through the same bridge (Plan 27): their
+      // tags come out of the same printer, in the order they were queued.
+      bridgeSharedWith: bridge?.bridgedStations.map((s) => s.name) ?? [],
     };
   }
 

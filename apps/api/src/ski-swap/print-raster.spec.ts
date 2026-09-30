@@ -20,9 +20,12 @@ function harness(jobs: Job[]) {
   let renders = 0;
   const writes: unknown[] = [];
   const prisma = {
-    device: { update: async () => ({}), findUnique: async () => ({ lastSeenAt: new Date() }) },
-    checkinStation: {
-      findFirst: async () => ({ id: 'station-1', bridge: { bridgedPrinter: null, bridgedScanner: null } }),
+    device: {
+      update: async () => ({}),
+      findUnique: async () => ({ lastSeenAt: new Date() }),
+      findUniqueOrThrow: async () => ({
+        bridgedPrinter: null, bridgedScanner: null, bridgedStations: [{ id: 'station-1', name: 'Station 1' }],
+      }),
     },
     $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       // The claim: every queued job takes the token.

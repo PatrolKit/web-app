@@ -144,6 +144,8 @@ export interface DeviceItem {
   printerName: string | null;
   /** The station a bridge serves. Null when nothing routes work to it. */
   stationName: string | null;
+  /** Every station a bridge serves, one name each (Plan 27). */
+  stationNames: string[];
   /**
    * The resort this device stands at. Null for a kind of device that has none,
    * for one nobody has placed yet, and for one whose resort was retired.
@@ -449,9 +451,10 @@ export interface SwapPrinterRecord {
   marginRight:  number;
   assignedSellerId: string | null;
   assignedSellerName: string | null;
-  /** The bridge that drives this printer, and the station that bridge serves. */
+  /** The bridge that drives this printer, and the stations that bridge serves, joined. */
   bridgeDeviceId: string | null;
   stationName: string | null;
+  stationNames: string[];
 }
 
 /**
@@ -507,6 +510,8 @@ export interface CheckinStationRecord {
   bridgeLastSeenAt: string | null;
   printerId: string | null;
   printerName: string | null;
+  /** The other stations printing through this station's bridge (Plan 27). */
+  bridgeSharedWith: string[];
   createdAt: string;
 }
 
@@ -528,6 +533,8 @@ export interface StationQueueStatus {
   oldestQueuedAt: string | null;
   bridgeLastSeenAt: string | null;
   attendantLastSeenAt: string | null;
+  /** The other stations printing through the same bridge (Plan 27). */
+  bridgeSharedWith: string[];
 }
 
 /** A barcode scanner an org owns, and the bridge that drives it. */
@@ -536,8 +543,9 @@ export interface SwapScanner {
   name: string;
   bluetoothName: string;
   bridgeDeviceId: string | null;
-  /** The station the driving bridge serves, when it serves one. */
+  /** The stations the driving bridge serves, joined, when it serves any. */
   stationName: string | null;
+  stationNames: string[];
 }
 
 export interface SkiSwapSettings {

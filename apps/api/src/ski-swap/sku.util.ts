@@ -50,5 +50,18 @@ export function formatSku(prefix: string, code: string | null, counter: number):
   return code && code !== SERVER_SKU_CODE ? `${prefix}-${code}-${n}` : `${prefix}-${n}`;
 }
 
+/**
+ * The station or device code inside a SKU, or null when it has none.
+ *
+ * The inverse of `formatSku`: `SS26-A-0001` is `A`, while `SS26-0001` (entered on
+ * the web) and a bare legacy ticket number carry no code. It is what puts the
+ * station's letter on a tag (Plan 27), read from the number itself so a reprint,
+ * or a tag from any bridge or iPad, shows the same letter as the first one.
+ */
+export function stationCodeOf(sku: string): string | null {
+  const match = /^[A-Z0-9]{1,6}-([A-Z0-9])-\d{4,}$/.exec(sku);
+  return match && SKU_CODE_ALPHABET.includes(match[1]) ? match[1] : null;
+}
+
 /** The widest SKU the barcode can carry at 2 dots per module on a 400-dot head. */
 export const MAX_SKU_LENGTH = 13;

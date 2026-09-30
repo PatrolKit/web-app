@@ -131,8 +131,19 @@ export default function StationsTab({
     onSuccess: refreshAll,
   });
 
-  const boundBridgeIds = new Set(stations.map((s) => s.bridgeDeviceId).filter(Boolean));
-  const freeBridges = devices.filter((d) => d.role === BRIDGE_ROLE && !boundBridgeIds.has(d.id));
+  /*
+   * Which bridges each kind of station may choose (Plan 27). A bridge serves
+   * one self-service station or any number of staffed ones, never a mix — the
+   * server enforces it; these lists only avoid offering what it would refuse.
+   */
+  const stationsOn = (bridgeId: string) => stations.filter((s) => s.bridgeDeviceId === bridgeId);
+  const allBridges = devices.filter((d) => d.role === BRIDGE_ROLE);
+  const freeBridges: BridgeOption[] = allBridges
+    .filter((d) => stationsOn(d.id).length === 0)
+    .map((d) => ({ ...d, alsoServes: [] }));
+  const shareableBridges: BridgeOption[] = allBridges
+    .filter((d) => stationsOn(d.id).every((s) => s.kind === 'staffed'))
+    .map((d) => ({ ...d, alsoServes: stationsOn(d.id).map((s) => s.name) }));
 
   const selfStations = stations.filter((s) => s.kind === 'self_service');
   const staffStations = stations.filter((s) => s.kind === 'staffed');
@@ -146,7 +157,6 @@ export default function StationsTab({
     orgId,
     swapId,
     canAdmin,
-    bridges: freeBridges,
     onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) =>
       patchStation.mutate({ id, data }),
     onConfirmRetire: (station: CheckinStationRecord) => setRetiring(station),
@@ -198,6 +208,7 @@ export default function StationsTab({
               key={station.id}
               station={station}
               {...rowProps}
+              bridges={freeBridges}
               onShowQr={() => setShowQr(station)}
             />
           )}
@@ -227,7 +238,7 @@ export default function StationsTab({
           <AddStationForm
             orgId={orgId}
             kind="staffed"
-            bridges={freeBridges}
+            bridges={shareableBridges}
             onCancel={() => setAdding(null)}
             onDone={(result) => { setAdding(null); refreshAll(); onStationAdded(result); }}
           />
@@ -242,6 +253,7 @@ export default function StationsTab({
               key={station.id}
               station={station}
               {...rowProps}
+              bridges={shareableBridges}
               devices={devices}
               onRotateSecret={(deviceId) => rotateSecret.mutate({ station, deviceId })}
               working={rotateSecret.isPending}
@@ -308,6 +320,14 @@ function StationCells({ station }: { station: CheckinStationRecord }) {
   );
 }
 
+/** A bridge a station may choose, and the stations already printing through it. */
+export type BridgeOption = DeviceItem & { alsoServes: string[] };
+
+/** "Station 1", "Station 1 and 2", "Station 1, 2 and 3". */
+function namesList(names: string[]): string {
+  return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
 /** The bridge cell: change it, or make one if the station has none. */
 function BridgeCell({
   station,
@@ -317,11 +337,13 @@ function BridgeCell({
   required,
 }: {
   station: CheckinStationRecord;
-  bridges: DeviceItem[];
+  bridges: BridgeOption[];
   canAdmin: boolean;
   onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) => void;
   required: boolean;
 }) {
+  // This station's own bridge is never "also serving" itself.
+  const others = (b: BridgeOption) => b.alsoServes.filter((n) => n !== station.name);
   return (
     <td className="py-3 pr-4 align-top">
       <select
@@ -336,9 +358,17 @@ function BridgeCell({
           <option value={station.bridgeDeviceId}>{station.printerName ?? 'Bound bridge'}</option>
         )}
         {bridges.map((b) => (
-          <option key={b.id} value={b.id}>{b.printerName ?? b.name}</option>
+          <option key={b.id} value={b.id}>
+            {b.printerName ?? b.name}
+            {others(b).length > 0 ? ` — also serves ${namesList(others(b))}` : ''}
+          </option>
         ))}
       </select>
+      {station.bridgeSharedWith.length > 0 && (
+        <span className="block text-xs text-gray-500 mt-1">
+          Shared with {namesList(station.bridgeSharedWith)}
+        </span>
+      )}
       {/* Bridges are set up on the Printers page, where the Bluetooth handshake
           lives; here they are only chosen. */}
       {canAdmin && required && !station.bridgeDeviceId && (
@@ -363,6 +393,11 @@ function StatusCell({ orgId, station }: { orgId: string; station: CheckinStation
           {queue.queued} queued · {queue.claimed} printing
         </span>
       )}
+      {queue && queue.bridgeSharedWith.length > 0 && (
+        <span className="block text-xs text-gray-600" title="Tags print in the order they are queued, each station's batch whole.">
+          Shares its printer with {namesList(queue.bridgeSharedWith)}
+        </span>
+      )}
     </td>
   );
 }
@@ -371,7 +406,7 @@ type RowProps = {
   orgId: string;
   swapId: string | null;
   canAdmin: boolean;
-  bridges: DeviceItem[];
+  bridges: BridgeOption[];
   onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) => void;
   onConfirmRetire: (station: CheckinStationRecord) => void;
 };

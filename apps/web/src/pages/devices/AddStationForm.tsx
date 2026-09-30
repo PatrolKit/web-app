@@ -38,8 +38,12 @@ export default function AddStationForm({
 }: {
   orgId: string;
   kind: StationKind;
-  /** Unbound bridges only: one already driving a counter is not on offer. */
-  bridges: DeviceItem[];
+  /**
+   * The bridges this kind of station may choose: only free ones for a
+   * self-service station, and for a staffed one also those already serving
+   * staffed stations (Plan 27).
+   */
+  bridges: (DeviceItem & { alsoServes?: string[] })[];
   onCancel: () => void;
   onDone: (result: AddStationResult) => void;
 }) {
@@ -115,7 +119,10 @@ export default function AddStationForm({
             <option value="">Choose a bridge…</option>
           )}
           {bridges.map((b) => (
-            <option key={b.id} value={b.id}>{b.printerName ?? b.name}</option>
+            <option key={b.id} value={b.id}>
+              {b.printerName ?? b.name}
+              {b.alsoServes?.length ? ` — also serves ${b.alsoServes.join(', ')}` : ''}
+            </option>
           ))}
         </select>
       </label>

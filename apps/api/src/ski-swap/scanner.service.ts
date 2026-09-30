@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../prisma/prisma.service';
+import { BRIDGED_STATIONS_SELECT, bridgedStationNames } from './bridge-stations.util';
 import type { SwapScannerResponse } from '../contracts/ski-swap.contracts';
 
 const SCANNER_INCLUDE = {
-  bridge: { include: { bridgedStation: true } },
+  bridge: { include: { bridgedStations: BRIDGED_STATIONS_SELECT } },
 } as const;
 
 type ScannerRow = {
@@ -12,7 +13,7 @@ type ScannerRow = {
   name: string;
   bluetoothName: string;
   bridgeDeviceId: string | null;
-  bridge: { bridgedStation: { name: string } | null } | null;
+  bridge: { bridgedStations: { name: string }[] } | null;
 };
 
 /**
@@ -140,7 +141,7 @@ export class ScannerService {
       name: s.name,
       bluetoothName: s.bluetoothName,
       bridgeDeviceId: s.bridgeDeviceId,
-      stationName: s.bridge?.bridgedStation?.name ?? null,
+      ...bridgedStationNames(s.bridge?.bridgedStations),
     };
   }
 }

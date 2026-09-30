@@ -694,6 +694,8 @@ export const SwapPrinterResponseSchema = z.object({
    * Whether one is attached is `bridgeDeviceId`; where it serves is below.
    */
   stationName: z.string().nullable(),
+  /** Every station the driving bridge serves, one name each (Plan 27). */
+  stationNames: z.array(z.string()),
 });
 
 export class CreatePrinterDto extends createZodDto(CreatePrinterSchema) {}
@@ -727,6 +729,8 @@ export const SwapScannerResponseSchema = z.object({
   /** The bridge that drives this scanner, and the station that bridge serves. */
   bridgeDeviceId: z.string().nullable(),
   stationName: z.string().nullable(),
+  /** Every station the driving bridge serves, one name each (Plan 27). */
+  stationNames: z.array(z.string()),
 });
 
 export class CreateScannerDto extends createZodDto(CreateScannerSchema) {}
@@ -908,6 +912,11 @@ export const StationResponseSchema = z.object({
    */
   printerId: z.string().nullable(),
   printerName: z.string().nullable(),
+  /**
+   * The other stations printing through this station's bridge (Plan 27). Empty
+   * when the bridge is this station's alone, or there is none.
+   */
+  bridgeSharedWith: z.array(z.string()),
   createdAt: z.string(),
 });
 
@@ -931,6 +940,8 @@ export const StationQueueResponseSchema = z.object({
   bridgeLastSeenAt: z.string().nullable(),
   /** The staff tablet, when one is bound. What to watch when there is no bridge. */
   attendantLastSeenAt: z.string().nullable(),
+  /** The other stations printing through this station's bridge (Plan 27). */
+  bridgeSharedWith: z.array(z.string()),
 });
 
 export type StationQueueResponse = z.infer<typeof StationQueueResponseSchema>;
@@ -994,7 +1005,13 @@ export const ClaimedJobSchema = z.object({
 export const ClaimPeripheralSchema = z.object({ bluetoothName: z.string() });
 
 export const ClaimResponseSchema = z.object({
+  /**
+   * The first of `stationIds` by name. The firmware only shows it; nothing
+   * about how a bridge behaves depends on it.
+   */
   stationId: z.string(),
+  /** Every station this bridge prints for — several when staffed counters share it (Plan 27). */
+  stationIds: z.array(z.string()),
   backoffMs: z.number().int(),
   jobs: z.array(ClaimedJobSchema),
   /**

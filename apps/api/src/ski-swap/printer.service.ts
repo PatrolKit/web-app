@@ -1,3 +1,4 @@
+import { BRIDGED_STATIONS_SELECT, bridgedStationNames } from './bridge-stations.util';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -24,7 +25,7 @@ export class PrinterService {
 
     const printers = await this.prisma.swapPrinter.findMany({
       where: isAdmin ? { orgId } : { orgId, assignedSellerId: null },
-      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStations: BRIDGED_STATIONS_SELECT } } },
       orderBy: { createdAt: 'asc' },
     });
     return printers.map((p) => this.toResponse(p));
@@ -38,7 +39,7 @@ export class PrinterService {
 
     const printers = await this.prisma.swapPrinter.findMany({
       where: { orgId, assignedSellerId: seller.id },
-      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStations: BRIDGED_STATIONS_SELECT } } },
       orderBy: { createdAt: 'asc' },
     });
     return printers.map((p) => this.toResponse(p));
@@ -58,7 +59,7 @@ export class PrinterService {
         ...LABEL_SIZE[data.paperSize as PaperSize].defaultMargins,
         createdBy: userId,
       },
-      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStations: BRIDGED_STATIONS_SELECT } } },
     });
     return this.toResponse(printer);
   }
@@ -90,7 +91,7 @@ export class PrinterService {
   async patch(orgId: string, printerId: string, data: { name?: string; bluetoothName?: string; assignedSellerId?: string | null; bridgeDeviceId?: string | null; model?: string; paperSize?: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number }): Promise<SwapPrinterResponse> {
     const existing = await this.prisma.swapPrinter.findFirst({
       where: { id: printerId, orgId },
-      include: { bridge: { include: { bridgedStation: true } } },
+      include: { bridge: { include: { bridgedStations: BRIDGED_STATIONS_SELECT } } },
     });
     if (!existing) throw new NotFoundException('Printer not found');
 
@@ -143,7 +144,7 @@ export class PrinterService {
         ...(data.marginLeft !== undefined ? { marginLeft: data.marginLeft } : {}),
         ...(data.marginRight !== undefined ? { marginRight: data.marginRight } : {}),
       },
-      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStations: BRIDGED_STATIONS_SELECT } } },
     });
     return this.toResponse(updated);
   }
@@ -169,7 +170,7 @@ export class PrinterService {
 
     const printer = await this.prisma.swapPrinter.findFirst({
       where: { id: printerId, orgId },
-      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStations: BRIDGED_STATIONS_SELECT } } },
     });
     if (!printer) throw new NotFoundException('Printer not found');
 
@@ -191,12 +192,12 @@ export class PrinterService {
     const updated = await this.prisma.swapPrinter.update({
       where: { id: printerId },
       data: { paperSize, ...LABEL_SIZE[paperSize as PaperSize].defaultMargins },
-      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStation: true } } },
+      include: { seller: { include: SELLER_NAME_INCLUDE }, bridge: { include: { bridgedStations: BRIDGED_STATIONS_SELECT } } },
     });
     return this.toResponse(updated);
   }
 
-  private toResponse(p: { id: string; name: string; bluetoothName: string; model: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number; assignedSellerId: string | null; seller: SellerNameRow | null; bridgeDeviceId?: string | null; bridge?: { bridgedStation?: { name: string; deletedAt: Date | null } | null } | null }): SwapPrinterResponse {
+  private toResponse(p: { id: string; name: string; bluetoothName: string; model: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number; assignedSellerId: string | null; seller: SellerNameRow | null; bridgeDeviceId?: string | null; bridge?: { bridgedStations?: { name: string }[] } | null }): SwapPrinterResponse {
     return {
       id: p.id,
       name: p.name,
@@ -210,11 +211,10 @@ export class PrinterService {
       assignedSellerId: p.assignedSellerId,
       assignedSellerName: sellerDisplayName(p.seller),
       bridgeDeviceId: p.bridgeDeviceId ?? null,
-      // Which counter this printer ends up serving, reached the way the queue
-      // reaches it: station → bridge → printer.
-      stationName: p.bridge?.bridgedStation && !p.bridge.bridgedStation.deletedAt
-        ? p.bridge.bridgedStation.name
-        : null,
+      // Which counters this printer ends up serving, reached the way the queue
+      // reaches it: station → bridge → printer. Several, when the bridge is
+      // shared by staffed stations (Plan 27).
+      ...bridgedStationNames(p.bridge?.bridgedStations),
     };
   }
 }
