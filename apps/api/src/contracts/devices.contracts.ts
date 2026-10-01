@@ -146,7 +146,26 @@ export const DeviceMeResponseSchema = z.object({
    * means unbound — a client that mints SKUs itself cannot, and should say so.
    */
   station: z
-    .object({ id: z.string(), name: z.string(), code: z.string() })
+    .object({
+      id: z.string(),
+      name: z.string(),
+      code: z.string(),
+      /**
+       * The bridge this station prints through, or null when it has none
+       * (Plan 28). Configuration, not live status: whether the bridge is checked
+       * in and its printer ready is the helper-labels endpoint's answer.
+       */
+      printBridge: z
+        .object({
+          deviceId: z.string(),
+          name: z.string(),
+          /** Null while the bridge drives no printer. */
+          printer: z
+            .object({ id: z.string(), model: z.string(), paperSize: z.string() })
+            .nullable(),
+        })
+        .nullable(),
+    })
     .nullable(),
   /**
    * Every station this device serves (Plan 27). A tablet serves one; a print

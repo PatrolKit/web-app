@@ -72,6 +72,12 @@ const ask = (body = {}) => fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${sta
   }),
 });
 
+// ─── What the iPad knows before it asks ──────────────────────────────────────
+const me = await fetch(`${BASE}/devices/me`, { headers: I }).then(unwrap);
+ok('the iPad’s /devices/me names its station’s bridge and the stock it holds',
+  me.station?.printBridge?.deviceId === bridge.id && me.station.printBridge.printer?.paperSize === '25x67',
+  JSON.stringify(me.station?.printBridge));
+
 // ─── A pair, printed now ─────────────────────────────────────────────────────
 await heartbeat();
 const asked = await ask();

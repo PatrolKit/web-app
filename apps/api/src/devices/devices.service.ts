@@ -385,7 +385,7 @@ export class DevicesService {
       where: { id: deviceId },
       include: {
         org: true,
-        attendedStation: { select: { id: true, name: true, code: true, deletedAt: true } },
+        attendedStation: { select: { id: true, name: true, code: true, deletedAt: true, bridgeDeviceId: true } },
         bridgedStations: BRIDGED_STATIONS_SELECT,
         resort: { select: { id: true, name: true, timeZone: true, deletedAt: true } },
       },
@@ -407,7 +407,26 @@ export class DevicesService {
     const stations = (
       device.attendedStation && !device.attendedStation.deletedAt ? [device.attendedStation] : device.bridgedStations
     ).map((s) => ({ id: s.id, name: s.name, code: s.code }));
-    const station = stations[0] ?? null;
+    const first = stations[0] ?? null;
+
+    // The bridge a tablet's station prints through (Plan 28), so the iPad can
+    // tell whether to ask it for helper labels without asking and being told
+    // NO_BRIDGE. A bridge's own station names the bridge itself.
+    const bridgeId = device.attendedStation && !device.attendedStation.deletedAt
+      ? device.attendedStation.bridgeDeviceId
+      : first ? device.id : null;
+    const bridge = bridgeId
+      ? await this.prisma.device.findUnique({
+          where: { id: bridgeId },
+          select: { id: true, name: true, bridgedPrinter: { select: { id: true, model: true, paperSize: true } } },
+        })
+      : null;
+    const station = first && {
+      ...first,
+      printBridge: bridge
+        ? { deviceId: bridge.id, name: bridge.name, printer: bridge.bridgedPrinter ?? null }
+        : null,
+    };
 
     return {
       id: device.id,
