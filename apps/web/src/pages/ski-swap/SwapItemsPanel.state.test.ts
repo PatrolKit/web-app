@@ -36,10 +36,10 @@ describe('itemState', () => {
    * variation, so `inStock` is 0 and `soldCount` is the whole quantity — it
    * rendered as fully sold in a table whose other column said "0 in stock".
    */
-  it('is awaiting a scan before anything else, however the numbers read', () => {
+  it('is not yet received before anything else, however the numbers read', () => {
     const unscanned = item({ consignedAt: null, squareSynced: false, inStock: 0 });
     expect(unscanned.soldCount).toBe(1); // the misleading number, still there
-    expect(itemState(unscanned).label).toBe('Awaiting scan');
+    expect(itemState(unscanned).label).toBe('Not yet received');
   });
 
   /** Accepted, but the push failed. It cannot sell, and it is not waiting. */
@@ -50,7 +50,7 @@ describe('itemState', () => {
   it('ranks by what stops a sale first', () => {
     // Unscanned *and* unsynced is unscanned: scanning it fixes both.
     const both = item({ consignedAt: null, squareSynced: false, inStock: 0 });
-    expect(itemState(both).label).toBe('Awaiting scan');
+    expect(itemState(both).label).toBe('Not yet received');
   });
 
   describe('quantities', () => {
