@@ -7,9 +7,11 @@ import {
   SCANNER_FACTORY_NAME_PREFIX,
 } from '../../lib/printing/InateckScannerService';
 import type { SwapScanner } from '../../lib/api.types';
+import ScannerTestModal from './ScannerTestModal';
 
 /**
- * The barcode scanners this org owns.
+ * The barcode scanners this org owns, each with a test that reads a QR code and
+ * a barcode straight off the scanner (`ScannerTestModal`).
  *
  * The same shape as the printer list above it, and provisioned the same way:
  * pick the peripheral out of the BLE picker to capture the name it advertises,
@@ -19,8 +21,8 @@ import type { SwapScanner } from '../../lib/api.types';
  * the banner in InateckScannerService. So the advertised name is what is stored,
  * and two scanners are distinguishable only if the hardware makes them so.
  *
- * The browser never talks to a scanner. Picking one here only reads its name;
- * the bridge is what holds the link.
+ * In service the browser never talks to a scanner: picking one here only reads
+ * its name, and the bridge holds the link. The test is the one exception.
  *
  * Which bridge drives a scanner is picked on the bridge, not here — a bridge
  * holds both a printer and a scanner, and answering that question in two places
@@ -40,6 +42,7 @@ export default function ScannersSection({
   const [device, setDevice] = useState<BluetoothDevice | null>(null);
   const [airName, setAirName] = useState('');
   const [error, setError] = useState('');
+  const [testing, setTesting] = useState<SwapScanner | null>(null);
 
   const scannersKey = ['ski-swap/scanners', orgId];
   const { data: scanners = [] } = useQuery({
@@ -216,23 +219,34 @@ export default function ScannersSection({
                     : 'Not bound to a bridge'}
                 </p>
               </div>
-              {canAdmin && (
+              <div className="flex items-center gap-3 shrink-0">
                 <button
-                  onClick={() => {
-                    if (confirm(`Remove "${s.name}"? The bridge stops using it at once.`)) {
-                      deleteMutation.mutate(s.id);
-                    }
-                  }}
-                  disabled={deleteMutation.isPending}
-                  className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                  onClick={() => setTesting(s)}
+                  title="Connect to this scanner and check it reads a QR code and a barcode exactly"
+                  className="text-xs text-blue-400 hover:underline"
                 >
-                  Remove
+                  Test scanner
                 </button>
-              )}
+                {canAdmin && (
+                  <button
+                    onClick={() => {
+                      if (confirm(`Remove "${s.name}"? The bridge stops using it at once.`)) {
+                        deleteMutation.mutate(s.id);
+                      }
+                    }}
+                    disabled={deleteMutation.isPending}
+                    className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
             </li>
           ))}
         </ul>
       )}
+
+      {testing && <ScannerTestModal scanner={testing} onClose={() => setTesting(null)} />}
     </div>
   );
 }

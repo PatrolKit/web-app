@@ -5,9 +5,11 @@
 // on one peripheral and the scanner's command service on another — and nothing
 // else. Keeping them together only invited that collision to be read as kinship.
 //
-// **The browser does not talk to a scanner.** It shows a picker and reads the
-// advertised name; the bridge holds the link, and every scan goes scanner →
-// bridge → server with the web UI nowhere in that path.
+// **In service, the browser does not talk to a scanner.** It shows a picker and
+// reads the advertised name; the bridge holds the link, and every scan goes
+// scanner → bridge → server with the web UI nowhere in that path. The one
+// exception is the scanner test, which connects directly while the scanner is
+// off its bridge — see "Reading scans".
 //
 // It was supposed to do one more thing — rename the scanner at provisioning, so
 // the name was ours rather than whatever it shipped with. That did not work on
@@ -90,6 +92,122 @@ export async function scanForScanner(): Promise<{ device: BluetoothDevice; bluet
     ],
   });
   return { device, bluetoothName: device.name ?? '' };
+}
+
+/**
+ * The picker, narrowed to one scanner by the exact name it advertises, for when
+ * the page already knows which one it wants — testing a scanner on the list.
+ */
+export async function pickScannerNamed(bluetoothName: string): Promise<BluetoothDevice> {
+  return navigator.bluetooth.requestDevice({
+    filters: [{ name: bluetoothName }],
+    optionalServices: [SCANNER_DATA_SERVICE, SCANNER_BATTERY_SERVICE, SCANNER_COMMAND_SERVICE],
+  });
+}
+
+// ─── Reading scans ───────────────────────────────────────────────────────────
+//
+// Only the scanner test reads scans in the browser: in service, the bridge holds
+// the link. The decoding is a port of the firmware's `scan_decoder.c`, itself a
+// port of the iPad's `ScanDecoder.swift`, and must stay identical to both — a
+// test that decoded more forgivingly than the bridge would pass a scanner the
+// bridge then misreads.
+
+/** Barcode notifications, in fragments. */
+const SCANNER_DATA_NOTIFY = '00002af0-0000-1000-8000-00805f9b34fb' as BluetoothCharacteristicUUID;
+
+/** Ends each barcode. Anything else is buffered until one arrives. */
+const SCAN_TERMINATOR = '\r';
+
+/** The firmware's buffer: a barcode longer than this is discarded whole, not truncated. */
+const SCAN_BUFFER_MAX = 512;
+
+/** And its payload ceiling, which only a runaway QR could reach. */
+const SCAN_PAYLOAD_MAX = 255;
+
+/**
+ * Which kind of code was read, from the one-character id the scanner prepends.
+ * Case matters: 'a' is Code-128 and 'A' is QR.
+ */
+export type ScanSymbology = 'code39' | 'code128' | 'qr' | 'unknown';
+
+export interface Scan {
+  symbology: ScanSymbology;
+  /** The leading character when it was not an id we know — nothing was stripped then. */
+  unknownId?: string;
+  payload: string;
+}
+
+const CODE_IDS: Record<string, ScanSymbology> = { f: 'code39', a: 'code128', A: 'qr' };
+
+/** One terminated segment to a scan, or null when it is only whitespace. Exported for the tests. */
+export function decodeScanSegment(segment: string): Scan | null {
+  const trimmed = segment.replace(/^[ \t\n\r\v\f]+|[ \t\n\r\v\f]+$/g, '');
+  if (!trimmed) return null;
+  const id = trimmed[0];
+  const symbology = CODE_IDS[id];
+  // Not an id we know means code-id output is off on the scanner. Keep the
+  // character: stripping it on a guess is how every SKU loses its first letter.
+  if (!symbology) return { symbology: 'unknown', unknownId: id, payload: trimmed.slice(0, SCAN_PAYLOAD_MAX) };
+  return { symbology, payload: trimmed.slice(1, 1 + SCAN_PAYLOAD_MAX) };
+}
+
+/** Whole barcodes out of notification fragments, one or several per notification. */
+export class ScanDecoder {
+  private buf = '';
+  private overflowed = false;
+
+  ingest(bytes: Uint8Array): Scan[] {
+    const scans: Scan[] = [];
+    for (const byte of bytes) {
+      const c = String.fromCharCode(byte);
+      if (c === SCAN_TERMINATOR) {
+        const scan = this.overflowed ? null : decodeScanSegment(this.buf);
+        if (scan) scans.push(scan);
+        this.buf = '';
+        this.overflowed = false;
+      } else if (this.buf.length < SCAN_BUFFER_MAX) {
+        this.buf += c;
+      } else {
+        this.overflowed = true;
+      }
+    }
+    return scans;
+  }
+}
+
+/**
+ * Connects to a scanner and hands each whole barcode to `onScan`, until the
+ * returned function is called.
+ *
+ * Only works while the scanner is free. A scanner holds one link, and one held
+ * by its bridge means it is not advertising, so the picker never showed it.
+ */
+export async function listenForScans(
+  device: BluetoothDevice,
+  onScan: (scan: Scan) => void,
+  onDisconnect?: () => void,
+): Promise<() => void> {
+  if (!device.gatt) throw new Error('That device exposes no GATT server, so it cannot be a scanner.');
+  const server = await device.gatt.connect();
+  const decoder = new ScanDecoder();
+  const data = await (await server.getPrimaryService(SCANNER_DATA_SERVICE)).getCharacteristic(SCANNER_DATA_NOTIFY);
+
+  const onValue = (event: Event) => {
+    const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
+    if (!value) return;
+    for (const scan of decoder.ingest(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))) onScan(scan);
+  };
+  const onGone = () => onDisconnect?.();
+  data.addEventListener('characteristicvaluechanged', onValue);
+  device.addEventListener('gattserverdisconnected', onGone);
+  await data.startNotifications();
+
+  return () => {
+    data.removeEventListener('characteristicvaluechanged', onValue);
+    device.removeEventListener('gattserverdisconnected', onGone);
+    if (device.gatt?.connected) device.gatt.disconnect();
+  };
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
