@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { NOT_NORTH_AMERICAN, SmsService, TEXTING_PAUSED } from './sms.service';
+import { NOT_NORTH_AMERICAN, SMS_OFF, SmsService, TEXTING_PAUSED } from './sms.service';
 import { LIMITS } from '../common/limits/limits';
 
 /**
@@ -9,17 +9,28 @@ import { LIMITS } from '../common/limits/limits';
  * reports the ordinary "switched off" suppression — which is how these tests
  * tell "stopped by a limit" apart from "would have gone".
  */
-function build(sentThisHour: { codes: number; receipts: number }) {
+function build(sentThisHour: { codes: number; receipts: number }, smsEnabled = true) {
   const prisma = {
     contactChallenge: { count: async () => sentThisHour.codes },
     receiptDelivery: { count: async () => sentThisHour.receipts },
   };
   const config = { get: (_k: string, d?: unknown) => d };
   const usage = { record: jest.fn() };
-  return { sms: new SmsService(config as never, prisma as never, usage as never), usage };
+  const settings = { smsEnabled: async () => smsEnabled };
+  return { sms: new SmsService(config as never, prisma as never, usage as never, settings as never), usage };
 }
 
 const CEILING = LIMITS['sms.site'].limit;
+
+describe('SmsService — with texting switched off (Plan 29)', () => {
+  it('refuses before the country and ceiling checks, and sends nothing', async () => {
+    const { sms, usage } = build({ codes: CEILING * 2, receipts: 0 }, false);
+    await expect(sms.canText('+442071234567')).resolves.toEqual({ ok: false, reason: SMS_OFF });
+    await expect(sms.canText('+18025550100')).resolves.toEqual({ ok: false, reason: SMS_OFF });
+    await expect(sms.send('+18025550100', 'hi')).resolves.toEqual({ status: 'suppressed', reason: SMS_OFF });
+    expect(usage.record).not.toHaveBeenCalled();
+  });
+});
 
 describe('SmsService — where texts can go', () => {
   it('does not text a number outside the US and Canada', async () => {

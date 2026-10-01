@@ -2,13 +2,17 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { SkiSwapSettingsResponse } from '../contracts/ski-swap.contracts';
 import type { DevicePinResponse } from '../contracts/devices.contracts';
+import { PlatformSettingsService } from '../platform/platform-settings.service';
 import { basisPointsToPercent, percentToBasisPoints } from './payouts/money';
 
 const DEFAULT_LABELS_PER_ITEM = 1;
 
 @Injectable()
 export class SkiSwapSettingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly platform: PlatformSettingsService,
+  ) {}
 
   async get(orgId: string): Promise<SkiSwapSettingsResponse> {
     const row = await this.prisma.skiSwapSettings.findUnique({ where: { orgId } });
@@ -20,6 +24,7 @@ export class SkiSwapSettingsService {
       // 1 for an org with no row, matching what the taxonomy service reports —
       // a client that has cached nothing compares against it and fetches.
       taxonomyVersion: row?.taxonomyVersion ?? 1,
+      smsEnabled: await this.platform.smsEnabled(),
       // Zero for an org that has never set one: a patrol that has not said what
       // its cut is takes nothing, rather than a number somebody guessed.
       commissionPercent: basisPointsToPercent(row?.commissionBasisPoints ?? 0),
@@ -110,6 +115,7 @@ export class SkiSwapSettingsService {
       labelsPerItem: await this.runningSwapLabelsPerItem(orgId),
       requireConsignmentScan: row.requireConsignmentScan,
       taxonomyVersion: row.taxonomyVersion,
+      smsEnabled: await this.platform.smsEnabled(),
       commissionPercent: basisPointsToPercent(row.commissionBasisPoints),
       commissionBasisPoints: row.commissionBasisPoints,
     };

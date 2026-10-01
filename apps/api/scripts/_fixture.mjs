@@ -203,3 +203,36 @@ export async function smokeSession(prisma, base, user, unwrap) {
 
   return session.accessToken;
 }
+
+/**
+ * Turns texting on or off platform-wide (Plan 29), through the API so its
+ * cache sees the change, and returns what it was so a script can put it back.
+ *
+ * Scripts that sign sellers up by phone turn it on for their run. On a server
+ * with no origination number nothing is actually sent either way: codes are
+ * read back with `forceChallengeCode`.
+ */
+export async function setTexting(prisma, base, unwrap, on) {
+  const admin = await smokeSuperAdmin(prisma);
+  const token = await smokeSession(prisma, base, admin, unwrap);
+  const H = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const before = await fetch(`${base}/admin/settings`, { headers: H }).then(unwrap);
+  await fetch(`${base}/admin/settings`, { method: 'PATCH', headers: H, body: JSON.stringify({ smsEnabled: on }) });
+  await dropSmokeAdmin(prisma);
+  return before.smsEnabled;
+}
+
+/**
+ * Turns texting on for the rest of a script's run, and returns what puts it
+ * back. A script that crashes part-way puts it back too: otherwise one failure
+ * leaves a server offering texts nobody meant it to.
+ */
+export async function textingOnForRun(prisma, base, unwrap) {
+  const was = await setTexting(prisma, base, unwrap, true);
+  const restore = () => setTexting(prisma, base, unwrap, was);
+  process.once('uncaughtException', async (err) => {
+    console.error(err);
+    try { await restore(); } finally { process.exit(1); }
+  });
+  return restore;
+}

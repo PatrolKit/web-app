@@ -18,6 +18,7 @@ import TimeTrackingSettingsPage from './pages/time-tracking/SettingsPage';
 import DeviceSoftwareTab from './pages/admin/DeviceSoftwareTab';
 import ItemTaxonomyTab from './pages/admin/ItemTaxonomyTab';
 import ServerHealthTab from './pages/admin/ServerHealthTab';
+import ConfigurationTab from './pages/admin/ConfigurationTab';
 import TelemetryLayout from './pages/admin/telemetry/TelemetryLayout';
 import PrintBridgeTelemetry from './pages/admin/telemetry/PrintBridgeTelemetry';
 import SignageLayout, { SignagePlaceholder } from './pages/signage/SignageLayout';
@@ -118,6 +119,7 @@ export default function App() {
               <Route index element={<Navigate to="bridges" replace />} />
               <Route path="bridges" element={<PrintBridgeTelemetry />} />
             </Route>
+            <Route path="configuration" element={<ConfigurationTab />} />
           </Route>
           {/* Modules used to be its own nav item; keep old links working. */}
           <Route path="modules" element={<Navigate to="/dashboard/org-admin/modules" replace />} />

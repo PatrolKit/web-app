@@ -11,11 +11,14 @@
 
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
-import { smokeOrg, forceChallengeCode } from './_fixture.mjs';
+import { smokeOrg, forceChallengeCode, textingOnForRun } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
 const unwrap = async (r) => { const b = await r.json(); return b && b.success && 'data' in b ? b.data : b; };
+
+// Sellers here sign up by phone, which needs texting on (Plan 29). Put back after.
+const restoreTexting = await textingOnForRun(prisma, BASE, unwrap);
 const ok = (label, cond, extra = '') =>
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? ' — ' + extra : ''}`);
 
@@ -139,4 +142,5 @@ ok('the pages are numbered from zero, in order',
    many.every((j, i) => j.seq === i && (j.params?.page ?? -1) === i),
    many.map((j) => `${j.seq}:${j.params?.page}`).join(' '));
 
+await restoreTexting();
 await prisma.$disconnect();

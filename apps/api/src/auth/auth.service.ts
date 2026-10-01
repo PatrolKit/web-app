@@ -9,6 +9,7 @@ import type { Request, Response } from 'express';
 import type { DeviceTokenResponse } from '../contracts/devices.contracts';
 import type { SignInContext } from '../contracts/auth.contracts';
 import { normalizeEmail, normalizePhone } from '../common/util/person';
+import { SmsService } from '../sms/sms.service';
 
 const REFRESH_COOKIE = 'refresh_token';
 
@@ -25,6 +26,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly challenges: ContactChallengeService,
     private readonly config: ConfigService,
+    private readonly sms: SmsService,
   ) {}
 
   // ─── Login (email or phone) ──────────────────────────────────────────────────
@@ -47,6 +49,13 @@ export class AuthService {
     const email = normalizeEmail(input.email);
     const phone = normalizePhone(input.phone);
     if (!email && !phone) return null;
+
+    // Texting off (Plan 29): a phone can't be sent a code. Refused before the
+    // account lookup, so every number gets the same answer and none of them
+    // says whether an account exists.
+    if (!email && !(await this.sms.enabled())) {
+      throw new BadRequestException({ message: 'Use your email to sign in.', code: 'SMS_OFF' });
+    }
 
     // Before the decoy branch, so a bad context fails the same way for everyone
     // — checking it only for real accounts would make the error an oracle.

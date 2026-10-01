@@ -63,6 +63,7 @@ export class PayoutNudgeService {
       },
     });
 
+    let smsOn: boolean | undefined;
     for (const line of lines) {
       results.considered++;
 
@@ -82,7 +83,10 @@ export class PayoutNudgeService {
       // 25 owes one message, not two in the same minute.
       const dayMark = Math.max(...due);
       const user = line.seller.membership.user;
-      const channel = user.verifiedEmail ? 'EMAIL' : user.verifiedPhone ? 'SMS' : null;
+      // Texting off (Plan 29): email only. A seller reachable only by text is
+      // recorded unreached, like one with no contact at all.
+      smsOn ??= await this.sms.enabled();
+      const channel = user.verifiedEmail ? 'EMAIL' : user.verifiedPhone && smsOn ? 'SMS' : null;
       const destination = channel === 'EMAIL' ? user.verifiedEmail : user.verifiedPhone;
 
       if (!channel || !destination) {
@@ -90,7 +94,7 @@ export class PayoutNudgeService {
         // reach this person" is a thing somebody can see and act on.
         await this.record(line.id, dayMark, 'EMAIL', '', {
           status: 'failed',
-          error: 'No verified contact to nudge',
+          error: user.verifiedPhone ? 'Texting is off, and there is no verified email to nudge' : 'No verified contact to nudge',
         });
         results.failed++;
         continue;

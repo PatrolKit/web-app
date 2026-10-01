@@ -364,6 +364,14 @@ export const api = {
     deleteUser: (userId: string) =>
       request<void>(`/admin/users/${userId}`, { method: 'DELETE' }),
 
+    /** Platform Admin → Configuration (Plan 29). */
+    settings: () => request<import('./api.types').PlatformSettings>('/admin/settings'),
+    updateSettings: (data: { smsEnabled: boolean }) =>
+      request<import('./api.types').PlatformSettings>('/admin/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
     /** How close traffic has come to each limit (Plan 26 §11). */
     healthLimits: (range: import('./api.types').HealthRange) =>
       request<import('./api.types').LimitsHealth>(`/admin/health/limits?range=${range}`),
@@ -1277,6 +1285,8 @@ export const api = {
   },
 
   public: {
+    /** What the signed-out pages may offer — just whether texting is on (Plan 29). */
+    features: () => request<{ sms: boolean }>('/public/features'),
     /** A frozen receipt, by the token from an email or a text. */
     getReceipt: (token: string) =>
       request<import('./api.types').PublicReceiptResponse>(

@@ -8,6 +8,7 @@ import {
 import { api, ApiError } from '../../lib/api';
 import { PoweredByFooter } from '../public/PoweredByFooter';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFeatures } from '../../lib/features';
 
 type Channel = 'email' | 'phone';
 
@@ -23,6 +24,10 @@ export default function LoginPage() {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Texting off (Plan 29): email is the only way in, and the page says nothing
+  // about phones at all.
+  const { sms } = useFeatures();
+  const active: Channel = sms ? channel : 'email';
 
   // If the silent refresh already restored a session, skip the login page
   if (!isLoading && user) return <Navigate to="/dashboard" replace />;
@@ -33,7 +38,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await api.auth.login(
-        channel === 'email' ? { email: contact } : { phone: contact },
+        active === 'email' ? { email: contact } : { phone: contact },
       );
       // challengeId is null when nobody matches — deliberately indistinguishable
       // from success, so the page says the same thing either way.
@@ -71,16 +76,16 @@ export default function LoginPage() {
                 wait, and a wall of grey text does not read as progress. */}
             <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-brand-600/15">
               <FontAwesomeIcon
-                icon={channel === 'email' ? faEnvelopeOpenTextDuo : faCommentSmsDuo}
+                icon={active === 'email' ? faEnvelopeOpenTextDuo : faCommentSmsDuo}
                 className="h-6 w-6 text-brand-500"
               />
             </div>
 
             <h1 className="text-2xl font-bold text-white text-center mb-2">
-              {channel === 'email' ? 'Check your email' : 'Check your messages'}
+              {active === 'email' ? 'Check your email' : 'Check your messages'}
             </h1>
             <p className="text-gray-400 text-center text-sm">
-              {channel === 'email' ? 'A sign-in link is on its way to' : 'We sent a 6-digit code to'}
+              {active === 'email' ? 'A sign-in link is on its way to' : 'We sent a 6-digit code to'}
             </p>
 
             {/* Lifted out of the sentence. It is the one thing on this screen
@@ -102,7 +107,7 @@ export default function LoginPage() {
               </p>
             )}
 
-            {channel === 'phone' && challengeId && (
+            {active === 'phone' && challengeId && (
               <form onSubmit={handleConfirm} className="space-y-4">
                 <input
                   inputMode="numeric"
@@ -130,7 +135,7 @@ export default function LoginPage() {
               onClick={() => { setSent(false); setCode(''); setError(''); }}
               className="mt-6 w-full text-center text-sm text-gray-400 hover:text-white"
             >
-              Use a different {channel === 'email' ? 'email' : 'number'}
+              Use a different {active === 'email' ? 'email' : 'number'}
             </button>
           </div>
           <PoweredByFooter />
@@ -159,19 +164,19 @@ export default function LoginPage() {
             <span className="text-brand-600">Patrol</span>Kit
           </h1>
           <p className="text-gray-400 text-sm mt-1.5">
-            Sign in with your phone number or email
+            {sms ? 'Sign in with your phone number or email' : 'Sign in with your email'}
           </p>
         </div>
 
-        <div className="flex gap-2 mb-6">
+        {sms && <div className="flex gap-2 mb-6">
           {(['phone', 'email'] as const).map((c) => (
             <button
               key={c}
               type="button"
               onClick={() => { setChannel(c); setContact(''); setError(''); }}
-              aria-pressed={channel === c}
+              aria-pressed={active === c}
               className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium ${
-                channel === c
+                active === c
                   ? 'bg-brand-600 text-white'
                   : 'bg-surface-100 text-gray-400 hover:text-white'
               }`}
@@ -179,16 +184,16 @@ export default function LoginPage() {
               {c === 'phone' ? 'Phone' : 'Email'}
             </button>
           ))}
-        </div>
+        </div>}
 
         <form onSubmit={handleRequest} className="space-y-4">
           <input
-            type={channel === 'email' ? 'email' : 'tel'}
-            inputMode={channel === 'email' ? 'email' : 'tel'}
-            autoComplete={channel === 'email' ? 'email' : 'tel'}
+            type={active === 'email' ? 'email' : 'tel'}
+            inputMode={active === 'email' ? 'email' : 'tel'}
+            autoComplete={active === 'email' ? 'email' : 'tel'}
             value={contact}
             onChange={(e) => setContact(e.target.value)}
-            placeholder={channel === 'email' ? 'you@example.com' : '(555) 010-1001'}
+            placeholder={active === 'email' ? 'you@example.com' : '(555) 010-1001'}
             required
             className="w-full bg-surface-100 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-brand-600"
           />
@@ -198,10 +203,10 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold rounded-lg px-4 py-3"
           >
-            {loading ? 'Sending…' : channel === 'email' ? 'Send sign-in link' : 'Send code'}
+            {loading ? 'Sending…' : active === 'email' ? 'Send sign-in link' : 'Send code'}
           </button>
 
-          {channel === 'phone' && (
+          {active === 'phone' && (
             // Carriers require this disclosure to sit with the field that collects the
             // number: the screenshot of it is the evidence attached to the toll-free
             // registration, so the wording here and the wording filed with AWS must match.

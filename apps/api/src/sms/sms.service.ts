@@ -5,14 +5,19 @@ import type { SendOutcome } from '../common/messaging/send-outcome';
 import { PrismaService } from '../prisma/prisma.service';
 import { LIMITS } from '../common/limits/limits';
 import { LimitUsageService } from '../common/limits/limit-usage.service';
+import { PlatformSettingsService } from '../platform/platform-settings.service';
 
 /** A US or Canadian number, which is all a toll-free number can reach. */
 const NORTH_AMERICAN = /^\+1\d{10}$/;
 
 export const NOT_NORTH_AMERICAN = 'SMS is only sent to US and Canadian numbers';
 export const TEXTING_PAUSED = 'Texting is paused';
+/** The platform switch is off (Plan 29): nothing is texted, and nothing offers to. */
+export const SMS_OFF = 'Texting is off';
 
-export type TextAvailability = { ok: true } | { ok: false; reason: typeof NOT_NORTH_AMERICAN | typeof TEXTING_PAUSED };
+export type TextAvailability =
+  | { ok: true }
+  | { ok: false; reason: typeof SMS_OFF | typeof NOT_NORTH_AMERICAN | typeof TEXTING_PAUSED };
 
 @Injectable()
 export class SmsService {
@@ -22,13 +27,20 @@ export class SmsService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly usage: LimitUsageService,
+    private readonly settings: PlatformSettingsService,
   ) {}
+
+  /** Whether texting is switched on, platform-wide (Plan 29). */
+  enabled(): Promise<boolean> {
+    return this.settings.smsEnabled();
+  }
 
   /**
    * Whether a text to this number would go, asked before creating anything
    * that would need it to — registration chooses its channel with this.
    */
   async canText(to: string): Promise<TextAvailability> {
+    if (!(await this.enabled())) return { ok: false, reason: SMS_OFF };
     if (!NORTH_AMERICAN.test(to)) return { ok: false, reason: NOT_NORTH_AMERICAN };
     if ((await this.sentThisHour()) >= LIMITS['sms.site'].limit) return { ok: false, reason: TEXTING_PAUSED };
     return { ok: true };
@@ -62,6 +74,12 @@ export class SmsService {
    * `ContactChallengeService.dispatch`, beside the mail call that always did.
    */
   async send(to: string, body: string): Promise<SendOutcome> {
+    // The backstop for every caller that should have asked first (Plan 29).
+    if (!(await this.enabled())) {
+      this.logger.log({ to }, `[SMS suppressed] ${SMS_OFF}`);
+      return { status: 'suppressed', reason: SMS_OFF };
+    }
+
     /*
      * +1 only. A toll-free number cannot reach anywhere else anyway; this says
      * so rather than relying on the carrier, and keeps premium-rate

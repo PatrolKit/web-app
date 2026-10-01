@@ -252,7 +252,7 @@ export class ReceiptService {
     });
     const user = seller.membership.user;
 
-    const channel = resolveChannel(params.channel ?? null, user);
+    const channel = resolveChannel(params.channel ?? null, user, await this.sms.enabled());
     const destination = (channel === 'EMAIL' ? user.verifiedEmail : user.verifiedPhone)!;
     if (params.limitPerDestination) await this.assertDestinationNotLimited(destination, swapId);
 
@@ -478,10 +478,17 @@ export interface VerifiedContacts {
 export function resolveChannel(
   requested: ReceiptChannel | null,
   user: VerifiedContacts,
+  smsOn: boolean,
 ): ReceiptChannel {
+  // Texting off (Plan 29): a text is never chosen, and asking for one is told
+  // what to do instead — before the "no verified phone" sentence, which would
+  // send staff off to verify a phone that cannot be.
+  if (!smsOn && requested === 'SMS') {
+    throw new BadRequestException({ message: 'Texting is off. Send it by email.', code: 'SMS_OFF' });
+  }
   const verified: Record<ReceiptChannel, string | null> = {
     EMAIL: user.verifiedEmail,
-    SMS: user.verifiedPhone,
+    SMS: smsOn ? user.verifiedPhone : null,
   };
   // Unasked, the order is the old one: email first, phone second. The web sends
   // no channel and must keep getting what it got before.
@@ -498,7 +505,9 @@ export function resolveChannel(
    */
   if (!verified.EMAIL && !verified.SMS) {
     throw new BadRequestException(
-      'This seller has no verified email or phone, so there is nowhere to send a receipt.',
+      smsOn
+        ? 'This seller has no verified email or phone, so there is nowhere to send a receipt.'
+        : 'This seller has no verified email, so there is nowhere to send a receipt.',
     );
   }
   throw new BadRequestException(

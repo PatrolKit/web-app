@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
 import { usePrinter } from '../../contexts/PrinterContext';
+import { useFeatures } from '../../lib/features';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
@@ -14,6 +15,7 @@ interface Props {
 
 export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
   const { orgId } = useOutletContext<SkiSwapContext>();
+  const { sms } = useFeatures();
   const { printReceipt } = usePrinter();
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
@@ -131,7 +133,7 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
             like one that can. */}
         {!seller.receiptChannel && (
           <p className="text-xs text-center text-gray-500">
-            No verified email or phone on file, so there is nowhere to send it.
+            No verified {sms ? 'email or phone' : 'email'} on file, so there is nowhere to send it.
           </p>
         )}
 

@@ -1149,3 +1149,13 @@ export interface TelemetryBridgeHistory {
   }[];
   outages: { startedAt: string; endedAt: string | null; ms: number }[];
 }
+
+/** Platform Admin → Configuration (Plan 29). */
+export interface PlatformSettings {
+  smsEnabled: boolean;
+  updatedAt: string;
+  /** Who last changed it, by name. Null before anyone has. */
+  updatedBy: string | null;
+  /** Whether a text would actually leave with the switch on. */
+  smsReadiness: { originationNumber: boolean; outboundNotifications: boolean };
+}

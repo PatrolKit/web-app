@@ -51,7 +51,7 @@ describe('labels per item, on the swap', () => {
           where.active ? { labelsPerItem: 2 } : { labelsPerItem: 3 },
       },
     };
-    const settings = new SkiSwapSettingsService(prisma as never);
+    const settings = new SkiSwapSettingsService(prisma as never, { smsEnabled: async () => false } as never);
     await expect(settings.get('org-1')).resolves.toMatchObject({ labelsPerItem: 2 });
   });
 });

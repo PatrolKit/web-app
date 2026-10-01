@@ -8,6 +8,7 @@ import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SellerImportModal from './SellerImportModal';
 import SellerTicketSource from './SellerTicketSource';
+import { useFeatures } from '../../lib/features';
 import PrintReceiptModal from './PrintReceiptModal';
 
 interface SellerForm {
@@ -115,6 +116,9 @@ export default function SellersPage() {
   const [phoneChallengeId, setPhoneChallengeId] = useState<string | null>(null);
   const [phoneOtpInput, setPhoneOtpInput] = useState('');
   const [verifyMsg, setVerifyMsg] = useState<{ ok: boolean; msg: string } | null>(null);
+  // Texting off (Plan 29): a phone can't be verified, so it is kept and shown
+  // as unverified, and nothing offers to text it.
+  const { sms } = useFeatures();
 
   function handleSort(key: SellerSortKey) {
     if (key === sortKey) setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
@@ -393,7 +397,10 @@ export default function SellersPage() {
                           <div className="flex gap-1.5">
                             <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
                               className="flex-1 min-w-0 bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
-                            {editSeller && !editSeller.phoneVerifiedAt && (
+                            {editSeller && !editSeller.phoneVerifiedAt && !sms && editSeller.phone && (
+                              <span className="self-center shrink-0 text-xs text-gray-500">Unverified</span>
+                            )}
+                            {editSeller && !editSeller.phoneVerifiedAt && sms && (
                               <button type="button"
                                 disabled={initiatePhoneMutation.isPending}
                                 onClick={() => { if (confirm(`Send a verification SMS to ${editSeller.phone}?`)) { setVerifyMsg(null); initiatePhoneMutation.mutate(editSeller.id); } }}
@@ -448,7 +455,7 @@ export default function SellersPage() {
                   </div>
 
                   {/* Inline OTP entry (shown after phone SMS is sent) */}
-                  {phoneOtpSent && editSeller && (
+                  {sms && phoneOtpSent && editSeller && (
                     <div className="flex gap-2 items-center">
                       <input
                         value={phoneOtpInput}
@@ -498,7 +505,10 @@ export default function SellersPage() {
                             <option value="">— select —</option>
                             {form.payoutMethod === 'PAYPAL' && <option value="PAYPAL_ID">Their PayPal ID</option>}
                             {form.payoutMethod === 'PAYPAL' && <option value="EMAIL">Their email</option>}
-                            {form.payoutMethod === 'PAYPAL' && <option value="PHONE">Their phone</option>}
+                            {/* Paid to a verified phone only, and none can be verified while texting is off. */}
+                            {form.payoutMethod === 'PAYPAL' && (sms || editSeller?.phoneVerifiedAt || form.payoutTarget === 'PHONE') && (
+                              <option value="PHONE">Their phone</option>
+                            )}
                             {form.payoutMethod === 'VENMO' && <option value="VENMO_ID">Their Venmo ID</option>}
                           </select>
                         </label>

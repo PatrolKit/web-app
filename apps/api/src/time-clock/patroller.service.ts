@@ -7,6 +7,7 @@ import { ContactChallengeService, isTooManyCodes } from '../auth/contact-challen
 import { displayName, normalizeNamePart, normalizeNspId, normalizePhone } from '../common/util/person';
 import { createId } from '@paralleldrive/cuid2';
 import { parse as parseCsv } from 'csv-parse/sync';
+import { SmsService } from '../sms/sms.service';
 import type { PatrollerResponse } from '../contracts/time-clock.contracts';
 
 export { normalizeNspId };
@@ -68,6 +69,7 @@ export class PatrollerService {
     private readonly people: PersonService,
     private readonly touch: MembershipTouchService,
     private readonly challenges: ContactChallengeService,
+    private readonly sms: SmsService,
   ) {}
 
   /**
@@ -195,12 +197,15 @@ export class PatrollerService {
       include: ROSTER_INCLUDE,
     });
 
+    // With texting off (Plan 29), a patroller known only by a phone has no way
+    // to be sent a code, and is skipped like one with no contact at all.
+    const canText = await this.sms.enabled();
     let sent = 0;
     let skipped = 0;
     for (const row of rows) {
       const u = row.membership.user;
       if (u.emailVerifiedAt || u.phoneVerifiedAt) { skipped++; continue; }
-      const channel = u.email ? 'email' : u.phone ? 'phone' : null;
+      const channel = u.email ? 'email' : u.phone && canText ? 'phone' : null;
       if (!channel) { skipped++; continue; }
 
       try {

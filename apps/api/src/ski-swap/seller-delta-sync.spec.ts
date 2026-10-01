@@ -42,7 +42,7 @@ function stubPrisma(rows: SellerRow[] = []) {
 /** `list` reaches for prisma alone; the other three collaborators stay unbuilt. */
 function service(prisma: ReturnType<typeof stubPrisma>) {
   const unused = {} as never;
-  return new SellerService(prisma as unknown as never, unused, unused, unused);
+  return new SellerService(prisma as unknown as never, unused, unused, unused, { enabled: async () => true } as never);
 }
 
 /** A seller row shaped the way SELLER_INCLUDE returns one. */
@@ -154,7 +154,7 @@ describe('tombstones', () => {
 
 describe('what a seller row reports', () => {
   it('carries the membership watermark as its updatedAt', () => {
-    const mapped = toSellerResponse(row({ updatedAt: new Date('2026-08-31T12:00:00.000Z') }));
+    const mapped = toSellerResponse(row({ updatedAt: new Date('2026-08-31T12:00:00.000Z') }), true);
 
     // The value a client stores as its cursor and the value the server filters
     // on have to be the same clock, or the cursor walks past its own updates.
@@ -162,17 +162,27 @@ describe('what a seller row reports', () => {
   });
 
   it('reports a seller removed from the swap', () => {
-    const mapped = toSellerResponse(row({ deletedAt: new Date('2026-08-30T09:00:00.000Z') }));
+    const mapped = toSellerResponse(row({ deletedAt: new Date('2026-08-30T09:00:00.000Z') }), true);
     expect(mapped.deletedAt).toBe('2026-08-30T09:00:00.000Z');
   });
 
   it('reports a seller who left the org', () => {
     // The profile is untouched in this case; the membership is what was ended.
-    const mapped = toSellerResponse(row({ membershipDeletedAt: new Date('2026-08-30T09:00:00.000Z') }));
+    const mapped = toSellerResponse(row({ membershipDeletedAt: new Date('2026-08-30T09:00:00.000Z') }), true);
     expect(mapped.deletedAt).toBe('2026-08-30T09:00:00.000Z');
   });
 
   it('says nothing about removal for a seller still here', () => {
-    expect(toSellerResponse(row()).deletedAt).toBeNull();
+    expect(toSellerResponse(row(), true).deletedAt).toBeNull();
+  });
+});
+
+describe('receiptChannel and the texting switch (Plan 29)', () => {
+  it('is never SMS while texting is off', () => {
+    const phoneOnly = row();
+    phoneOnly.membership.user.verifiedEmail = null;
+    phoneOnly.membership.user.verifiedPhone = '+18025550100';
+    expect(toSellerResponse(phoneOnly, true).receiptChannel).toBe('SMS');
+    expect(toSellerResponse(phoneOnly, false).receiptChannel).toBeNull();
   });
 });

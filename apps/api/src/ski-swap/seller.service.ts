@@ -7,6 +7,7 @@ import { MembershipTouchService } from '../common/identity/membership-touch.serv
 import { displayName, normalizeNamePart, normalizePhone, splitName } from '../common/util/person';
 import { createId } from '@paralleldrive/cuid2';
 import { parse as parseCsv } from 'csv-parse/sync';
+import { SmsService } from '../sms/sms.service';
 import type { PersonSearchResult, SellerResponse } from '../contracts/ski-swap.contracts';
 
 // ─── Address normalisation ────────────────────────────────────────────────────
@@ -102,7 +103,11 @@ type SellerRow = {
   };
 };
 
-export function toSellerResponse(s: SellerRow): SellerResponse {
+/**
+ * `smsOn` is the platform switch (Plan 29): while texting is off a receipt is
+ * never offered by text, even to a phone verified before.
+ */
+export function toSellerResponse(s: SellerRow, smsOn: boolean): SellerResponse {
   const u = s.membership.user;
   // Either row can carry the tombstone: a seller can be removed from the swap,
   // or leave the org entirely. Whichever happened, the client needs to know.
@@ -128,7 +133,7 @@ export function toSellerResponse(s: SellerRow): SellerResponse {
     phoneVerifiedAt: u.phoneVerifiedAt?.toISOString() ?? null,
     // The same precedence the send uses, from the same columns. A claim in
     // `email` is not somewhere a receipt may go.
-    receiptChannel: u.verifiedEmail ? 'EMAIL' : u.verifiedPhone ? 'SMS' : null,
+    receiptChannel: u.verifiedEmail ? 'EMAIL' : u.verifiedPhone && smsOn ? 'SMS' : null,
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.membership.updatedAt.toISOString(),
     deletedAt: deletedAt?.toISOString() ?? null,
@@ -142,7 +147,13 @@ export class SellerService {
     private readonly idempotency: IdempotencyService,
     private readonly people: PersonService,
     private readonly touch: MembershipTouchService,
+    private readonly sms: SmsService,
   ) {}
+
+  /** A seller as the API answers with it, under the current texting switch. */
+  private async respond(row: SellerRow): Promise<SellerResponse> {
+    return toSellerResponse(row, await this.sms.enabled());
+  }
 
   /**
    * Whether a seller could actually be reached and paid.
@@ -231,7 +242,8 @@ export class SellerService {
     const merged = new Map(
       [...sellers, ...byBusiness].map((s) => [s.id, s] as const),
     );
-    const all = [...merged.values()].map(toSellerResponse);
+    const smsOn = await this.sms.enabled();
+    const all = [...merged.values()].map((row) => toSellerResponse(row, smsOn));
     // Filtered after mapping rather than in SQL: the rule spans four address
     // columns and two payout ones, and is stated once here so the list and the
     // dashboard count cannot drift apart.
@@ -244,7 +256,7 @@ export class SellerService {
   }
 
   async get(orgId: string, sellerId: string): Promise<SellerResponse> {
-    return toSellerResponse(await this.findOrThrow(orgId, sellerId));
+    return this.respond(await this.findOrThrow(orgId, sellerId));
   }
 
   /**
@@ -281,7 +293,7 @@ export class SellerService {
 
     const membership = await this.people.upsertMembership(userId, orgId);
     const profile = await this.upsertSellerProfile(membership.id, null);
-    return toSellerResponse(await this.findByIdOrThrow(profile.id));
+    return this.respond(await this.findByIdOrThrow(profile.id));
   }
 
   async create(
@@ -326,7 +338,7 @@ export class SellerService {
       data.id,
     );
 
-    const response = toSellerResponse(await this.findByIdOrThrow(profile.id));
+    const response = await this.respond(await this.findByIdOrThrow(profile.id));
 
     if (idempotencyKey) {
       await this.idempotency.save(
@@ -382,7 +394,7 @@ export class SellerService {
           code: 'SELLER_MODIFIED',
           // Under `details` because that is what the error envelope carries;
           // `message` and `code` are the only other fields it keeps.
-          details: { seller: toSellerResponse(await this.findByIdOrThrow(sellerId)) },
+          details: { seller: await this.respond(await this.findByIdOrThrow(sellerId)) },
         });
       }
     }
@@ -397,7 +409,7 @@ export class SellerService {
     }
     await this.touch.touch(existing.membership.id);
 
-    const response = toSellerResponse(await this.findByIdOrThrow(sellerId));
+    const response = await this.respond(await this.findByIdOrThrow(sellerId));
     if (idempotencyKey) {
       await this.idempotency.save(
         `seller-patch:${orgId}`,
@@ -612,7 +624,7 @@ export class SellerService {
      * restore it into. A person can simply be a seller again.
      */
     if (existing.deletedAt) return null;
-    return toSellerResponse(existing);
+    return this.respond(existing);
   }
 
   /**

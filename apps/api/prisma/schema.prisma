@@ -1566,3 +1566,15 @@ model DeviceOutage {
   @@index([deviceId, startedAt])
   @@index([endedAt])
 }
+
+/// Platform-wide settings (Plan 29). Exactly one row, id 1, inserted by its
+/// migration; changed from Platform Admin → Configuration without a deploy.
+model PlatformSettings {
+  id          Int      @id @default(1)
+  /// Texting: sign-in codes, phone verification, texted receipts and payout
+  /// reminders. Off until a toll-free originator is approved; while off, every
+  /// SMS feature is hidden and refused.
+  smsEnabled  Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+}

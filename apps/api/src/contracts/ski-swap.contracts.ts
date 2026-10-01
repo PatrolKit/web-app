@@ -791,6 +791,12 @@ export const SkiSwapSettingsResponseSchema = z.object({
    * tree itself, which is no use for deciding whether to ask for the tree.
    */
   taxonomyVersion: z.number().int(),
+  /**
+   * Whether texting is on, platform-wide (Plan 29). Rides here for the same
+   * reason as `taxonomyVersion`: the iPad already fetches this every sync.
+   * While false, every SMS feature is hidden and the server refuses them.
+   */
+  smsEnabled: z.boolean(),
 });
 
 export class UpdateSkiSwapSettingsDto extends createZodDto(UpdateSkiSwapSettingsSchema) {}

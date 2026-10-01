@@ -21,6 +21,7 @@ import { MeModule } from './me/me.module';
 import { OrgsModule } from './orgs/orgs.module';
 import { MembersModule } from './members/members.module';
 import { PlatformModule } from './platform/platform.module';
+import { PlatformSettingsModule } from './platform/platform-settings.module';
 import { OrgModulesModule } from './modules/modules.module';
 import { DevicesModule } from './devices/devices.module';
 import { DeviceImagesModule } from './device-images/device-images.module';
@@ -77,6 +78,7 @@ import appConfig from './config/app.config';
     OrgsModule,
     MembersModule,
     PlatformModule,
+    PlatformSettingsModule,
     OrgModulesModule,
     DevicesModule,
     BootstrapModule,

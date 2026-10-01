@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFeatures } from '../../lib/features';
 import {
   CheckinShell, contextLine, ErrorNote, inputClass, primaryButtonClass, secondaryButtonClass,
 } from './shared';
@@ -26,7 +27,10 @@ function channelTabClass(active: boolean): string {
 export default function SignInStep({ context }: { context: CheckinContext }) {
   const { login } = useAuth();
   const [mode, setMode] = useState<Mode>('contact');
-  const [useEmail, setUseEmail] = useState(false);
+  const [emailPicked, setUseEmail] = useState(false);
+  // Texting off (Plan 29): email is the only way, and phones go unmentioned.
+  const { sms } = useFeatures();
+  const useEmail = !sms || emailPicked;
 
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -163,7 +167,7 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
         {/* Phone sits on the left and starts selected: an SMS code offers itself
             in the iOS keyboard bar, which email cannot match. Both are one tap,
             so nothing is hidden behind a link. */}
-        <div className="grid grid-cols-2 gap-2 p-1 bg-surface-100 rounded-lg">
+        {sms && <div className="grid grid-cols-2 gap-2 p-1 bg-surface-100 rounded-lg">
           <button
             type="button"
             aria-pressed={!useEmail}
@@ -180,7 +184,7 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
           >
             Email
           </button>
-        </div>
+        </div>}
 
         {useEmail ? (
           <input
@@ -236,7 +240,8 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
       </div>
 
       <p className="text-xs text-gray-500 text-center">
-        Already sold here before? Use the same number or address and we will find you.
+        Already sold here before? Use the same {sms ? 'number or address' : 'email address'} and we
+        will find you.
       </p>
     </CheckinShell>
   );

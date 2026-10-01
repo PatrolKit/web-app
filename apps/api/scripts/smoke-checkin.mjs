@@ -19,11 +19,14 @@ import argon2 from 'argon2';
 // Node 18 has no global `crypto`; the deployed host runs 18.
 import { randomUUID } from 'crypto';
 
-import { smokeOrg, smokeStaff, smokeSession, forceChallengeCode } from './_fixture.mjs';
+import { smokeOrg, smokeStaff, smokeSession, forceChallengeCode, textingOnForRun } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
 const unwrap = async (r) => { const b = await r.json(); return b && b.success && 'data' in b ? b.data : b; };
+
+// Sellers here sign up by phone, which needs texting on (Plan 29). Put back after.
+const restoreTexting = await textingOnForRun(prisma, BASE, unwrap);
 const ok = (label, cond, extra = '') =>
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? ' — ' + extra : ''}`);
 
@@ -360,7 +363,7 @@ const quiet = await fetch(
 ).then(unwrap);
 ok('an item cursor in the future returns nothing', quiet.items.length === 0, `${quiet.items.length} items`);
 
-const sellers = await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers`, { headers: SH }).then(unwrap);
+const { sellers } = await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers`, { headers: SH }).then(unwrap);
 const dana = sellers.find((x) => x.phone === '+15550199001');
 ok('a seller reports a removal field', dana !== undefined && dana.deletedAt === null,
    JSON.stringify(dana?.deletedAt));
@@ -374,7 +377,7 @@ await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers/${dana.id}`, {
 const afterEdit = await fetch(
   `${BASE}/orgs/${org.id}/ski-swap/sellers?updatedSince=${encodeURIComponent(cursor)}`,
   { headers: SH },
-).then(unwrap);
+).then(unwrap).then((r) => r.sellers);
 ok('a renamed seller reaches a delta-syncing client',
    afterEdit.some((x) => x.id === dana.id && x.lastName === 'Whitcomb'),
    `${afterEdit.length} changed`);
@@ -394,12 +397,12 @@ ok('a seller can be removed', removed.status === 200 || removed.status === 204, 
 const afterRemoval = await fetch(
   `${BASE}/orgs/${org.id}/ski-swap/sellers?updatedSince=${encodeURIComponent(cursor)}`,
   { headers: SH },
-).then(unwrap);
+).then(unwrap).then((r) => r.sellers);
 const tombstone = afterRemoval.find((x) => x.id === dana.id);
 ok('a removed seller arrives as a tombstone, not an absence', !!tombstone?.deletedAt,
    JSON.stringify(tombstone?.deletedAt));
 
-const live = await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers`, { headers: SH }).then(unwrap);
+const live = await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers`, { headers: SH }).then(unwrap).then((r) => r.sellers);
 ok('and is still absent from the staff list', !live.some((x) => x.id === dana.id),
    `${live.length} live`);
 
@@ -413,4 +416,5 @@ await prisma.checkinStation.delete({ where: { id: station.id } });
 await prisma.swapPrinter.delete({ where: { id: printer.id } });
 await prisma.device.delete({ where: { id: device.id } });
 await prisma.user.deleteMany({ where: { phone: '+15550199001' } });
+await restoreTexting();
 await prisma.$disconnect();

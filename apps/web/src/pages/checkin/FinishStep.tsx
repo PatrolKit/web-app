@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheck as faCheckDuo, faEnvelope as faEnvelopeDuo, faMessage as faMessageDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
+import { useFeatures } from '../../lib/features';
 import { CheckinShell, contextLine, ErrorNote, formatCents, secondaryButtonClass } from './shared';
 import type { CheckinContext, CheckinSummary } from '../../lib/api.types';
 
@@ -61,7 +62,9 @@ export default function FinishStep({
   const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(emailedTo);
   const [sendError, setSendError] = useState('');
-  const destination = verifiedEmail ?? verifiedPhone;
+  // Texting off (Plan 29): a copy goes by email or not at all.
+  const { sms } = useFeatures();
+  const destination = verifiedEmail ?? (sms ? verifiedPhone : null);
   const byEmail = !!verifiedEmail;
 
   async function sendCopy() {

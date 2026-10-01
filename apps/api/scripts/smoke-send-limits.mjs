@@ -16,7 +16,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import {
-  smokeOrg, smokeStaff, smokeSession, smokeSuperAdmin, dropSmokeAdmin,
+  smokeOrg, smokeStaff, smokeSession, smokeSuperAdmin, dropSmokeAdmin, textingOnForRun,
 } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
@@ -29,6 +29,9 @@ const ok = (label, cond, extra = '') => {
 };
 const body = async (r) => { const b = await r.json(); return b?.success && 'data' in b ? b.data : b; };
 const unwrap = body;
+
+// Sellers here sign up by phone, which needs texting on (Plan 29). Put back after.
+const restoreTexting = await textingOnForRun(prisma, BASE, unwrap);
 const addr = () => `203.0.113.${Math.floor(Math.random() * 250) + 2}`;
 
 const PHONE = '+15550199061';
@@ -46,8 +49,10 @@ const swap = await prisma.skiSwap.create({
     skuPrefix: 'SLS', active: true, activeSkuPrefix: 'SLS',
   },
 });
+// A letter no other script's station is holding: they share the smoke org.
+const taken = new Set((await prisma.checkinStation.findMany({ where: { orgId: org.id }, select: { code: true } })).map((s) => s.code));
 const station = await prisma.checkinStation.create({
-  data: { orgId: org.id, name: 'Send limits station', code: 'L' },
+  data: { orgId: org.id, name: 'Send limits station', code: [...'LABCDEFGHJKMNPSUWXY23456789'].find((c) => !taken.has(c)) },
 });
 
 const register = (phone, from) =>
@@ -136,6 +141,7 @@ await prisma.user.deleteMany({ where: { phone: { in: [PHONE, NOBODY] } } });
 await prisma.checkinStation.delete({ where: { id: station.id } });
 await prisma.skiSwap.delete({ where: { id: swap.id } });
 await dropSmokeAdmin(prisma);
+await restoreTexting();
 await prisma.$disconnect();
 
 console.log(failures ? `\n${failures} failing assertion(s)` : '\nAll assertions passed');

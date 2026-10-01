@@ -97,7 +97,7 @@ function stubPrisma(pin: string | null, exists = true) {
 }
 
 describe.each([
-  ['ski swap', (p: unknown) => new SkiSwapSettingsService(p as never), 'ski_swap'],
+  ['ski swap', (p: unknown) => new SkiSwapSettingsService(p as never, { smsEnabled: async () => false } as never), 'ski_swap'],
   ['time clock', (p: unknown) => new TimeClockSettingsService(p as never), 'time_clock'],
 ])('%s settings', (_name, make, prefix) => {
   it('reports null for an org that has never set one', async () => {

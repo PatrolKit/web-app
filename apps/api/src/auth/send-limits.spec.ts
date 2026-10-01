@@ -15,6 +15,7 @@ const PHONE = '+18025550100';
  * superseded rows, because the real one does.
  */
 function harness() {
+  const smsOn = { value: true };
   const rows: { id: string; target: string; createdAt: Date; usedAt: Date | null }[] = [];
   const sent: string[] = [];
   const written: unknown[] = [];
@@ -41,13 +42,13 @@ function harness() {
     get: (k: string, d?: unknown) =>
       ({ 'app.outboundNotifications': true, 'app.nodeEnv': 'production' })[k] ?? d,
   };
-  const sms = { send: async (to: string) => { sent.push(to); return { status: 'sent' }; } };
+  const sms = { enabled: async () => smsOn.value, send: async (to: string) => { sent.push(to); return { status: 'sent' }; } };
   const mail = { sendMagicLink: async (to: string) => { sent.push(to); return { status: 'sent' }; } };
   const resolver = { resolve: async () => ({ orgId: '', swapId: '' }) } as unknown as AttributionResolver;
   const usage = new LimitUsageService(prisma as never, resolver);
 
   const challenges = new ContactChallengeService(prisma as never, mail as never, sms as never, config as never, usage);
-  const auth = new AuthService(prisma as never, {} as never, challenges, config as never);
+  const auth = new AuthService(prisma as never, {} as never, challenges, config as never, sms as never);
 
   const issue = (target = PHONE, whenLimited?: 'refuse' | 'decoy') =>
     challenges.issue({ userId: 'u1', channel: 'phone', target, purpose: 'verify', whenLimited });
@@ -57,7 +58,7 @@ function harness() {
     }
   };
 
-  return { rows, sent, written, usage, challenges, auth, issue, backdate, prisma };
+  return { rows, sent, written, usage, challenges, auth, issue, backdate, prisma, smsOn };
 }
 
 describe('codes, per destination', () => {
@@ -123,6 +124,22 @@ describe('a limited sign-in', () => {
     expect(h.rows.find((r) => r.id === limited!.challengeId)).toBeUndefined();
     expect(h.rows).toHaveLength(rowsBefore);
     expect(h.sent).toHaveLength(0);
+  });
+});
+
+describe('signing in by phone with texting off (Plan 29)', () => {
+  it('refuses a known and an unknown number alike, before looking either up', async () => {
+    const h = harness();
+    h.smsOn.value = false;
+    const lookup = jest.spyOn(h.prisma.user, 'findFirst');
+    const known = await h.auth.requestLogin({ phone: PHONE }).catch((e: HttpException) => e);
+    const unknown = await h.auth.requestLogin({ phone: '+18025550142' }).catch((e: HttpException) => e);
+    for (const e of [known, unknown]) {
+      expect((e as HttpException).getStatus()).toBe(400);
+      expect((e as HttpException).getResponse()).toEqual({ message: 'Use your email to sign in.', code: 'SMS_OFF' });
+    }
+    expect(lookup).not.toHaveBeenCalled();
+    expect(h.rows).toHaveLength(0);
   });
 });
 

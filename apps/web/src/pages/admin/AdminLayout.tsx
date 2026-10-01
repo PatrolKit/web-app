@@ -38,6 +38,7 @@ export default function AdminLayout() {
         <NavLink to="/dashboard/admin/item-taxonomy" className={navClass}>Item Details</NavLink>
         <NavLink to="/dashboard/admin/health" className={navClass}>Server health</NavLink>
         <NavLink to="/dashboard/admin/telemetry" className={navClass}>Device Telemetry</NavLink>
+        <NavLink to="/dashboard/admin/configuration" className={navClass}>Configuration</NavLink>
       </nav>
 
       <Outlet />

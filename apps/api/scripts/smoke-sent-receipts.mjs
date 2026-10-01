@@ -16,11 +16,14 @@ import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import { randomUUID } from 'crypto';
 
-import { smokeOrg, smokeStaff, smokeSession, forceChallengeCode } from './_fixture.mjs';
+import { smokeOrg, smokeStaff, smokeSession, forceChallengeCode, textingOnForRun } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
 const unwrap = async (r) => { const b = await r.json(); return b && b.success && 'data' in b ? b.data : b; };
+
+// Sellers here sign up by phone, which needs texting on (Plan 29). Put back after.
+const restoreTexting = await textingOnForRun(prisma, BASE, unwrap);
 const ok = (label, cond, extra = '') =>
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? ' — ' + extra : ''}`);
 
@@ -335,4 +338,5 @@ const sameAnswer = (a, b) =>
 ok('and the retry replays the first answer', sameAnswer(first, replay),
    `${first.receiptId}/${first.status} vs ${replay.receiptId}/${replay.status}`);
 
+await restoreTexting();
 await prisma.$disconnect();
