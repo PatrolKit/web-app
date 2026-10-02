@@ -6,7 +6,7 @@ import { faPrint as faPrintDuo, faPrintSlash as faPrintSlashDuo } from '@fortawe
 import { useAuth } from '../contexts/AuthContext';
 import { PrinterProvider, usePrinter } from '../contexts/PrinterContext';
 import { api } from '../lib/api';
-import type { OrgRole } from '../lib/api.types';
+import type { OrgRole, SwapPrinterRecord } from '../lib/api.types';
 import {
   PAPER_SIZE_LABELS,
   paperSizesFor,
@@ -220,7 +220,7 @@ function PrinterStatusBar() {
   const {
     preferredPrinter, isPreferredConnected, connectPreferred, disconnectPreferred,
     setPaperSize, previewMode, setPreviewMode, isSupported,
-    printCalibration, printPrinterIdLabel,
+    printCalibration, printPrinterIdLabel, printers, connectPrinterById,
   } = usePrinter();
   const [isConnecting, setIsConnecting] = useState(false);
   const [showPopover, setShowPopover] = useState(false);
@@ -260,6 +260,30 @@ function PrinterStatusBar() {
       setIsConnecting(false);
     }
   }
+
+  /**
+   * Connects to another of the org's printers, which then becomes the one this
+   * browser prints to. A printer on a bridge is left out: the bridge holds its
+   * Bluetooth link, so the browser could never reach it.
+   */
+  async function handleSwitch(printer: SwapPrinterRecord) {
+    setIsConnecting(true);
+    setConnectError(null);
+    try {
+      await connectPrinterById(printer);
+      setShowPopover(false);
+    } catch (err: unknown) {
+      const name = (err as { name?: string })?.name;
+      setConnectError(
+        name === 'NotFoundError'
+          ? `${printer.name} wasn't picked. If it wasn't listed, it's asleep, out of range, or connected to something else.`
+          : (err as Error)?.message ?? `Could not connect to ${printer.name}.`,
+      );
+    } finally {
+      setIsConnecting(false);
+    }
+  }
+  const otherPrinters = printers.filter((p) => p.id !== preferredPrinter?.id && !p.bridgeDeviceId);
 
   async function handlePaperSize(size: PaperSize) {
     setShowPopover(false);
@@ -369,8 +393,25 @@ function PrinterStatusBar() {
                   disabled={isConnecting}
                   className="w-full text-left px-3 py-2 text-gray-300 hover:bg-surface-200 disabled:opacity-40"
                 >
-                  {isConnecting ? 'Connecting…' : 'Reconnect'}
+                  {isConnecting ? 'Connecting…' : `Reconnect to ${preferredPrinter.name}`}
                 </button>
+                {otherPrinters.length > 0 && (
+                  <>
+                    <div className="border-t border-gray-800" />
+                    <p className="px-3 pt-2 pb-1 text-gray-500 text-xs">Connect a different printer</p>
+                    {otherPrinters.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => { void handleSwitch(p); }}
+                        disabled={isConnecting}
+                        className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-surface-200 disabled:opacity-40"
+                      >
+                        {p.name}
+                        <span className="text-gray-500"> · {PAPER_SIZE_LABELS[p.paperSize]}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
                 {connectError && (
                   <p className="px-3 pb-2 text-amber-400 text-xs">{connectError}</p>
                 )}
