@@ -4,9 +4,13 @@
 > Each item names the file and line so the fix can be scoped from this
 > document alone.
 >
-> **Fixed 2026-10-01:** A2, A3, A4, A5, A6, A9, A10, A11, A12, A13, A14, A15,
-> A16. Line numbers in those entries describe the code as reviewed, before the
-> fix. Still open: A1, A7, A8, everything in B, C, and D.
+> **Fixed 2026-10-01:** A2, A3, A4, A5, A6, A7, A9, A10, A11, A12, A13, A14,
+> A15, A16. Line numbers in those entries describe the code as reviewed, before
+> the fix. Still open: A1, A8, everything in B, C, and D.
+>
+> A rule that came out of A7: payout lines are what a seller is paid, and are
+> not to be read as evidence of anything else — not sales, not stock. Square
+> is the source for both.
 
 ## How this was done
 

@@ -736,6 +736,12 @@ export interface PublicSellerDetailItem {
   originalQuantity: number;
   inStock: number;
   soldCount: number;
+  /**
+   * Whether `soldCount` is Square's answer. False when Square could not be
+   * read. Optional because this page is reached from a printed tag and may
+   * run against an older API; absent reads as known, which is what it was.
+   */
+  inventoryKnown?: boolean;
   donateProceeds: boolean;
   /** False while the item is still waiting for a staff member to accept it. */
   consigned: boolean;

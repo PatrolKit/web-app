@@ -6,10 +6,14 @@ import type {
 } from '../contracts/ski-swap.contracts';
 import { displayName } from '../common/util/person';
 import { basisPointsToPercent } from './payouts/money';
+import { PosAdapterFactory } from './pos/pos.adapter';
 
 @Injectable()
 export class PublicSellerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly posFactory: PosAdapterFactory,
+  ) {}
 
   async getById(sellerId: string): Promise<PublicSellerDetailResponse> {
     const profile = await this.prisma.sellerProfile.findUnique({
@@ -38,7 +42,7 @@ export class PublicSellerService {
     });
     // Read before the early return: a seller whose swap has ended still has
     // money to account for, and that is exactly when they come looking.
-    const { payouts, soldItemIds } = await this.payoutsFor(seller.id);
+    const payouts = await this.payoutsFor(seller.id);
 
     if (!activeSwaps.length) {
       return {
@@ -63,18 +67,75 @@ export class PublicSellerService {
         originalQuantity: true,
         donateProceeds: true,
         consignedAt: true,
+        squareVariationId: true,
       },
     });
 
     // Group items by swap, omitting swaps with no items for this seller
-    const swapMap = new Map<string, { swapId: string; swapTitle: string; items: typeof items }>();
+    const swapMap = new Map<string, { swapId: string; swapTitle: string; locationId: string; items: typeof items }>();
     for (const item of items) {
       if (!swapMap.has(item.swapId)) {
         const swap = activeSwaps.find((s) => s.id === item.swapId)!;
-        swapMap.set(item.swapId, { swapId: swap.id, swapTitle: swap.title, items: [] });
+        swapMap.set(item.swapId, { swapId: swap.id, swapTitle: swap.title, locationId: swap.locationId, items: [] });
       }
       swapMap.get(item.swapId)!.items.push(item);
     }
+
+    /*
+     * Sold means Square says so, the same reading the staff items page takes.
+     *
+     * This used to be derived from payout lines, which exist only once a
+     * payout run has been built — days after the swap — so a seller opening
+     * the link on their receipt saw "Not yet sold" under every item all
+     * weekend, beneath a sentence promising the page updates on its own. A
+     * payout is what the seller is paid; it is not where a sale is recorded,
+     * and it says nothing about anything until somebody builds one.
+     *
+     * One Square read per swap, because the location is the swap's. A read
+     * that fails leaves those items "unknown" rather than unsold: the page
+     * says it could not check, which is true, instead of guessing.
+     */
+    const pos = await this.posFactory.forOrg(seller.orgId);
+    const swaps = await Promise.all(
+      Array.from(swapMap.values()).map(async (s) => {
+        const variationIds = s.items
+          .map((i) => i.squareVariationId)
+          .filter((id): id is string => !!id);
+        const counts: Map<string, number> | null =
+          pos && s.locationId && variationIds.length
+            ? await pos.getInventoryCounts(variationIds, s.locationId).catch(() => null)
+            : new Map();
+
+        return {
+          swapId: s.swapId,
+          swapTitle: s.swapTitle,
+          items: s.items.map((item) => {
+            // Only an item in Square has stock to not know about. Anything
+            // not there yet has all of its stock, by our own record.
+            const inventoryKnown = counts !== null || !item.squareVariationId;
+            const inStock = !inventoryKnown
+              ? item.originalQuantity
+              : item.squareVariationId
+                ? (counts!.get(item.squareVariationId) ?? 0)
+                : item.originalQuantity;
+            return {
+              itemId: item.id,
+              name: item.name,
+              sku: item.sku,
+              priceCents: item.priceCents,
+              originalQuantity: item.originalQuantity,
+              inStock,
+              soldCount: Math.max(0, item.originalQuantity - inStock),
+              inventoryKnown,
+              donateProceeds: item.donateProceeds,
+              // A date rather than the date: the seller is told whether their item
+              // was taken, not when a volunteer got to it.
+              consigned: item.consignedAt !== null,
+            };
+          }),
+        };
+      }),
+    );
 
     return {
       sellerName: seller.name,
@@ -82,29 +143,7 @@ export class PublicSellerService {
       orgLogoUrl: seller.org.logoUrl ?? null,
       payoutMethod: seller.payoutMethod,
       payouts,
-      swaps: Array.from(swapMap.values()).map((s) => ({
-        swapId: s.swapId,
-        swapTitle: s.swapTitle,
-        items: s.items.map((item) => ({
-          itemId: item.id,
-          name: item.name,
-          sku: item.sku,
-          priceCents: item.priceCents,
-          originalQuantity: item.originalQuantity,
-          // DB-only: inStock is not yet decremented by Square; treat originalQty as inStock
-          inStock: soldItemIds.has(item.id) ? 0 : item.originalQuantity,
-          // Square's inventory is not mirrored here, so this was always zero —
-          // which was merely incomplete until a payout section appeared
-          // underneath it, and then became a contradiction: "Not yet sold"
-          // directly above "Sold $100.00, paid". A payout line is proof of a
-          // sale, so where one exists it is believed.
-          soldCount: soldItemIds.has(item.id) ? 1 : 0,
-          donateProceeds: item.donateProceeds,
-          // A date rather than the date: the seller is told whether their item
-          // was taken, not when a volunteer got to it.
-          consigned: item.consignedAt !== null,
-        })),
-      })),
+      swaps,
     };
   }
 
@@ -115,26 +154,16 @@ export class PublicSellerService {
    * and a seller chasing money from a swap that closed last month is precisely
    * the person this section is for.
    */
-  private async payoutsFor(
-    sellerId: string,
-  ): Promise<{ payouts: PublicSellerPayout[]; soldItemIds: Set<string> }> {
+  private async payoutsFor(sellerId: string): Promise<PublicSellerPayout[]> {
     const lines = await this.prisma.payoutLine.findMany({
       where: { sellerId },
       orderBy: { createdAt: 'desc' },
       include: {
-        items: { select: { itemId: true } },
         run: { select: { commissionBasisPoints: true, swap: { select: { title: true } } } },
       },
     });
 
-    // Which of this seller's items a run found a sale for. The payout's own
-    // evidence, so the two halves of the page cannot disagree.
-    const soldItemIds = new Set<string>();
-    for (const line of lines) {
-      for (const item of line.items) if (item.itemId) soldItemIds.add(item.itemId);
-    }
-
-    const payouts = lines.map((line) => ({
+    return lines.map((line) => ({
       swapTitle: line.run.swap.title,
       status: line.status as PublicSellerPayout['status'],
       grossCents: line.grossCents,
@@ -149,8 +178,6 @@ export class PublicSellerService {
       // is the person who can do something about it.
       needsAction: line.status === 'UNCLAIMED',
     }));
-
-    return { payouts, soldItemIds };
   }
 }
 

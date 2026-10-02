@@ -819,6 +819,12 @@ export const PublicSellerDetailItemSchema = z.object({
   originalQuantity: z.number().int(),
   inStock: z.number().int(),
   soldCount: z.number().int(),
+  /**
+   * Whether `inStock` and `soldCount` are Square's answer. False when Square
+   * could not be read; the numbers then say "unsold" as a placeholder, and
+   * the page says it could not check rather than showing either word.
+   */
+  inventoryKnown: z.boolean(),
   donateProceeds: z.boolean(),
   /**
    * False while the item is still waiting for a staff member to accept it, so

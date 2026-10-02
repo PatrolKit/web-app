@@ -249,11 +249,13 @@ export default function SellerItemsPage() {
                     </thead>
                     <tbody>
                       {swap.items.map((item) => {
-                        const sold = item.soldCount > 0;
-                        // Waiting outranks "not yet sold", which would be
-                        // technically true and quietly misleading: the item
-                        // cannot sell, because nobody has taken it yet.
+                        // Waiting outranks everything: the item cannot sell,
+                        // because nobody has taken it yet. Then whether Square
+                        // could be asked, and only then its answer — a guess
+                        // either way would be read as a fact.
                         const waiting = !item.consigned;
+                        const unknown = !waiting && item.inventoryKnown === false;
+                        const sold = !waiting && !unknown && item.soldCount > 0;
                         return (
                           <tr key={item.itemId} className="border-b border-gray-800 last:border-0">
                             <td className="px-3 py-2 text-white">{item.name}</td>
@@ -266,10 +268,18 @@ export default function SellerItemsPage() {
                                     ? 'bg-green-900/40 text-green-400'
                                     : waiting
                                       ? 'bg-yellow-900/40 text-yellow-300'
-                                      : 'bg-surface-100 text-gray-400'
+                                      : unknown
+                                        ? 'bg-amber-900/40 text-amber-300'
+                                        : 'bg-surface-100 text-gray-400'
                                 }`}
                               >
-                                {sold ? 'Sold' : waiting ? 'Waiting to be accepted' : 'Not yet sold'}
+                                {sold
+                                  ? 'Sold'
+                                  : waiting
+                                    ? 'Waiting to be accepted'
+                                    : unknown
+                                      ? 'Could not check — try again shortly'
+                                      : 'Not yet sold'}
                               </span>
                             </td>
                           </tr>
