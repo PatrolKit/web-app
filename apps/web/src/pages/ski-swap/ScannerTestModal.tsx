@@ -180,7 +180,7 @@ export default function ScannerTestModal({ scanner, onClose }: { scanner: SwapSc
         {step === 'done' && (
           <div className="space-y-3">
             <p className={`text-sm font-medium ${passed ? 'text-green-400' : 'text-red-400'}`}>
-              {passed ? 'Passed — this scanner reads both kinds of code exactly.' : 'Failed — see below.'}
+              {passed ? 'The scanner read all codes successfully.' : 'Failed — see below.'}
             </p>
             <ResultRow label="QR code" outcome={qr} want="qr" />
             <ResultRow label="Barcode" outcome={barcode} want="code128" />
