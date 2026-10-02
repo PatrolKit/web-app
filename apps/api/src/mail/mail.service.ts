@@ -4,6 +4,10 @@ import nodemailer from 'nodemailer';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import type { SendOutcome } from '../common/messaging/send-outcome';
 import { emailShell } from './email-shell';
+import { plainText } from './plain-text';
+import { formatSender, PLATFORM_SENDER_NAME, senderAddress } from './sender';
+import { PrismaService } from '../prisma/prisma.service';
+import { normalizeEmail } from '../common/util/person';
 
 /** Whose sign-in this is, when the person belongs to exactly one org. */
 export interface SignInBrand {
@@ -159,7 +163,10 @@ function escapeHtml(text: string): string {
 export class MailService {
   private readonly logger = new Logger(MailService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async sendMagicLink(
     to: string,
@@ -244,18 +251,51 @@ export class MailService {
       this.logger.log({ to, subject }, '[mail suppressed] OUTBOUND_NOTIFICATIONS is off');
       return { status: 'suppressed', reason: 'OUTBOUND_NOTIFICATIONS is off' };
     }
-    const from = this.config.get<string>('app.emailFrom', 'noreply@patrolkit.io');
+    const address = senderAddress(this.config.get<string>('app.emailFrom', 'noreply@patrolkit.io'));
+    const from = formatSender(await this.senderName(to), address);
+    const text = plainText(html);
     const transport = this.config.get<string>('app.mailTransport', 'smtp');
     try {
       const providerRef =
         transport === 'ses'
-          ? await this.sendViaSes(from, to, subject, html)
-          : await this.sendViaSmtp(from, to, subject, html);
+          ? await this.sendViaSes(from, to, subject, html, text)
+          : await this.sendViaSmtp(from, to, subject, html, text);
       this.logger.log({ to, subject, providerRef }, 'Email sent');
       return providerRef ? { status: 'sent', providerRef } : { status: 'sent' };
     } catch (err) {
       this.logger.error({ err, to }, 'Failed to send email');
       throw err;
+    }
+  }
+
+  /**
+   * Who the mail says it is from: the recipient's club when they belong to
+   * exactly one, otherwise PatrolKit (see `sender.ts`).
+   *
+   * Found by address, because that is all every caller has in common. An
+   * address claimed by more than one person is treated like several clubs: the
+   * name would be a guess.
+   */
+  private async senderName(to: string): Promise<string> {
+    const email = normalizeEmail(to);
+    if (!email) return PLATFORM_SENDER_NAME;
+    try {
+      const users = await this.prisma.user.findMany({
+        where: { OR: [{ verifiedEmail: email }, { email }] },
+        select: { id: true },
+        take: 2,
+      });
+      if (users.length !== 1) return PLATFORM_SENDER_NAME;
+      const memberships = await this.prisma.membership.findMany({
+        where: { userId: users[0].id, deletedAt: null, org: { status: 'active' } },
+        select: { org: { select: { name: true } } },
+        take: 2,
+      });
+      return memberships.length === 1 ? memberships[0].org.name : PLATFORM_SENDER_NAME;
+    } catch (err) {
+      // A name is a nicety. Failing to find one must not stop the mail.
+      this.logger.warn({ err }, 'Could not work out a sender name; using PatrolKit');
+      return PLATFORM_SENDER_NAME;
     }
   }
 
@@ -265,6 +305,7 @@ export class MailService {
     to: string,
     subject: string,
     html: string,
+    text: string,
   ): Promise<string | undefined> {
     const region = this.config.get<string>('app.sesRegion', 'us-east-2');
     const ses = new SESClient({ region });
@@ -274,7 +315,10 @@ export class MailService {
         Destination: { ToAddresses: [to] },
         Message: {
           Subject: { Data: subject, Charset: 'UTF-8' },
-          Body: { Html: { Data: html, Charset: 'UTF-8' } },
+          Body: {
+            Html: { Data: html, Charset: 'UTF-8' },
+            Text: { Data: text, Charset: 'UTF-8' },
+          },
         },
       }),
     );
@@ -286,13 +330,14 @@ export class MailService {
     to: string,
     subject: string,
     html: string,
+    text: string,
   ): Promise<string | undefined> {
     const transporter = nodemailer.createTransport({
       host: this.config.get<string>('app.smtpHost', 'localhost'),
       port: this.config.get<number>('app.smtpPort', 1025),
       secure: false,
     });
-    const info = await transporter.sendMail({ from, to, subject, html });
+    const info = await transporter.sendMail({ from, to, subject, html, text });
     return info.messageId;
   }
 }
