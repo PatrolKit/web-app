@@ -207,15 +207,39 @@ export class SellerSelfService {
     return { queued: true };
   }
 
+  /**
+   * A seller editing their own item.
+   *
+   * Until it is accepted for sale, anything. After, nothing — the same line as
+   * `deleteItem`. An accepted item is live at the register under a tag staff
+   * have checked, and changes to it are made at the counter, where somebody can
+   * see the gear and reprint the tag: a new price typed on a phone would ring
+   * up against a tag that says otherwise, and a quantity reset on something
+   * already sold would put it back in stock.
+   *
+   * The one thing still accepted is `hasPrintedTag`, which the web sets itself
+   * after printing a tag. It records that a tag came out, not anything about
+   * the item.
+   */
   async updateItem(
     orgId: string,
     userId: string,
     itemId: string,
-    data: { name?: string; description?: string | null; priceCents?: number; quantity?: number; donateProceeds?: boolean; hasPrintedTag?: boolean },
+    data: {
+      categoryId?: string;
+      attributes?: ItemAttributeInput[];
+      description?: string | null;
+      priceCents?: number;
+      quantity?: number;
+      donateProceeds?: boolean;
+      hasPrintedTag?: boolean;
+    },
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
+    const editsItem = Object.entries(data).some(([key, value]) => key !== 'hasPrintedTag' && value !== undefined);
+    if (editsItem) this.assertNotAccepted(item);
     return this.itemService.patch(orgId, item.swapId, itemId, data);
   }
 
@@ -227,13 +251,12 @@ export class SellerSelfService {
    * push to Square on every path — so this is the line between gear the seller
    * still effectively holds and gear that is live at a register.
    *
-   * Three paths stamp it at creation: a staff check-in, a station self check-in
-   * at an org that does not require a scan, and a business seller listing stock
-   * from their own desk, where there is no station and so nothing to wait for.
-   * The one path that leaves it null is a station self check-in at an org
-   * running `requireConsignmentScan`, which is exactly the case this guard is
-   * for: the seller has tagged their gear and is standing beside it, and may
-   * take a row back out until a staff member accepts it.
+   * Two paths stamp it at creation: a staff check-in, and a station self
+   * check-in at an org that does not require a scan. Two leave it null until
+   * staff accept the item: a station self check-in at an org running
+   * `requireConsignmentScan`, and anything a seller enters or uploads away from
+   * a station, such as a shop's inventory. Until then the seller may take a row
+   * back out.
    *
    * After that it is staff work — rare, and done at the counter, where somebody
    * can see both the gear and the tag. That is the thing a seller on their phone
@@ -263,6 +286,7 @@ export class SellerSelfService {
     const seller = await this.getSellerRecord(orgId, userId);
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
+    this.assertNotAccepted(item);
     return this.itemService.uploadPhoto(orgId, item.swapId, itemId, file);
   }
 
@@ -270,10 +294,22 @@ export class SellerSelfService {
     const seller = await this.getSellerRecord(orgId, userId);
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
+    this.assertNotAccepted(item);
     return this.itemService.deletePhoto(orgId, item.swapId, itemId, photoId);
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /** Edits to an accepted item are staff work, made at the counter (see `updateItem`). */
+  private assertNotAccepted(item: { name: string; consignedAt: Date | null }) {
+    if (item.consignedAt === null) return;
+    throw new ConflictException({
+      message:
+        `${item.name} has already been accepted for sale, so it can only be changed at the counter. ` +
+        'Ask a staff member and they can change it for you.',
+      code: 'ITEM_ACCEPTED',
+    });
+  }
 
   private async requireOwnership(orgId: string, sellerId: string, itemId: string) {
     const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId, deletedAt: null } });
@@ -281,3 +317,4 @@ export class SellerSelfService {
     if (item.sellerId !== sellerId) throw new ForbiddenException('Not your item');
   }
 }
+

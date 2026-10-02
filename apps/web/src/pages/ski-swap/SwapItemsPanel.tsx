@@ -609,7 +609,15 @@ export default function SwapItemsPanel({
                 </td>
                 {canManage && (
                   <td className="py-2 flex gap-2 items-center">
-                    <button onClick={() => openEdit(item)} className="text-xs text-brand-500 hover:underline">Edit</button>
+                    {selfService && item.consignedAt ? (
+                      // Accepted items are changed at the counter, like delete below.
+                      <span
+                        className="text-xs text-gray-600 cursor-not-allowed"
+                        title="This item has been accepted for sale. Ask at the counter to change it."
+                      >Edit</span>
+                    ) : (
+                      <button onClick={() => openEdit(item)} className="text-xs text-brand-500 hover:underline">Edit</button>
+                    )}
                     {selfService && item.consignedAt ? (
                       // Said rather than hidden. A button that quietly vanishes
                       // once an item is accepted reads as a bug; this reads as
