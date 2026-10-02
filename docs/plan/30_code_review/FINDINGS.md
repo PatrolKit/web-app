@@ -1,12 +1,16 @@
 # Plan 30 — Pre-beta code review of Ski Swap
 
-> **Status:** Findings, 2026-10-01. Review ahead of the customer beta weekend.
-> Each item names the file and line so the fix can be scoped from this
-> document alone.
+> **Status:** Findings, 2026-10-01, reviewed ahead of the customer beta
+> weekend. Each item names the file and line as the code stood when reviewed,
+> so a fix can be scoped from this document alone.
 >
-> **Fixed 2026-10-01:** A2, A3, A4, A5, A6, A7, A9, A10, A11, A12, A13, A14,
-> A15, A16. Line numbers in those entries describe the code as reviewed, before
-> the fix. Still open: A1, A8, everything in B, C, and D.
+> **Fixed the same day** (commits `079ba4e` and `3cdad02`): A2, A3, A4, A5,
+> A6, A7, A9, A10, A11, A12, A13, A14, A15, A16. Each of those entries ends
+> with a **Fixed** note saying what was done. Line numbers in the entry body
+> describe the code before the fix.
+>
+> **Still open:** A1 (check the swap prefix length), A8, everything in B, C
+> and D.
 >
 > A rule that came out of A7: payout lines are what a seller is paid, and are
 > not to be read as evidence of anything else — not sales, not stock. Square
@@ -26,8 +30,9 @@ Alongside the reading:
 - `jest` in `apps/api`: 68 suites, 738 tests, all pass.
 - `tsc` in both apps: clean.
 - `vitest` in `apps/web`: 4 files, 55 tests, all pass.
-- `pnpm lint`: one error (unused `isPrintingId` in `PrintersPage.tsx:65`),
-  four warnings.
+- `pnpm lint`: one web error (unused `isPrintingId` in `PrintersPage.tsx:65`,
+  fixed in `079ba4e`), one pre-existing API error (`let` for `const` in
+  `label-templates.ts:841`), four warnings.
 - Production probes: `patrolkit.io` and `skiswap.patrolkit.io` both serve;
   `/public/features` reports `sms: false`.
 - DNS: SPF for `patrolkit.io` is `include:spf.improvmx.com ~all` only; there is
@@ -107,6 +112,8 @@ B has no profile); "I'm done" is refused with "We still need your address". No
 way back except a hard reload. Fix: reset all check-in state on logout, or key
 the state on `user.id`.
 
+**Fixed** in `079ba4e`. `CheckinPage` now renders the signed-in flow as a child component keyed on `user.id`, so a change of person is a fresh component with none of the previous seller's state.
+
 ### A3. Concurrent consign creates duplicate Square catalog items
 `apps/api/src/ski-swap/item.service.ts:941-949` (`consign`), `:894`
 (`pushConsignedBatch`)
@@ -125,6 +132,8 @@ pressing "Accept all", and between check-in finish's push and a staff re-push.
 
 Fix: `updateMany({ where: { id, consignedAt: null } })` and push only when
 `count === 1`; re-read `squareItemId` inside the push under a row lock.
+
+**Fixed** in `079ba4e`. `consign` stamps with `updateMany({ where: { id, consignedAt: null } })` and pushes only when `count === 1`; `consignAllForSeller` does the same one row at a time and pushes only the rows it won. `syncItemToPos` serialises pushes per item behind an in-process lock and re-reads the Square ids inside it, so a finish and a staff re-push cannot both create.
 
 ### A4. Any Square inventory read failure shows every item as "Sold"
 `apps/api/src/ski-swap/item.service.ts:1049,1064`,
@@ -161,6 +170,8 @@ Two related permanent cases:
 Fix: distinguish "no reading" from "zero" in the response (`inStock: null`),
 and render it as unknown.
 
+**Fixed** in `079ba4e`. `fetchInventoryMap` returns `null` on a failed read; `toResponse` and `StatsService` carry a new `inventoryKnown` field, with unknown stock reported as unsold rather than sold. The web shows a "Stock unknown" state in the items panel and dashes on the dashboard. The Square adapter now recreates an item Square returns NOT_FOUND for, reads every page of inventory counts, and sets an initial count for an existing item only when Square answers and holds no count row at all (never on a failed read, which would restock a sold item).
+
 ### A5. Staff items page silently shows only the first 50 items
 `apps/web/src/pages/ski-swap/SwapItemsPanel.tsx:278-285`,
 `apps/api/src/ski-swap/item.service.ts:165`
@@ -176,6 +187,8 @@ SKU or name.
 Same cap on a business seller's "My items" (`seller-self.service.ts:78-85`):
 a shop that imports 200 ticket items sees 50.
 
+**Fixed** in `079ba4e`. `SwapItemsPanel` fetches every page (200 at a time until `total`), and the seller's own `GET /seller/me/items` accepts `skip`/`take` so the shop's page pages the same way.
+
 ### A6. Searching by name returns every item / every seller
 `apps/api/src/ski-swap/item.service.ts:120`,
 `apps/api/src/ski-swap/seller.service.ts:215`
@@ -186,6 +199,8 @@ which matches every non-null phone, and it is OR'd with the other clauses.
 Staff typing a brand or surname get effectively the whole swap or roster.
 Fix: add the phone clause only when the digit string is non-empty.
 
+**Fixed** in `079ba4e`. Both searches add the phone clause only when the query contains a digit.
+
 ### A7. Public "track your items" page says "Not yet sold" all weekend
 `apps/api/src/ski-swap/public-seller.service.ts:88-99`,
 `apps/web/src/pages/public/SellerItemsPage.tsx:76`
@@ -194,6 +209,8 @@ Fix: add the phone clause only when the digit string is non-empty.
 payout run is built. The page text says "it updates on its own, so there is no
 need to call and ask." Sellers whose item sold Saturday see "Not yet sold"
 until the treasurer builds a run days later. They will call.
+
+**Fixed** in `3cdad02`. `PublicSellerService` reads Square inventory once per active swap at that swap's location, the same reading the staff items page takes, and reports `inventoryKnown` per item. Payout lines no longer feed the sold state at all. The page shows "Could not check — try again shortly" when Square did not answer. The rule that came out of it is in the status block at the top.
 
 ### A8. Print queue: bridge with no printer burns attempts; Clear leaves claimed jobs
 `apps/api/src/ski-swap/print-queue.service.ts:593-607,670` and `:850-856`
@@ -238,6 +255,8 @@ client restricts itself to one.
 Fix: refuse when the typed email and phone resolve to different people, or
 only ever issue to the contact that matched (or the one being created).
 
+**Fixed** in `079ba4e`. `register` resolves the account by the contact the code is sent to and by nothing else: `resolveOrCreate` is given only that one contact. Whatever else was typed plays no part in sign-in.
+
 ### A10. Staff "Add seller" silently resets a returning seller's payout to CHECK
 `apps/api/src/ski-swap/seller.service.ts:326-333` (create), `:664-666`
 (`writeUserFields`), `apps/web/src/pages/ski-swap/SellersPage.tsx:31,176-178`
@@ -252,6 +271,8 @@ by phone this weekend → `resolveOrCreate` matches → payout overwritten to
 CHECK with no warning. If a client sends only `payoutMethod`,
 `assertPayoutIsCoherent` instead throws 400 and the create fails.
 
+**Fixed** in `079ba4e`. `writeUserFields` applies the fill-gaps rule to the three payout fields as a unit: without `overwrite`, an existing `payoutMethod` is left alone. Staff edit (`patch`) still overwrites, as it passes `overwrite: true`.
+
 ### A11. Seller edit form cannot save business or email-only sellers
 `apps/web/src/pages/ski-swap/SellersPage.tsx:369-399`, `:183-194`
 
@@ -260,6 +281,8 @@ When `editSeller` is set the individual block renders for everyone with
 name + email) or an individual who self-checked-in by email has no phone →
 browser validation blocks Save with no visible reason. The patch also never
 sends `businessName`, so a shop cannot be renamed.
+
+**Fixed** in `079ba4e`. Editing a shop shows a required Business name field and sends `businessName` on save; first and last name are required only for individuals; phone is never `required` (the server still requires a name or one contact, and now says so on screen).
 
 ### A12. Stale `selectedSwap` in localStorage blanks every swap-scoped tab
 `apps/web/src/pages/ski-swap/SkiSwapLayout.tsx:82-97,119,213-223`
@@ -273,6 +296,8 @@ one active swap the user cannot "change" it to trigger `onChange`.
 Dashboard → "No active swaps found. Create one on the 'Swaps' page." while the
 picker shows the real swap. Stuck until localStorage is cleared.
 
+**Fixed** in `079ba4e`. Both default-to-first effects also fire when the remembered id is not in the loaded list.
+
 ### A13. Patching an unconsigned item puts it in Square
 `apps/api/src/ski-swap/item.service.ts:553`,
 `apps/api/src/ski-swap/seller-self.service.ts:208-218`
@@ -283,6 +308,8 @@ editing not-yet-arrived inventory, or staff editing a "Not yet received" item.
 With `requireConsignmentScan` on, the item is live in Square before any staff
 member has seen it, while the web still says "not in Square and cannot sell".
 Only matters if that setting is on.
+
+**Fixed** in `079ba4e`. `syncItemToPos` returns `skipped` for any item with `consignedAt` null, so no caller — patch, re-push, finish — can put an unaccepted item in Square.
 
 ### A14. Errors are swallowed in the item and seller modals
 `apps/web/src/pages/ski-swap/SwapItemsPanel.tsx:287-343,801-818`,
@@ -295,6 +322,8 @@ been verified" (`seller.service.ts:783`) → same. Delete refused → row stays,
 message. Also unshown: `PayoutsPage.tsx:47` nudge errors,
 `SellerProfilePage.tsx` save errors, Bluetooth print failures in
 `SwapItemsPanel.tsx:409-424` (caught and `console.error`'d).
+
+**Fixed** in `079ba4e`. The items modal renders create/patch errors and the panel shows delete and Bluetooth print errors above the toolbar; the sellers modal renders create/patch/invite errors and the page shows delete errors above the table. Mutations are reset when a form closes. Not done: `PayoutsPage` nudge errors and `SellerProfilePage` save errors.
 
 ### A15. Sign-in link resend both kills the first link and locks the address out
 `apps/api/src/auth/contact-challenge.service.ts:104-122,180-206`,
@@ -314,6 +343,8 @@ Also: the expired-link screen's "Send me a new link" is an `<a href="/auth/login
 which has no route on the seller site (`App.tsx` seller branch), so it lands
 on a blank page. On the seller site it should say "scan the station QR again".
 
+**Fixed** in `079ba4e`. `ContactChallengeService.issue` supersedes outstanding challenges only for the phone channel; emailed links stay valid until used or expired. The "Check your email" screen has a resend button with a 30 second hold and says every link keeps working. The expired-link screen on the seller site points back to `/checkin` instead of `/auth/login`. The per-destination limits are unchanged.
+
 ### A16. Item-add idempotency key is minted per tap, not per attempt
 `apps/web/src/pages/checkin/ItemsStep.tsx:142`
 
@@ -321,6 +352,8 @@ A fresh key is generated inside `addItem`; the comment says it is "kept across
 retries of that attempt" but a retry after a timeout is a new key. A request
 that lands server-side with a dropped response → error shown → seller taps
 again → second item and second tag.
+
+**Fixed** in `079ba4e`. The key lives in a ref from the first tap until the item saves, then clears.
 
 ---
 
@@ -488,7 +521,9 @@ Not code defects, but things that will decide whether the weekend works.
   and a background push like `consignAllForSeller`. (The check-in finish push
   at `checkin.service.ts:379-391` is also sequential per item; a 30-item
   seller could push the request past a proxy timeout. Not timed.)
-- Lint error: unused `isPrintingId` in `PrintersPage.tsx:65`.
+- Lint: `label-templates.ts:841` declares `y` with `let`; `prefer-const` fails
+  the API lint. One word, untouched because the file was not otherwise in
+  scope. (The web lint error at `PrintersPage.tsx:65` was fixed in `079ba4e`.)
 
 ---
 
@@ -655,12 +690,13 @@ Raised by a reviewer, not confirmed. Worth a look, not a fix on faith.
 
 ---
 
-## Suggested order
+## What is left, in order
 
-1. A1 (check the prefix length first; it may need no code change for this
-   customer), A2, A3, A5, A6, A7 — every seller and every staff member hits
-   these on the day.
-2. A8, A9, A10, A11, A12, A14, A15 — the next tier of weekend pain.
+1. A1 — check the customer's swap prefix length now. Five characters or
+   fewer needs no code change; six needs a fix before any tag is printed.
+2. A8 — the print queue: refuse to claim for a bridge with no printer, and
+   make Clear take claimed jobs too.
 3. B1 and B2 before anyone presses "Create run"; B3 and B4 before the second
    run.
 4. Everything in C that is a setting rather than code, today.
+5. The rest of D as time allows.
