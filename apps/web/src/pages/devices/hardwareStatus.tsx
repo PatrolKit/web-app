@@ -59,6 +59,16 @@ export const OFFLINE_AFTER_MS = 20_000;
 export const OFFLINE_AFTER_UNBOUND_MS = 70_000;
 
 /**
+ * The same rule for a staff tablet.
+ *
+ * A tablet has no heartbeat: it is seen when it syncs, which the iPad does every
+ * two minutes. Judged on a bridge's twenty seconds, a working tablet read as
+ * offline five-sixths of the time. Two missed syncs, plus slack — so a tablet
+ * that really has died takes up to five minutes to say so.
+ */
+export const OFFLINE_AFTER_TABLET_MS = 300_000;
+
+/**
  * Re-renders on a timer, so a status computed from the clock keeps up with it.
  *
  * Every "offline" verdict here is `now - lastSeen`, evaluated during render —

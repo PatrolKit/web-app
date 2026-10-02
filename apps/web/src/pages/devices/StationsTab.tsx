@@ -19,7 +19,7 @@ import {
 import QRCode from 'react-qr-code';
 import { api } from '../../lib/api';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
-import { lastSeenTitle, recentlySeen, StatusLine, useClockTick } from './hardwareStatus';
+import { lastSeenTitle, OFFLINE_AFTER_TABLET_MS, recentlySeen, StatusLine, useClockTick } from './hardwareStatus';
 import type { HardwareStatus } from './hardwareStatus';
 import { deviceLabel } from '../../lib/api.types';
 import type {
@@ -666,7 +666,7 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): Hardw
   // Bluetooth, which the server never sees. The tablet checking in is the only
   // thing we can honestly report.
   if (!station.bridgeDeviceId) {
-    if (!recentlySeen(queue.attendantLastSeenAt)) {
+    if (!recentlySeen(queue.attendantLastSeenAt, OFFLINE_AFTER_TABLET_MS)) {
       return {
         icon: faPlugCircleXmarkDuo,
         label: 'Tablet offline',
