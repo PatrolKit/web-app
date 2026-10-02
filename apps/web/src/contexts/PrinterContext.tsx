@@ -236,6 +236,9 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
       ...body,
       format: previewMode ? 'png' : 'escpos',
     });
+    // Nothing to print, as for a receipt header on 62 × 100 stock, where the
+    // receipt carries its own: neither preview it nor connect for it.
+    if (pages.length === 0) return;
 
     if (previewMode) {
       const urls = pages.map((b64) => `data:image/png;base64,${b64}`);

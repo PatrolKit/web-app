@@ -83,6 +83,11 @@ export class PrintRecipeService {
       }
 
       case 'receipt_header': {
+        // On the tall tier the receipt is one page with its masthead built in
+        // (see `receipt_items`), so a separate header label would print it
+        // twice. A client that asks for both, as the web does, gets nothing
+        // here and the whole receipt from the items.
+        if (target.size.tier === 'tall') return [];
         const seller = await this.seller(orgId, recipe.sellerId);
         return [await this.renderer.receiptHeader(this.masthead(seller), target)];
       }
