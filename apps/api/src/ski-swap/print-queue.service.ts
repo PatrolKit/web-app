@@ -1,13 +1,13 @@
 import { BadRequestException, ConflictException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createId } from '@paralleldrive/cuid2';
 import { Prisma } from '@prisma/client';
-import type { PrintJob } from '@prisma/client';
+import type { Device, PrintJob, SwapPrinter } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LabelRendererService } from './printing/label-renderer.service';
 import { PrintRecipeService, printTargetFor, type PrintRecipeKind } from './printing/print-recipe.service';
-import type { PrintTarget } from './printing/geometry';
+import { geometryOf, type PrintTarget } from './printing/geometry';
 import type { HelperLabelData } from './printing/label-templates';
-import type { StationQueueResponse } from '../contracts/ski-swap.contracts';
+import type { StationPrintKind, StationPrintRequest, StationQueueResponse } from '../contracts/ski-swap.contracts';
 import { TelemetryService } from '../telemetry/telemetry.service';
 
 /** How long a claimed job is held before it returns to the queue. */
@@ -48,7 +48,28 @@ const RECHECK_MS = 2_000;
 
 export type PrintJobKind =
   | 'item' | 'receipt_header' | 'receipt_items' | 'qr' | 'calibration'
-  | 'helper_item' | 'helper_office';
+  | 'helper_item' | 'helper_office'
+  // Pages the iPad drew and the bridge prints as sent (iOS Plan 26).
+  | 'drawn_item_tag' | 'drawn_receipt' | 'drawn_seller_qr' | 'drawn_helper_labels';
+
+/** A drawn job's kind, from what was asked for. Short: the firmware keeps 31 characters. */
+const DRAWN_KIND: Record<StationPrintKind, PrintJobKind> = {
+  item_tag: 'drawn_item_tag',
+  receipt: 'drawn_receipt',
+  seller_qr: 'drawn_seller_qr',
+  helper_labels: 'drawn_helper_labels',
+};
+
+/** What each kind is called in a refusal. */
+const PRINT_KIND_NAME: Record<StationPrintKind, string> = {
+  item_tag: 'item tags',
+  receipt: 'receipts',
+  seller_qr: 'QR labels',
+  helper_labels: 'helper labels',
+};
+
+/** One request's worth of labels, pages times copies: a long receipt twice, with room. */
+const STATION_PRINT_MAX_JOBS = 40;
 
 /**
  * How long a helper-label pair may wait for its bridge (Plan 28). They are wanted
@@ -58,7 +79,7 @@ export type PrintJobKind =
 export const HELPER_LABEL_TTL_MS = 60_000;
 
 /** A bridge counts as online within this — the web's offline rule. */
-const BRIDGE_ONLINE_MS = 20_000;
+export const BRIDGE_ONLINE_MS = 20_000;
 
 /** The text for a legacy ticket's helper stickers, as the iPad sent it. */
 export interface HelperLabelRequest {
@@ -366,25 +387,11 @@ export class PrintQueueService {
       throw helperRefusal('HELPER_LABELS_OFF', 'this swap does not print helper labels.');
     }
 
-    const bridge = station.bridge;
-    if (!bridge) {
-      throw helperRefusal('NO_BRIDGE', `${station.name} has no print bridge.`);
-    }
-    if (!bridge.lastSeenAt || Date.now() - bridge.lastSeenAt.getTime() > BRIDGE_ONLINE_MS) {
-      throw helperRefusal('BRIDGE_OFFLINE', `the print bridge at ${station.name} is offline.`);
-    }
-    const printer = bridge.bridgedPrinter;
-    if (!printer) {
-      throw helperRefusal('NO_PRINTER', `the print bridge at ${station.name} has no printer.`);
-    }
+    const { bridge, printer } = this.reachableBridge(station);
     if (!this.helperOnly(station)) {
       throw helperRefusal('PRINTER_STOCK', `the printer at ${station.name} isn't loaded with 25 × 67 labels.`);
     }
-    // Online is a report of `ready`. A printer never reported, or reported down,
-    // is not known to be able to print.
-    if (bridge.printerLink !== 'ready') {
-      throw helperRefusal('PRINTER_OFFLINE', `the printer at ${station.name} is offline.`);
-    }
+    this.assertPrinterReady(station, bridge);
 
     // An item the iPad has not synced yet is still a ticket in someone's hand,
     // so a missing one is recorded as absent rather than refused.
@@ -427,6 +434,147 @@ export class PrintQueueService {
     });
     this.wake(stationId);
     return { jobIds, notAfter: notAfter.toISOString() };
+  }
+
+  /**
+   * Labels the iPad drew itself, printed through its station's bridge exactly
+   * as sent (iOS Plan 26): item tags, receipts, QR labels and helper labels.
+   *
+   * The iPad draws with a line-for-line port of this server's renderer, for
+   * the bridge printer's model and stock, so the two printers' output is the
+   * same and a print needs nothing to have synced first. Everything is checked
+   * before anything is queued, as for helper labels; each refusal is a 409
+   * with a code and a sentence that follows "didn't print: ". A raster drawn
+   * for settings the printer no longer has is refused rather than printed at
+   * the wrong size. What the bridge hasn't taken within a minute is dropped.
+   */
+  async printDrawn(
+    deviceId: string,
+    orgId: string,
+    stationId: string,
+    request: StationPrintRequest,
+  ): Promise<{ jobIds: string[]; notAfter: string }> {
+    const station = await this.prisma.checkinStation.findFirst({
+      where: { id: stationId, orgId, deletedAt: null, attendantDeviceId: deviceId },
+      include: { bridge: { include: { bridgedPrinter: true } } },
+    });
+    if (!station) throw new NotFoundException('Station not found');
+
+    // Malformed before anything about the counter: a bad request is the
+    // iPad's to fix, whatever state the bridge is in.
+    const bytesPerPage = (request.widthDots / 8) * request.heightDots;
+    const pages = request.pages.map((page, i) => {
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(page)) throw new BadRequestException(`Page ${i + 1} is not base64.`);
+      const bytes = Buffer.from(page, 'base64');
+      if (bytes.length !== bytesPerPage) {
+        throw new BadRequestException(
+          `Page ${i + 1} is ${bytes.length} bytes; ${request.widthDots} × ${request.heightDots} dots packs to ${bytesPerPage}.`,
+        );
+      }
+      return bytes;
+    });
+    if (pages.length * request.copies > STATION_PRINT_MAX_JOBS) {
+      throw new BadRequestException(`That is ${pages.length * request.copies} labels; one request prints at most ${STATION_PRINT_MAX_JOBS}.`);
+    }
+
+    const swap = await this.prisma.skiSwap.findFirst({
+      where: { id: request.swapId, orgId },
+      select: { legacyTicketsOnly: true, printLegacyHelperLabels: true },
+    });
+    if (!swap) throw new NotFoundException('Swap not found');
+    if (request.kind === 'item_tag' && swap.legacyTicketsOnly) {
+      throw helperRefusal('TAGS_OFF', 'this swap uses legacy tickets, so it prints no item tags.');
+    }
+    if (request.kind === 'helper_labels' && !swap.printLegacyHelperLabels) {
+      throw helperRefusal('HELPER_LABELS_OFF', 'this swap does not print helper labels.');
+    }
+
+    const { bridge, printer } = this.reachableBridge(station);
+
+    const target = printTargetFor(printer);
+    const tier = target.size.tier;
+    const stockTakes =
+      request.kind === 'item_tag' ? tier === 'compact' || tier === 'tall'
+      : request.kind === 'helper_labels' ? tier === 'strip'
+      : tier !== 'strip';
+    if (!stockTakes) {
+      throw helperRefusal(
+        'PRINTER_STOCK',
+        `the printer at ${station.name} is loaded with ${target.size.label} labels, which don't take ${PRINT_KIND_NAME[request.kind]}.`,
+      );
+    }
+    if (!drawnFor(target, printer, request)) {
+      throw helperRefusal(
+        'PRINTER_STOCK',
+        `the printer at ${station.name} has been set up differently since this iPad last synced. Sync and try again.`,
+      );
+    }
+    this.assertPrinterReady(station, bridge);
+
+    // For the record. Only a tag is tied to its item: acknowledging a job with
+    // an item marks that item's tag printed, which a receipt must not do.
+    const [item, seller] = await Promise.all([
+      request.kind === 'item_tag' && request.itemId
+        ? this.prisma.swapItem.findFirst({ where: { id: request.itemId, orgId, deletedAt: null }, select: { id: true } })
+        : null,
+      request.sellerId
+        ? this.prisma.sellerProfile.findFirst({ where: { id: request.sellerId, membership: { orgId } }, select: { id: true } })
+        : null,
+    ]);
+
+    const notAfter = new Date(Date.now() + HELPER_LABEL_TTL_MS);
+    const kind = DRAWN_KIND[request.kind];
+    const rows = Array.from({ length: request.copies }, (_, copy) =>
+      pages.map((raster, page) => ({
+        id: createId(),
+        orgId,
+        stationId: station.id,
+        printerId: printer.id,
+        swapId: request.swapId,
+        itemId: item?.id ?? null,
+        sellerId: seller?.id ?? null,
+        kind,
+        params: {
+          page, copy, model: request.model, paperSize: request.paperSize,
+          widthDots: request.widthDots, heightDots: request.heightDots,
+          ...(request.itemId && !item ? { unsyncedItemId: request.itemId } : {}),
+        } as Prisma.InputJsonValue,
+        raster,
+        notAfter,
+      })),
+    ).flat().map((row, seq) => ({ ...row, seq }));
+
+    await this.prisma.printJob.createMany({ data: rows });
+    this.wake(station.id);
+    return { jobIds: rows.map((r) => r.id), notAfter: notAfter.toISOString() };
+  }
+
+  /**
+   * The station's bridge and its printer, when both can be reached: a bridge
+   * that has checked in within the offline rule's 20 seconds, driving a printer.
+   */
+  private reachableBridge(
+    station: { name: string; bridge: (Device & { bridgedPrinter: SwapPrinter | null }) | null },
+  ): { bridge: Device & { bridgedPrinter: SwapPrinter | null }; printer: SwapPrinter } {
+    const bridge = station.bridge;
+    if (!bridge) {
+      throw helperRefusal('NO_BRIDGE', `${station.name} has no print bridge.`);
+    }
+    if (!bridge.lastSeenAt || Date.now() - bridge.lastSeenAt.getTime() > BRIDGE_ONLINE_MS) {
+      throw helperRefusal('BRIDGE_OFFLINE', `the print bridge at ${station.name} is offline.`);
+    }
+    const printer = bridge.bridgedPrinter;
+    if (!printer) {
+      throw helperRefusal('NO_PRINTER', `the print bridge at ${station.name} has no printer.`);
+    }
+    return { bridge, printer };
+  }
+
+  /** Online is a report of `ready`. A printer never reported, or reported down, is not known to be able to print. */
+  private assertPrinterReady(station: { name: string }, bridge: { printerLink: string | null }): void {
+    if (bridge.printerLink !== 'ready') {
+      throw helperRefusal('PRINTER_OFFLINE', `the printer at ${station.name} is offline.`);
+    }
   }
 
   // ─── Claim / ack / nack ─────────────────────────────────────────────────────
@@ -557,6 +705,7 @@ export class PrintQueueService {
     const abandoned = await this.prisma.$executeRaw`
       UPDATE PrintJob
          SET status = 'abandoned',
+             raster = NULL,
              claimToken = NULL,
              claimUntil = NULL,
              lastError = COALESCE(lastError, 'Claimed but never acknowledged'),
@@ -577,6 +726,7 @@ export class PrintQueueService {
     const expired = await this.prisma.$executeRaw`
       UPDATE PrintJob
          SET status = 'abandoned',
+             raster = NULL,
              claimToken = NULL,
              claimUntil = NULL,
              lastError = 'Not printed within a minute of being asked for',
@@ -671,10 +821,7 @@ export class PrintQueueService {
     const jobs: ClaimedJob[] = [];
     for (const job of claimed) {
       try {
-        const rows = await this.render(job, target, codeOf.get(job.stationId) ?? null);
-        // A bare raster, not a finished job: the firmware wraps it in ESC/POS
-        // itself and adds its own feed rows.
-        const raster = this.renderer.toRaster(rows);
+        const { raster, widthBytes } = await this.rasterFor(job, target, codeOf.get(job.stationId) ?? null, bridge.bridgedPrinter ?? null);
         this.keepRaster(job.id, token, raster);
         jobs.push({
           id: job.id,
@@ -682,9 +829,7 @@ export class PrintQueueService {
           seq: job.seq,
           ...(options.omitPayload ? {} : { payload: raster.toString('base64') }),
           rasterBytes: raster.length,
-          // Taken from the raster rather than the target, so it cannot disagree
-          // with the bytes beside it.
-          widthBytes: Math.ceil((rows[0]?.length ?? 0) / 8),
+          widthBytes,
         });
       } catch (err) {
         // Nobody is watching a claim the way a seller watches a save, so a
@@ -694,7 +839,7 @@ export class PrintQueueService {
         this.logger.error({ err, jobId: job.id }, 'Print job render failed');
         await this.prisma.printJob.update({
           where: { id: job.id },
-          data: { status: 'failed', lastError: message.slice(0, 500) },
+          data: { status: 'failed', lastError: message.slice(0, 500), raster: null },
         });
       }
     }
@@ -720,7 +865,8 @@ export class PrintQueueService {
 
     await this.prisma.printJob.update({
       where: { id: job.id },
-      data: { status: 'printed', printedAt: new Date(), claimToken: null },
+      // A drawn page has done its job; kept, every tag would sit in the database twice.
+      data: { status: 'printed', printedAt: new Date(), claimToken: null, raster: null },
     });
 
     if (job.itemId) {
@@ -780,10 +926,10 @@ export class PrintQueueService {
 
     // Claimed before a restart. Rendered again and kept, so the next fetch in
     // this claim is the same bytes as this one.
-    const rows = await this.render(job, printTargetFor(job.station.bridge?.bridgedPrinter ?? null), job.station.code);
-    const bytes = this.renderer.toRaster(rows);
-    this.keepRaster(job.id, job.claimToken!, bytes);
-    return bytes;
+    const printer = job.station.bridge?.bridgedPrinter ?? null;
+    const { raster } = await this.rasterFor(job, printTargetFor(printer), job.station.code, printer);
+    this.keepRaster(job.id, job.claimToken!, raster);
+    return raster;
   }
 
   // ─── Staff view ─────────────────────────────────────────────────────────────
@@ -894,6 +1040,35 @@ export class PrintQueueService {
   }
 
   /**
+   * The bytes the bridge prints for one job, packed, and how wide each row is.
+   *
+   * A page the iPad drew is printed as sent, once it is checked against the
+   * printer as it is now: one re-set to other stock since the request would
+   * print it at the wrong size, so it fails rather than prints. Everything else
+   * is rendered here.
+   */
+  private async rasterFor(
+    job: { orgId: string; kind: string; itemId: string | null; sellerId: string | null; swapId: string | null; params: Prisma.JsonValue; raster?: Uint8Array | null },
+    target: PrintTarget,
+    stationCode: string | null,
+    printer: { model: string; paperSize: string } | null,
+  ): Promise<{ raster: Buffer; widthBytes: number }> {
+    if (job.kind.startsWith('drawn_')) {
+      const drawn = job.params as { model: string; paperSize: string; widthDots: number; heightDots: number };
+      if (!job.raster) throw new BadRequestException('This label has nothing left to print');
+      if (!printer || !drawnFor(target, printer, drawn)) {
+        throw new BadRequestException('The printer was set up differently after this label was drawn');
+      }
+      return { raster: Buffer.from(job.raster), widthBytes: drawn.widthDots / 8 };
+    }
+    const rows = await this.render(job, target, stationCode);
+    // A bare raster, not a finished job: the firmware wraps it in ESC/POS
+    // itself and adds its own feed rows. The width is taken from the rows
+    // rather than the target, so it cannot disagree with the bytes beside it.
+    return { raster: this.renderer.toRaster(rows), widthBytes: Math.ceil((rows[0]?.length ?? 0) / 8) };
+  }
+
+  /**
    * Turns one job into one raster, through the same resolver the browser uses.
    * A receipt's item list paginates, and each page is its own job, so the job's
    * `page` param selects which of the resolved pages this one prints.
@@ -925,4 +1100,28 @@ export class PrintQueueService {
     return pages[page];
   }
 
+}
+
+/**
+ * Whether a raster was drawn for this printer as it is set up now: its model,
+ * its stock, the full head width and the label's height, and its margins when
+ * the iPad sent them.
+ */
+function drawnFor(
+  target: PrintTarget,
+  printer: { model: string; paperSize: string; marginTop?: number; marginBottom?: number; marginLeft?: number; marginRight?: number },
+  drawn: {
+    model: string; paperSize: string; widthDots: number; heightDots: number;
+    margins?: { top: number; bottom: number; left: number; right: number };
+  },
+): boolean {
+  const geometry = geometryOf(target);
+  if (drawn.model !== printer.model || drawn.paperSize !== printer.paperSize) return false;
+  if (drawn.widthDots !== geometry.headWidthDots || drawn.heightDots !== geometry.canvasHeightDots) return false;
+  if (drawn.margins) {
+    const m = target.margins;
+    if (drawn.margins.top !== m.marginTop || drawn.margins.bottom !== m.marginBottom
+      || drawn.margins.left !== m.marginLeft || drawn.margins.right !== m.marginRight) return false;
+  }
+  return true;
 }

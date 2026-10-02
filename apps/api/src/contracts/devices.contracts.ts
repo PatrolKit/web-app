@@ -159,9 +159,22 @@ export const DeviceMeResponseSchema = z.object({
         .object({
           deviceId: z.string(),
           name: z.string(),
+          /**
+           * Checked in within the offline rule's 20 seconds, as of this answer
+           * (iOS Plan 26). For a status dot: the print endpoint's own answer is
+           * still the real test.
+           */
+          online: z.boolean(),
+          lastSeenAt: z.string().nullable(),
           /** Null while the bridge drives no printer. */
           printer: z
-            .object({ id: z.string(), model: z.string(), paperSize: z.string() })
+            .object({
+              id: z.string(),
+              model: z.string(),
+              paperSize: z.string(),
+              /** The bridge last reported this printer ready. */
+              ready: z.boolean(),
+            })
             .nullable(),
         })
         .nullable(),

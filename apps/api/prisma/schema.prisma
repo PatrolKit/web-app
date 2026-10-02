@@ -739,6 +739,9 @@ model PrintJob {
   /// hand, and a pair printed an hour late is for a ticket long gone. Null for
   /// every other kind, which waits however long it takes.
   notAfter   DateTime?
+  /// A page the iPad drew itself (iOS Plan 26), printed as sent. Null for every
+  /// job the server renders, and cleared once the job is settled.
+  raster     Bytes?    @db.MediumBlob
   attempts   Int       @default(0)
   lastError  String?   @db.VarChar(500)
 

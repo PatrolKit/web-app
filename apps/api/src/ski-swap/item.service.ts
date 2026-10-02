@@ -230,6 +230,8 @@ export class ItemService {
       description?: string; priceCents: number; quantity: number;
       sellerId?: string; donateProceeds?: boolean; sku?: string;
       stationId?: string; alreadyPrinted?: boolean;
+      /** `false` queues no tag at the bridge; see `CreateItemSchema.queueTag`. */
+      queueTag?: boolean;
       /** Whoever is entering this, so a value they type is attributable. */
       actorId?: string;
       /**
@@ -320,9 +322,10 @@ export class ItemService {
       idempotencyKey,
     );
 
-    // Nothing to queue when the tag is already on the item, and nothing to queue
-    // through a station that has no bridge — the client printed it itself.
-    if (station?.bridgeDeviceId && !data.alreadyPrinted) {
+    // Nothing to queue when the tag is already on the item, through a station
+    // that has no bridge, or when the client prints the tag itself as it saves
+    // (`queueTag: false`).
+    if (station?.bridgeDeviceId && !data.alreadyPrinted && data.queueTag !== false) {
       // The swap's own setting: one swap's tags go on skis that take one at
       // each end, another's on a single hang tag.
       const { labelsPerItem } = await this.prisma.skiSwap.findUniqueOrThrow({

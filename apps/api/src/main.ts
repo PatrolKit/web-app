@@ -76,6 +76,10 @@ async function bootstrap() {
   // nowhere else: holding a second copy of every request body to serve one
   // route would be a waste, and request bodies are the last thing worth
   // duplicating in memory.
+  // One route takes more: a station's iPad sends the pages it drew to print at
+  // the bridge (iOS Plan 26), 37–57 KB each, and a long receipt is several.
+  // Parsed here first, so the general parser below finds the body already read.
+  app.use(/^\/api\/v1\/orgs\/[^/]+\/ski-swap\/stations\/[^/]+\/print$/, json({ limit: '3mb' }));
   app.use(json({
     limit: '1mb',
     verify: (req: IncomingMessage & { rawBody?: Buffer }, _res, buf) => {

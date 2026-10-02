@@ -25,25 +25,37 @@ const ipad = (station: Row | null): Row => ({
   attendedStation: station, bridgedStations: [], resort: null,
 });
 const STATION = { id: 'st-3', name: 'Station 3', code: 'C', deletedAt: null };
+const SEEN = new Date(Date.now() - 5_000);
 
 describe('the station on /devices/me', () => {
   it('names its bridge and the printer the bridge drives', async () => {
     const me = await service([
       ipad({ ...STATION, bridgeDeviceId: 'bridge-1' }),
-      { id: 'bridge-1', name: 'Station 3 bridge', bridgedPrinter: { id: 'pr-1', model: 'm221', paperSize: '25x67' } },
+      { id: 'bridge-1', name: 'Station 3 bridge', lastSeenAt: SEEN, printerLink: 'ready', bridgedPrinter: { id: 'pr-1', model: 'm221', paperSize: '25x67' } },
     ]).getDeviceMe('ipad-1');
     expect(me.station).toEqual({
       id: 'st-3', name: 'Station 3', code: 'C',
-      printBridge: { deviceId: 'bridge-1', name: 'Station 3 bridge', printer: { id: 'pr-1', model: 'm221', paperSize: '25x67' } },
+      printBridge: {
+        deviceId: 'bridge-1', name: 'Station 3 bridge', online: true, lastSeenAt: SEEN.toISOString(),
+        printer: { id: 'pr-1', model: 'm221', paperSize: '25x67', ready: true },
+      },
     });
   });
 
   it('gives a bridge with no printer a null printer', async () => {
     const me = await service([
       ipad({ ...STATION, bridgeDeviceId: 'bridge-1' }),
-      { id: 'bridge-1', name: 'Station 3 bridge', bridgedPrinter: null },
+      { id: 'bridge-1', name: 'Station 3 bridge', lastSeenAt: null, printerLink: null, bridgedPrinter: null },
     ]).getDeviceMe('ipad-1');
-    expect(me.station?.printBridge).toEqual({ deviceId: 'bridge-1', name: 'Station 3 bridge', printer: null });
+    expect(me.station?.printBridge).toEqual({ deviceId: 'bridge-1', name: 'Station 3 bridge', online: false, lastSeenAt: null, printer: null });
+  });
+
+  it('says a bridge unseen for 30 seconds is offline, and a printer reported down is not ready', async () => {
+    const me = await service([
+      ipad({ ...STATION, bridgeDeviceId: 'bridge-1' }),
+      { id: 'bridge-1', name: 'Station 3 bridge', lastSeenAt: new Date(Date.now() - 30_000), printerLink: 'down', bridgedPrinter: { id: 'pr-1', model: 'm221', paperSize: '62x100' } },
+    ]).getDeviceMe('ipad-1');
+    expect(me.station?.printBridge).toMatchObject({ online: false, printer: { ready: false } });
   });
 
   it('is null for a station with no bridge', async () => {

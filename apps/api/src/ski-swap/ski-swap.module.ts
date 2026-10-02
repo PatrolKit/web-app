@@ -45,6 +45,7 @@ import { CheckinController, PublicCheckinController } from './checkin.controller
 import { StationService } from './station.service';
 import { StationController } from './station.controller';
 import { HelperLabelController } from './helper-label.controller';
+import { StationPrintController } from './station-print.controller';
 import { PrintQueueService } from './print-queue.service';
 import { QrSheetService } from './printing/qr-sheet.service';
 import { PrintJobController } from './print-job.controller';
@@ -90,6 +91,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     SkiSwapSettingsController,
     StationController,
     HelperLabelController,
+    StationPrintController,
     CheckinController,
     PublicCheckinController,
     PrintJobController,

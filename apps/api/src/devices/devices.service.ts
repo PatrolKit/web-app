@@ -22,6 +22,7 @@ import type {
 } from '../contracts/devices.contracts';
 import { moduleOfRole } from '../contracts/devices.contracts';
 import { PermissionsService } from '../permissions/permissions.service';
+import { BRIDGE_ONLINE_MS } from '../ski-swap/print-queue.service';
 import { ModuleAccessService } from '../common/services/module-access.service';
 
 /**
@@ -385,13 +386,24 @@ export class DevicesService {
     const bridge = bridgeId
       ? await this.prisma.device.findUnique({
           where: { id: bridgeId },
-          select: { id: true, name: true, bridgedPrinter: { select: { id: true, model: true, paperSize: true } } },
+          select: {
+            id: true, name: true, lastSeenAt: true, printerLink: true,
+            bridgedPrinter: { select: { id: true, model: true, paperSize: true } },
+          },
         })
       : null;
     const station = first && {
       ...first,
       printBridge: bridge
-        ? { deviceId: bridge.id, name: bridge.name, printer: bridge.bridgedPrinter ?? null }
+        ? {
+            deviceId: bridge.id,
+            name: bridge.name,
+            online: !!bridge.lastSeenAt && Date.now() - bridge.lastSeenAt.getTime() <= BRIDGE_ONLINE_MS,
+            lastSeenAt: bridge.lastSeenAt?.toISOString() ?? null,
+            printer: bridge.bridgedPrinter
+              ? { ...bridge.bridgedPrinter, ready: bridge.printerLink === 'ready' }
+              : null,
+          }
         : null,
     };
 

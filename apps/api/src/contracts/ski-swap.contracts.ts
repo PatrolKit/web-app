@@ -320,6 +320,14 @@ export const CreateItemSchema = z
      * client that printed it is the authority on what it says.
      */
     alreadyPrinted: z.boolean().optional(),
+    /**
+     * `false`: queue no tag at the station's bridge, whatever `alreadyPrinted`
+     * says (iOS Plan 26). The iPad prints the tag itself when the item is
+     * saved, through the bridge or over Bluetooth, and patches `hasPrintedTag`
+     * once it has. A tag queued when a delayed create finally lands would come
+     * out after the seller has gone. Omitted, a create behaves as before.
+     */
+    queueTag: z.boolean().optional(),
   })
   .strict();
 
@@ -1116,3 +1124,38 @@ export const HelperLabelsRequestSchema = z
   .strict();
 
 export class HelperLabelsRequestDto extends createZodDto(HelperLabelsRequestSchema) {}
+
+// ─── Printing what the iPad drew (iOS Plan 26) ───────────────────────────────
+
+export const STATION_PRINT_KINDS = ['item_tag', 'receipt', 'seller_qr', 'helper_labels'] as const;
+export type StationPrintKind = (typeof STATION_PRINT_KINDS)[number];
+
+/** A long receipt is a handful of pages; this is room for one and then some. */
+export const STATION_PRINT_MAX_PAGES = 20;
+export const STATION_PRINT_MAX_COPIES = 5;
+
+export const StationPrintRequestSchema = z
+  .object({
+    kind: z.enum(STATION_PRINT_KINDS),
+    swapId: z.string().min(1),
+    /** For the record only; it may not have synced yet. */
+    itemId: z.string().nullish(),
+    sellerId: z.string().nullish(),
+    copies: z.number().int().min(1).max(STATION_PRINT_MAX_COPIES).default(1),
+    /** What the iPad drew for. Checked against the bridge's printer as it is now. */
+    model: z.string().min(1).max(20),
+    paperSize: z.string().min(1).max(20),
+    widthDots: z.number().int().positive().max(2048).refine((n) => n % 8 === 0, 'widthDots must be a whole number of bytes'),
+    heightDots: z.number().int().positive().max(4096),
+    /** Optional: when sent, a raster drawn for other margins is refused too. */
+    margins: z
+      .object({ top: z.number().int(), bottom: z.number().int(), left: z.number().int(), right: z.number().int() })
+      .strict()
+      .optional(),
+    /** One per label, in print order, in `packRaster`'s format, base64. */
+    pages: z.array(z.string().min(1).max(200_000)).min(1).max(STATION_PRINT_MAX_PAGES),
+  })
+  .strict();
+
+export class StationPrintRequestDto extends createZodDto(StationPrintRequestSchema) {}
+export type StationPrintRequest = z.infer<typeof StationPrintRequestSchema>;
