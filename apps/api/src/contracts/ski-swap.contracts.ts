@@ -974,6 +974,9 @@ export const StationQueueResponseSchema = z.object({
   bridgeLastSeenAt: z.string().nullable(),
   /** The staff tablet, when one is bound. What to watch when there is no bridge. */
   attendantLastSeenAt: z.string().nullable(),
+  /** The app the tablet last reported running: "1.4.0" and its build. Null until it has said. */
+  attendantAppVersion: z.string().nullable(),
+  attendantAppBuild: z.string().nullable(),
   /** The other stations printing through this station's bridge (Plan 27). */
   bridgeSharedWith: z.array(z.string()),
 });

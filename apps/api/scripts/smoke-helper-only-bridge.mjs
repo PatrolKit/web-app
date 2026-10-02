@@ -76,7 +76,8 @@ const ask = (body = {}) => fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${sta
 });
 
 // ─── What the iPad knows before it asks ──────────────────────────────────────
-const me = await fetch(`${BASE}/devices/me`, { headers: I }).then(unwrap);
+// As an iPad on a build that sends only its default User-Agent.
+const me = await fetch(`${BASE}/devices/me`, { headers: { ...I, 'user-agent': 'PatrolKit/202610021640 CFNetwork/1498.700.2.2.1 Darwin/23.6.0' } }).then(unwrap);
 ok('the iPad’s /devices/me names its station’s bridge and the stock it holds',
   me.station?.printBridge?.deviceId === bridge.id && me.station.printBridge.printer?.paperSize === '25x67',
   JSON.stringify(me.station?.printBridge));
@@ -135,6 +136,12 @@ ok('a pair its bridge did not take within its minute is dropped, not printed',
 const { user } = await smokeStaff(prisma, org, ['ski_swap:admin', 'ski_swap:manage', 'ski_swap:report']);
 const S = { authorization: `Bearer ${await smokeSession(prisma, BASE, user, unwrap)}`, 'content-type': 'application/json' };
 const queueNow = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/queue`, { headers: S }).then(unwrap);
+ok('the station’s status shows the build its iPad reported', queueNow.attendantAppBuild === '202610021640' && queueNow.attendantAppVersion === null,
+  `${queueNow.attendantAppVersion} / ${queueNow.attendantAppBuild}`);
+await fetch(`${BASE}/devices/me`, { headers: { ...I, 'x-app-version': '1.4.0', 'x-app-build': '202610031200' } });
+const queueLater = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/queue`, { headers: S }).then(unwrap);
+ok('...and its version once the iPad sends the headers', queueLater.attendantAppVersion === '1.4.0' && queueLater.attendantAppBuild === '202610031200',
+  `${queueLater.attendantAppVersion} / ${queueLater.attendantAppBuild}`);
 ok('the station’s status says why the pair gave up', /within a minute/.test(queueNow.lastAbandonedReason ?? ''), queueNow.lastAbandonedReason);
 const listed = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations`, { headers: S }).then(unwrap);
 const row = (Array.isArray(listed) ? listed : listed.stations ?? []).find((s) => s.id === station.id);

@@ -383,6 +383,15 @@ function BridgeCell({
   );
 }
 
+/** "App 1.4.0 (202610021640)", or just the build until the iPad reports a version. */
+function appLabel(queue: StationQueueStatus): string | null {
+  const { attendantAppVersion: version, attendantAppBuild: build } = queue;
+  if (version && build) return `App ${version} (${build})`;
+  if (version) return `App ${version}`;
+  if (build) return `Build ${build}`;
+  return null;
+}
+
 /** A queue-aware status cell. Its own query, because it polls per station. */
 function StatusCell({ orgId, station }: { orgId: string; station: CheckinStationRecord }) {
   const { data: queue } = useQuery({
@@ -393,6 +402,11 @@ function StatusCell({ orgId, station }: { orgId: string; station: CheckinStation
   return (
     <td className="py-3 pr-4 align-top min-w-[13rem]">
       {queue ? <StationStatus station={station} queue={queue} /> : <span className="text-gray-600">…</span>}
+      {queue && station.kind === 'staffed' && appLabel(queue) && (
+        <span className="block text-xs text-gray-500" title="The app this station's iPad last reported running">
+          {appLabel(queue)}
+        </span>
+      )}
       {queue && (queue.queued > 0 || queue.claimed > 0) && (
         <span className="block text-xs text-gray-600">
           {queue.queued} queued · {queue.claimed} printing

@@ -348,7 +348,7 @@ export class DevicesService {
 
   // ─── Device me ───────────────────────────────────────────────────────────────
 
-  async getDeviceMe(deviceId: string): Promise<DeviceMeResponse> {
+  async getDeviceMe(deviceId: string, app: { version?: string; build?: string } = {}): Promise<DeviceMeResponse> {
     const device = await this.prisma.device.findUnique({
       where: { id: deviceId },
       include: {
@@ -365,7 +365,12 @@ export class DevicesService {
 
     await this.prisma.device.update({
       where: { id: deviceId },
-      data: { lastSeenAt: new Date() },
+      data: {
+        lastSeenAt: new Date(),
+        // Only what it said: a request that reports nothing leaves the last report standing.
+        ...(app.version ? { appVersion: app.version } : {}),
+        ...(app.build ? { appBuild: app.build } : {}),
+      },
     });
 
     // A device is bound through one slot or the other, never both. Which one it

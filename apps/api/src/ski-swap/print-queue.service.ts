@@ -911,7 +911,7 @@ export class PrintQueueService {
       station.attendantDeviceId
         ? this.prisma.device.findUnique({
             where: { id: station.attendantDeviceId },
-            select: { lastSeenAt: true },
+            select: { lastSeenAt: true, appVersion: true, appBuild: true },
           })
         : null,
     ]);
@@ -926,6 +926,8 @@ export class PrintQueueService {
       oldestQueuedAt: oldest?.createdAt.toISOString() ?? null,
       bridgeLastSeenAt: bridge?.lastSeenAt?.toISOString() ?? null,
       attendantLastSeenAt: attendant?.lastSeenAt?.toISOString() ?? null,
+      attendantAppVersion: attendant?.appVersion ?? null,
+      attendantAppBuild: attendant?.appBuild ?? null,
       printerLink: (bridge?.printerLink as 'ready' | 'down' | null) ?? null,
       printerLinkAt: bridge?.printerLinkAt?.toISOString() ?? null,
       // The other counters printing through the same bridge (Plan 27): their

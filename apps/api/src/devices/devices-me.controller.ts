@@ -16,9 +16,20 @@ export class DevicesMeController {
     private readonly bootstrap: BootstrapService,
   ) {}
 
+  /**
+   * Also where a staff iPad says which app it runs, shown under its station's
+   * status: `X-App-Version` (CFBundleShortVersionString) and `X-App-Build`
+   * (CFBundleVersion). Until a build sends them, the build is read from the
+   * User-Agent iOS sends by default, `PatrolKit/<build> CFNetwork/…`.
+   */
   @Get('me')
-  getMe(@CurrentDevice() device: AuthenticatedDevice): Promise<DeviceMeResponse> {
-    return this.devicesService.getDeviceMe(device.deviceId);
+  getMe(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Headers('x-app-version') appVersion?: string,
+    @Headers('x-app-build') appBuild?: string,
+    @Headers('user-agent') userAgent?: string,
+  ): Promise<DeviceMeResponse> {
+    return this.devicesService.getDeviceMe(device.deviceId, appReport(appVersion, appBuild, userAgent));
   }
 
   /**
@@ -120,4 +131,19 @@ function matchesEtag(ifNoneMatch: string | undefined, etag: string): boolean {
     .split(',')
     .map((candidate) => candidate.trim().replace(/^W\//, ''))
     .includes(etag);
+}
+
+/** At most this long, and printable ASCII only: it is shown on a page as sent. */
+const APP_FIELD_MAX = 32;
+
+function appField(raw: string | undefined): string | undefined {
+  const clean = raw?.trim();
+  if (!clean || clean.length > APP_FIELD_MAX || !/^[\x21-\x7e]+$/.test(clean)) return undefined;
+  return clean;
+}
+
+/** The version and build a device reports, each only when it can be trusted to display. */
+export function appReport(version?: string, build?: string, userAgent?: string): { version?: string; build?: string } {
+  const fromAgent = /^PatrolKit\/(\S+)/.exec(userAgent ?? '')?.[1];
+  return { version: appField(version), build: appField(build) ?? appField(fromAgent) };
 }

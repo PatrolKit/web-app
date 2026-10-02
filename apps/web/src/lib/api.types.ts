@@ -544,6 +544,9 @@ export interface StationQueueStatus {
   oldestQueuedAt: string | null;
   bridgeLastSeenAt: string | null;
   attendantLastSeenAt: string | null;
+  /** The app the staff tablet last reported: "1.4.0" and its build. */
+  attendantAppVersion: string | null;
+  attendantAppBuild: string | null;
   /** The other stations printing through the same bridge (Plan 27). */
   bridgeSharedWith: string[];
 }

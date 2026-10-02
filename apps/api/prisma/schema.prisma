@@ -332,6 +332,11 @@ model Device {
   /// entirely 304s, so a `bootstrapAt` that only moved on 200s would look like
   /// a device that had stopped calling in.
   bootstrapAt       DateTime?
+  /// The app a staff iPad reports running, recorded on each `/devices/me`:
+  /// the marketing version (CFBundleShortVersionString, "1.4.0") and the build
+  /// (CFBundleVersion). Null until the device has said.
+  appVersion        String?   @db.VarChar(32)
+  appBuild          String?   @db.VarChar(32)
 
   /// The composite unique on (orgId, skiSwapDeviceCode) used to double as the
   /// index MySQL requires behind the orgId foreign key. With the code gone,
