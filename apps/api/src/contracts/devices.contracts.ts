@@ -153,7 +153,7 @@ export const DeviceMeResponseSchema = z.object({
       /**
        * The bridge this station prints through, or null when it has none
        * (Plan 28). Configuration, not live status: whether the bridge is checked
-       * in and its printer ready is the helper-labels endpoint's answer.
+       * in and its printer ready is the print endpoint's answer.
        */
       printBridge: z
         .object({

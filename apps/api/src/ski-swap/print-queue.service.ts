@@ -72,29 +72,25 @@ const PRINT_KIND_NAME: Record<StationPrintKind, string> = {
 const STATION_PRINT_MAX_JOBS = 40;
 
 /**
- * How long a helper-label pair may wait for its bridge (Plan 28). They are wanted
- * while the ticket is in the volunteer's hand; a pair a bridge only picks up an
- * hour later is stickers for tickets long since handed over, so it is dropped.
+ * How long a print asked for at the counter may wait for its bridge: what an
+ * iPad drew (iOS Plan 26), and a station Test's sample helper pair. They are
+ * wanted while the seller or volunteer is standing there; a label a bridge only
+ * picks up an hour later is for someone long gone, so it is dropped.
  */
-export const HELPER_LABEL_TTL_MS = 60_000;
+export const PRINT_NOW_TTL_MS = 60_000;
 
 /** A bridge counts as online within this — the web's offline rule. */
 export const BRIDGE_ONLINE_MS = 20_000;
 
-/** The text for a legacy ticket's helper stickers, as the iPad sent it. */
-export interface HelperLabelRequest {
-  swapId: string;
-  itemId?: string | null;
-  ticket: string;
-  name: string;
-  itemName: string;
-  size: string | null;
-  priceCents: number;
-  sellerName: string;
-}
+/**
+ * What a helper-sticker job prints: the text, and the legacy ticket it is for.
+ * Only the station's Test button queues these now, on a bridge loaded with
+ * 25 × 67; an iPad sends the stickers it drew through `printDrawn`.
+ */
+export type HelperStickerText = HelperLabelData & { ticket: string };
 
-/** A refusal the iPad shows after "helper labels didn't print:". */
-function helperRefusal(code: string, message: string): ConflictException {
+/** A refusal the iPad shows after "didn't print:". */
+function printRefusal(code: string, message: string): ConflictException {
   return new ConflictException({ message, code });
 }
 
@@ -354,69 +350,14 @@ export class PrintQueueService {
     this.wake(station.id);
   }
 
-  /**
-   * A legacy ticket's helper stickers, printed now through the station's bridge
-   * (Plan 28), for an iPad with no 25 × 67 printer of its own.
-   *
-   * Everything is checked before anything is queued, so the answer comes back
-   * while the volunteer is at the counter. Success means the bridge is online,
-   * its printer is online, and the pair is queued; a pair its bridge does not
-   * pick up within a minute is dropped rather than printed late.
-   *
-   * Only the tablet bound to this station may ask. The text is taken as sent:
-   * it is what the iPad would have printed itself, so the two printers agree
-   * word for word.
-   */
-  async printHelperLabels(
-    deviceId: string,
-    orgId: string,
-    stationId: string,
-    request: HelperLabelRequest,
-  ): Promise<{ jobIds: string[]; notAfter: string }> {
-    const station = await this.prisma.checkinStation.findFirst({
-      where: { id: stationId, orgId, deletedAt: null, attendantDeviceId: deviceId },
-      include: { bridge: { include: { bridgedPrinter: true } } },
-    });
-    if (!station) throw new NotFoundException('Station not found');
-
-    const swap = await this.prisma.skiSwap.findFirst({
-      where: { id: request.swapId, orgId },
-      select: { printLegacyHelperLabels: true },
-    });
-    if (!swap?.printLegacyHelperLabels) {
-      throw helperRefusal('HELPER_LABELS_OFF', 'this swap does not print helper labels.');
-    }
-
-    const { bridge, printer } = this.reachableBridge(station);
-    if (!this.helperOnly(station)) {
-      throw helperRefusal('PRINTER_STOCK', `the printer at ${station.name} isn't loaded with 25 × 67 labels.`);
-    }
-    this.assertPrinterReady(station, bridge);
-
-    // An item the iPad has not synced yet is still a ticket in someone's hand,
-    // so a missing one is recorded as absent rather than refused.
-    const item = request.itemId
-      ? await this.prisma.swapItem.findFirst({ where: { id: request.itemId, orgId, deletedAt: null }, select: { id: true } })
-      : null;
-
-    return this.queueHelperPair(orgId, station.id, printer.id, {
-      swapId: request.swapId,
-      itemId: item?.id ?? null,
-      content: {
-        ticket: request.ticket, name: request.name, itemName: request.itemName, size: request.size,
-        priceCents: request.priceCents, sellerName: request.sellerName,
-      },
-    });
-  }
-
   /** The pair, as one batch that expires together. */
   private async queueHelperPair(
     orgId: string,
     stationId: string,
     printerId: string | null,
-    job: { swapId: string | null; itemId: string | null; content: Omit<HelperLabelRequest, 'swapId' | 'itemId'> },
+    job: { swapId: string | null; itemId: string | null; content: HelperStickerText },
   ): Promise<{ jobIds: string[]; notAfter: string }> {
-    const notAfter = new Date(Date.now() + HELPER_LABEL_TTL_MS);
+    const notAfter = new Date(Date.now() + PRINT_NOW_TTL_MS);
     const jobIds = [createId(), createId()];
     await this.prisma.printJob.createMany({
       data: (['helper_item', 'helper_office'] as const).map((kind, i) => ({
@@ -483,10 +424,10 @@ export class PrintQueueService {
     });
     if (!swap) throw new NotFoundException('Swap not found');
     if (request.kind === 'item_tag' && swap.legacyTicketsOnly) {
-      throw helperRefusal('TAGS_OFF', 'this swap uses legacy tickets, so it prints no item tags.');
+      throw printRefusal('TAGS_OFF', 'this swap uses legacy tickets, so it prints no item tags.');
     }
     if (request.kind === 'helper_labels' && !swap.printLegacyHelperLabels) {
-      throw helperRefusal('HELPER_LABELS_OFF', 'this swap does not print helper labels.');
+      throw printRefusal('HELPER_LABELS_OFF', 'this swap does not print helper labels.');
     }
 
     const { bridge, printer } = this.reachableBridge(station);
@@ -498,13 +439,13 @@ export class PrintQueueService {
       : request.kind === 'helper_labels' ? tier === 'strip'
       : tier !== 'strip';
     if (!stockTakes) {
-      throw helperRefusal(
+      throw printRefusal(
         'PRINTER_STOCK',
         `the printer at ${station.name} is loaded with ${target.size.label} labels, which don't take ${PRINT_KIND_NAME[request.kind]}.`,
       );
     }
     if (!drawnFor(target, printer, request)) {
-      throw helperRefusal(
+      throw printRefusal(
         'PRINTER_STOCK',
         `the printer at ${station.name} has been set up differently since this iPad last synced. Sync and try again.`,
       );
@@ -522,7 +463,7 @@ export class PrintQueueService {
         : null,
     ]);
 
-    const notAfter = new Date(Date.now() + HELPER_LABEL_TTL_MS);
+    const notAfter = new Date(Date.now() + PRINT_NOW_TTL_MS);
     const kind = DRAWN_KIND[request.kind];
     const rows = Array.from({ length: request.copies }, (_, copy) =>
       pages.map((raster, page) => ({
@@ -558,14 +499,14 @@ export class PrintQueueService {
   ): { bridge: Device & { bridgedPrinter: SwapPrinter | null }; printer: SwapPrinter } {
     const bridge = station.bridge;
     if (!bridge) {
-      throw helperRefusal('NO_BRIDGE', `${station.name} has no print bridge.`);
+      throw printRefusal('NO_BRIDGE', `${station.name} has no print bridge.`);
     }
     if (!bridge.lastSeenAt || Date.now() - bridge.lastSeenAt.getTime() > BRIDGE_ONLINE_MS) {
-      throw helperRefusal('BRIDGE_OFFLINE', `the print bridge at ${station.name} is offline.`);
+      throw printRefusal('BRIDGE_OFFLINE', `the print bridge at ${station.name} is offline.`);
     }
     const printer = bridge.bridgedPrinter;
     if (!printer) {
-      throw helperRefusal('NO_PRINTER', `the print bridge at ${station.name} has no printer.`);
+      throw printRefusal('NO_PRINTER', `the print bridge at ${station.name} has no printer.`);
     }
     return { bridge, printer };
   }
@@ -573,7 +514,7 @@ export class PrintQueueService {
   /** Online is a report of `ready`. A printer never reported, or reported down, is not known to be able to print. */
   private assertPrinterReady(station: { name: string }, bridge: { printerLink: string | null }): void {
     if (bridge.printerLink !== 'ready') {
-      throw helperRefusal('PRINTER_OFFLINE', `the printer at ${station.name} is offline.`);
+      throw printRefusal('PRINTER_OFFLINE', `the printer at ${station.name} is offline.`);
     }
   }
 
@@ -1024,7 +965,7 @@ export class PrintQueueService {
   }
 
   private stockRefusal(stationName: string): ConflictException {
-    return helperRefusal(
+    return printRefusal(
       'PRINTER_STOCK',
       `${stationName}'s printer is loaded with 25 × 67 helper labels, and prints nothing else.`,
     );

@@ -1,11 +1,10 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
-import { HELPER_LABEL_TTL_MS, PrintQueueService, type HelperLabelRequest } from './print-queue.service';
+import { ConflictException } from '@nestjs/common';
+import { PrintQueueService } from './print-queue.service';
 
 /**
- * Legacy helper labels through a bridge (Plan 28).
- *
- * A bridge whose printer holds 25 × 67 prints helper labels and nothing else,
- * and a tablet asking for a pair is told at once whether it will print.
+ * A bridge whose printer holds 25 × 67 prints helper labels and nothing else
+ * (Plan 28). What an iPad asks such a bridge to print is checked in
+ * `station-print.spec.ts`; these are the server's own jobs.
  */
 
 type Printer = { id: string; model: string; paperSize: string; marginTop: number; marginBottom: number; marginLeft: number; marginRight: number };
@@ -58,55 +57,6 @@ function harness(opts: {
   const queue = new PrintQueueService(prisma as never, {} as never, {} as never, { recordCheckIn: async () => undefined } as never);
   return { queue, jobs, sql };
 }
-
-const REQUEST: HelperLabelRequest = {
-  swapId: 'swap-1', itemId: 'item-1', ticket: '10042',
-  name: 'Volkl Kendo 88 176cm', itemName: 'Volkl Kendo 88', size: '176cm', priceCents: 24900, sellerName: 'Dana Reyes',
-};
-
-describe('asking a bridge for helper labels', () => {
-  it('queues the pair as one batch that expires in a minute, with the text as sent', async () => {
-    const { queue, jobs } = harness();
-    const before = Date.now();
-    const res = await queue.printHelperLabels('ipad-1', 'org-1', 'station-1', REQUEST);
-    expect(jobs.map((j) => [j.kind, j.seq])).toEqual([['helper_item', 0], ['helper_office', 1]]);
-    expect(jobs.every((j) => (j.notAfter as Date).getTime() >= before + HELPER_LABEL_TTL_MS)).toBe(true);
-    expect(jobs[0].notAfter).toEqual(jobs[1].notAfter);
-    expect(jobs[0]).toMatchObject({ itemId: 'item-1', stationId: 'station-1', params: {
-      ticket: '10042', name: REQUEST.name, itemName: REQUEST.itemName, size: '176cm', priceCents: 24900, sellerName: 'Dana Reyes',
-    } });
-    expect(res.jobIds).toEqual(jobs.map((j) => j.id));
-  });
-
-  it('prints for an item that has not synced yet, recording none', async () => {
-    const { queue, jobs } = harness();
-    await queue.printHelperLabels('ipad-1', 'org-1', 'station-1', { ...REQUEST, itemId: 'not-synced-yet' });
-    expect(jobs[0].itemId).toBeNull();
-  });
-
-  const refusals: [string, Parameters<typeof harness>[0]][] = [
-    ['HELPER_LABELS_OFF', { helperLabelsOn: false }],
-    ['NO_BRIDGE', { bridge: false }],
-    ['BRIDGE_OFFLINE', { lastSeenMsAgo: 30_000 }],
-    ['BRIDGE_OFFLINE', { lastSeenMsAgo: null }],
-    ['NO_PRINTER', { paperSize: null }],
-    ['PRINTER_STOCK', { paperSize: '62x100' }],
-    ['PRINTER_OFFLINE', { printerLink: 'down' }],
-    ['PRINTER_OFFLINE', { printerLink: null }],
-  ];
-  it.each(refusals)('refuses with %s, queuing nothing', async (code, opts) => {
-    const { queue, jobs } = harness(opts);
-    const err = await queue.printHelperLabels('ipad-1', 'org-1', 'station-1', REQUEST).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(ConflictException);
-    expect((err as ConflictException).getResponse()).toMatchObject({ code });
-    expect(jobs).toHaveLength(0);
-  });
-
-  it('is 404 for a tablet that is not this station’s', async () => {
-    const { queue } = harness();
-    await expect(queue.printHelperLabels('ipad-2', 'org-1', 'station-1', REQUEST)).rejects.toBeInstanceOf(NotFoundException);
-  });
-});
 
 describe('a bridge that holds 25 × 67', () => {
   it('queues no tag when an item is saved there', async () => {

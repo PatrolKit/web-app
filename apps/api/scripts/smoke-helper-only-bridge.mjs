@@ -1,13 +1,14 @@
-// Legacy helper labels through a print bridge (Plan 28), against a running API
-// and a real database.
+// A print bridge loaded with 25 × 67 helper labels (Plan 28), against a running
+// API and a real database.
 //
 //   PORT=4001 node apps/api/dist/src/main.js &
-//   node apps/api/scripts/smoke-helper-labels.mjs
+//   node apps/api/scripts/smoke-helper-only-bridge.mjs
 //
-// A staff iPad with no 25 × 67 printer of its own asks its station's bridge to
-// print a legacy ticket's two stickers. Success is a bridge that is online, a
-// printer that is online, and the pair queued; anything else is refused at
-// once with a reason, and a pair not taken within a minute is dropped.
+// The station's iPad sends the helper stickers it drew through the print
+// endpoint (iOS Plan 26). Success is a bridge that is online, a printer that is
+// online, and the pair queued; anything else is refused at once with a reason,
+// and a pair not taken within a minute is dropped. Such a bridge prints helper
+// labels and nothing else.
 
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
@@ -23,7 +24,7 @@ const ok = (label, cond, extra = '') => {
 };
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
-const SEED = 'helper-labels-smoke';
+const SEED = 'helper-only-bridge-smoke';
 const org = await smokeOrg(prisma);
 await prisma.skiSwap.deleteMany({ where: { orgId: org.id, title: 'Helper labels swap' } });
 await prisma.checkinStation.deleteMany({ where: { orgId: org.id, name: 'Helper station' } });
@@ -64,11 +65,13 @@ const heartbeat = () => fetch(`${BASE}/devices/me/print-jobs/claim?limit=0`, {
 const claim = () => fetch(`${BASE}/devices/me/print-jobs/claim?limit=10&wait=0&payload=omit`, {
   method: 'POST', headers: B, body: '{}',
 }).then(unwrap);
-const ask = (body = {}) => fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/helper-labels`, {
+// 25 × 67 on an M221: the full 576-dot head, 536 rows less 16 feed rows.
+const sticker = (fill) => Buffer.alloc((576 / 8) * 520, fill).toString('base64');
+const ask = (body = {}) => fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/print`, {
   method: 'POST', headers: I,
   body: JSON.stringify({
-    swapId: swap.id, ticket: '10042', name: 'Volkl Kendo 88 176cm', itemName: 'Volkl Kendo 88',
-    size: '176cm', priceCents: 24900, sellerName: 'Dana Reyes', ...body,
+    kind: 'helper_labels', swapId: swap.id, copies: 1, model: 'm221', paperSize: '25x67',
+    widthDots: 576, heightDots: 520, pages: [sticker(1), sticker(2)], ...body,
   }),
 });
 
@@ -86,7 +89,7 @@ ok('an online bridge with an online 25 × 67 printer takes the pair', asked.stat
   `HTTP ${asked.status} ${JSON.stringify(askedBody).slice(0, 120)}`);
 
 const got = await claim();
-ok('one claim hands the bridge both stickers, item then office', got.jobs?.map((j) => j.kind).join(',') === 'helper_item,helper_office',
+ok('one claim hands the bridge both stickers, in order', got.jobs?.map((j) => j.kind).join(',') === 'drawn_helper_labels,drawn_helper_labels',
   got.jobs?.map((j) => j.kind).join(','));
 ok('...each the full head wide and the stock long', got.jobs?.every((j) => j.widthBytes === 72 && j.rasterBytes === 72 * (67 * 8 - 16)),
   got.jobs?.map((j) => `${j.widthBytes}×${j.rasterBytes}`).join(' '));
@@ -100,6 +103,13 @@ ok('a bridge unseen for 30 seconds is refused as offline', offline.status === 40
   `HTTP ${offline.status} ${offlineBody.code}: ${offlineBody.error}`);
 
 await heartbeat();
+// A receipt, not a tag: this swap is on legacy tickets, so a tag would be refused
+// as TAGS_OFF before the stock was ever asked about.
+const receipt = await ask({ kind: 'receipt' });
+const receiptBody = await receipt.json();
+ok('a receipt is refused: this stock prints helper labels only', receipt.status === 409 && receiptBody.code === 'PRINTER_STOCK',
+  `HTTP ${receipt.status} ${receiptBody.code}: ${receiptBody.error}`);
+
 await prisma.swapPrinter.update({ where: { id: printer.id }, data: { paperSize: '62x100' } });
 const stock = await ask();
 const stockBody = await stock.json();
@@ -143,6 +153,9 @@ const savedItem = await unwrap(saved);
 const tagJobs = await prisma.printJob.count({ where: { itemId: savedItem.id } });
 ok('an item saved at the station saves, and queues no tag', saved.status === 201 && tagJobs === 0 && savedItem.hasPrintedTag === false,
   `HTTP ${saved.status}, ${tagJobs} tag jobs`);
+
+const retired = await fetch(`${BASE}/orgs/${org.id}/ski-swap/stations/${station.id}/helper-labels`, { method: 'POST', headers: I, body: '{}' });
+ok('the retired helper-labels endpoint is gone', retired.status === 404, `HTTP ${retired.status}`);
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
 await prisma.swapItem.deleteMany({ where: { swapId: swap.id } });

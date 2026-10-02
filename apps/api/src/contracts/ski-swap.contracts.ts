@@ -1099,32 +1099,6 @@ export const RenderLabelResponseSchema = z.object({
 export class RenderLabelDto extends createZodDto(RenderLabelSchema) {}
 export type RenderLabelResponse = z.infer<typeof RenderLabelResponseSchema>;
 
-// ─── Legacy helper labels through a bridge (Plan 28) ─────────────────────────
-
-/**
- * A legacy ticket's two helper stickers, as the iPad would have printed them
- * itself. The text is taken as sent, so a sticker from a bridge says word for
- * word what one from the iPad says.
- */
-export const HelperLabelsRequestSchema = z
-  .object({
-    swapId: z.string().min(1),
-    /** Absent while the item is still in the iPad's offline queue. */
-    itemId: z.string().min(1).nullish(),
-    /** The legacy ticket number, for the job record. */
-    ticket: z.string().min(1).max(20),
-    /** The whole name, size and all — the office sticker's. */
-    name: z.string().min(1).max(200),
-    /** The item sticker's name, without the size when the size has its own line. */
-    itemName: z.string().min(1).max(200),
-    size: z.string().min(1).max(40).nullable(),
-    priceCents: z.number().int().positive().max(100_000_000),
-    sellerName: z.string().min(1).max(200),
-  })
-  .strict();
-
-export class HelperLabelsRequestDto extends createZodDto(HelperLabelsRequestSchema) {}
-
 // ─── Printing what the iPad drew (iOS Plan 26) ───────────────────────────────
 
 export const STATION_PRINT_KINDS = ['item_tag', 'receipt', 'seller_qr', 'helper_labels'] as const;

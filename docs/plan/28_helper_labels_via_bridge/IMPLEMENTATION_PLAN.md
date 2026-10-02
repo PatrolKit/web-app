@@ -1,5 +1,11 @@
 # Plan 28 — Legacy helper labels through a print bridge
 
+> **Retired, 2026-10-02:** the endpoint in §4 was removed. The iPad now draws
+> helper labels itself and sends them through `POST …/stations/:stationId/print`
+> (iOS Plan 26), with the same refusal codes. The rest stands: the 25 × 67
+> stock rules (§3), the one-minute expiry (§5), and the server's drawing (§6),
+> which the station's Test button still uses.
+
 A swap on legacy tickets can print two 25 × 67 stickers per ticket instead of
 volunteers handwriting on it:
 - the **item label**: name, size and price, for the section that stays with the
