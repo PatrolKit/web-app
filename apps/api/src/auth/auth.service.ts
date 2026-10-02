@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from './jwt.service';
@@ -220,6 +220,31 @@ export class AuthService {
 
   // ─── Device token (delegated from controller) ────────────────────────────────
 
+  /** A real argon2id hash of a secret nobody holds, made once. */
+  private unknownDeviceHashing: Promise<string> | null = null;
+  private unknownDeviceHash(argon2: typeof import('argon2')): Promise<string> {
+    this.unknownDeviceHashing ??= argon2.hash(randomBytes(32).toString('hex'), { type: argon2.argon2id });
+    return this.unknownDeviceHashing;
+  }
+
+  /**
+   * A token for a device presenting its credentials.
+   *
+   * Three answers, kept apart because a device acts on each differently:
+   *
+   * - **401 `DEVICE_REVOKED`**: these credentials will never work again.
+   *   Revoking deletes the device and rotating replaces its secret, and
+   *   `clientId`s are minted here, so an unknown one or a secret that doesn't
+   *   verify means exactly that. The device stops and asks to be provisioned.
+   * - **500**: the check itself failed (argon2 out of memory, the database
+   *   away). Nothing is known about the credentials, so the device retries.
+   *   This used to come back as 401, which told a working iPad it had been
+   *   revoked.
+   * - **200**: a token.
+   *
+   * An unknown `clientId` is still checked against a real hash, so it costs
+   * the same time as a wrong secret and says nothing about which it was.
+   */
   async getDeviceToken(clientId: string, clientSecret: string): Promise<DeviceTokenResponse> {
     // Dynamic import to avoid circular dependency at module init time
     const argon2 = await import('argon2');
@@ -227,11 +252,22 @@ export class AuthService {
       where: { clientId },
     });
 
-    const hash = device?.secretHash ?? '$argon2id$v=19$m=65536,t=3,p=4$placeholder';
-    const valid = await argon2.verify(hash, clientSecret).catch(() => false);
+    let valid: boolean;
+    try {
+      valid = await argon2.verify(device?.secretHash ?? (await this.unknownDeviceHash(argon2)), clientSecret);
+    } catch (err) {
+      this.logger.error({ err, clientId }, 'Device secret check failed');
+      throw new InternalServerErrorException('Could not check this device’s credentials. Try again.');
+    }
 
     if (!device || !valid) {
-      throw new UnauthorizedException('Invalid device credentials');
+      // Logged with the clientId, which identifies but grants nothing: the
+      // next time a device says it was refused, this is what answers why.
+      this.logger.warn({ clientId, known: !!device }, 'Device token refused');
+      throw new UnauthorizedException({
+        message: 'This device has been removed from the organization, or its credentials were replaced. Provision it again.',
+        code: 'DEVICE_REVOKED',
+      });
     }
 
     // The role rides in the token: the print-job claim polls once a second, and

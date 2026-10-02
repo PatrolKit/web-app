@@ -19,7 +19,6 @@ import type {
   DeviceRole,
   ProvisionDeviceRequest,
   ProvisionDeviceResponse,
-  DeviceTokenResponse,
 } from '../contracts/devices.contracts';
 import { moduleOfRole } from '../contracts/devices.contracts';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -209,38 +208,6 @@ export class DevicesService {
       createdAt: d.createdAt,
     }));
   }
-
-  // ─── Device token ────────────────────────────────────────────────────────────
-
-  async getDeviceToken(clientId: string, clientSecret: string): Promise<DeviceTokenResponse> {
-    const device = await this.prisma.device.findUnique({
-      where: { clientId },
-    });
-
-    // Constant-time-ish check: always verify even if not found
-    const hash = device?.secretHash ?? '$argon2id$v=19$m=65536,t=3,p=4$placeholder';
-    const valid = await argon2.verify(hash, clientSecret).catch(() => false);
-
-    if (!device || !valid) {
-      throw new UnauthorizedException('Invalid device credentials');
-    }
-
-    const accessToken = await this.jwtService.signDeviceToken({
-      sub: clientId,
-      deviceId: device.id,
-      orgId: device.orgId,
-      role: device.role,
-    });
-
-    await this.prisma.device.update({
-      where: { id: device.id },
-      data: { lastSeenAt: new Date() },
-    });
-
-    return { accessToken, tokenType: 'Bearer' };
-  }
-
-  // ─── Rotate secret ───────────────────────────────────────────────────────────
 
   async rotateSecret(
     orgId: string,
