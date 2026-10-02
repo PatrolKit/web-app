@@ -16,12 +16,15 @@ export interface SwapItemsPanelApi {
   /**
    * `sellerId` is applied by the server, not by filtering what came back.
    *
-   * The list is a page of fifty. A seller scope that only hid rows already
-   * fetched would disagree with "accept everything this seller is waiting on",
-   * which acts on all of them — and the button would quietly do more than the
-   * screen showed.
+   * The server answers a page at a time (`skip`/`take`), and the panel asks
+   * for every page: the state and tag filters are applied here, so a list
+   * that stopped at the server's default of fifty hid everything past it from
+   * "Not printed" and "Not yet received" with nothing on screen to say so.
    */
-  fetchItems: (swapId: string, opts?: { query?: string; sellerId?: string }) => Promise<{ items: ItemResponse[]; total: number }>;
+  fetchItems: (
+    swapId: string,
+    opts?: { query?: string; sellerId?: string; skip?: number; take?: number },
+  ) => Promise<{ items: ItemResponse[]; total: number }>;
   /** Accepts every item this seller is still waiting on. Staff pages only. */
   consignAllForSeller?: (swapId: string, sellerId: string) => Promise<{ consigned: number }>;
   createItem: (swapId: string, data: CreateItemInput) => Promise<ItemResponse>;
@@ -133,11 +136,12 @@ function describeRanges(ranges: { startNumber: number; endNumber: number }[]): s
  * unscanned item is not also "not in Square" as far as anybody acting on this
  * screen is concerned, it is unscanned, and scanning it fixes both.
  */
-export type ItemStateKey = 'not_received' | 'not_in_square' | 'for_sale' | 'sold';
+export type ItemStateKey = 'not_received' | 'not_in_square' | 'stock_unknown' | 'for_sale' | 'sold';
 
 export const ITEM_STATE_FILTERS: { value: ItemStateKey; label: string }[] = [
   { value: 'not_received', label: 'Not yet received' },
   { value: 'not_in_square', label: 'Not in Square' },
+  { value: 'stock_unknown', label: 'Stock unknown' },
   { value: 'for_sale', label: 'For sale' },
   { value: 'sold', label: 'Sold' },
 ];
@@ -235,6 +239,17 @@ export function itemState(item: ItemResponse): {
     };
   }
 
+  // Square did not answer. The numbers below are the server's placeholder, not
+  // a reading, and a Square outage used to show every item in the swap as sold.
+  if (!item.inventoryKnown) {
+    return {
+      key: 'stock_unknown',
+      label: 'Stock unknown',
+      tone: 'bg-amber-900/40 text-amber-300',
+      title: 'In Square, but Square could not be read just now. Whether it has sold is not known until it answers.',
+    };
+  }
+
   if (item.inStock > 0) {
     return {
       key: 'for_sale',
@@ -277,12 +292,31 @@ export default function SwapItemsPanel({
 
   const { data, isLoading } = useQuery({
     queryKey,
-    queryFn: () => panelApi.fetchItems(swapId!, {
-      ...(query ? { query } : {}),
-      ...(sellerFilter ? { sellerId: sellerFilter } : {}),
-    }),
+    // Every page, not the first. The filters above the table are applied to
+    // what came back, so a list cut off at the server's default of fifty was a
+    // list that silently did not have the items a filter was looking for.
+    queryFn: async () => {
+      const PAGE = 200;
+      const scope = {
+        ...(query ? { query } : {}),
+        ...(sellerFilter ? { sellerId: sellerFilter } : {}),
+      };
+      const first = await panelApi.fetchItems(swapId!, { ...scope, skip: 0, take: PAGE });
+      const items = [...first.items];
+      while (items.length < first.total) {
+        const next = await panelApi.fetchItems(swapId!, { ...scope, skip: items.length, take: PAGE });
+        if (!next.items.length) break;
+        items.push(...next.items);
+      }
+      return { items, total: first.total };
+    },
     enabled: !!swapId,
   });
+
+  /** A delete or a print that was refused. Both used to fail without a word. */
+  const [actionError, setActionError] = useState<string | null>(null);
+  const describe = (err: unknown, fallback: string) =>
+    err instanceof Error && err.message ? err.message : fallback;
 
   const createMutation = useMutation({
     mutationFn: () => panelApi.createItem(swapId!, {
@@ -339,6 +373,8 @@ export default function SwapItemsPanel({
 
   const deleteMutation = useMutation({
     mutationFn: (itemId: string) => panelApi.deleteItem(itemId),
+    onMutate: () => setActionError(null),
+    onError: (err) => setActionError(describe(err, 'Could not delete that item')),
     onSettled: () => qc.invalidateQueries({ queryKey }),
   });
 
@@ -404,11 +440,15 @@ export default function SwapItemsPanel({
     setShowForm(false);
     setEditItem(null);
     setForm(emptyForm);
+    // A refusal belongs to the attempt it refused, not to the next form.
+    createMutation.reset();
+    patchMutation.reset();
   }
 
   async function handlePrint(item: ItemResponse) {
     if (!isWebBluetoothSupported()) { setShowUnsupportedModal(true); return; }
     setPrintingItem(true);
+    setActionError(null);
     try {
       for (let i = 0; i < labelsPerItem; i++) {
         await printItem(item);
@@ -416,8 +456,11 @@ export default function SwapItemsPanel({
       await panelApi.patchItem(item.id, { hasPrintedTag: true });
       qc.invalidateQueries({ queryKey });
     } catch (err: unknown) {
-      if ((err as { name?: string })?.name !== 'NotFoundError')
+      // `NotFoundError` is the browser's picker being dismissed: nothing to say.
+      if ((err as { name?: string })?.name !== 'NotFoundError') {
         console.error('Print failed:', err);
+        setActionError(describe(err, 'Could not print the tag. Check the printer and try again.'));
+      }
     } finally {
       setPrintingItem(false);
     }
@@ -436,6 +479,11 @@ export default function SwapItemsPanel({
 
   return (
     <div className="space-y-4">
+      {actionError && (
+        <p className="text-sm text-red-400 bg-red-900/20 border border-red-900/50 rounded px-3 py-2">
+          {actionError}
+        </p>
+      )}
       {/* Toolbar */}
       <div className="flex flex-wrap gap-2 items-center justify-between">
         <div className="flex gap-2 items-center">
@@ -800,6 +848,15 @@ export default function SwapItemsPanel({
 
             {photoError && (
               <p className="text-xs text-red-400 pt-1">{photoError}</p>
+            )}
+
+            {/* The server's refusal, where the person who has to fix it is
+                looking. A price of nothing, or a ticket already on another
+                item, used to leave the form open and silent. */}
+            {(createMutation.error || patchMutation.error) && (
+              <p className="text-sm text-red-400 bg-red-900/20 border border-red-900/50 rounded px-3 py-2">
+                {describe(createMutation.error ?? patchMutation.error, editItem ? 'Could not save the item' : 'Could not add the item')}
+              </p>
             )}
 
             </div>

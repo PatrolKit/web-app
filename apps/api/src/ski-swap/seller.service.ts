@@ -212,7 +212,12 @@ export class SellerService {
                   OR: [
                     { firstName: { contains: query } },
                     { lastName: { contains: query } },
-                    { phone: { contains: query.replace(/\D/g, '') } },
+                    // Only when the query has digits in it. Stripped of
+                    // letters, "Smith" is the empty string, and `contains: ''`
+                    // matches every phone on the roster.
+                    ...(query.replace(/\D/g, '')
+                      ? [{ phone: { contains: query.replace(/\D/g, '') } }]
+                      : []),
                     { email: { contains: query } },
                   ],
                 },
@@ -661,9 +666,22 @@ export class SellerService {
       ...defined('city', keep(data.city, current.city)),
       ...defined('state', keep(data.state, current.state)),
       ...defined('zip', keep(data.zip, current.zip)),
-      ...defined('payoutMethod', data.payoutMethod),
-      ...defined('payoutTarget', data.payoutTarget),
-      ...defined('payoutHandle', data.payoutHandle),
+      /*
+       * The three payout fields move as one, and under the same rule as the
+       * rest: fill a gap, never overwrite without being told to.
+       *
+       * They used to bypass `keep`. Staff adding last season's seller again by
+       * phone matched the existing person, and the form's default of CHECK
+       * silently replaced the PayPal details they had given — the first anyone
+       * heard of it was a cheque in the post.
+       */
+      ...(!opts.overwrite && current.payoutMethod != null
+        ? {}
+        : {
+            ...defined('payoutMethod', data.payoutMethod),
+            ...defined('payoutTarget', data.payoutTarget),
+            ...defined('payoutHandle', data.payoutHandle),
+          }),
     };
 
     if (Object.keys(update).length === 0) return;

@@ -494,7 +494,8 @@ export default function PrintersPage() {
             <div className="flex gap-2 pt-1">
               <button
                 onClick={() => { handleTestPrint(pendingTestPrint); setPendingTestPrint(null); }}
-                className="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm rounded py-1.5 flex items-center justify-center gap-1"
+                disabled={isPrintingId !== null}
+                className="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm rounded py-1.5 flex items-center justify-center gap-1"
               >
                 <FontAwesomeIcon icon={faPrintDuo} /> Print Label
               </button>

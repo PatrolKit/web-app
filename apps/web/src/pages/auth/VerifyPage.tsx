@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
@@ -19,6 +19,9 @@ import { PoweredByFooter } from '../public/PoweredByFooter';
  * JavaScript, which is the only reason firing on mount has not already been
  * spending people's codes for them. A tap is a signal a human is here.
  */
+// The same test App.tsx branches on. Evaluated once; a host does not change.
+const onSellerSite = window.location.hostname.startsWith('skiswap.');
+
 export default function VerifyPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -108,14 +111,32 @@ export default function VerifyPage() {
           )}
         </p>
 
-        {!confirmingContact && (
-          <a
-            href="/auth/login"
+        {/* Where a new link comes from depends on where this one was going.
+            On the seller site there is no login page: the link is minted by
+            the station's check-in screen, which the QR code opens. Pointing
+            sellers at `/auth/login` here sent them to a route that does not
+            exist on that host — a blank page, at the moment they were already
+            stuck. */}
+        {!confirmingContact && (onSellerSite ? (
+          <>
+            <p className="text-center text-sm text-gray-400">
+              Scan the QR code at your check-in station again to get a new one.
+            </p>
+            <Link
+              to="/checkin"
+              className="mt-4 block w-full rounded-lg bg-brand-600 hover:bg-brand-700 py-3 text-center text-white font-medium"
+            >
+              Back to check-in
+            </Link>
+          </>
+        ) : (
+          <Link
+            to="/auth/login"
             className="block w-full rounded-lg bg-brand-600 hover:bg-brand-700 py-3 text-center text-white font-medium"
           >
             Send me a new link
-          </a>
-        )}
+          </Link>
+        ))}
       </Shell>
     );
   }

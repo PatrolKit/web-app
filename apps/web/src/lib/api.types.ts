@@ -320,6 +320,11 @@ export interface ItemResponse {
   originalQuantity: number;
   inStock: number;
   soldCount: number;
+  /**
+   * Whether `inStock` and `soldCount` are Square's answer. False when Square
+   * could not be read; the numbers then say "unsold" as a placeholder.
+   */
+  inventoryKnown: boolean;
   squareSynced: boolean;
   donateProceeds: boolean;
   hasPrintedTag: boolean;
@@ -416,6 +421,8 @@ export interface SwapStats {
   totalSellers: number;
   itemsSold: number;
   grossRevenueCents: number;
+  /** False when Square could not be read; sold and revenue are then 0, not answers. */
+  inventoryKnown: boolean;
 }
 
 export interface SquareConfigResponse {

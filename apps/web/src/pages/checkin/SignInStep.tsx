@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFeatures } from '../../lib/features';
@@ -42,6 +42,22 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
   const [errorCode, setErrorCode] = useState<string | undefined>();
   /** Codes texted so far. The third is the second re-send. */
   const [textsSent, setTextsSent] = useState(0);
+  /**
+   * When the last link went out, for the re-send button's hold.
+   *
+   * Thirty seconds is not a limit — the server has those, five to one address
+   * in fifteen minutes — it is a pause long enough for slow venue email to
+   * arrive before the tap that would have asked for another. Every link sent
+   * stays good, so the one that lands first works whichever tap sent it.
+   */
+  const [linkSentAt, setLinkSentAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (mode !== 'sent') return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [mode]);
+  const resendWait = Math.max(0, 30 - Math.floor((now - linkSentAt) / 1000));
 
   const contact = useEmail ? email.trim() : phone.trim();
 
@@ -60,6 +76,7 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
       // back so the flow can be walked without a phone.
       if (res.devCode) setCode(res.devCode);
       if (res.channel === 'phone') setTextsSent((n) => n + 1);
+      if (res.channel === 'email') { setLinkSentAt(Date.now()); setNow(Date.now()); }
       setMode(res.channel === 'phone' ? 'code' : 'sent');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not send a code');
@@ -110,7 +127,19 @@ export default function SignInStep({ context }: { context: CheckinContext }) {
           We sent a sign-in link to {email.trim()}. Open it on this phone and you will come
           straight back here.
         </p>
-        <button className={secondaryButtonClass} onClick={() => setMode('contact')}>
+        <p className="text-xs text-gray-500 text-center">
+          Nothing after a minute? Check your spam folder, or send it again. Every link we
+          send keeps working until you use one.
+        </p>
+        <ErrorNote>{error}</ErrorNote>
+        <button
+          className={secondaryButtonClass}
+          disabled={busy || resendWait > 0}
+          onClick={sendCode}
+        >
+          {busy ? 'Sending…' : resendWait > 0 ? `Send it again (${resendWait})` : 'Send it again'}
+        </button>
+        <button className={secondaryButtonClass} disabled={busy} onClick={() => setMode('contact')}>
           Use a different address
         </button>
       </CheckinShell>

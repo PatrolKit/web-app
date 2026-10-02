@@ -7,6 +7,8 @@ export interface SwapStats {
   totalSellers: number;
   itemsSold: number;
   grossRevenueCents: number;
+  /** False when Square could not be read; `itemsSold` and revenue are then 0, not answers. */
+  inventoryKnown: boolean;
 }
 
 @Injectable()
@@ -28,16 +30,21 @@ export class StatsService {
 
     const syncedItems = items.filter((i) => i.squareVariationId);
     if (!syncedItems.length || !swap.locationId) {
-      return { totalItems, totalSellers: totalSellers.length, itemsSold: 0, grossRevenueCents: 0 };
+      return { totalItems, totalSellers: totalSellers.length, itemsSold: 0, grossRevenueCents: 0, inventoryKnown: true };
     }
 
     const pos = await this.posFactory.forOrg(orgId);
     if (!pos) {
-      return { totalItems, totalSellers: totalSellers.length, itemsSold: 0, grossRevenueCents: 0 };
+      return { totalItems, totalSellers: totalSellers.length, itemsSold: 0, grossRevenueCents: 0, inventoryKnown: true };
     }
 
     const variationIds = syncedItems.map((i) => i.squareVariationId as string);
-    const inventoryMap = await pos.getInventoryCounts(variationIds, swap.locationId).catch(() => new Map<string, number>());
+    // A failed read is not "nothing in stock". With an empty map every synced
+    // item counted as sold and the whole swap's list price became revenue.
+    const inventoryMap = await pos.getInventoryCounts(variationIds, swap.locationId).catch(() => null);
+    if (!inventoryMap) {
+      return { totalItems, totalSellers: totalSellers.length, itemsSold: 0, grossRevenueCents: 0, inventoryKnown: false };
+    }
 
     let itemsSold = 0;
     let grossRevenueCents = 0;
@@ -48,6 +55,6 @@ export class StatsService {
       grossRevenueCents += sold * item.priceCents;
     }
 
-    return { totalItems, totalSellers: totalSellers.length, itemsSold, grossRevenueCents };
+    return { totalItems, totalSellers: totalSellers.length, itemsSold, grossRevenueCents, inventoryKnown: true };
   }
 }

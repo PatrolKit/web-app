@@ -84,6 +84,12 @@ function harness(opts: { duringGap?: (rows: Row[]) => void } = {}) {
         return { ...found, name: found.id, description: null, priceCents: 1, sku: found.id,
                  originalQuantity: 1, squareItemId: null, squareVariationId: null };
       },
+      // The push re-reads the Square ids under its per-item lock before it
+      // decides between create and update. Nothing here has been pushed yet.
+      findFirst: async ({ where }: { where: Record<string, unknown> }) => {
+        const found = rows.find((r) => matches(r, where));
+        return found ? { squareItemId: null, squareVariationId: null } : null;
+      },
       update: async ({ where }: { where: { id: string } }) => rows.find((r) => r.id === where.id),
     },
     swapItemPhoto: { findMany: async () => [] },

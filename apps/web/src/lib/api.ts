@@ -858,10 +858,16 @@ export const api = {
       }),
     sellerListSwaps: (orgId: string) =>
       request<{ id: string; title: string; labelsPerItem: number }[]>(`/orgs/${orgId}/ski-swap/seller/me/swaps`),
-    sellerListItems: (orgId: string, swapId?: string) =>
-      request<{ items: import('./api.types').ItemResponse[]; total: number }>(
-        `/orgs/${orgId}/ski-swap/seller/me/items${swapId ? `?swapId=${swapId}` : ''}`
-      ),
+    sellerListItems: (orgId: string, swapId?: string, opts?: { skip?: number; take?: number }) => {
+      const params = new URLSearchParams();
+      if (swapId) params.set('swapId', swapId);
+      if (opts?.skip !== undefined) params.set('skip', String(opts.skip));
+      if (opts?.take !== undefined) params.set('take', String(opts.take));
+      const qs = params.toString();
+      return request<{ items: import('./api.types').ItemResponse[]; total: number }>(
+        `/orgs/${orgId}/ski-swap/seller/me/items${qs ? `?${qs}` : ''}`
+      );
+    },
     /**
      * `stationId` marks the item as entered at a check-in station: it decides
      * where the tag prints and which counter mints the SKU. `idempotencyKey`

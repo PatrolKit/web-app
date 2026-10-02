@@ -50,7 +50,7 @@ export default function BusinessSellerPage() {
           : undefined
       }
       panelApi={{
-        fetchItems: (sid) => api.skiSwap.sellerListItems(orgId, sid),
+        fetchItems: (sid, opts) => api.skiSwap.sellerListItems(orgId, sid, opts),
         createItem: (_sid, data) => api.skiSwap.sellerCreateItem(orgId, {
           swapId: sellerSelectedSwapId!,
           categoryId: data.categoryId,

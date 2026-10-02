@@ -117,7 +117,11 @@ export class ItemService {
         { seller: { membership: { user: { firstName: { contains: opts.query } } } } },
         { seller: { membership: { user: { lastName: { contains: opts.query } } } } },
         { seller: { membership: { user: { email: { contains: opts.query } } } } },
-        { seller: { membership: { user: { phone: { contains: opts.query.replace(/\D/g, '') } } } } },
+        // Only when the query has digits in it. Stripped of letters, "rossignol"
+        // is the empty string, and `contains: ''` is every phone there is.
+        ...(opts.query.replace(/\D/g, '')
+          ? [{ seller: { membership: { user: { phone: { contains: opts.query.replace(/\D/g, '') } } } } }]
+          : []),
       ] } : {}),
       ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
       ...(opts.updatedSince ? { updatedAt: { gt: new Date(opts.updatedSince) } } : {}),
@@ -882,18 +886,32 @@ export class ItemService {
      * once cannot restamp each other's work, and `count` is what this call
      * actually changed rather than what it hoped to.
      */
-    const { count } = await this.prisma.swapItem.updateMany({
-      where: { id: { in: ids }, consignedAt: null },
-      data: { consignedAt: new Date(), consignedBy: actorId },
-    });
+    /*
+     * One row at a time, so the answer says *which* rows this press changed.
+     *
+     * A single `updateMany` over the whole set returned a count, and the push
+     * then went by the snapshot — every id, whether or not this press was the
+     * one that stamped it. Two volunteers pressing together both pushed every
+     * item, and two pushes of an item that has no Square id yet are two
+     * creates: Square ended up holding two of it, each with stock, under one
+     * SKU. The register could sell the same skis twice.
+     *
+     * `consignedAt: null` in each filter is what makes this safe: only one
+     * press can take a given row, and only that press pushes it.
+     */
+    const now = new Date();
+    const taken: string[] = [];
+    for (const id of ids) {
+      const { count } = await this.prisma.swapItem.updateMany({
+        where: { id, consignedAt: null },
+        data: { consignedAt: now, consignedBy: actorId },
+      });
+      if (count === 1) taken.push(id);
+    }
 
-    // Pushed by the snapshot rather than by `count`, which does not say *which*
-    // rows it changed. Re-pushing one another press has already sent is an
-    // upsert — the same thing an edit does — so the overlap costs a call and
-    // nothing else.
-    void this.pushConsignedBatch(orgId, swapId, ids);
+    if (taken.length) void this.pushConsignedBatch(orgId, swapId, taken);
 
-    return { consigned: count };
+    return { consigned: taken.length };
   }
 
   /**
@@ -938,11 +956,22 @@ export class ItemService {
     const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId, swapId, deletedAt: null } });
     if (!existing) throw new NotFoundException('Item not found');
 
-    if (existing.consignedAt === null) {
-      const accepted = await this.prisma.swapItem.update({
-        where: { id: itemId },
-        data: { consignedAt: new Date(), consignedBy: actorId },
-      });
+    /*
+     * Conditional on the row still waiting, not on what was read a moment ago.
+     *
+     * A scanner double-reads a barcode constantly, and the two reads arrive as
+     * two requests a few milliseconds apart. Both used to see `consignedAt`
+     * null, both stamped it, and both pushed — and a push of an item with no
+     * Square id yet is a create, so Square got two of it under one SKU. Whoever
+     * loses this update finds `count` 0 and does nothing, which is the "second
+     * scan is not an error" promise kept without the second catalogue entry.
+     */
+    const { count } = await this.prisma.swapItem.updateMany({
+      where: { id: itemId, consignedAt: null },
+      data: { consignedAt: new Date(), consignedBy: actorId },
+    });
+    if (count === 1) {
+      const accepted = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, deletedAt: null } });
       // The item reaches the catalogue exactly here — being accepted and being
       // sellable are the same event.
       await this.syncItemToPos(orgId, swap, accepted);
@@ -972,10 +1001,52 @@ export class ItemService {
    * batched push at check-in finish tells the seller what actually landed, and
    * "Square is not configured" is not a failure to report.
    */
-  private async syncItemToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, item: { id: string; name: string; description: string | null; priceCents: number; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null }): Promise<PosSyncResult> {
+  private async syncItemToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, item: { id: string; name: string; description: string | null; priceCents: number; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; consignedAt: Date | null }): Promise<PosSyncResult> {
     if (!swap.locationId) return 'skipped';
+    /*
+     * Never before it is accepted. An item is in Square exactly when
+     * `consignedAt` is set — that is the contract every screen reads — and an
+     * edit used to break it: a seller correcting a price from their phone, or
+     * a shop tidying inventory that had not arrived, pushed the item on sale
+     * while the web still said it could not be sold.
+     */
+    if (item.consignedAt === null) return 'skipped';
     const pos = await this.posFactory.forOrg(orgId);
     if (!pos) return 'skipped';
+    /*
+     * One push per item at a time, and each push starts from the ids the
+     * previous one stored. Two pushes of the same item in flight together —
+     * check-in finish against a staff re-push, or two "Accept all" presses —
+     * both read no Square id and both created one. Serialised, the second
+     * reads the first's id and is the update it was always meant to be.
+     */
+    return this.withItemLock(item.id, async () => {
+      const latest = await this.prisma.swapItem.findFirst({
+        where: { id: item.id, deletedAt: null },
+        select: { squareItemId: true, squareVariationId: true },
+      });
+      // Withdrawn while this waited its turn: nothing to put on sale.
+      if (!latest) return 'skipped';
+      const squareItemId = latest.squareItemId ?? item.squareItemId;
+      const squareVariationId = latest.squareVariationId ?? item.squareVariationId;
+      return this.pushToPos(orgId, swap, pos, { ...item, squareItemId, squareVariationId });
+    });
+  }
+
+  private readonly itemLocks = new Map<string, Promise<unknown>>();
+
+  /** Runs `fn` after any other call for the same item has finished. */
+  private withItemLock<T>(itemId: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.itemLocks.get(itemId) ?? Promise.resolve();
+    const run = previous.then(fn, fn);
+    // Keyed on the chain itself so a later caller clears only its own entry.
+    const entry = run.then(() => undefined, () => undefined);
+    this.itemLocks.set(itemId, entry);
+    void entry.then(() => { if (this.itemLocks.get(itemId) === entry) this.itemLocks.delete(itemId); });
+    return run;
+  }
+
+  private async pushToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, pos: IPosAdapter, item: { id: string; name: string; description: string | null; priceCents: number; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null }): Promise<PosSyncResult> {
     try {
       const result = await pos.syncItem(
         { posItemId: item.squareItemId ?? undefined, posVariationId: item.squareVariationId ?? undefined, name: item.name, description: item.description ?? undefined, priceCents: item.priceCents, sku: item.sku, categoryId: swap.squareCategoryId, categoryName: swap.title },
@@ -1040,13 +1111,25 @@ export class ItemService {
     }
   }
 
-  private async fetchInventoryMap(orgId: string, swap: { locationId: string }, items: { squareVariationId: string | null }[]): Promise<Map<string, number>> {
+  /**
+   * Square's stock for these items, or null when Square could not say.
+   *
+   * Null rather than an empty map, deliberately. An empty map reads as "none
+   * of these has any stock", and a Square outage used to turn into exactly
+   * that: every synced item in the swap showed as sold, and the dashboard
+   * summed the lot as revenue. Not knowing is a different answer from zero,
+   * and the response says which it is (`inventoryKnown`).
+   */
+  private async fetchInventoryMap(orgId: string, swap: { locationId: string }, items: { squareVariationId: string | null }[]): Promise<Map<string, number> | null> {
     if (!swap.locationId) return new Map();
     const ids = items.map((i) => i.squareVariationId).filter((id): id is string => !!id);
     if (!ids.length) return new Map();
     const pos = await this.posFactory.forOrg(orgId);
     if (!pos) return new Map();
-    return pos.getInventoryCounts(ids, swap.locationId).catch(() => new Map());
+    return pos.getInventoryCounts(ids, swap.locationId).catch((err: unknown) => {
+      this.logger.warn({ err, orgId, count: ids.length }, 'Square inventory read failed; stock is unknown');
+      return null;
+    });
   }
 
   /**
@@ -1060,13 +1143,21 @@ export class ItemService {
     return this.taxonomy.describeItems(items);
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number>, descriptions?: Map<string, ItemDescription>): ItemResponse {
-    const inStock = item.squareVariationId ? (inventoryMap.get(item.squareVariationId) ?? 0) : 0;
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number> | null, descriptions?: Map<string, ItemDescription>): ItemResponse {
+    // Only an item in Square has stock to not know about. For everything else
+    // the answer is a fact about our own row, whatever Square is doing.
+    const inventoryKnown = inventoryMap !== null || !item.squareVariationId;
+    // Unknown reads as unsold, not as sold out. Both are guesses; the first
+    // sends a buyer to the floor to look, the second sends them home.
+    const inStock = !inventoryKnown
+      ? item.originalQuantity
+      : item.squareVariationId ? (inventoryMap!.get(item.squareVariationId) ?? 0) : 0;
     return {
       id: item.id, swapId: item.swapId, orgId: item.orgId,
       name: item.name, description: item.description,
       sku: item.sku, priceCents: item.priceCents, originalQuantity: item.originalQuantity,
       inStock, soldCount: Math.max(0, item.originalQuantity - inStock),
+      inventoryKnown,
       squareSynced: !!item.squareItemId,
       donateProceeds: item.donateProceeds,
       hasPrintedTag: item.hasPrintedTag,

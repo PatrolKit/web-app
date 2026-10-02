@@ -84,13 +84,25 @@ export class CheckinService {
       throw new BadRequestException('An email address or phone number is required');
     }
     const channel = await this.channelFor(normalized);
+    const target = (channel === 'phone' ? normalized.phone : normalized.email)!;
 
-    const { user } = await this.people.resolveOrCreate(input);
+    /*
+     * The account is found by the contact the code goes to, and by nothing
+     * else. The web sends one contact, but the route accepts two, and
+     * resolving by both while sending to one let them name different people:
+     * a known phone plus a new email matched the phone's owner and mailed the
+     * link to the new address — a session as somebody else, and their verified
+     * email overwritten on confirm. Whatever else was typed is not a
+     * credential, so it plays no part here; the profile asks for it later.
+     */
+    const { user } = await this.people.resolveOrCreate(
+      channel === 'phone' ? { phone: target } : { email: target },
+    );
 
     return this.challenges.issue({
       userId: user.id,
       channel,
-      target: (channel === 'phone' ? normalized.phone : normalized.email)!,
+      target,
       purpose: 'login',
       context: { swapId: ctx.swapId, stationId: ctx.stationId } satisfies SignInContext,
     });

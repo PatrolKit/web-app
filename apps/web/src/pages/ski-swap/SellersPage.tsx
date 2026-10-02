@@ -116,6 +116,7 @@ export default function SellersPage() {
   const [phoneChallengeId, setPhoneChallengeId] = useState<string | null>(null);
   const [phoneOtpInput, setPhoneOtpInput] = useState('');
   const [verifyMsg, setVerifyMsg] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   // Texting off (Plan 29): a phone can't be verified, so it is kept and shown
   // as unverified, and nothing offers to text it.
   const { sms } = useFeatures();
@@ -182,6 +183,12 @@ export default function SellersPage() {
 
   const patchMutation = useMutation({
     mutationFn: (s: SellerResponse) => api.skiSwap.patchSeller(orgId, s.id, {
+      // A shop keeps being a shop: the name is sent only when it has one and
+      // only when it is non-empty, so an edit can rename it but never turn it
+      // into an individual by accident.
+      ...(s.businessName !== null && form.businessName.trim()
+        ? { businessName: form.businessName.trim() }
+        : {}),
       firstName: form.firstName || null, lastName: form.lastName || null,
       phone: form.phone || null, email: form.email || null,
       street: form.street || null, city: form.city || null,
@@ -195,6 +202,10 @@ export default function SellersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (sellerId: string) => api.skiSwap.deleteSeller(orgId, sellerId),
+    onMutate: () => setDeleteError(null),
+    // The form has closed by the time the server answers, so the refusal
+    // goes above the table, where the row that did not disappear still is.
+    onError: (err) => setDeleteError(describe(err, 'Could not remove that seller')),
     onSettled: (_, __, sellerId) => {
       qc.setQueryData<SellerResponse[]>(['ski-swap/sellers', orgId], (old) =>
         old?.filter((s) => s.id !== sellerId) ?? [],
@@ -253,7 +264,17 @@ export default function SellersPage() {
     });
   }
 
-  function closeForm() { setShowForm(false); setEditSeller(null); setForm(emptyForm); setPhoneOtpSent(false); setPhoneOtpInput(''); setPhoneChallengeId(null); setVerifyMsg(null); }
+  function closeForm() {
+    setShowForm(false); setEditSeller(null); setForm(emptyForm);
+    setPhoneOtpSent(false); setPhoneOtpInput(''); setPhoneChallengeId(null); setVerifyMsg(null);
+    // A refusal belongs to the attempt it refused, not to the next form.
+    createMutation.reset(); patchMutation.reset(); inviteMutation.reset();
+  }
+
+  /** The server's sentence where there is one. */
+  const describe = (err: unknown, fallback: string) =>
+    err instanceof Error && err.message ? err.message : fallback;
+  const formError = createMutation.error ?? patchMutation.error ?? inviteMutation.error;
 
   const canManage = perms.has('ski_swap:manage');
 
@@ -375,27 +396,43 @@ export default function SellersPage() {
                       <span className="ml-1 underline">Change</span>
                     </button>
                   )}
+                  {/* A shop being edited. The name is what it is called
+                      everywhere; the person fields below are its contact and
+                      are optional, because a shop invited by email alone has
+                      none of them and still has to be saveable. */}
+                  {editSeller && editSeller.businessName !== null && (
+                    <label className="block">
+                      <span className="text-xs text-gray-400 mb-1 block">Business name <span className="text-red-400">*</span></span>
+                      <input required value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })}
+                        className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
+                    </label>
+                  )}
                   {/* Contact section */}
                   <div>
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Contact</p>
                     <div className="space-y-2">
                       <div className="grid grid-cols-2 gap-2">
                         <label className="block">
-                          <span className="text-xs text-gray-400 mb-1 block">First name <span className="text-red-400">*</span></span>
-                          <input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                          <span className="text-xs text-gray-400 mb-1 block">First name {!editSeller?.businessName && <span className="text-red-400">*</span>}</span>
+                          <input required={!editSeller?.businessName} value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })}
                             className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
                         </label>
                         <label className="block">
-                          <span className="text-xs text-gray-400 mb-1 block">Last name <span className="text-red-400">*</span></span>
-                          <input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                          <span className="text-xs text-gray-400 mb-1 block">Last name {!editSeller?.businessName && <span className="text-red-400">*</span>}</span>
+                          <input required={!editSeller?.businessName} value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })}
                             className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
                         </label>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <label className="block">
-                          <span className="text-xs text-gray-400 mb-1 block">Phone <span className="text-red-400">*</span></span>
+                          {/* Not required. A seller who checked in by email has no
+                              phone, and marking it required meant their row could
+                              not be saved at all — the browser refused the form
+                              before the server saw it. The server needs a name or
+                              one contact, and says so if neither is there. */}
+                          <span className="text-xs text-gray-400 mb-1 block">Phone</span>
                           <div className="flex gap-1.5">
-                            <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                            <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
                               className="flex-1 min-w-0 bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
                             {editSeller && !editSeller.phoneVerifiedAt && !sms && editSeller.phone && (
                               <span className="self-center shrink-0 text-xs text-gray-500">Unverified</span>
@@ -589,6 +626,15 @@ export default function SellersPage() {
               )}
             </div>
 
+            {/* The server's refusal, beside the button that was refused. A
+                duplicate phone or an unverified payout email used to leave
+                the form open and silent. */}
+            {form.type !== '' && formError && (
+              <p className="mx-5 mb-3 text-sm text-red-400 bg-red-900/20 border border-red-900/50 rounded px-3 py-2">
+                {describe(formError, editSeller ? 'Could not save the seller' : 'Could not add the seller')}
+              </p>
+            )}
+
             {/* Footer */}
             {form.type !== '' && (
               <div className="flex gap-2 px-5 py-4 border-t border-gray-700 items-center shrink-0">
@@ -613,6 +659,12 @@ export default function SellersPage() {
             )}
           </form>
         </div>
+      )}
+
+      {deleteError && (
+        <p className="text-sm text-red-400 bg-red-900/20 border border-red-900/50 rounded px-3 py-2">
+          {deleteError}
+        </p>
       )}
 
       <div className="overflow-x-auto">

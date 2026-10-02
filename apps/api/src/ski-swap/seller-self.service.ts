@@ -64,7 +64,7 @@ export class SellerSelfService {
 
   // ─── Items ────────────────────────────────────────────────────────────────
 
-  async listItems(orgId: string, userId: string, swapId?: string) {
+  async listItems(orgId: string, userId: string, swapId?: string, page: { skip?: number; take?: number } = {}) {
     const seller = await this.getSellerRecord(orgId, userId);
 
     // When no swapId given, collect items from all active swaps
@@ -75,14 +75,16 @@ export class SellerSelfService {
       });
       const results = await Promise.all(
         activeSwaps.map((s) =>
-          this.itemService.list(orgId, s.id, { sellerId: seller.id }),
+          this.itemService.list(orgId, s.id, { sellerId: seller.id, ...page }),
         ),
       );
       const items = results.flatMap((r) => r.items);
-      return { items, total: items.length };
+      return { items, total: results.reduce((n, r) => n + r.total, 0) };
     }
 
-    return this.itemService.list(orgId, swapId, { sellerId: seller.id });
+    // `skip`/`take` pass straight through. Without them a shop that imported
+    // two hundred items saw the list's default page of fifty and no more.
+    return this.itemService.list(orgId, swapId, { sellerId: seller.id, ...page });
   }
 
   async getItem(orgId: string, userId: string, itemId: string) {

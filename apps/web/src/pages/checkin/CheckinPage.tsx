@@ -10,7 +10,7 @@ import AddressStep from './AddressStep';
 import PayoutStep from './PayoutStep';
 import ItemsStep from './ItemsStep';
 import FinishStep from './FinishStep';
-import type { CheckinJoined } from '../../lib/api.types';
+import type { CheckinContext, CheckinJoined } from '../../lib/api.types';
 
 /**
  * Self-service check-in, start to finish.
@@ -27,24 +27,6 @@ export default function CheckinPage() {
   const stationId = params.get('station') ?? '';
   const { user, isLoading: authLoading } = useAuth();
 
-  const [joined, setJoined] = useState<CheckinJoined | null>(null);
-  /** Held here so the payout step can show it back without asking again. */
-  const [address, setAddress] = useState<{
-    street: string; city: string; state: string; zip: string;
-  } | null>(null);
-  const [payoutDone, setPayoutDone] = useState(false);
-  const [namedThisSession, setNamedThisSession] = useState(false);
-  const [joinError, setJoinError] = useState('');
-  /**
-   * Null until check-in is done; afterwards, what finishing reported. Held
-   * rather than reduced to a boolean because the finish screen tells a seller
-   * to wait with their items only when some of them are actually waiting, and
-   * that is the only place the count is available.
-   */
-  const [finished, setFinished] = useState<
-    { awaitingConsignment: number; emailedTo: string | null } | null
-  >(null);
-
   const { data: context, error: contextError, isLoading } = useQuery({
     queryKey: ['checkin/context', swapId, stationId],
     queryFn: () => api.checkin.context(swapId, stationId),
@@ -52,21 +34,6 @@ export default function CheckinPage() {
     retry: false,
     staleTime: 5 * 60_000,
   });
-
-  // Joining is idempotent and cheap, so it runs as soon as there is a session
-  // rather than behind a button — a seller returning to a half-finished
-  // check-in should land straight on their items.
-  useEffect(() => {
-    if (!user || !context || joined) return;
-    let cancelled = false;
-    api.checkin
-      .join(context.orgId, context.swapId, context.stationId)
-      .then((res) => { if (!cancelled) setJoined(res); })
-      .catch((err) => {
-        if (!cancelled) setJoinError(err instanceof ApiError ? err.message : 'Could not check you in');
-      });
-    return () => { cancelled = true; };
-  }, [user, context, joined]);
 
   if (!swapId || !stationId) {
     return (
@@ -94,6 +61,53 @@ export default function CheckinPage() {
   }
 
   if (!user) return <SignInStep context={context} />;
+
+  /*
+   * Keyed on who is signed in, so a change of person is a fresh start.
+   *
+   * Everything below — joined, address, payout, finished — belongs to one
+   * seller's check-in, and it used to live up here, where it survived
+   * "Not you?". The next person to sign in on the same phone landed on the
+   * previous one's finish screen, or on their items with the address and
+   * payout steps skipped, with no profile of their own and no way back short
+   * of a reload. A new key is a new component with nothing carried over.
+   */
+  return <SignedInCheckin key={user.id} context={context} />;
+}
+
+function SignedInCheckin({ context }: { context: CheckinContext }) {
+  const [joined, setJoined] = useState<CheckinJoined | null>(null);
+  /** Held here so the payout step can show it back without asking again. */
+  const [address, setAddress] = useState<{
+    street: string; city: string; state: string; zip: string;
+  } | null>(null);
+  const [payoutDone, setPayoutDone] = useState(false);
+  const [namedThisSession, setNamedThisSession] = useState(false);
+  const [joinError, setJoinError] = useState('');
+  /**
+   * Null until check-in is done; afterwards, what finishing reported. Held
+   * rather than reduced to a boolean because the finish screen tells a seller
+   * to wait with their items only when some of them are actually waiting, and
+   * that is the only place the count is available.
+   */
+  const [finished, setFinished] = useState<
+    { awaitingConsignment: number; emailedTo: string | null } | null
+  >(null);
+
+  // Joining is idempotent and cheap, so it runs as soon as there is a session
+  // rather than behind a button — a seller returning to a half-finished
+  // check-in should land straight on their items.
+  useEffect(() => {
+    if (joined) return;
+    let cancelled = false;
+    api.checkin
+      .join(context.orgId, context.swapId, context.stationId)
+      .then((res) => { if (!cancelled) setJoined(res); })
+      .catch((err) => {
+        if (!cancelled) setJoinError(err instanceof ApiError ? err.message : 'Could not check you in');
+      });
+    return () => { cancelled = true; };
+  }, [context, joined]);
 
   if (joinError) {
     return (

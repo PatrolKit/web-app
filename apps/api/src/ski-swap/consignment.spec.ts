@@ -101,6 +101,15 @@ function harness(opts: { requireConsignmentScan?: boolean } = {}) {
         Object.assign(row, data);
         return row;
       },
+      // What `consign` stamps with: conditional on the row still waiting, so
+      // the count says whether this call was the one that accepted it.
+      updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Partial<Row> }) => {
+        const hit = rows.filter((r) =>
+          Object.entries(where).every(([k, v]) => (r as unknown as Record<string, unknown>)[k] === v),
+        );
+        for (const r of hit) Object.assign(r, data);
+        return { count: hit.length };
+      },
     },
   };
 

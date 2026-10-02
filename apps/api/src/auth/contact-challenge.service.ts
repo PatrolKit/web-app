@@ -116,10 +116,20 @@ export class ContactChallengeService {
       );
     }
 
-    await this.prisma.contactChallenge.updateMany({
-      where: { userId, channel, purpose, usedAt: null },
-      data: { usedAt: new Date() },
-    });
+    /*
+     * A new short code retires the old one: six digits are guessable, and two
+     * live codes are twice the surface. A link is not — 32 random bytes — and
+     * retiring it cost real sign-ins. Venue email is slow; a seller who tapped
+     * "send" twice while waiting then opened the first message to arrive, and
+     * it was dead. Every outstanding link stays good until it is used or it
+     * expires, so whichever email lands first is the one that works.
+     */
+    if (channel === 'phone') {
+      await this.prisma.contactChallenge.updateMany({
+        where: { userId, channel, purpose, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+    }
 
     // Email proves control of a link; phone proves control of a short code.
     const rawCode =

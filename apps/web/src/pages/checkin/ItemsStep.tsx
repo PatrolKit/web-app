@@ -133,13 +133,22 @@ export default function ItemsStep({
   // valid item, and it is less typing than the old free-text field was.
   const canAdd = draft.describer.categoryId !== null && priceCents !== null;
 
+  /**
+   * One key per item until that item is saved.
+   *
+   * Minted on the first tap and kept through every retry: the point is that a
+   * dropped response does not mint a second SKU and print a second tag. It
+   * used to be minted inside the tap, so the retry after a timeout was a new
+   * request as far as the server could tell — the one case the key exists for.
+   * Cleared only on success, when there is a new item to key.
+   */
+  const idempotencyKeyRef = useRef<string | null>(null);
+
   async function addItem() {
     if (!canAdd) return;
     setBusy(true);
     setError('');
-    // Generated per attempt, kept across retries of that attempt: the point is
-    // that a dropped response does not mint a second SKU and print a second tag.
-    const key = idempotencyKey();
+    const key = idempotencyKeyRef.current ?? (idempotencyKeyRef.current = idempotencyKey());
     try {
       const item = await api.skiSwap.sellerCreateItem(
         context.orgId,
@@ -165,6 +174,7 @@ export default function ItemsStep({
         setPhoto(null);
       }
 
+      idempotencyKeyRef.current = null;
       setDraft(emptyDraft);
       setAdded({ id: item.id, name: item.name, sku: item.sku, priceCents: item.priceCents });
       // The panel replaces a form the seller may have scrolled down inside.

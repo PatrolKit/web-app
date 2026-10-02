@@ -85,11 +85,24 @@ class SquarePosAdapter implements IPosAdapter {
     });
   }
 
-  async syncItem(item: PosItemSync, locationId: string, initialQuantity: number): Promise<{ posItemId: string; posVariationId: string; resolvedCategoryId: string }> {
+  async syncItem(input: PosItemSync, locationId: string, initialQuantity: number): Promise<{ posItemId: string; posVariationId: string; resolvedCategoryId: string }> {
+    let item = input;
     let existingVersion: bigint | undefined;
     if (item.posItemId) {
-      const current = await this.client.catalog.object.get({ objectId: item.posItemId });
-      existingVersion = current.object?.version;
+      const current = await this.client.catalog.object.get({ objectId: item.posItemId }).catch((err: unknown) => {
+        // Gone from the catalogue — somebody tidied the Square dashboard, or
+        // the org moved from sandbox to production and every stored id went
+        // with it. Not an error to report forever: the item is created afresh,
+        // and the caller stores the new ids over the dangling ones.
+        if (err instanceof SquareError && err.errors.some((e) => e.code === 'NOT_FOUND')) return null;
+        throw err;
+      });
+      if (current) {
+        existingVersion = current.object?.version;
+      } else {
+        console.warn('[Square] stored item no longer exists, recreating:', item.posItemId);
+        item = { ...item, posItemId: undefined, posVariationId: undefined };
+      }
     }
 
     let resolvedCategoryId = item.categoryId;
@@ -119,7 +132,18 @@ class SquarePosAdapter implements IPosAdapter {
 
     // Set initial inventory for new items separately — a failure here must not
     // prevent us from returning the catalog IDs (we still want squareItemId stored).
-    if (!item.posItemId) {
+    //
+    // And again for an existing item that has no count at all. The first
+    // attempt can fail on its own — a wrong location, a variation Square has
+    // not finished creating, a transient error — and since every later sync
+    // took the update path, nothing ever came back for it: the item sat in the
+    // catalogue with no stock and read as sold. A count of zero is a count;
+    // only an absent one is retried.
+    //
+    // Only on Square's say-so. A read that fails says nothing about whether a
+    // count exists, and resetting on it would restock an item that has sold.
+    const needsCount = !item.posItemId || (await this.hasNoCount(posVariationId, locationId));
+    if (needsCount) {
       await this.setInitialInventory(posVariationId, locationId, initialQuantity)
         .catch((err) => console.error('[Square] setInitialInventory failed:', err));
     }
@@ -154,6 +178,28 @@ class SquarePosAdapter implements IPosAdapter {
     await this.client.catalog.object.delete({ objectId: posImageId });
   }
 
+  /**
+   * True only when Square answered and holds no count row of any state for
+   * this variation — the one case where its stock was never set. A row with
+   * quantity "0" is a row: the item sold out, and must not be restocked.
+   * False on a failed read, because not knowing is not the same as absent.
+   */
+  private async hasNoCount(variationId: string, locationId: string): Promise<boolean> {
+    try {
+      const page = await this.client.inventory.batchGetCounts({
+        catalogObjectIds: [variationId],
+        locationIds: [locationId],
+      });
+      for await (const count of page) {
+        if (count.catalogObjectId === variationId) return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('[Square] could not read inventory before deciding to set it:', err);
+      return false;
+    }
+  }
+
   async getInventoryCounts(variationIds: string[], locationId: string): Promise<Map<string, number>> {
     if (variationIds.length === 0) return new Map();
     const page = await this.client.inventory.batchGetCounts({
@@ -161,7 +207,10 @@ class SquarePosAdapter implements IPosAdapter {
       locationIds: [locationId],
     });
     const map = new Map<string, number>();
-    for (const count of page.data) {
+    // Every page. `page.data` is the first one only, and anything past it read
+    // as "no count" — which the caller turns into "sold" — on a swap large
+    // enough to need a second page.
+    for await (const count of page) {
       if (count.state === 'IN_STOCK' && count.catalogObjectId && count.quantity) {
         map.set(count.catalogObjectId, Math.floor(parseFloat(count.quantity)));
       }

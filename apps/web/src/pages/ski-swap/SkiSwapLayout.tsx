@@ -89,9 +89,13 @@ export default function SkiSwapLayout() {
     if (storageKey) localStorage.setItem(storageKey, id);
   }
 
-  // Default to first swap when nothing is stored
+  // Default to the first swap when nothing is stored — or when what is stored
+  // is no longer on the list. A remembered swap that has since been
+  // deactivated left every tab saying "No active swaps found" under a picker
+  // that appeared to show one, and with a single active swap there was no way
+  // to pick it again.
   useEffect(() => {
-    if (!selectedSwapId && swaps.length > 0) {
+    if (swaps.length > 0 && (!selectedSwapId || !swaps.some((s) => s.id === selectedSwapId))) {
       setSelectedSwapId(swaps[0].id);
     }
   }, [swaps, selectedSwapId]);
@@ -111,7 +115,9 @@ export default function SkiSwapLayout() {
     if (sellerStorageKey) localStorage.setItem(sellerStorageKey, id);
   }
   useEffect(() => {
-    if (!sellerSelectedSwapId && sellerSwaps.length > 0) setSellerSelectedSwapId(sellerSwaps[0].id);
+    if (sellerSwaps.length > 0 && (!sellerSelectedSwapId || !sellerSwaps.some((s) => s.id === sellerSelectedSwapId))) {
+      setSellerSelectedSwapId(sellerSwaps[0].id);
+    }
   }, [sellerSwaps, sellerSelectedSwapId]);
 
   if (!perms.has('ski_swap:report') && !roles.includes('seller')) return <Navigate to="/dashboard" replace />;

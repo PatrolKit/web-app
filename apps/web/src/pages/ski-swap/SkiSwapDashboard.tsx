@@ -59,16 +59,24 @@ export default function SkiSwapDashboard() {
     );
   }
 
-  const revenue = stats ? `$${(stats.grossRevenueCents / 100).toFixed(2)}` : '—';
+  // Sold and revenue come from Square. When it could not be read they are
+  // unknown, not zero, and a dash says so where a number would be believed.
+  const stockKnown = stats?.inventoryKnown ?? false;
+  const revenue = stats && stockKnown ? `$${(stats.grossRevenueCents / 100).toFixed(2)}` : '—';
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatTile label="Total Items" value={stats?.totalItems ?? '—'} />
-        <StatTile label="Items Sold" value={stats?.itemsSold ?? '—'} />
+        <StatTile label="Items Sold" value={stockKnown ? (stats?.itemsSold ?? '—') : '—'} />
         <StatTile label="Sellers" value={stats?.totalSellers ?? '—'} />
         <StatTile label="Est. Revenue" value={revenue} />
       </div>
+      {stats && !stockKnown && (
+        <p className="text-xs text-amber-300">
+          Square could not be read just now, so sold counts and revenue are unavailable. Reload in a moment.
+        </p>
+      )}
 
       {/* Only while there is somebody waiting. Nothing here accepts an item —
           that happens at the table, on the staff iPad — so this says where to

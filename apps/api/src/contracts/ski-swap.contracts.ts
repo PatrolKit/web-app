@@ -358,6 +358,13 @@ export const ItemResponseSchema = z.object({
   originalQuantity: z.number().int(),
   inStock: z.number().int(),
   soldCount: z.number().int(),
+  /**
+   * Whether `inStock` and `soldCount` are Square's answer. False when Square
+   * could not be read: the two numbers then say "unsold" as a placeholder,
+   * which is a guess and must be shown as one. True for anything not in Square,
+   * whose stock is a fact about our own row.
+   */
+  inventoryKnown: z.boolean(),
   squareSynced: z.boolean(),
   donateProceeds: z.boolean(),
   hasPrintedTag: z.boolean(),

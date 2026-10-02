@@ -14,6 +14,7 @@ const item = (over: Partial<ItemResponse> = {}): ItemResponse => {
     inStock: 1,
     consignedAt: '2026-09-18T12:00:00.000Z',
     squareSynced: true,
+    inventoryKnown: true,
     ...over,
   };
   return {
@@ -45,6 +46,21 @@ describe('itemState', () => {
   /** Accepted, but the push failed. It cannot sell, and it is not waiting. */
   it('distinguishes a failed push from a missing scan', () => {
     expect(itemState(item({ squareSynced: false, inStock: 0 })).label).toBe('Not in Square');
+  });
+
+  /**
+   * Square could not be read. The server fills in "unsold" as a placeholder,
+   * and the screen must not pass that off as a fact either way: a Square
+   * outage used to show every item in the swap as sold.
+   */
+  it('says the stock is unknown rather than guessing when Square did not answer', () => {
+    expect(itemState(item({ inventoryKnown: false, inStock: 1 })).label).toBe('Stock unknown');
+    expect(itemState(item({ inventoryKnown: false, inStock: 0 })).label).toBe('Stock unknown');
+  });
+
+  it('still puts a missing scan and a failed push ahead of unknown stock', () => {
+    expect(itemState(item({ inventoryKnown: false, consignedAt: null, squareSynced: false })).label).toBe('Not yet received');
+    expect(itemState(item({ inventoryKnown: false, squareSynced: false })).label).toBe('Not in Square');
   });
 
   it('ranks by what stops a sale first', () => {
@@ -79,14 +95,15 @@ describe('itemState', () => {
       itemState(item({ inStock: 0 })),
       itemState(item({ consignedAt: null, squareSynced: false, inStock: 0 })),
       itemState(item({ squareSynced: false, inStock: 0 })),
+      itemState(item({ inventoryKnown: false })),
     ].map((s) => s.key);
 
-    expect(new Set(reachable).size).toBe(4);
+    expect(new Set(reachable).size).toBe(5);
     for (const key of reachable) {
       expect(ITEM_STATE_FILTERS.some((f) => f.value === key)).toBe(true);
     }
     // And nothing offered that cannot happen.
-    expect(ITEM_STATE_FILTERS).toHaveLength(4);
+    expect(ITEM_STATE_FILTERS).toHaveLength(5);
   });
 
   it('gives every state a tone and an explanation', () => {
