@@ -81,7 +81,7 @@ export class SwapService {
     swapId: string,
     data: {
       title?: string; active?: boolean; locationId?: string;
-      legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean;
+      legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean; webLegacyTicketsOnly?: boolean;
       printLegacyHelperLabels?: boolean; labelsPerItem?: number;
     },
   ): Promise<SwapResponse> {
@@ -89,6 +89,10 @@ export class SwapService {
 
     // What "tickets only" will be once this patch lands: turning acceptance
     // off clears it, below.
+    const willAccept = data.legacyTicketsEnabled ?? swap.legacyTicketsEnabled;
+    if (!willAccept && (data.legacyTicketsOnly === true || data.webLegacyTicketsOnly === true)) {
+      throw new BadRequestException('Tickets only applies only to a swap that accepts legacy tickets');
+    }
     const willBeTicketsOnly =
       data.legacyTicketsEnabled === false ? false : (data.legacyTicketsOnly ?? swap.legacyTicketsOnly);
     if (data.printLegacyHelperLabels === true && !willBeTicketsOnly) {
@@ -173,6 +177,12 @@ export class SwapService {
             ? { legacyTicketsOnly: false }
             : data.legacyTicketsOnly !== undefined
               ? { legacyTicketsOnly: data.legacyTicketsOnly }
+              : {}),
+          // The web's own "only" (Plan 31), cleared by the same rule.
+          ...(data.legacyTicketsEnabled === false
+            ? { webLegacyTicketsOnly: false }
+            : data.webLegacyTicketsOnly !== undefined
+              ? { webLegacyTicketsOnly: data.webLegacyTicketsOnly }
               : {}),
           // And helper labels cannot outlive "tickets only", by the same rule.
           ...(!willBeTicketsOnly
@@ -337,6 +347,7 @@ export class SwapService {
     skuPrefix: string;
     legacyTicketsEnabled: boolean;
     legacyTicketsOnly: boolean;
+    webLegacyTicketsOnly: boolean;
     printLegacyHelperLabels: boolean;
     labelsPerItem: number;
     createdAt: Date;
@@ -352,6 +363,7 @@ export class SwapService {
       skuPrefix: swap.skuPrefix,
       legacyTicketsEnabled: swap.legacyTicketsEnabled,
       legacyTicketsOnly: swap.legacyTicketsOnly,
+      webLegacyTicketsOnly: swap.webLegacyTicketsOnly,
       printLegacyHelperLabels: swap.printLegacyHelperLabels,
       labelsPerItem: swap.labelsPerItem,
       createdAt: swap.createdAt.toISOString(),

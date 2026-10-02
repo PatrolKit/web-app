@@ -33,8 +33,11 @@ export const PatchSwapSchema = z
     active: z.boolean().optional(),
     locationId: z.string().min(1).optional(),
     legacyTicketsEnabled: z.boolean().optional(),
+    /** Staff check-in: the iPad takes tickets only. Refused unless legacy tickets are accepted. */
     legacyTicketsOnly: z.boolean().optional(),
-    /** Refused unless the swap is, or is being made, legacy-tickets-only. */
+    /** The web takes tickets only (Plan 31). Refused unless legacy tickets are accepted. */
+    webLegacyTicketsOnly: z.boolean().optional(),
+    /** Refused unless check-in is, or is being made, legacy-tickets-only. */
     printLegacyHelperLabels: z.boolean().optional(),
     labelsPerItem: z.number().int().min(1).max(3).optional(),
   })
@@ -72,6 +75,14 @@ export const SwapResponseSchema = z.object({
    * Absent reads as off.
    */
   legacyTicketsOnly: z.boolean(),
+  /**
+   * Whether every item entered on the web must be a legacy ticket (Plan 31):
+   * a seller's hand entry and uploads, and staff uploading for one. Off, a
+   * business seller may also print labels with generated SKUs. Independent of
+   * `legacyTicketsOnly`, which is the staff check-in's; cleared, like it, when
+   * `legacyTicketsEnabled` goes off. The iPad doesn't read it.
+   */
+  webLegacyTicketsOnly: z.boolean(),
   /**
    * Whether the staff iPad prints a helper label with each legacy ticket. The
    * iPad decides what one looks like and prints it; the server keeps the
@@ -530,6 +541,13 @@ export const SellerItemCreateSchema = z
      * because their number would collide with the minted sequence.
      */
     sku: z.string().max(20).optional(),
+    /**
+     * A seller on issued tickets asking for a generated SKU instead, for an
+     * item they will print a label for (Plan 31). Needed because an omitted
+     * `sku` means "take my next ticket", which older clients rely on. Refused
+     * with `sku`, and in a swap whose web takes legacy tickets only.
+     */
+    generateSku: z.boolean().optional(),
   })
   .strict();
 
@@ -616,14 +634,17 @@ export const TicketFormStateSchema = z.object({
   ranges: z.array(z.object({ startNumber: z.number().int(), endNumber: z.number().int() })),
   suggested: z.number().int().nullable(),
   exhausted: z.boolean(),
+  /**
+   * The swap's web takes legacy tickets only (Plan 31): every item this seller
+   * enters must be a ticket, and nothing may get a generated SKU.
+   */
+  webTicketsOnly: z.boolean(),
 });
 
 /**
- * A seller staff can upload a file for: one who holds tickets in this swap.
- *
- * Only these are offered in the picker. A shop with no ranges could not own the
- * numbers in any file, so letting one be chosen only produces an import where
- * every row fails.
+ * A seller staff can upload a file for: one holding tickets in this swap, and
+ * when its web isn't tickets-only, any business seller, with no ranges (Plan
+ * 31). A shop without ranges can only import rows that get generated SKUs.
  */
 export const TicketSellerSchema = z.object({
   sellerId: z.string(),

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { TicketImportRow, TicketSeller } from '../../lib/api.types';
+import { GenerateSkusSwitch, importedSummary } from './ImportSkuOptions';
 
 /** "67000–67499", or two blocks for a shop given a second pad. */
 function describeRanges(s: TicketSeller): string {
@@ -21,15 +22,19 @@ function describeRanges(s: TicketSeller): string {
 export default function ProxyItemImportModal({
   orgId,
   swapId,
+  allowGenerate,
   onClose,
   onImported,
 }: {
   orgId: string;
   swapId: string;
+  /** The swap's web isn't tickets-only, so rows without a ticket may get a SKU (Plan 31). */
+  allowGenerate: boolean;
   onClose: () => void;
   onImported: () => void;
 }) {
   const [sellerId, setSellerId] = useState('');
+  const [generateSkus, setGenerateSkus] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [rows, setRows] = useState<TicketImportRow[] | null>(null);
   const [error, setError] = useState('');
@@ -51,7 +56,7 @@ export default function ProxyItemImportModal({
     setError('');
     setRows(null);
     try {
-      const res = await api.skiSwap.importItemsForSeller(orgId, swapId, sellerId, file);
+      const res = await api.skiSwap.importItemsForSeller(orgId, swapId, sellerId, file, allowGenerate && generateSkus);
       if (!res.success) {
         setError(res.error ?? 'Could not read that file');
       } else {
@@ -82,7 +87,7 @@ export default function ProxyItemImportModal({
             className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white disabled:opacity-50"
           >
             <option value="">
-              {isLoading ? 'Loading…' : sellers.length ? 'Choose a seller…' : 'Nobody holds tickets in this swap'}
+              {isLoading ? 'Loading…' : sellers.length ? 'Choose a seller…' : 'No seller can be uploaded for in this swap'}
             </option>
             {sellers.map((s) => (
               <option key={s.sellerId} value={s.sellerId}>{s.displayName}</option>
@@ -92,16 +97,19 @@ export default function ProxyItemImportModal({
               point of choosing rather than only in a page of failures. */}
           {chosen && (
             <span className="block text-xs text-gray-500">
-              Tickets {describeRanges(chosen)} — {chosen.usedCount} of {chosen.ticketCount} used
+              {chosen.ranges.length
+                ? `Tickets ${describeRanges(chosen)} — ${chosen.usedCount} of ${chosen.ticketCount} used`
+                : 'No tickets in this swap: every row needs a generated SKU.'}
             </span>
           )}
         </label>
 
         <div className="text-sm text-gray-400 space-y-2">
           <p>
-            One row per ticket. The number and the price are required; a name and a
-            description are not. Without a name the item is called after the shop and
-            the number.
+            One row per item. The price is required; a name and a description are not.
+            The ticket number is required too
+            {allowGenerate ? ', unless SKUs are generated below' : ''}. Without a name the
+            item is called by its number.
           </p>
           <pre className="bg-surface-100 border border-gray-700 rounded p-3 text-xs text-gray-300 overflow-x-auto">
 {`sku,price,name,description
@@ -110,6 +118,10 @@ export default function ProxyItemImportModal({
 67171,45.00,,Poles`}
           </pre>
         </div>
+
+        {allowGenerate && (
+          <GenerateSkusSwitch checked={generateSkus} onChange={(on) => { setGenerateSkus(on); setRows(null); setError(''); }} />
+        )}
 
         <input
           type="file"
@@ -144,10 +156,7 @@ export default function ProxyItemImportModal({
         )}
 
         {rows && failures.length === 0 && created.length > 0 && (
-          <p className="text-sm text-green-400">
-            {created.length} item{created.length === 1 ? '' : 's'} imported for{' '}
-            {chosen?.displayName ?? 'this seller'}.
-          </p>
+          <p className="text-sm text-green-400">{importedSummary(created, chosen?.displayName ?? 'this seller')}</p>
         )}
 
         <div className="flex gap-2 justify-end">

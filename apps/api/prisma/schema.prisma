@@ -414,6 +414,13 @@ model SkiSwap {
   /// none. Nothing enforces it yet; it is read by the staff iPad to decide what
   /// it offers.
   legacyTicketsOnly    Boolean  @default(false)
+  /// Whether every item entered on the web — by a seller or by staff for one,
+  /// by hand or by upload — must be a legacy ticket (Plan 31). Off, a business
+  /// seller may also print labels with generated SKUs. `legacyTicketsOnly`
+  /// above is the staff check-in's setting and the iPad's; this is the web's.
+  ///
+  /// Meaningless without `legacyTicketsEnabled`, and cleared with it.
+  webLegacyTicketsOnly Boolean  @default(false)
   /// Whether the staff iPad prints a helper label to go with each legacy
   /// ticket. The iPad decides what one is and prints it itself; the server
   /// only keeps the switch.

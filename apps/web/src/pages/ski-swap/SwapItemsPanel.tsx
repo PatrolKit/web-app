@@ -37,6 +37,8 @@ export interface SwapItemsPanelApi {
 export interface CreateItemInput {
   /** A ticket number, for a seller on issued tickets. Absent otherwise. */
   sku?: string;
+  /** A ticket seller leaving the number blank, to print a label instead (Plan 31). */
+  generateSku?: boolean;
   /**
    * What the item is. The name is derived from this and the answers (Plan 19).
    * Optional: without one the server calls the item by its number, `Item #<sku>`.
@@ -80,8 +82,18 @@ export interface SwapItemsPanelProps {
     suggested: number | null;
     /** True only when nothing at all is unused — the one state that refuses. */
     exhausted: boolean;
+    /**
+     * The number may be left blank, for an item that gets a generated SKU and
+     * a printed label instead (Plan 31): the swap's web isn't tickets-only.
+     */
+    optional?: boolean;
     onUsed: () => void;
   };
+  /**
+   * Why nothing can be added here, shown in place of the Add button. A seller
+   * with no tickets in a swap whose web takes tickets only (Plan 31).
+   */
+  addBlockedBecause?: string;
   /**
    * True on a seller's own "My Items" page, false on the staff Items page.
    *
@@ -270,7 +282,7 @@ export function itemState(item: ItemResponse): {
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService,
   showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
-  tickets, toolbarExtra,
+  tickets, toolbarExtra, addBlockedBecause,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
@@ -330,7 +342,9 @@ export default function SwapItemsPanel({
       quantity: 1,
       sellerId: form.sellerId || undefined,
       donateProceeds: form.donateProceeds,
-      ...(tickets ? { sku: form.sku.trim() } : {}),
+      ...(tickets
+        ? tickets.optional && !form.sku.trim() ? { generateSku: true } : { sku: form.sku.trim() }
+        : {}),
     }),
     onSuccess: (item) => {
       // The suggestion is derived from the items, so it is stale the moment one
@@ -541,7 +555,10 @@ export default function SwapItemsPanel({
           />
         )}
         {toolbarExtra}
-        {canManage && (
+        {canManage && addBlockedBecause && (
+          <p className="text-xs text-gray-500 max-w-xs text-right">{addBlockedBecause}</p>
+        )}
+        {canManage && !addBlockedBecause && (
           <button
             onClick={() => {
               setShowForm(true);
@@ -632,15 +649,12 @@ export default function SwapItemsPanel({
                         className="text-xs text-red-500 hover:underline"
                       >Delete</button>
                     )}
-                    {/* Hidden two ways, for the same reason twice over.
-                        `tickets` is a seller working off an issued stack, and
-                        `legacyTicket` is a single item checked in against a
-                        pre-printed one: either way the tag is already on the
-                        goods and came out of a box, so there is nothing a
-                        printer could produce. Both check-in paths mark these
-                        `hasPrintedTag`, which is what used to leave a Reprint
-                        button offering to reproduce something we never made. */}
-                    {tickets || item.legacyTicket ? null : item.hasPrintedTag ? (
+                    {/* Decided per item, not per seller (Plan 31): a seller on
+                        issued tickets may also have items with generated SKUs.
+                        An item on a ticket has its tag on the goods already,
+                        out of a box, so there is nothing a printer could
+                        produce; every other item can be printed. */}
+                    {item.legacyTicket ? null : item.hasPrintedTag ? (
                       <button
                         onClick={() => handlePrint(item)}
                         disabled={printingItem}
@@ -710,6 +724,7 @@ export default function SwapItemsPanel({
                   {tickets.suggested !== null
                     ? `Next in ${describeRanges(tickets.ranges)}. Type another if this one was lost or you are using a different ticket.`
                     : `No next ticket — you have worked to the end of ${describeRanges(tickets.ranges)}. If you have found a skipped one, enter its number.`}
+                  {tickets.optional && ' Leave blank to print a label instead.'}
                 </span>
               </label>
             )}

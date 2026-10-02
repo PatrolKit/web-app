@@ -756,37 +756,45 @@ export class ItemService {
     swapId: string,
     sellerId: string,
     rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+    generateSkus = false,
   ): Promise<ImportRowResult[]> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    if (!swap.legacyTicketsEnabled) {
+    // Staff upload ticket rows only for a swap that takes tickets; generated
+    // rows go in either way (Plan 31), and ticket rows among them are refused.
+    if (!swap.legacyTicketsEnabled && !generateSkus) {
       throw new BadRequestException('This swap does not accept legacy tickets.');
     }
     await this.sellerService.findOrThrow(orgId, sellerId);
     // Staff uploaded it, so the goods are already accounted for.
-    return this.importTicketItems(orgId, swapId, sellerId, rows, { selfService: false });
+    return this.importItems(orgId, swapId, sellerId, rows, { selfService: false, generateSkus, requireAcceptance: true });
   }
 
   /**
-   * Writes a checked file.
+   * A seller's inventory from a spreadsheet, by the seller or by staff for
+   * them. Checked whole before anything is written (`checkImportRows`).
    *
-   * `selfService` decides whether the rows arrive consigned, and it is the only
-   * thing that differs between the two callers. A file staff uploaded was sent
-   * in by a shop and handed to a volunteer to load, so the goods are accounted
-   * for; a file the shop uploaded itself is a list of what they intend to
-   * bring, and nobody has seen any of it.
+   * A row with a ticket is created on it and marked printed: the ticket came
+   * out of a box. A row without one, when SKUs are generated (Plan 31), gets
+   * the swap's next SKU, without a station letter, and a label to print.
    */
-  async importTicketItems(
+  async importItems(
     orgId: string,
     swapId: string,
     sellerId: string,
     rows: { sku: string; name?: string; description?: string; priceCents: number }[],
-    opts: { selfService: boolean },
+    opts: { selfService: boolean; generateSkus?: boolean; requireAcceptance?: boolean },
   ): Promise<ImportRowResult[]> {
-    const results = await this.tickets.checkImportRows(swapId, sellerId, rows);
+    const swap = await this.findSwapOrThrow(orgId, swapId);
+    const results = await this.tickets.checkImportRows(swapId, sellerId, rows, {
+      generateSkus: !!opts.generateSkus,
+      webTicketsOnly: swap.webLegacyTicketsOnly,
+      acceptsTickets: opts.requireAcceptance ? swap.legacyTicketsEnabled : true,
+    });
     if (results.some((r) => r.outcome === 'error')) return results;
 
     for (let i = 0; i < rows.length; i++) {
-      const sku = rows[i].sku.trim();
+      const generated = !!results[i].generated;
+      const sku = generated ? undefined : rows[i].sku.trim();
       const item = await this.create(orgId, swapId, {
         // The CSV importer has a name column and no taxonomy (Plan 19 D12), so
         // items it creates are named, not described. A blank name is left to
@@ -799,6 +807,12 @@ export class ItemService {
         sku,
         awaitsConsignment: opts.selfService,
       });
+
+      // A generated SKU has no label yet: the seller prints one from the web.
+      if (generated) {
+        results[i] = { ...results[i], sku: item.sku, outcome: 'created' };
+        continue;
+      }
 
       // `create` has no `alreadyPrinted` — that belongs to the station path —
       // so this is set after the fact. Without it the shop is offered a reprint

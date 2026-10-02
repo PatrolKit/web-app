@@ -13,11 +13,13 @@ export default function BusinessSellerPage() {
   const qc = useQueryClient();
 
   /**
-   * Whether this seller is on issued tickets, and which number to offer.
+   * Whether this seller holds issued tickets, which number to offer, and
+   * whether the swap's web takes tickets only (Plan 31).
    *
    * A seller with no ranges gets `ranges: []`, and the panel keeps its ordinary
-   * shape — minted SKU, printable tag. The two are alternatives, so nothing
-   * here has to ask which kind of seller this is.
+   * shape: generated SKU, printable label. One with ranges is offered the next
+   * ticket, and, unless the web is tickets-only, may clear it to print a label
+   * instead.
    */
   const ticketQueryKey = ['ski-swap/ticket-state', orgId, sellerSelectedSwapId];
   const { data: ticketState } = useQuery({
@@ -27,6 +29,7 @@ export default function BusinessSellerPage() {
   });
 
   const onTickets = !!ticketState && ticketState.ranges.length > 0;
+  const webTicketsOnly = !!ticketState?.webTicketsOnly;
   const [importing, setImporting] = useState(false);
 
   return (
@@ -45,8 +48,14 @@ export default function BusinessSellerPage() {
               ranges: ticketState.ranges,
               suggested: ticketState.suggested,
               exhausted: ticketState.exhausted,
+              optional: !webTicketsOnly,
               onUsed: () => { void qc.invalidateQueries({ queryKey: ticketQueryKey }); },
             }
+          : undefined
+      }
+      addBlockedBecause={
+        webTicketsOnly && ticketState && !onTickets
+          ? 'This swap takes legacy tickets only. Ask the organizer for a block of tickets.'
           : undefined
       }
       panelApi={{
@@ -60,6 +69,7 @@ export default function BusinessSellerPage() {
           quantity: data.quantity,
           donateProceeds: data.donateProceeds,
           sku: data.sku,
+          generateSku: data.generateSku,
         }),
         patchItem: (iid, data) => api.skiSwap.sellerPatchItem(orgId, iid, data),
         deleteItem: (iid) => api.skiSwap.sellerDeleteItem(orgId, iid),
@@ -68,9 +78,9 @@ export default function BusinessSellerPage() {
       }}
       />
 
-      {/* Only a shop on issued tickets can import: every row is a ticket
-          number, and a seller who prints their own has none to give. */}
-      {onTickets && sellerSelectedSwapId && (
+      {/* A shop can import when its rows can be made into items: on tickets, or
+          with generated SKUs when the swap's web isn't tickets-only (Plan 31). */}
+      {(onTickets || (ticketState && !webTicketsOnly)) && sellerSelectedSwapId && (
         <div className="flex justify-end">
           <button
             onClick={() => setImporting(true)}
@@ -85,6 +95,7 @@ export default function BusinessSellerPage() {
         <TicketItemImportModal
           orgId={orgId}
           swapId={sellerSelectedSwapId}
+          allowGenerate={!webTicketsOnly}
           onClose={() => setImporting(false)}
           onImported={() => {
             void qc.invalidateQueries({ queryKey: ['seller/items', orgId] });

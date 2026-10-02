@@ -540,7 +540,7 @@ export const api = {
       swapId: string,
       data: {
         title?: string; active?: boolean; locationId?: string;
-        legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean;
+        legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean; webLegacyTicketsOnly?: boolean;
         printLegacyHelperLabels?: boolean; labelsPerItem?: number;
       },
     ) =>
@@ -598,10 +598,11 @@ export const api = {
      * Returns the per-row verdict rather than throwing, the same as the shop's
      * own upload — a rejected file is a list of things to fix, not an error.
      */
-    importItemsForSeller: async (orgId: string, swapId: string, sellerId: string, file: File) => {
+    importItemsForSeller: async (orgId: string, swapId: string, sellerId: string, file: File, generateSkus = false) => {
       const form = new FormData();
       form.append('file', file);
       form.append('sellerId', sellerId);
+      if (generateSkus) form.append('generateSkus', 'true');
       const headers: Record<string, string> = {};
       if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
       const res = await fetch(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/import`, {
@@ -700,10 +701,11 @@ export const api = {
         { method: 'DELETE' },
       ),
     /** A whole inventory at once. Nothing is written unless every row passes. */
-    importTicketItems: (orgId: string, swapId: string, file: File) => {
+    importTicketItems: (orgId: string, swapId: string, file: File, generateSkus = false) => {
       const form = new FormData();
       form.append('file', file);
       form.append('swapId', swapId);
+      if (generateSkus) form.append('generateSkus', 'true');
       const headers: Record<string, string> = {};
       if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
       return fetch(`/api/v1/orgs/${orgId}/ski-swap/seller/me/items/import`, {
@@ -711,7 +713,7 @@ export const api = {
       }).then((r) => r.json() as Promise<{
         success: boolean;
         error?: string;
-        data?: { line: number; sku: string; outcome: 'ok' | 'created' | 'error'; error?: string }[];
+        data?: import('./api.types').TicketImportRow[];
       }>);
     },
     /** What the seller's own item form opens with. */
@@ -876,7 +878,7 @@ export const api = {
      */
     sellerCreateItem: (
       orgId: string,
-      data: { swapId: string; categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean; stationId?: string; sku?: string },
+      data: { swapId: string; categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean; stationId?: string; sku?: string; generateSku?: boolean },
       idempotencyKey?: string,
     ) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items`, {

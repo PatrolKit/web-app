@@ -51,9 +51,11 @@ export class SellerSelfController {
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file: Express.Multer.File,
     @Body('swapId') swapId: string,
+    // A multipart field, so a string: "true" turns it on (Plan 31).
+    @Body('generateSkus') generateSkus?: string,
   ) {
     const { rows } = this.tickets.parseItemCsv(file.buffer);
-    return this.sellerSelfService.importItems(orgId, user.userId, swapId, rows);
+    return this.sellerSelfService.importItems(orgId, user.userId, swapId, rows, generateSkus === 'true');
   }
 
   /**

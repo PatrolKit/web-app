@@ -248,6 +248,8 @@ export interface SwapResponse {
    * when that goes off, so the two can never contradict each other.
    */
   legacyTicketsOnly: boolean;
+  /** The web takes legacy tickets only (Plan 31); `legacyTicketsOnly` is staff check-in's. */
+  webLegacyTicketsOnly: boolean;
   /**
    * Whether the staff iPad prints a helper label with each legacy ticket.
    * Only ever true alongside `legacyTicketsOnly`; the server clears it with that.
@@ -397,14 +399,19 @@ export interface TicketFormState {
   ranges: { startNumber: number; endNumber: number }[];
   suggested: number | null;
   exhausted: boolean;
+  /** The swap's web takes legacy tickets only (Plan 31). */
+  webTicketsOnly: boolean;
 }
 
 /** One row's fate in a ticket-item import. */
 export interface TicketImportRow {
   line: number;
+  /** The ticket, or once created, the SKU generated for a row without one. */
   sku: string;
   outcome: 'ok' | 'created' | 'error';
   error?: string;
+  /** A row without a ticket that got a generated SKU (Plan 31). */
+  generated?: boolean;
 }
 
 /** A seller staff can upload a file for: one holding tickets in this swap. */

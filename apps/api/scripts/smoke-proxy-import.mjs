@@ -34,6 +34,9 @@ const swap = await prisma.skiSwap.create({
   data: {
     orgId: org.id, title: 'Proxy import smoke', squareCategoryId: 'proxy-smoke',
     skuPrefix: 'PRX', active: true, activeSkuPrefix: 'PRX', legacyTicketsEnabled: true,
+    // Tickets only on the web, so the picker keeps to ticket holders. With it
+    // off, every business seller is offered (Plan 31; smoke-mixed-tickets).
+    webLegacyTicketsOnly: true,
   },
 });
 
@@ -109,7 +112,8 @@ ok('and carries its printed tag', rows.every((r) => r.hasPrintedTag === true),
 ok('a description lands in its own field, not the name',
    rows[0].name === 'Rossignol Experience 88' && rows[0].description === '170cm, edges good',
    `${rows[0].name} / ${rows[0].description}`);
-ok('a blank name becomes the shop and the number', rows[2].name === 'Alpine Sports 67171', rows[2].name);
+// Called by its number since Plan 20 (36bd10d), like any uncategorised item.
+ok('a blank name is called by its number', rows[2].name === 'Item #67171', rows[2].name);
 
 const after = await fetch(`${itemsUrl}/ticket-sellers`, { headers: H }).then(unwrap);
 ok('the picker counts what was spent', after.find((s) => s.displayName === 'Alpine Sports')?.usedCount === 3,

@@ -15,13 +15,17 @@ export default function ItemsPage() {
   const qc = useQueryClient();
   const [importing, setImporting] = useState(false);
 
-  const legacyOn = !!selectedSwap?.legacyTicketsEnabled;
+  /** The swap's web takes legacy tickets only, so no row may get a generated SKU (Plan 31). */
+  const webTicketsOnly = !!selectedSwap?.webLegacyTicketsOnly;
 
-  /** Who could be uploaded for. Not asked when the swap takes no tickets. */
+  /**
+   * Who could be uploaded for: sellers holding tickets in this swap, and, when
+   * its web isn't tickets-only, every business seller (Plan 31).
+   */
   const { data: ticketSellers = [], isLoading: ticketSellersLoading } = useQuery({
     queryKey: ['ski-swap/ticket-sellers', orgId, swapId],
     queryFn: () => api.skiSwap.listTicketSellers(orgId, swapId!),
-    enabled: !!swapId && canManage && legacyOn,
+    enabled: !!swapId && canManage,
   });
 
   /**
@@ -32,13 +36,13 @@ export default function ItemsPage() {
    * look for the reason; one that is visible and says what is missing points at
    * the thing to go and do.
    */
-  const importBlockedBecause = !legacyOn
-    ? 'This swap does not take tickets from the stockpile. Turn that on when you edit the swap.'
-    : ticketSellersLoading
-      ? 'Checking who holds tickets…'
-      : ticketSellers.length === 0
+  const importBlockedBecause = ticketSellersLoading
+    ? 'Checking who can be uploaded for…'
+    : ticketSellers.length === 0
+      ? webTicketsOnly
         ? 'Nobody has been issued tickets for this swap yet. Issue a block from a seller’s Ticket source.'
-        : '';
+        : 'No business sellers yet. Add a shop on the Sellers page.'
+      : '';
 
   const { data: sellers = [] } = useQuery<SellerResponse[]>({
     queryKey: ['ski-swap/sellers', orgId],
@@ -99,6 +103,7 @@ export default function ItemsPage() {
       <ProxyItemImportModal
         orgId={orgId}
         swapId={swapId}
+        allowGenerate={!webTicketsOnly}
         onClose={() => setImporting(false)}
         onImported={() => {
           void qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId] });

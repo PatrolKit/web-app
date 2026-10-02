@@ -136,8 +136,9 @@ const unnamed = await fetch(itemsUrl, {
   method: 'POST', headers: H,
   body: JSON.stringify({ swapId: swap.id, priceCents: 4000, quantity: 1, sku: '67003' }),
 }).then(unwrap);
-ok('a blank name becomes the seller and the number',
-   unnamed.name === 'Alpine Sports 67003', unnamed.name);
+// Called by its number since Plan 20 (36bd10d), like any uncategorised item.
+ok('a blank name is called by its number',
+   unnamed.name === 'Item #67003', unnamed.name);
 
 // Legacy items carry their tag already.
 const stored = await prisma.swapItem.findFirst({ where: { swapId: swap.id, sku: '67000' } });
@@ -205,15 +206,17 @@ const printer = await prisma.swapPrinter.create({
 const assign = await fetch(`${BASE}/orgs/${org.id}/ski-swap/printers/${printer.id}`, {
   method: 'PATCH', headers: SH, body: JSON.stringify({ assignedSellerId: shop.id }),
 });
-ok('a printer cannot be given to a seller on tickets', assign.status === 409, String(assign.status));
+// Both at once since Plan 31: each item is one or the other.
+ok('a printer can be given to a seller on tickets', assign.status === 200, String(assign.status));
 
 await prisma.swapPrinter.update({ where: { id: printer.id }, data: { assignedSellerId: other.id } });
 const rangeForPrinterSeller = await fetch(
   `${BASE}/orgs/${org.id}/ski-swap/sellers/${other.id}/ticket-ranges`,
-  { method: 'POST', headers: SH, body: JSON.stringify({ swapId: swap.id, startNumber: 70000, endNumber: 70010 }) },
+  // Clear of the blocks issued below, now that this succeeds.
+  { method: 'POST', headers: SH, body: JSON.stringify({ swapId: swap.id, startNumber: 75000, endNumber: 75010 }) },
 );
-ok('and tickets cannot be issued to a seller with a printer',
-   rangeForPrinterSeller.status === 409, String(rangeForPrinterSeller.status));
+ok('and tickets can be issued to a seller with a printer',
+   rangeForPrinterSeller.status === 201, String(rangeForPrinterSeller.status));
 
 // ─── Taking a block back ─────────────────────────────────────────────────────
 
@@ -278,8 +281,8 @@ const imported = await prisma.swapItem.findMany({
   orderBy: { sku: 'asc' },
 });
 ok('every imported row landed', imported.length === 3, String(imported.length));
-ok('a blank name became the seller and the number',
-   imported.find((i) => i.sku === '70002')?.name === 'Alpine Sports 70002',
+ok('a blank name was called by its number',
+   imported.find((i) => i.sku === '70002')?.name === 'Item #70002',
    imported.find((i) => i.sku === '70002')?.name);
 ok('and imported items count as printed',
    imported.every((i) => i.hasPrintedTag), JSON.stringify(imported.map((i) => i.hasPrintedTag)));
@@ -293,7 +296,11 @@ ok('a row with no price is refused',
    JSON.stringify((noPrice.body.data ?? []).map((r) => r.error)));
 
 const noSkuColumn = await upload('name,price\nSomething,10.00\n');
-ok('a file with no sku column is refused', noSkuColumn.status === 400, String(noSkuColumn.status));
+// Read as rows without tickets since Plan 31: without "Generate SKUs as
+// needed", each one is refused, and nothing is written.
+ok('a file with no sku column imports nothing without the generate switch',
+   (noSkuColumn.body.data ?? []).length > 0 && (noSkuColumn.body.data ?? []).every((r) => /needs a ticket number/.test(r.error ?? '')),
+   JSON.stringify((noSkuColumn.body.data ?? []).map((r) => r.error)));
 
 // ─── An ordinary seller cannot mint a SKU ────────────────────────────────────
 

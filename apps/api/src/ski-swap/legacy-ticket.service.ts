@@ -10,13 +10,28 @@ const TICKET_NUMBER = /^\d+$/;
 
 export type Range = { startNumber: number; endNumber: number };
 
-/** One row's fate. `ok` means it passed the check but nothing was written yet. */
+/**
+ * One row's fate. `ok` means it passed the check but nothing was written yet.
+ * `generated` marks a row with no ticket that gets a new SKU (Plan 31); once
+ * created, `sku` is that SKU.
+ */
 export type ImportRowResult = {
   line: number;
   sku: string;
   outcome: 'ok' | 'created' | 'error';
   error?: string;
+  generated?: boolean;
 };
+
+/** How an upload treats rows without a ticket (Plan 31). */
+export interface ImportRules {
+  /** The uploader asked for SKUs to be generated for rows without a ticket. */
+  generateSkus: boolean;
+  /** The swap's web takes legacy tickets only, so nothing may be generated. */
+  webTicketsOnly: boolean;
+  /** The swap takes legacy tickets at all. Off, only generated rows can be imported. Default on. */
+  acceptsTickets?: boolean;
+}
 
 /** Parses a SKU as a ticket number, or null if it is one of ours. */
 export function ticketNumberOf(sku: string): number | null {
@@ -99,16 +114,39 @@ export class LegacyTicketService {
    * What the staff import picker offers. Ordered by name because it is read as
    * a list of shops rather than of ranges.
    */
+  /**
+   * Who an upload can be for: everyone holding tickets in this swap, and, when
+   * its web isn't tickets-only, every business seller too, with no ranges
+   * (Plan 31). Their rows get generated SKUs.
+   */
   async sellersWithRanges(orgId: string, swapId: string): Promise<TicketSeller[]> {
-    const rows = await this.prisma.legacyTicketRange.findMany({
-      where: { orgId, swapId, seller: { deletedAt: null } },
-      orderBy: { startNumber: 'asc' },
-      include: { seller: { include: { membership: { include: { user: true } } } } },
-    });
-    if (!rows.length) return [];
+    const [rows, swap] = await Promise.all([
+      this.prisma.legacyTicketRange.findMany({
+        where: { orgId, swapId, seller: { deletedAt: null } },
+        orderBy: { startNumber: 'asc' },
+        include: { seller: { include: { membership: { include: { user: true } } } } },
+      }),
+      this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { webLegacyTicketsOnly: true } }),
+    ]);
 
-    const used = await this.usedNumbers(swapId);
+    const used = rows.length ? await this.usedNumbers(swapId) : new Set<number>();
     const bySeller = new Map<string, TicketSeller>();
+
+    if (swap && !swap.webLegacyTicketsOnly) {
+      const shops = await this.prisma.sellerProfile.findMany({
+        where: { deletedAt: null, businessName: { not: null }, membership: { orgId, deletedAt: null } },
+        include: { membership: { include: { user: true } } },
+      });
+      for (const shop of shops) {
+        bySeller.set(shop.id, {
+          sellerId: shop.id,
+          displayName: displayName(shop.membership.user, shop.businessName),
+          ranges: [],
+          ticketCount: 0,
+          usedCount: 0,
+        });
+      }
+    }
 
     for (const r of rows) {
       const entry = bySeller.get(r.sellerId) ?? {
@@ -172,7 +210,6 @@ export class LegacyTicketService {
       throw new BadRequestException('The first number has to be below the last.');
     }
     await this.assertSellerInSwap(orgId, swapId, sellerId);
-    await this.assertNoPrinter(orgId, sellerId);
 
     const clash = await this.prisma.legacyTicketRange.findFirst({
       where: {
@@ -297,13 +334,17 @@ export class LegacyTicketService {
   async formState(
     swapId: string,
     sellerId: string,
-  ): Promise<{ ranges: Range[]; suggested: number | null; exhausted: boolean }> {
-    const ranges = await this.listForSeller(swapId, sellerId);
-    const used = await this.usedNumbers(swapId);
+  ): Promise<{ ranges: Range[]; suggested: number | null; exhausted: boolean; webTicketsOnly: boolean }> {
+    const [ranges, used, swap] = await Promise.all([
+      this.listForSeller(swapId, sellerId),
+      this.usedNumbers(swapId),
+      this.prisma.skiSwap.findUnique({ where: { id: swapId }, select: { webLegacyTicketsOnly: true } }),
+    ]);
     return {
       ranges,
       suggested: suggestNext(ranges, used),
       exhausted: ranges.length > 0 && !hasAnyUnused(ranges, used),
+      webTicketsOnly: !!swap?.webLegacyTicketsOnly,
     };
   }
 
@@ -344,34 +385,6 @@ export class LegacyTicketService {
       throw new ConflictException(
         `All of your tickets (${describe(ranges)}) are on items. ` +
           'Ask staff for another range.',
-      );
-    }
-  }
-
-  // ─── Exclusivity with printers (D1) ────────────────────────────────────────
-
-  /** Refuses a range for a seller who already prints their own tags. */
-  async assertNoPrinter(orgId: string, sellerId: string): Promise<void> {
-    const printer = await this.prisma.swapPrinter.findFirst({
-      where: { orgId, assignedSellerId: sellerId },
-      select: { name: true },
-    });
-    if (printer) {
-      throw new ConflictException(
-        `This seller has a printer (${printer.name}). Unassign it first.`,
-      );
-    }
-  }
-
-  /** Refuses a printer for a seller who is on issued tickets. */
-  async assertNoRanges(orgId: string, sellerId: string): Promise<void> {
-    const range = await this.prisma.legacyTicketRange.findFirst({
-      where: { orgId, sellerId },
-      select: { id: true },
-    });
-    if (range) {
-      throw new ConflictException(
-        'This seller uses issued tickets. Remove their ranges first.',
       );
     }
   }
@@ -421,11 +434,12 @@ export class LegacyTicketService {
     const descAt = indexOf(['description', 'details', 'notes']);
     const priceAt = indexOf(['price', 'amount', 'cost', 'value']);
 
-    if (skuAt === -1) throw new BadRequestException('The file needs a "sku" column.');
+    // No ticket column is a file of rows without tickets: fine when SKUs are
+    // generated, and each row says so when they aren't (`checkImportRows`).
     if (priceAt === -1) throw new BadRequestException('The file needs a "price" column.');
 
     const rows = dataRows.map((row) => ({
-      sku: (row[skuAt] ?? '').trim(),
+      sku: skuAt === -1 ? '' : (row[skuAt] ?? '').trim(),
       name: nameAt === -1 ? undefined : (row[nameAt] ?? '').trim() || undefined,
       description: descAt === -1 ? undefined : (row[descAt] ?? '').trim() || undefined,
       // "$250.00" and "250" both mean the same thing to whoever typed it.
@@ -450,14 +464,32 @@ export class LegacyTicketService {
    * that service already depends on this one — so the rules stay here and the
    * writing happens on the side that can reach both.
    */
+  /**
+   * Checks an upload before anything is written (Plan 31).
+   *
+   * A row with a ticket must be one of this seller's, unused, once. A row
+   * without one gets a generated SKU when `generateSkus` is on, and is an
+   * error otherwise. Generating is refused outright for a swap whose web takes
+   * legacy tickets only.
+   */
   async checkImportRows(
     swapId: string,
     sellerId: string,
     rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+    rules: ImportRules,
   ): Promise<ImportRowResult[]> {
+    if (rules.generateSkus && rules.webTicketsOnly) {
+      throw new BadRequestException(
+        'This swap takes legacy tickets only on the web, so SKUs can’t be generated.',
+      );
+    }
     const ranges = await this.listForSeller(swapId, sellerId);
-    if (ranges.length === 0) {
-      throw new BadRequestException('This seller has no ticket ranges for this swap.');
+    if (ranges.length === 0 && !rules.generateSkus) {
+      throw new BadRequestException(
+        rules.webTicketsOnly
+          ? 'This seller has no ticket ranges for this swap, and it takes legacy tickets only on the web.'
+          : 'This seller has no ticket ranges for this swap. Turn on “Generate SKUs as needed” to give each row a new SKU.',
+      );
     }
     const used = await this.usedNumbers(swapId);
 
@@ -469,11 +501,22 @@ export class LegacyTicketService {
       const sku = row.sku?.trim() ?? '';
       const fail = (error: string) => results.push({ line, sku, outcome: 'error', error });
 
-      if (!sku) return fail('Every row needs a ticket number.');
-      const n = ticketNumberOf(sku);
-      if (n === null) return fail('A ticket number is just the digits on the ticket.');
       if (!Number.isFinite(row.priceCents) || row.priceCents <= 0) {
         return fail('Every row needs a price.');
+      }
+      if (!sku) {
+        if (rules.generateSkus) return results.push({ line, sku, outcome: 'ok', generated: true });
+        return fail(
+          rules.webTicketsOnly
+            ? 'Every row needs a ticket number.'
+            : 'Every row needs a ticket number, or turn on “Generate SKUs as needed”.',
+        );
+      }
+      if (rules.acceptsTickets === false) return fail('This swap doesn’t take legacy tickets.');
+      const n = ticketNumberOf(sku);
+      if (n === null) return fail('A ticket number is just the digits on the ticket.');
+      if (ranges.length === 0) {
+        return fail('This seller has no tickets for this swap. Leave the ticket blank to generate a SKU.');
       }
       if (!inAnyRange(n, ranges)) {
         return fail(`${n} is not one of this seller's tickets. Theirs are ${describe(ranges)}.`);

@@ -14,12 +14,13 @@ interface SwapForm {
   locationId: string;
   legacyTicketsEnabled: boolean;
   legacyTicketsOnly: boolean;
+  webLegacyTicketsOnly: boolean;
   printLegacyHelperLabels: boolean;
   labelsPerItem: number;
 }
 const emptyForm: SwapForm = {
   title: '', locationId: '', legacyTicketsEnabled: false, legacyTicketsOnly: false,
-  printLegacyHelperLabels: false, labelsPerItem: 1,
+  webLegacyTicketsOnly: false, printLegacyHelperLabels: false, labelsPerItem: 1,
 };
 
 export default function SwapsPage() {
@@ -69,6 +70,8 @@ export default function SwapsPage() {
         form.legacyTicketsEnabled !== s.legacyTicketsEnabled ? form.legacyTicketsEnabled : undefined,
       legacyTicketsOnly:
         form.legacyTicketsOnly !== s.legacyTicketsOnly ? form.legacyTicketsOnly : undefined,
+      webLegacyTicketsOnly:
+        form.webLegacyTicketsOnly !== s.webLegacyTicketsOnly ? form.webLegacyTicketsOnly : undefined,
       printLegacyHelperLabels:
         form.printLegacyHelperLabels !== s.printLegacyHelperLabels ? form.printLegacyHelperLabels : undefined,
       labelsPerItem: form.labelsPerItem !== s.labelsPerItem ? form.labelsPerItem : undefined,
@@ -100,6 +103,7 @@ export default function SwapsPage() {
       locationId: s.locationId,
       legacyTicketsEnabled: s.legacyTicketsEnabled,
       legacyTicketsOnly: s.legacyTicketsOnly,
+      webLegacyTicketsOnly: s.webLegacyTicketsOnly,
       printLegacyHelperLabels: s.printLegacyHelperLabels,
       labelsPerItem: s.labelsPerItem,
     });
@@ -199,6 +203,7 @@ export default function SwapsPage() {
                   ...form,
                   legacyTicketsEnabled: e.target.checked,
                   legacyTicketsOnly: e.target.checked ? form.legacyTicketsOnly : false,
+                  webLegacyTicketsOnly: e.target.checked ? form.webLegacyTicketsOnly : false,
                   printLegacyHelperLabels: e.target.checked ? form.printLegacyHelperLabels : false,
                 })}
                 className="mt-0.5"
@@ -215,48 +220,70 @@ export default function SwapsPage() {
             </label>
           )}
 
-          {/* Nested, because it only means anything once tickets are taken at
-              all. It appears rather than greying out: the question "tickets
-              only?" does not exist for a swap on printed tags. */}
+          {/* Nested, because "only" means anything once tickets are taken at
+              all. It appears rather than greying out: the question does not
+              exist for a swap on printed tags. Two settings since Plan 31: the
+              counter and the web can each be tickets-only, or not, on their own. */}
           {editSwap && form.legacyTicketsEnabled && (
-            <label className="flex items-start gap-3 pl-7">
-              <input
-                type="checkbox"
-                checked={form.legacyTicketsOnly}
-                onChange={(e) => setForm({
-                  ...form,
-                  legacyTicketsOnly: e.target.checked,
-                  printLegacyHelperLabels: e.target.checked ? form.printLegacyHelperLabels : false,
-                })}
-                className="mt-0.5"
-              />
-              <span>
-                <span className="block text-sm text-white">Legacy tickets only</span>
-                <span className="block text-gray-500 text-xs mt-0.5">
-                  Every item comes in on a numbered ticket and nothing prints a tag. The
-                  staff iPad reads this to decide what it offers.
-                </span>
-              </span>
-            </label>
-          )}
+            <div className="pl-7 space-y-3">
+              <span className="block text-sm text-white">Legacy tickets only</span>
 
-          {/* One level further in, by the same rule: helper labels only mean
-              anything on a swap that takes tickets and nothing else. */}
-          {editSwap && form.legacyTicketsEnabled && form.legacyTicketsOnly && (
-            <label className="flex items-start gap-3 pl-14">
-              <input
-                type="checkbox"
-                checked={form.printLegacyHelperLabels}
-                onChange={(e) => setForm({ ...form, printLegacyHelperLabels: e.target.checked })}
-                className="mt-0.5"
-              />
-              <span>
-                <span className="block text-sm text-white">Print legacy helper labels</span>
-                <span className="block text-gray-500 text-xs mt-0.5">
-                  The staff iPad prints a helper label to go with each legacy ticket.
+              <label className="flex items-start gap-3 pl-7">
+                <input
+                  type="checkbox"
+                  checked={form.legacyTicketsOnly}
+                  onChange={(e) => setForm({
+                    ...form,
+                    legacyTicketsOnly: e.target.checked,
+                    printLegacyHelperLabels: e.target.checked ? form.printLegacyHelperLabels : false,
+                  })}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="block text-sm text-white">Staff Check-In</span>
+                  <span className="block text-gray-500 text-xs mt-0.5">
+                    Every item checked in at the counter comes in on a numbered ticket. The
+                    staff iPad reads this to decide what it offers.
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+
+              {/* One level further in: helper labels are the staff iPad's, and
+                  only mean anything when the counter takes tickets only. */}
+              {form.legacyTicketsOnly && (
+                <label className="flex items-start gap-3 pl-14">
+                  <input
+                    type="checkbox"
+                    checked={form.printLegacyHelperLabels}
+                    onChange={(e) => setForm({ ...form, printLegacyHelperLabels: e.target.checked })}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="block text-sm text-white">Print legacy helper labels</span>
+                    <span className="block text-gray-500 text-xs mt-0.5">
+                      The staff iPad prints a helper label to go with each legacy ticket.
+                    </span>
+                  </span>
+                </label>
+              )}
+
+              <label className="flex items-start gap-3 pl-7">
+                <input
+                  type="checkbox"
+                  checked={form.webLegacyTicketsOnly}
+                  onChange={(e) => setForm({ ...form, webLegacyTicketsOnly: e.target.checked })}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="block text-sm text-white">Web UI</span>
+                  <span className="block text-gray-500 text-xs mt-0.5">
+                    Every item entered on the web, by a seller or by staff for one, must be a
+                    ticket from the seller's issued blocks. Off, a business seller can also
+                    print labels with generated SKUs.
+                  </span>
+                </span>
+              </label>
+            </div>
           )}
 
           {/* Edit only, like the ticket settings: a new swap starts with its
@@ -346,12 +373,18 @@ export default function SwapsPage() {
                   {/* Coloured rather than a second grey pill: the two settings
                       differ by one trailing word, and a column of near-identical
                       badges is read by its colour, not by its text. */}
-                  {s.legacyTicketsOnly && (
+                  {(s.legacyTicketsOnly || s.webLegacyTicketsOnly) && (
                     <span
                       className="ml-2 text-xs px-2 py-0.5 rounded bg-amber-900/40 text-amber-300"
-                      title="Every item comes in on a numbered ticket — nothing prints a tag"
+                      title={s.legacyTicketsOnly && s.webLegacyTicketsOnly
+                        ? 'Every item comes in on a numbered ticket, at the counter and on the web'
+                        : s.legacyTicketsOnly
+                          ? 'Every item checked in at the counter comes in on a numbered ticket'
+                          : 'Every item entered on the web must be a numbered ticket'}
                     >
-                      Tickets only
+                      {s.legacyTicketsOnly && s.webLegacyTicketsOnly
+                        ? 'Tickets only'
+                        : s.legacyTicketsOnly ? 'Tickets only (check-in)' : 'Tickets only (web)'}
                     </span>
                   )}
                 </td>

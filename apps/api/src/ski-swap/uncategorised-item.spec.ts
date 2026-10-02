@@ -10,7 +10,7 @@ import { ItemService, uncategorisedName } from './item.service';
  * column — and carries no answers.
  */
 
-const SWAP = { id: 'swap-1', orgId: 'org-1', skuPrefix: 'SS26', squareCategoryId: 'cat', title: 'Fall' };
+const SWAP = { id: 'swap-1', orgId: 'org-1', skuPrefix: 'SS26', squareCategoryId: 'cat', title: 'Fall', legacyTicketsEnabled: true, webLegacyTicketsOnly: false };
 const STATION = { id: 'station-1', code: 'A', bridgeDeviceId: null };
 
 function harness() {
@@ -108,7 +108,7 @@ describe('an item with no category', () => {
 describe('an imported file', () => {
   it('keeps a name from the file, and calls a blank one by its number', async () => {
     const { service, created } = harness();
-    await service.importTicketItems('org-1', 'swap-1', 'seller-1', [
+    await service.importItems('org-1', 'swap-1', 'seller-1', [
       { sku: '10042', name: 'Rossignol boots', priceCents: 1000 },
       { sku: '10043', name: '  ', priceCents: 1000 },
       { sku: '10044', priceCents: 1000 },

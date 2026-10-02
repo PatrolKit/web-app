@@ -106,12 +106,14 @@ export class SellerSelfService {
     userId: string,
     swapId: string,
     rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+    generateSkus = false,
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
     // The shop's own file: a list of what they mean to bring, none of which
     // anybody has seen. It waits for staff like everything else they enter.
-    return this.itemService.importTicketItems(orgId, swapId, seller.id, rows, {
+    return this.itemService.importItems(orgId, swapId, seller.id, rows, {
       selfService: true,
+      generateSkus,
     });
   }
 
@@ -135,6 +137,7 @@ export class SellerSelfService {
       donateProceeds?: boolean;
       stationId?: string;
       sku?: string;
+      generateSku?: boolean;
     },
     idempotencyKey?: string,
   ) {
@@ -142,7 +145,26 @@ export class SellerSelfService {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: data.swapId, orgId, active: true } });
     if (!swap) throw new NotFoundException('Active swap not found');
 
-    const onTickets = await this.tickets.isLegacySeller(data.swapId, seller.id);
+    const holdsTickets = await this.tickets.isLegacySeller(data.swapId, seller.id);
+
+    // Plan 31. With the swap's web on tickets only, every item entered here is
+    // one: a seller with no block has nothing to enter it on, and none may ask
+    // for a generated SKU. Off, a seller who holds tickets may still ask for
+    // one, for an item they will print a label for.
+    if (data.generateSku && data.sku !== undefined) {
+      throw new BadRequestException('Give a ticket number or ask for a generated SKU, not both.');
+    }
+    if (swap.webLegacyTicketsOnly) {
+      if (data.generateSku) {
+        throw new BadRequestException('This swap takes legacy tickets only, so SKUs can’t be generated.');
+      }
+      if (!holdsTickets) {
+        throw new BadRequestException(
+          'This swap takes legacy tickets only. Ask the organizer for a block of tickets.',
+        );
+      }
+    }
+    const onTickets = holdsTickets && !data.generateSku;
 
     // A ticket number is honoured only from a seller who holds one. Accepting
     // it from anyone else would let them mint a SKU that collides with the

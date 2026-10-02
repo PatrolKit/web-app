@@ -27,6 +27,9 @@ function service(opts: {
 
 const csv = (text: string) => Buffer.from(text, 'utf8');
 
+/** Today's rules: every row a ticket, nothing generated. */
+const TICKETS = { generateSkus: false, webTicketsOnly: false };
+
 describe('reading a shop’s file', () => {
   it('takes a description as its own column', async () => {
     const { rows } = service().parseItemCsv(
@@ -86,8 +89,11 @@ describe('reading a shop’s file', () => {
     expect(rows[0].description).toBeUndefined();
   });
 
-  it('refuses a file with no sku column', () => {
-    expect(() => service().parseItemCsv(csv('price,name\n180.00,Boots\n'))).toThrow('"sku" column');
+  it('reads a file with no sku column as rows without tickets (Plan 31)', () => {
+    // Each row then gets a generated SKU, or an error saying it needs a ticket.
+    expect(service().parseItemCsv(csv('price,name\n180.00,Boots\n')).rows).toEqual([
+      { sku: '', name: 'Boots', description: undefined, priceCents: 18000 },
+    ]);
   });
 
   it('refuses a file with no price column', () => {
@@ -101,7 +107,7 @@ describe('judging the rows before anything is written', () => {
   it('passes a file whose numbers are all the seller’s', async () => {
     const results = await service().checkImportRows('swap-1', 'seller-1', [
       row('67169'), row('67170'),
-    ]);
+    ], TICKETS);
 
     expect(results.every((r) => r.outcome === 'ok')).toBe(true);
   });
@@ -109,7 +115,7 @@ describe('judging the rows before anything is written', () => {
   it('refuses a number outside their blocks, and says whose they are', async () => {
     // The check that turns picking the wrong shop into a failure rather than a
     // mess: another shop's file fails on its first row and every row after.
-    const results = await service().checkImportRows('swap-1', 'seller-1', [row('68001')]);
+    const results = await service().checkImportRows('swap-1', 'seller-1', [row('68001')], TICKETS);
 
     expect(results[0].outcome).toBe('error');
     expect(results[0].error).toContain('not one of this seller');
@@ -118,7 +124,7 @@ describe('judging the rows before anything is written', () => {
 
   it('refuses a number already on an item', async () => {
     const results = await service({ usedSkus: ['67169'] })
-      .checkImportRows('swap-1', 'seller-1', [row('67169')]);
+      .checkImportRows('swap-1', 'seller-1', [row('67169')], TICKETS);
 
     expect(results[0].error).toBe('Ticket 67169 is already on another item.');
   });
@@ -126,7 +132,7 @@ describe('judging the rows before anything is written', () => {
   it('refuses the same number twice in one file, naming the earlier line', async () => {
     const results = await service().checkImportRows('swap-1', 'seller-1', [
       row('67169'), row('67170'), row('67169'),
-    ]);
+    ], TICKETS);
 
     expect(results[2].error).toBe('Ticket 67169 is also on line 2.');
   });
@@ -134,19 +140,19 @@ describe('judging the rows before anything is written', () => {
   it('refuses a row with no price', async () => {
     const results = await service().checkImportRows('swap-1', 'seller-1', [
       { sku: '67169', priceCents: NaN },
-    ]);
+    ], TICKETS);
 
     expect(results[0].error).toBe('Every row needs a price.');
   });
 
   it('refuses a ticket number that is not just digits', async () => {
-    const results = await service().checkImportRows('swap-1', 'seller-1', [row('SS26-A-0001')]);
+    const results = await service().checkImportRows('swap-1', 'seller-1', [row('SS26-A-0001')], TICKETS);
 
     expect(results[0].error).toContain('just the digits');
   });
 
   it('refuses a seller who holds no tickets in this swap', async () => {
-    await expect(service({ ranges: [] }).checkImportRows('swap-1', 'seller-1', [row('67169')]))
+    await expect(service({ ranges: [] }).checkImportRows('swap-1', 'seller-1', [row('67169')], TICKETS))
       .rejects.toThrow('no ticket ranges');
   });
 
@@ -155,7 +161,7 @@ describe('judging the rows before anything is written', () => {
     // upload at a time.
     const results = await service().checkImportRows('swap-1', 'seller-1', [
       row('68001'), row('67169'), row('68002'),
-    ]);
+    ], TICKETS);
 
     expect(results.filter((r) => r.outcome === 'error')).toHaveLength(2);
   });
@@ -165,7 +171,7 @@ describe('judging the rows before anything is written', () => {
     // accept; the high-water mark only decides what the form suggests.
     const results = await service().checkImportRows('swap-1', 'seller-1', [
       row('67400'), row('67001'), row('67250'),
-    ]);
+    ], TICKETS);
 
     expect(results.every((r) => r.outcome === 'ok')).toBe(true);
   });

@@ -6,14 +6,12 @@ import { createId } from '@paralleldrive/cuid2';
 import { LABEL_SIZE, type PaperSize } from './printing/geometry';
 import type { SwapPrinterResponse } from '../contracts/ski-swap.contracts';
 import { SELLER_NAME_INCLUDE, sellerDisplayName, type SellerNameRow } from './seller.service';
-import { LegacyTicketService } from './legacy-ticket.service';
 
 @Injectable()
 export class PrinterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissionsService: PermissionsService,
-    private readonly tickets: LegacyTicketService,
   ) {}
 
   async list(orgId: string, userId?: string): Promise<SwapPrinterResponse[]> {
@@ -111,10 +109,8 @@ export class PrinterService {
         );
       }
 
-      // A printer and issued tickets are alternative answers to "how does this
-      // item get a tag". A seller holding both would have two SKUs competing
-      // for one item, so the exclusivity is enforced from both directions.
-      await this.tickets.assertNoRanges(orgId, data.assignedSellerId);
+      // A seller may hold issued tickets and a printer at once (Plan 31): each
+      // item is one or the other, decided when it is entered.
     }
 
     if (data.bridgeDeviceId) {

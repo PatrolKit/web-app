@@ -580,9 +580,7 @@ export default function SellersPage() {
                 <SellerTicketSource
                   orgId={orgId}
                   sellerId={editSeller.id}
-                  swapId={selectedSwap?.id ?? null}
-                  swapTitle={selectedSwap?.title ?? null}
-                  legacyTicketsEnabled={selectedSwap?.legacyTicketsEnabled ?? false}
+                  initialSwapId={selectedSwap?.id ?? null}
                   canAdmin={perms.has('ski_swap:admin')}
                 />
               )}

@@ -152,13 +152,18 @@ export class ItemController {
     @Param('swapId') swapId: string,
     @UploadedFile() file: Express.Multer.File,
     @Body('sellerId') sellerId: string,
+    // A multipart field, so a string: "true" turns it on (Plan 31).
+    @Body('generateSkus') generateSkus?: string,
   ) {
     if (!sellerId) throw new BadRequestException('Choose which seller the file is for.');
     const { rows } = this.tickets.parseItemCsv(file.buffer);
-    return this.itemService.importForSeller(orgId, swapId, sellerId, rows);
+    return this.itemService.importForSeller(orgId, swapId, sellerId, rows, generateSkus === 'true');
   }
 
-  /** Who staff may upload a file for: everyone holding tickets in this swap. */
+  /**
+   * Who staff may upload a file for: everyone holding tickets in this swap,
+   * and, when its web isn't tickets-only, every business seller (Plan 31).
+   */
   @Get('ticket-sellers')
   @RequirePermissions('ski_swap:report')
   ticketSellers(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {

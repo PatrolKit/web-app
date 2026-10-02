@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import type { TicketImportRow } from '../../lib/api.types';
+import { GenerateSkusSwitch, importedSummary } from './ImportSkuOptions';
 
 /**
  * A shop's whole inventory in one file.
@@ -15,15 +16,19 @@ import type { TicketImportRow } from '../../lib/api.types';
 export default function TicketItemImportModal({
   orgId,
   swapId,
+  allowGenerate,
   onClose,
   onImported,
 }: {
   orgId: string;
   swapId: string;
+  /** The swap's web isn't tickets-only, so rows without a ticket may get a SKU (Plan 31). */
+  allowGenerate: boolean;
   onClose: () => void;
   onImported: () => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  const [generateSkus, setGenerateSkus] = useState(false);
   const [rows, setRows] = useState<TicketImportRow[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -37,7 +42,7 @@ export default function TicketItemImportModal({
     setError('');
     setRows(null);
     try {
-      const res = await api.skiSwap.importTicketItems(orgId, swapId, file);
+      const res = await api.skiSwap.importTicketItems(orgId, swapId, file, allowGenerate && generateSkus);
       if (!res.success) {
         setError(res.error ?? 'Could not read that file');
       } else {
@@ -61,8 +66,8 @@ export default function TicketItemImportModal({
 
         <div className="text-sm text-gray-400 space-y-2">
           <p>
-            One row per ticket. The number is required, so is the price; a name is
-            optional — left out, the item is named after your shop and the number.
+            One row per item. The price is required; a name is optional. The ticket number
+            is required too{allowGenerate ? ', unless SKUs are generated below' : ''}.
           </p>
           <pre className="bg-surface-100 border border-gray-700 rounded p-3 text-xs text-gray-300 overflow-x-auto">
 {`sku,name,price
@@ -70,6 +75,10 @@ export default function TicketItemImportModal({
 67170,,180.00`}
           </pre>
         </div>
+
+        {allowGenerate && (
+          <GenerateSkusSwitch checked={generateSkus} onChange={(on) => { setGenerateSkus(on); setRows(null); setError(''); }} />
+        )}
 
         <input
           type="file"
@@ -102,9 +111,7 @@ export default function TicketItemImportModal({
         )}
 
         {rows && failures.length === 0 && created.length > 0 && (
-          <p className="text-sm text-green-400">
-            {created.length} item{created.length === 1 ? '' : 's'} imported.
-          </p>
+          <p className="text-sm text-green-400">{importedSummary(created)}</p>
         )}
 
         <div className="flex gap-2 justify-end">
