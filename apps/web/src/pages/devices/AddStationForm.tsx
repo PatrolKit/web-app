@@ -50,6 +50,7 @@ export default function AddStationForm({
   const staffed = kind === 'staffed';
   const [name, setName] = useState('');
   const [bridgeChoice, setBridgeChoice] = useState('');
+  const sharedWith = bridges.find((b) => b.id === bridgeChoice)?.alsoServes ?? [];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -119,12 +120,13 @@ export default function AddStationForm({
             <option value="">Choose a bridge…</option>
           )}
           {bridges.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.printerName ?? b.name}
-              {b.alsoServes?.length ? ` — also serves ${b.alsoServes.join(', ')}` : ''}
-            </option>
+            <option key={b.id} value={b.id}>{b.printerName ?? b.name}</option>
           ))}
         </select>
+        {/* Said below the picker rather than in it, as on the station rows. */}
+        {sharedWith.length > 0 && (
+          <span className="block text-xs text-gray-500 mt-1">Shared with {sharedWith.join(', ')}</span>
+        )}
       </label>
 
       {/* Self-service cannot go without one, so an empty list is a dead end

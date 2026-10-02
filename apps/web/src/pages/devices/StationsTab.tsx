@@ -342,8 +342,6 @@ function BridgeCell({
   onPatch: (id: string, data: Parameters<typeof api.skiSwap.patchStation>[2]) => void;
   required: boolean;
 }) {
-  // This station's own bridge is never "also serving" itself.
-  const others = (b: BridgeOption) => b.alsoServes.filter((n) => n !== station.name);
   return (
     <td className="py-3 pr-4 align-top">
       <select
@@ -358,10 +356,7 @@ function BridgeCell({
           <option value={station.bridgeDeviceId}>{station.printerName ?? 'Bound bridge'}</option>
         )}
         {bridges.map((b) => (
-          <option key={b.id} value={b.id}>
-            {b.printerName ?? b.name}
-            {others(b).length > 0 ? ` — also serves ${namesList(others(b))}` : ''}
-          </option>
+          <option key={b.id} value={b.id}>{b.printerName ?? b.name}</option>
         ))}
       </select>
       {station.bridgeSharedWith.length > 0 && (
@@ -410,11 +405,6 @@ function StatusCell({ orgId, station }: { orgId: string; station: CheckinStation
       {queue && (queue.queued > 0 || queue.claimed > 0) && (
         <span className="block text-xs text-gray-600">
           {queue.queued} queued · {queue.claimed} printing
-        </span>
-      )}
-      {queue && queue.bridgeSharedWith.length > 0 && (
-        <span className="block text-xs text-gray-600" title="Tags print in the order they are queued, each station's batch whole.">
-          Shares its printer with {namesList(queue.bridgeSharedWith)}
         </span>
       )}
     </td>
