@@ -125,6 +125,25 @@ interface ItemFormData {
   sku: string;
 }
 
+/**
+ * What the item form still needs before it can be saved, in the words shown
+ * under its buttons. Empty means Add or Save is enabled.
+ *
+ * A seller is needed only where the form offers one: on staff screens. A
+ * seller's own form has no picker, because the item is theirs. Quantity shows
+ * only when editing; a new item is always one.
+ */
+export function missingItemFields(
+  form: Pick<ItemFormData, 'priceDollars' | 'quantity' | 'sellerId'>,
+  opts: { picksSeller: boolean; editing: boolean },
+): string[] {
+  const missing: string[] = [];
+  if (!(Math.round(parseFloat(form.priceDollars) * 100) > 0)) missing.push('a price');
+  if (opts.editing && !(parseInt(form.quantity, 10) >= 1)) missing.push('a quantity');
+  if (opts.picksSeller && !form.sellerId) missing.push('a seller');
+  return missing;
+}
+
 const emptyForm: ItemFormData = { describer: emptyDescriber, description: '', priceDollars: '', quantity: '1', sellerId: '', donateProceeds: false, sku: '' };
 
 /** "67000–67499", or "67000–67499, 68000–68499" for a shop with two pads. */
@@ -461,6 +480,8 @@ export default function SwapItemsPanel({
     });
   }
 
+  const missingFields = missingItemFields(form, { picksSeller: !!sellers, editing: !!editItem });
+
   function closeForm() {
     setPendingPhoto(null);
     setPhotoError(null);
@@ -714,7 +735,11 @@ export default function SwapItemsPanel({
           */}
           <form
             className="bg-surface-200 rounded-lg w-full max-w-md flex flex-col max-h-[calc(100vh-2rem)]"
-            onSubmit={(e) => { e.preventDefault(); if (editItem) patchMutation.mutate(); else createMutation.mutate(); }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (missingFields.length > 0) return;
+              if (editItem) patchMutation.mutate(); else createMutation.mutate();
+            }}
           >
             <h2 className="text-white font-semibold px-6 pt-6 pb-4 shrink-0">{editItem ? 'Edit Item' : 'Add Item'}</h2>
 
@@ -803,8 +828,8 @@ export default function SwapItemsPanel({
                 value={form.sellerId}
                 onChange={(v) => setForm({ ...form, sellerId: v })}
                 options={sellers.map((s) => ({ value: s.id, label: s.displayName, sublabel: s.phone ?? '', keywords: s.email ?? '' }))}
-                placeholder="No seller assigned"
-                clearLabel="No seller assigned"
+                placeholder="Choose a seller"
+                clearLabel="Choose a seller"
                 emptyMessage="No sellers match."
               />
             )}
@@ -898,10 +923,14 @@ export default function SwapItemsPanel({
 
             </div>
 
-            <div className="flex gap-2 px-6 py-4 shrink-0 border-t border-gray-700">
+            <div className="px-6 py-4 shrink-0 border-t border-gray-700 space-y-2">
+              {missingFields.length > 0 && (
+                <p className="text-xs text-gray-400">Still needed: {missingFields.join(', ')}.</p>
+              )}
+            <div className="flex gap-2">
               <button
                 type="submit"
-                disabled={createMutation.isPending || patchMutation.isPending || uploadPhotoMutation.isPending}
+                disabled={missingFields.length > 0 || createMutation.isPending || patchMutation.isPending || uploadPhotoMutation.isPending}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded py-1.5 disabled:opacity-40"
               >
                 {editItem ? 'Save' : 'Add'}
@@ -909,6 +938,7 @@ export default function SwapItemsPanel({
               <button type="button" onClick={closeForm} className="flex-1 bg-surface-100 text-gray-300 text-sm rounded py-1.5">
                 Cancel
               </button>
+            </div>
             </div>
           </form>
         </div>
