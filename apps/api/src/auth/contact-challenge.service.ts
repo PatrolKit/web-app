@@ -9,6 +9,7 @@ import { isUniqueViolation } from '../common/util/prisma-errors';
 import type { SignInContext } from '../contracts/auth.contracts';
 import { LIMITS } from '../common/limits/limits';
 import { LimitUsageService } from '../common/limits/limit-usage.service';
+import { MembershipTouchService } from '../common/identity/membership-touch.service';
 
 export type ChallengeChannel = 'email' | 'phone';
 /** `login` mints a session on confirm; `verify` only stamps; `invite` does both. */
@@ -71,6 +72,7 @@ export class ContactChallengeService {
     private readonly sms: SmsService,
     private readonly config: ConfigService,
     private readonly usage: LimitUsageService,
+    private readonly touch: MembershipTouchService,
   ) {}
 
   /**
@@ -266,6 +268,10 @@ export class ContactChallengeService {
       }
       throw err;
     }
+
+    // A verified contact is shown wherever the person sells or patrols, and
+    // the iPads only learn of it in a delta when the watermark moves.
+    await this.touch.touchAllForUser(challenge.userId);
 
     return {
       userId: challenge.userId,

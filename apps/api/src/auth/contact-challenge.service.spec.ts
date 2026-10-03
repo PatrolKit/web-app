@@ -4,8 +4,12 @@ import type { MailService } from '../mail/mail.service';
 import type { SmsService } from '../sms/sms.service';
 import type { ConfigService } from '@nestjs/config';
 import type { LimitUsageService } from '../common/limits/limit-usage.service';
+import type { MembershipTouchService } from '../common/identity/membership-touch.service';
+import { createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
 
 const usage = { record: jest.fn() } as unknown as LimitUsageService;
+const touch = { touchAllForUser: jest.fn() } as unknown as MembershipTouchService;
 
 /**
  * `devCode` echoes a freshly-issued code straight back to the caller. That is a
@@ -40,7 +44,7 @@ describe('ContactChallengeService — devCode exposure', () => {
     } as unknown as MailService;
     const sms = { send: jest.fn().mockResolvedValue(suppressed) } as unknown as SmsService;
 
-    return new ContactChallengeService(prisma, mail, sms, config, usage);
+    return new ContactChallengeService(prisma, mail, sms, config, usage, touch);
   }
 
   const issue = (svc: ContactChallengeService) =>
@@ -107,7 +111,7 @@ describe('ContactChallengeService — link origin', () => {
     } as unknown as MailService;
     const sms = { send: jest.fn().mockResolvedValue(undefined) } as unknown as SmsService;
 
-    return { svc: new ContactChallengeService(prisma, mail, sms, config, usage), sent, created };
+    return { svc: new ContactChallengeService(prisma, mail, sms, config, usage, touch), sent, created };
   }
 
   const base = { userId: 'u1', channel: 'email' as const, target: 'a@b.com', purpose: 'login' as const };
@@ -134,5 +138,55 @@ describe('ContactChallengeService — link origin', () => {
     // Ids never travel in the query string — the link carries only the challenge.
     expect(sent[0]).not.toContain('station1');
     expect(sent[0]).not.toContain('swap1');
+  });
+});
+
+/**
+ * The iPads sync people by `Membership.updatedAt`. Verifying a contact writes
+ * only the user, so unless every membership's watermark moves too, no delta
+ * ever carries the verification to them.
+ */
+describe('ContactChallengeService — confirming a contact', () => {
+  function build(opts: { duplicate?: boolean } = {}) {
+    const challenge = {
+      id: 'c1', userId: 'user-1', channel: 'email', target: 'dana@example.com', purpose: 'verify',
+      codeHash: createHash('sha256').update('123456').digest('hex'), attempts: 0, usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000), context: null,
+    };
+    const userWrites: unknown[] = [];
+    const prisma = {
+      contactChallenge: {
+        findUnique: jest.fn().mockResolvedValue(challenge),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      user: { update: jest.fn((args: unknown) => { userWrites.push(args); return {}; }) },
+      $transaction: jest.fn(async () => {
+        if (opts.duplicate) throw new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'test' });
+        return [];
+      }),
+    } as unknown as PrismaService;
+    const touched: string[] = [];
+    const touchAll = { touchAllForUser: jest.fn(async (id: string) => { touched.push(id); }) } as unknown as MembershipTouchService;
+    const svc = new ContactChallengeService(prisma, {} as MailService, {} as SmsService, {} as ConfigService, usage, touchAll);
+    return { svc, touched, userWrites };
+  }
+
+  it('moves the watermark of every membership the person holds', async () => {
+    const { svc, touched, userWrites } = build();
+    await svc.confirm('c1', '123456');
+    expect(userWrites).toEqual([{ where: { id: 'user-1' }, data: expect.objectContaining({ verifiedEmail: 'dana@example.com' }) }]);
+    expect(touched).toEqual(['user-1']);
+  });
+
+  it('moves nothing when the code is wrong', async () => {
+    const { svc, touched } = build();
+    await expect(svc.confirm('c1', '000000')).rejects.toThrow(/Invalid or expired code/);
+    expect(touched).toEqual([]);
+  });
+
+  it('moves nothing when the contact is already someone else’s', async () => {
+    const { svc, touched } = build({ duplicate: true });
+    await expect(svc.confirm('c1', '123456')).rejects.toThrow(/already verified by another account/);
+    expect(touched).toEqual([]);
   });
 });

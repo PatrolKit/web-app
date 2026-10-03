@@ -47,7 +47,7 @@ function harness() {
   const resolver = { resolve: async () => ({ orgId: '', swapId: '' }) } as unknown as AttributionResolver;
   const usage = new LimitUsageService(prisma as never, resolver);
 
-  const challenges = new ContactChallengeService(prisma as never, mail as never, sms as never, config as never, usage);
+  const challenges = new ContactChallengeService(prisma as never, mail as never, sms as never, config as never, usage, {} as never);
   const auth = new AuthService(prisma as never, {} as never, challenges, config as never, sms as never);
 
   const issue = (target = PHONE, whenLimited?: 'refuse' | 'decoy') =>

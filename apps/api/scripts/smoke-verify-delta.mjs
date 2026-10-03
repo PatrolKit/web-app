@@ -1,0 +1,66 @@
+// A verified contact reaches a delta-syncing iPad.
+//
+// The iPads sync sellers with `?updatedSince=`, which reads Membership.updatedAt.
+// Verifying a contact writes only the user, so confirming one has to move every
+// membership's watermark too, or no delta ever carries it.
+//
+//   SMOKE_BASE=https://patrolkit.io/api/v1 node apps/api/scripts/smoke-verify-delta.mjs
+
+import { PrismaClient } from '@prisma/client';
+import { createId } from '@paralleldrive/cuid2';
+import { createHash } from 'crypto';
+import { smokeOrg, smokeStaff, smokeSession, SMOKE_CODE } from './_fixture.mjs';
+
+const prisma = new PrismaClient();
+const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
+const unwrap = async (r) => { const b = await r.json(); return b && b.success && 'data' in b ? b.data : b; };
+let failed = 0;
+const ok = (label, cond, extra = '') => {
+  if (!cond) failed++;
+  console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? ' — ' + extra : ''}`);
+};
+
+const EMAIL = 'verify-delta-seller@patrolkit.invalid';
+await prisma.user.deleteMany({ where: { OR: [{ email: EMAIL }, { verifiedEmail: EMAIL }] } });
+
+const org = await smokeOrg(prisma);
+const { user: staffUser } = await smokeStaff(prisma, org, ['ski_swap:manage']);
+const SH = { authorization: `Bearer ${await smokeSession(prisma, BASE, staffUser, unwrap)}` };
+
+// A seller whose row last changed well before the cursor.
+const long_ago = new Date(Date.now() - 10 * 60_000);
+const seller = await prisma.user.create({ data: { id: createId(), email: EMAIL, firstName: 'Verify', lastName: 'Delta' } });
+const membership = await prisma.membership.create({
+  data: { id: createId(), userId: seller.id, orgId: org.id, updatedAt: long_ago },
+});
+const profile = await prisma.sellerProfile.create({ data: { id: createId(), membershipId: membership.id } });
+await prisma.membership.update({ where: { id: membership.id }, data: { updatedAt: long_ago } });
+
+const cursor = new Date(Date.now() - 1000).toISOString();
+const delta = () => fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers?updatedSince=${encodeURIComponent(cursor)}`, { headers: SH })
+  .then(unwrap).then((r) => r.sellers ?? []);
+
+ok('before verifying, the seller is not in the delta', !(await delta()).some((s) => s.id === profile.id));
+
+// The verification link's challenge, with a code we know. Only delivery is
+// skipped; the confirm endpoint and its writes are the real thing.
+const challenge = await prisma.contactChallenge.create({
+  data: {
+    id: createId(), userId: seller.id, channel: 'email', target: EMAIL, purpose: 'verify',
+    codeHash: createHash('sha256').update(SMOKE_CODE).digest('hex'),
+    expiresAt: new Date(Date.now() + 10 * 60_000),
+  },
+});
+const confirmed = await fetch(`${BASE}/auth/challenges/${challenge.id}/confirm`, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: SMOKE_CODE }),
+});
+ok('the verification link is confirmed', confirmed.ok, `HTTP ${confirmed.status}`);
+
+const after = (await delta()).find((s) => s.id === profile.id);
+ok('after verifying, a delta from before carries the seller', !!after);
+ok('...with the email verified', !!after?.emailVerifiedAt, String(after?.emailVerifiedAt));
+
+await prisma.user.delete({ where: { id: seller.id } });
+console.log(failed ? `${failed} failed` : 'All assertions passed');
+await prisma.$disconnect();
+process.exit(failed ? 1 : 0);
