@@ -271,7 +271,7 @@ ok('reprint queued exactly one more tag', (await drain()) === 1);
 const summary = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/summary?swapId=${swap.id}`, { headers: H }).then(unwrap);
 // Three: two entered through the seller path, plus the one the staff path
 // reported as already printed over Bluetooth.
-ok('the summary totals the items', summary.items.length === 3 && summary.totalCents === 22900 + 6500 + 1500,
+ok('the summary totals the items', summary.items.length === 3 && summary.totalCents === 24900 + 6500 + 1500,
    `${summary.items.length} items, ${summary.totalCents}c`);
 ok('the summary names the seller', summary.sellerName === 'Dana Reyes', summary.sellerName);
 

@@ -123,10 +123,11 @@ ok('an item checked in after the switch waits', waiting.consignedAt === null,
 
 const second = await addItem('Waiting poles', station.id);
 
-// A business seller at their own desk sends no station, and never waits.
+// A business seller at their own desk sends no station, and always waits:
+// nobody has seen the goods yet.
 const atDesk = await addItem('Desk item', null);
-ok('an item entered away from a station does not wait',
-   atDesk.consignedAt !== null, String(atDesk.consignedAt));
+ok('an item entered away from a station waits',
+   atDesk.consignedAt === null, String(atDesk.consignedAt));
 
 // Staff entering an item is already a person handling it.
 const byStaff = await fetch(swapItemsUrl, {
@@ -146,7 +147,7 @@ const finish = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/finish`, {
   method: 'POST', headers: H,
   body: JSON.stringify({ swapId: swap.id, stationId: station.id }),
 }).then(unwrap);
-ok('finishing reports how many are waiting', finish.awaitingConsignment === 2,
+ok('finishing reports how many are waiting', finish.awaitingConsignment === 3,
    JSON.stringify(finish));
 ok('and still prints a receipt', finish.receiptPages >= 2, String(finish.receiptPages));
 
@@ -185,13 +186,14 @@ ok('and does not move the time it was accepted',
 
 const stillWaiting = await fetch(`${swapItemsUrl}?consigned=false&sellerId=${seller.id}`, { headers: SH }).then(unwrap);
 ok('the waiting list holds only what has not been accepted',
-   stillWaiting.items.length === 1 && stillWaiting.items[0].id === second.id,
+   stillWaiting.items.length === 2 &&
+     [second.id, atDesk.id].every((id) => stillWaiting.items.some((i) => i.id === id)),
    JSON.stringify(stillWaiting.items.map((i) => i.sku)));
 
 const accepted = await fetch(`${swapItemsUrl}?consigned=true&sellerId=${seller.id}`, { headers: SH }).then(unwrap);
-// The one just accepted, plus the three that never waited.
+// The one just accepted, plus the two that never waited.
 ok('and the accepted list holds the rest',
-   accepted.items.every((i) => i.consignedAt !== null) && accepted.items.length === 4,
+   accepted.items.every((i) => i.consignedAt !== null) && accepted.items.length === 3,
    String(accepted.items.length));
 
 // ─── A refused item is simply left ───────────────────────────────────────────
