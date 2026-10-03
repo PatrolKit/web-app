@@ -28,6 +28,18 @@ export default function BusinessSellerPage() {
     enabled: !!sellerSelectedSwapId,
   });
 
+  /**
+   * An individual seller adds items only while checking in at the swap, from
+   * its QR code, and can't change them here afterwards; staff can. A shop
+   * manages its own from its desk.
+   */
+  const { data: profile } = useQuery({
+    queryKey: ['seller/profile', orgId],
+    queryFn: () => api.skiSwap.sellerGetProfile(orgId),
+    enabled: !!orgId,
+  });
+  const isShop = !!profile?.businessName;
+
   const onTickets = !!ticketState && ticketState.ranges.length > 0;
   const webTicketsOnly = !!ticketState?.webTicketsOnly;
   const [importing, setImporting] = useState(false);
@@ -37,11 +49,18 @@ export default function BusinessSellerPage() {
     <SwapItemsPanel
       orgId={orgId}
       swapId={sellerSelectedSwapId}
-      canManage={true}
+      canManage={isShop}
       selfService
       queryKeyPrefix="seller/items"
       labelsPerItem={labelsPerItem}
       emptyMessage="No items yet."
+      toolbarExtra={
+        profile && !isShop ? (
+          <p className="text-xs text-gray-500 max-w-xs text-right">
+            Add items when you check in at the swap, by scanning its check-in QR code. Staff there can change them.
+          </p>
+        ) : undefined
+      }
       tickets={
         onTickets
           ? {
@@ -80,7 +99,7 @@ export default function BusinessSellerPage() {
 
       {/* A shop can import when its rows can be made into items: on tickets, or
           with generated SKUs when the swap's web isn't tickets-only (Plan 31). */}
-      {(onTickets || (ticketState && !webTicketsOnly)) && sellerSelectedSwapId && (
+      {isShop && (onTickets || (ticketState && !webTicketsOnly)) && sellerSelectedSwapId && (
         <div className="flex justify-end">
           <button
             onClick={() => setImporting(true)}

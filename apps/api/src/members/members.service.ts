@@ -18,6 +18,7 @@ import type {
   UpdateMemberRequest,
   ImportOutcome,
 } from '../contracts/members.contracts';
+import { MailService } from '../mail/mail.service';
 import { ALL_PERMISSION_KEYS, type PermissionKey } from '../contracts/org.contracts';
 
 const MAX_CSV_ROWS = 500;
@@ -30,7 +31,27 @@ export class MembersService {
     private readonly permissionsService: PermissionsService,
     private readonly people: PersonService,
     private readonly touch: MembershipTouchService,
+    private readonly mail: MailService,
   ) {}
+
+  // ─── Invite email ─────────────────────────────────────────────────────────
+
+  /**
+   * Emails an existing member where and how to sign in: someone an
+   * administrator added, who has never been told. Sent by hand, from the
+   * Members page, as often as needed.
+   */
+  async sendInvite(orgId: string, userId: string): Promise<{ sentTo: string; status: string }> {
+    const membership = await this.prisma.membership.findUnique({
+      where: { userId_orgId: { userId, orgId } },
+      include: { user: true, org: true },
+    });
+    if (!membership || membership.deletedAt) throw new NotFoundException('Member not found');
+    const email = membership.user.verifiedEmail ?? membership.user.email;
+    if (!email) throw new BadRequestException('This member has no email address to send an invite to.');
+    const outcome = await this.mail.sendMemberInvite(email, membership.org.name);
+    return { sentTo: email, status: outcome.status };
+  }
 
   // ─── List ─────────────────────────────────────────────────────────────────
 

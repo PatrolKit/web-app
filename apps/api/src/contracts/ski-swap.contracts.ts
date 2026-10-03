@@ -219,6 +219,11 @@ export const SellerResponseSchema = z.object({
    */
   receiptChannel: z.enum(['EMAIL', 'SMS']).nullable(),
   /**
+   * The active swaps this seller has items in: what a receipt can be printed
+   * for. Empty when there are none, and the staff list then offers no receipt.
+   */
+  receiptSwaps: z.array(z.object({ id: z.string(), title: z.string() })),
+  /**
    * Set once the seller has been removed, from the swap or from the org.
    * Returned only to a caller passing `updatedSince` — a soft removal exists so
    * that an offline client can learn about it, which it cannot do from a list

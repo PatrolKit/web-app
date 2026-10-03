@@ -51,6 +51,19 @@ export default function MembersPage() {
     onSettled: () => qc.invalidateQueries({ queryKey: ['members', orgId] }),
   });
 
+  /** What became of each invite sent from this page, by member, until it reloads. */
+  const [inviteNotes, setInviteNotes] = useState<Record<string, { ok: boolean; text: string }>>({});
+  const sendInviteMutation = useMutation({
+    mutationFn: (userId: string) => api.members.sendInvite(orgId, userId),
+    onSuccess: (res, userId) => setInviteNotes((n) => ({
+      ...n,
+      [userId]: res.status === 'sent'
+        ? { ok: true, text: `Invite sent to ${res.sentTo}` }
+        : { ok: false, text: `Not sent (${res.status}) — outgoing email may be switched off` },
+    })),
+    onError: (err: Error, userId) => setInviteNotes((n) => ({ ...n, [userId]: { ok: false, text: err.message } })),
+  });
+
   function startEditPerms(m: MemberResponse) {
     setEditingPermsFor(m.userId);
     setDraftPerms(m.permissions);
@@ -135,7 +148,7 @@ export default function MembersPage() {
           <thead><tr className="text-left text-gray-500 border-b border-gray-800">
             <th className="py-2 pr-4">Name</th><th className="py-2 pr-4">Email</th>
             <th className="py-2 pr-4">Status</th><th className="py-2 pr-4">Permissions</th>
-            {(perms.has('users:manage') || perms.has('permissions:assign')) && <th className="py-2">Actions</th>}
+            {(perms.has('users:manage') || perms.has('permissions:assign') || perms.has('users:invite')) && <th className="py-2">Actions</th>}
           </tr></thead>
           <tbody>{members.map((m: MemberResponse) => (
             <React.Fragment key={m.userId}>
@@ -146,7 +159,24 @@ export default function MembersPage() {
                   <span className={`text-xs px-2 py-0.5 rounded-full ${m.removedAt === null ? 'bg-green-900 text-green-400' : 'bg-gray-800 text-gray-400'}`}>{m.removedAt === null ? 'active' : 'removed'}</span>
                 </td>
                 <td className="py-2 pr-4 text-xs text-gray-500 max-w-xs truncate">{m.permissions.join(', ') || '—'}</td>
-                <td className="py-2 flex gap-3">
+                <td className="py-2 flex gap-3 items-center flex-wrap">
+                  {/* Where and how to sign in, for someone an administrator
+                      added. A sign-in link would expire before it's read. */}
+                  {perms.has('users:invite') && m.removedAt === null && (
+                    <button
+                      onClick={() => sendInviteMutation.mutate(m.userId)}
+                      disabled={!m.email || (sendInviteMutation.isPending && sendInviteMutation.variables === m.userId)}
+                      title={m.email ? `Email ${m.email} where and how to sign in` : 'This member has no email address'}
+                      className="text-xs text-brand-500 hover:underline disabled:opacity-40 disabled:no-underline"
+                    >
+                      {sendInviteMutation.isPending && sendInviteMutation.variables === m.userId ? 'Sending…' : 'Send invite'}
+                    </button>
+                  )}
+                  {inviteNotes[m.userId] && (
+                    <span className={`text-xs ${inviteNotes[m.userId].ok ? 'text-green-400' : 'text-amber-400'}`}>
+                      {inviteNotes[m.userId].text}
+                    </span>
+                  )}
                   {perms.has('permissions:assign') && (
                     <button onClick={() => editingPermsFor === m.userId ? setEditingPermsFor(null) : startEditPerms(m)}
                       className="text-xs text-brand-500 hover:underline">

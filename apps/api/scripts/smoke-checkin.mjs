@@ -188,12 +188,18 @@ ok('saving queued a tag per item', jobs === perItem * 2, `${jobs} jobs for 2 ite
 ok('hasPrintedTag is still false before anything printed',
    (await prisma.swapItem.findUnique({ where: { id: item1.id } })).hasPrintedTag === false);
 
-// An edit must not queue a second tag.
-await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/${item1.id}`, {
+// An individual's items are read-only to them once entered: staff change them.
+const edit = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/${item1.id}`, {
   method: 'PATCH', headers: H, body: JSON.stringify({ priceCents: 22900 }),
 });
+ok('an individual seller cannot edit an item they entered', edit.status === 403, `HTTP ${edit.status}`);
+const addAway = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items`, {
+  method: 'POST', headers: H,
+  body: JSON.stringify({ swapId: swap.id, categoryId: category.id, priceCents: 1000, quantity: 1 }),
+});
+ok('...nor add one away from a station', addAway.status === 403, `HTTP ${addAway.status}`);
 jobs = await prisma.printJob.count({ where: { stationId: station.id, kind: 'item' } });
-ok('editing does not queue another tag', jobs === perItem * 2, `${jobs} jobs`);
+ok('neither queued another tag', jobs === perItem * 2, `${jobs} jobs`);
 
 // ─── A tag printed over Bluetooth must not queue a second one ───────────────
 // The client prints it itself and says so. Enqueueing anyway puts a duplicate

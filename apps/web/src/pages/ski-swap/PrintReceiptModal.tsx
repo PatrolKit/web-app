@@ -9,12 +9,21 @@ import type { SkiSwapContext } from './SkiSwapLayout';
 
 interface Props {
   seller: SellerResponse | null;
-  swapId: string | null;
+  /** The swap to start on, when the seller has items in it; otherwise their newest active swap. */
+  initialSwapId: string | null;
   onClose: () => void;
 }
 
-export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
+/**
+ * A seller's receipt, for one of the active swaps they have items in. Which
+ * swap is picked here: a seller can have items in more than one at once.
+ */
+export default function PrintReceiptModal({ seller, initialSwapId, onClose }: Props) {
   const { orgId } = useOutletContext<SkiSwapContext>();
+  const swaps = seller?.receiptSwaps ?? [];
+  const [swapId, setSwapId] = useState<string | null>(
+    swaps.find((s) => s.id === initialSwapId)?.id ?? swaps[0]?.id ?? null,
+  );
   const { sms } = useFeatures();
   const { printReceipt } = usePrinter();
   const [printing, setPrinting] = useState(false);
@@ -93,8 +102,19 @@ export default function PrintReceiptModal({ seller, swapId, onClose }: Props) {
 
         <div>
           <p className="text-white text-sm font-medium">{seller.displayName}</p>
+          {swaps.length > 1 && (
+            <select
+              value={swapId ?? ''}
+              onChange={(e) => { setSwapId(e.target.value); setSent(null); setSendError(null); setPrintError(null); }}
+              aria-label="Swap"
+              className="mt-2 w-full bg-surface-100 border border-gray-700 rounded px-2 py-1 text-sm text-white"
+            >
+              {swaps.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+            </select>
+          )}
+          {swaps.length === 1 && <p className="text-gray-500 text-xs mt-0.5">{swaps[0].title}</p>}
           {!swapId ? (
-            <p className="text-yellow-400 text-xs mt-1">No swap selected — select a swap first</p>
+            <p className="text-yellow-400 text-xs mt-1">This seller has no items in an active swap.</p>
           ) : isLoading ? (
             <p className="text-gray-400 text-xs mt-1">Loading…</p>
           ) : itemsError ? (

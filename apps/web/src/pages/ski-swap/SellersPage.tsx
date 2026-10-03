@@ -738,13 +738,17 @@ export default function SellersPage() {
                 <td className="py-2">
                   <div className="flex gap-3 items-center">
                     <button onClick={() => openEdit(s)} className="text-xs text-brand-500 hover:underline">Edit</button>
-                    <button
-                      onClick={() => setReceiptSeller(s)}
-                      title="Print or send this seller's receipt"
-                      className="text-xs text-gray-400 hover:text-white flex items-center gap-1"
-                    >
-                      <FontAwesomeIcon icon={faReceipt} /> Receipt
-                    </button>
+                    {/* Only for a seller with items in an active swap: a receipt
+                        lists items, and there is nothing to list otherwise. */}
+                    {s.receiptSwaps.length > 0 && (
+                      <button
+                        onClick={() => setReceiptSeller(s)}
+                        title="Print or send this seller's receipt"
+                        className="text-xs text-gray-400 hover:text-white flex items-center gap-1"
+                      >
+                        <FontAwesomeIcon icon={faReceipt} /> Receipt
+                      </button>
+                    )}
                   </div>
                 </td>
               )}
@@ -763,7 +767,7 @@ export default function SellersPage() {
       )}
 
       {receiptSeller && (
-        <PrintReceiptModal seller={receiptSeller} swapId={selectedSwap?.id ?? null} onClose={() => setReceiptSeller(null)} />
+        <PrintReceiptModal seller={receiptSeller} initialSwapId={selectedSwap?.id ?? null} onClose={() => setReceiptSeller(null)} />
       )}
 
     </div>

@@ -107,7 +107,11 @@ type SellerRow = {
  * `smsOn` is the platform switch (Plan 29): while texting is off a receipt is
  * never offered by text, even to a phone verified before.
  */
-export function toSellerResponse(s: SellerRow, smsOn: boolean): SellerResponse {
+export function toSellerResponse(
+  s: SellerRow,
+  smsOn: boolean,
+  receiptSwaps: { id: string; title: string }[] = [],
+): SellerResponse {
   const u = s.membership.user;
   // Either row can carry the tombstone: a seller can be removed from the swap,
   // or leave the org entirely. Whichever happened, the client needs to know.
@@ -134,6 +138,7 @@ export function toSellerResponse(s: SellerRow, smsOn: boolean): SellerResponse {
     // The same precedence the send uses, from the same columns. A claim in
     // `email` is not somewhere a receipt may go.
     receiptChannel: u.verifiedEmail ? 'EMAIL' : u.verifiedPhone && smsOn ? 'SMS' : null,
+    receiptSwaps,
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.membership.updatedAt.toISOString(),
     deletedAt: deletedAt?.toISOString() ?? null,
@@ -152,7 +157,31 @@ export class SellerService {
 
   /** A seller as the API answers with it, under the current texting switch. */
   private async respond(row: SellerRow): Promise<SellerResponse> {
-    return toSellerResponse(row, await this.sms.enabled());
+    const [smsOn, receiptSwaps] = await Promise.all([this.sms.enabled(), this.receiptSwapsFor([row.id])]);
+    return toSellerResponse(row, smsOn, receiptSwaps.get(row.id) ?? []);
+  }
+
+  /**
+   * For each seller, the active swaps they have live items in, newest swap
+   * first: the swaps a receipt can be printed for. One query, whatever the
+   * number of sellers.
+   */
+  private async receiptSwapsFor(sellerIds: string[]): Promise<Map<string, { id: string; title: string }[]>> {
+    const bySeller = new Map<string, { id: string; title: string }[]>();
+    if (sellerIds.length === 0) return bySeller;
+    const pairs = await this.prisma.swapItem.findMany({
+      where: { sellerId: { in: sellerIds }, deletedAt: null, swap: { active: true } },
+      distinct: ['sellerId', 'swapId'],
+      select: { sellerId: true, swap: { select: { id: true, title: true, createdAt: true } } },
+    });
+    pairs.sort((a, b) => b.swap.createdAt.getTime() - a.swap.createdAt.getTime());
+    for (const { sellerId, swap } of pairs) {
+      if (!sellerId) continue;
+      const list = bySeller.get(sellerId) ?? [];
+      list.push({ id: swap.id, title: swap.title });
+      bySeller.set(sellerId, list);
+    }
+    return bySeller;
   }
 
   /**
@@ -247,8 +276,11 @@ export class SellerService {
     const merged = new Map(
       [...sellers, ...byBusiness].map((s) => [s.id, s] as const),
     );
-    const smsOn = await this.sms.enabled();
-    const all = [...merged.values()].map((row) => toSellerResponse(row, smsOn));
+    const [smsOn, receiptSwaps] = await Promise.all([
+      this.sms.enabled(),
+      this.receiptSwapsFor([...merged.keys()]),
+    ]);
+    const all = [...merged.values()].map((row) => toSellerResponse(row, smsOn, receiptSwaps.get(row.id) ?? []));
     // Filtered after mapping rather than in SQL: the rule spans four address
     // columns and two payout ones, and is stated once here so the list and the
     // dashboard count cannot drift apart.

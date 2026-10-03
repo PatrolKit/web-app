@@ -178,8 +178,9 @@ export class SellerSelfController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('itemId') itemId: string,
     @UploadedFile() file: Express.Multer.File,
+    @Body('stationId') stationId?: string,
   ) {
-    return this.sellerSelfService.uploadPhoto(orgId, user.userId, itemId, file);
+    return this.sellerSelfService.uploadPhoto(orgId, user.userId, itemId, file, stationId);
   }
 
   @Delete('items/:itemId/photos/:photoId')

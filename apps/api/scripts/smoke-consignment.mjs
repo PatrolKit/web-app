@@ -52,8 +52,9 @@ const user = await prisma.user.create({
 const membership = await prisma.membership.create({
   data: { id: createId(), userId: user.id, orgId: org.id, updatedAt: new Date() },
 });
+// A shop: only a shop may add items away from a station.
 const seller = await prisma.sellerProfile.create({
-  data: { id: createId(), membershipId: membership.id },
+  data: { id: createId(), membershipId: membership.id, businessName: 'Consign Smoke Sports' },
 });
 
 // Plan 19 derives an item's name from a category rather than taking a typed

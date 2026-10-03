@@ -168,7 +168,7 @@ export default function ItemsStep({
         // Best-effort: the item and its tag are the deliverable, and a failed
         // photo upload must not cost the seller the entry they just typed.
         await api.skiSwap
-          .sellerUploadPhoto(context.orgId, item.id, await downscaleImage(photo.file))
+          .sellerUploadPhoto(context.orgId, item.id, await downscaleImage(photo.file), context.stationId)
           .catch(() => {});
         URL.revokeObjectURL(photo.preview);
         setPhoto(null);

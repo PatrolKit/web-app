@@ -109,6 +109,7 @@ export class SellerSelfService {
     generateSkus = false,
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
+    if (!seller.businessName) throw new ForbiddenException('Only a shop can upload its items from a file.');
     // The shop's own file: a list of what they mean to bring, none of which
     // anybody has seen. It waits for staff like everything else they enter.
     return this.itemService.importItems(orgId, swapId, seller.id, rows, {
@@ -142,6 +143,11 @@ export class SellerSelfService {
     idempotencyKey?: string,
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
+    // An individual adds items only while checking in, at a station, from its
+    // QR code. A shop also adds them from its own desk.
+    if (!seller.businessName && !data.stationId) {
+      throw new ForbiddenException('Add items when you check in at the swap, by scanning its check-in QR code.');
+    }
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: data.swapId, orgId, active: true } });
     if (!swap) throw new NotFoundException('Active swap not found');
 
@@ -258,6 +264,7 @@ export class SellerSelfService {
     },
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
+    this.assertMayChangeItems(seller);
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
     const editsItem = Object.entries(data).some(([key, value]) => key !== 'hasPrintedTag' && value !== undefined);
@@ -288,6 +295,7 @@ export class SellerSelfService {
    */
   async deleteItem(orgId: string, userId: string, itemId: string) {
     const seller = await this.getSellerRecord(orgId, userId);
+    this.assertMayChangeItems(seller);
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
 
@@ -306,8 +314,11 @@ export class SellerSelfService {
     userId: string,
     itemId: string,
     file: { buffer: Buffer; mimetype: string; originalname: string },
+    stationId?: string,
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
+    // Check-in photographs each item just after adding it, from the station.
+    if (!stationId || !(await this.isStation(orgId, stationId))) this.assertMayChangeItems(seller);
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
     this.assertNotAccepted(item);
@@ -316,6 +327,7 @@ export class SellerSelfService {
 
   async deletePhoto(orgId: string, userId: string, itemId: string, photoId: string) {
     const seller = await this.getSellerRecord(orgId, userId);
+    this.assertMayChangeItems(seller);
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
     this.assertNotAccepted(item);
@@ -323,6 +335,22 @@ export class SellerSelfService {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * An individual's items are read-only outside check-in: they enter them at
+   * a station, from its QR code, and changes after that are made by staff. A
+   * shop manages its own from its desk.
+   */
+  private assertMayChangeItems(seller: { businessName: string | null }) {
+    if (!seller.businessName) {
+      throw new ForbiddenException('Your items can only be changed by staff at the swap.');
+    }
+  }
+
+  private async isStation(orgId: string, stationId: string) {
+    const station = await this.prisma.checkinStation.findFirst({ where: { id: stationId, orgId, deletedAt: null }, select: { id: true } });
+    return !!station;
+  }
 
   /** Edits to an accepted item are staff work, made at the counter (see `updateItem`). */
   private assertNotAccepted(item: { name: string; consignedAt: Date | null }) {

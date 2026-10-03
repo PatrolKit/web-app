@@ -89,6 +89,29 @@ function sellerAddedTemplate(signInUrl: string, orgName: string): string {
   });
 }
 
+/**
+ * A member added to an org by an administrator, told where and how to sign in.
+ *
+ * Not a sign-in link: those expire in minutes, and this may sit in an inbox
+ * for days before it's read. It points at the sign-in page, which asks for
+ * this address and emails a fresh link each time.
+ */
+function memberInviteTemplate(signInUrl: string, orgName: string, email: string): string {
+  return emailShell({
+    title: `You've been added to ${orgName}`,
+    kicker: orgName,
+    heading: `You've been added to ${escapeHtml(orgName)} on PatrolKit`,
+    body: [
+      `<strong>${escapeHtml(orgName)}</strong> uses PatrolKit, and has added you to its team.`,
+      `To sign in, open PatrolKit with the button below and enter <strong>${escapeHtml(email)}</strong>. ` +
+        'We email you a link each time you sign in, so there is no password to remember.',
+    ],
+    action: { label: 'Sign in to PatrolKit', url: signInUrl },
+    footnote: "If you weren't expecting this, you can safely ignore this email.",
+    showRawLink: true,
+  });
+}
+
 function sellerInviteTemplate(inviteUrl: string, orgName: string): string {
   return emailShell({
     title: "You're invited to sell on PatrolKit",
@@ -206,6 +229,13 @@ export class MailService {
       ? `Confirm your email for ${brand.name}`
       : 'Confirm your email address — PatrolKit';
     return this.send(to, subject, verificationTemplate(verifyUrl, brand, this.brandMarkUrl()));
+  }
+
+  /** "You've been added to <org> on PatrolKit", with where and how to sign in. Never expires. */
+  async sendMemberInvite(to: string, orgName: string): Promise<SendOutcome> {
+    const appUrl = this.config.get<string>('app.appUrl', 'http://localhost:3000');
+    const signInUrl = `${appUrl.replace(/\/$/, '')}/app/auth/login`;
+    return this.send(to, `You've been added to ${orgName} on PatrolKit`, memberInviteTemplate(signInUrl, orgName, to));
   }
 
   async sendSellerAddedNotification(to: string, orgName: string): Promise<SendOutcome> {

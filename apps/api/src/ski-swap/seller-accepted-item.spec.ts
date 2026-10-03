@@ -11,7 +11,7 @@ function build(consigned: boolean) {
   const item = { id: 'item-1', name: 'Volkl Kendo 88', swapId: 'swap-1', sellerId: 'seller-1', consignedAt: consigned ? new Date() : null };
   const calls: string[] = [];
   const prisma = {
-    sellerProfile: { findFirst: async () => ({ id: 'seller-1', businessName: null }) },
+    sellerProfile: { findFirst: async () => ({ id: 'seller-1', businessName: 'Alpine Sports' }) },
     swapItem: { findFirst: async () => item, findFirstOrThrow: async () => item },
   };
   const items = {

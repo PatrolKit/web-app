@@ -36,6 +36,8 @@ function stubPrisma(rows: SellerRow[] = []) {
         return rows;
       },
     },
+    // Which active swaps each seller has items in, for the receipt button.
+    swapItem: { findMany: async () => [] },
   };
 }
 

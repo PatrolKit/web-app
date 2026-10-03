@@ -286,6 +286,8 @@ export interface SellerResponse {
   phoneVerifiedAt: string | null;
   /** Where a receipt would go, or null when there is nowhere to send one. */
   receiptChannel: 'EMAIL' | 'SMS' | null;
+  /** The active swaps this seller has items in: what a receipt can be printed for. */
+  receiptSwaps: { id: string; title: string }[];
   /** Set once removed. Only ever populated for a caller passing `updatedSince`. */
   deletedAt: string | null;
   createdAt: string;

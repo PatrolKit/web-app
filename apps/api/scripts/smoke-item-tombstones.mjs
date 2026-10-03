@@ -81,8 +81,10 @@ const sellerUser = await prisma.user.create({
 const sellerMembership = await prisma.membership.create({
   data: { id: createId(), userId: sellerUser.id, orgId: org.id, updatedAt: new Date() },
 });
+// A shop: an individual's items are read-only to them outside check-in, so
+// withdrawing from the web is a shop's to do.
 const sellerProfile = await prisma.sellerProfile.create({
-  data: { id: createId(), membershipId: sellerMembership.id },
+  data: { id: createId(), membershipId: sellerMembership.id, businessName: 'Tombstone Smoke Sports' },
 });
 
 const TICKET = '77001';

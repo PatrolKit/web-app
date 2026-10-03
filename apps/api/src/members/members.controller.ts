@@ -58,6 +58,14 @@ export class MembersController {
     return this.membersService.bulkImport(orgId, file.buffer, sendInvites);
   }
 
+  /** Emails the member where and how to sign in. Doesn't expire, unlike a sign-in link. */
+  @Post(':userId/invite')
+  @HttpCode(200)
+  @RequirePermissions('users:invite')
+  sendInvite(@Param('orgId') orgId: string, @Param('userId') userId: string) {
+    return this.membersService.sendInvite(orgId, userId);
+  }
+
   @Patch(':userId')
   @HttpCode(200)
   updateMember(

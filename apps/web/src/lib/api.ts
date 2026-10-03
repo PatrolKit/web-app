@@ -266,6 +266,9 @@ export const api = {
 
   members: {
     list: (orgId: string) => request<import('./api.types').MemberResponse[]>(`/orgs/${orgId}/members`),
+    /** Emails a member where and how to sign in. Doesn't expire. */
+    sendInvite: (orgId: string, userId: string) =>
+      request<{ sentTo: string; status: string }>(`/orgs/${orgId}/members/${userId}/invite`, { method: 'POST' }),
     invite: (orgId: string, data: { email: string; firstName?: string; lastName?: string; phone?: string; permissions: string[] }) =>
       request<import('./api.types').MemberResponse>(`/orgs/${orgId}/members`, {
         method: 'POST',
@@ -897,9 +900,11 @@ export const api = {
       request<{ queued: true }>(`/orgs/${orgId}/ski-swap/seller/me/items/${itemId}/reprint`, {
         method: 'POST', body: JSON.stringify({ stationId }),
       }),
-    sellerUploadPhoto: async (orgId: string, itemId: string, file: File): Promise<{ id: string; url: string }> => {
+    /** `stationId` while checking in: an individual seller's items are otherwise read-only. */
+    sellerUploadPhoto: async (orgId: string, itemId: string, file: File, stationId?: string): Promise<{ id: string; url: string }> => {
       const form = new FormData();
       form.append('image', file);
+      if (stationId) form.append('stationId', stationId);
       const headers: Record<string, string> = {};
       if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
       const res = await fetch(`/api/v1/orgs/${orgId}/ski-swap/seller/me/items/${itemId}/photos`, {
