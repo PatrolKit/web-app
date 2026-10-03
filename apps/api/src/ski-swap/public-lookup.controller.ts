@@ -7,16 +7,6 @@ import { PublicLookupService } from './public-lookup.service';
 export class PublicLookupController {
   constructor(private readonly lookupService: PublicLookupService) {}
 
-  @Get('seller-lookup')
-  lookup(
-    @Param('orgSlug') orgSlug: string,
-    @Query('phone') phone: string,
-    @Query('swapId') swapId?: string,
-  ) {
-    if (!phone) throw new BadRequestException('phone query param is required');
-    return this.lookupService.lookup(orgSlug, phone, swapId);
-  }
-
   @Get('branding')
   branding(@Param('orgSlug') orgSlug: string) {
     return this.lookupService.getOrgBranding(orgSlug);

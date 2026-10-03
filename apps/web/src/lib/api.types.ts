@@ -448,20 +448,6 @@ export interface SquareConfigResponse {
   updatedAt: string;
 }
 
-export interface PublicSellerItem {
-  itemId: string;
-  name: string;
-  priceCents: number | null;
-  originalQuantity: number;
-  inStock: number;
-  soldCount: number;
-}
-
-export interface PublicSellerLookupResponse {
-  sellerName: string;
-  items: PublicSellerItem[];
-}
-
 export interface SwapPrinterRecord {
   id: string;
   name: string;

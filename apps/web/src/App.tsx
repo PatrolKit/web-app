@@ -37,7 +37,6 @@ import AdministrationLayout from './pages/ski-swap/AdministrationLayout';
 import ItemDetailsPage from './pages/ski-swap/ItemDetailsPage';
 import BusinessSellerPage from './pages/ski-swap/BusinessSellerPage';
 import SellerProfilePage from './pages/ski-swap/SellerProfilePage';
-import SellerStatusPage from './pages/public/SellerStatusPage';
 import SellerItemsPage from './pages/public/SellerItemsPage';
 import OrgSellerLookupPage from './pages/public/OrgSellerLookupPage';
 import OrgAdminLayout from './pages/org/OrgAdminLayout';
@@ -80,7 +79,6 @@ export default function App() {
           {/* A receipt link from an email or a text. Public: the token is
               the credential, and it names one check-in rather than a seller. */}
           <Route path="r/:token" element={<ReceiptPage />} />
-          <Route path=":orgSlug/ski-swap/status" element={<SellerStatusPage />} />
           {/* Last: a bare slug is the org lookup, so it must not shadow the
               static segments above it. */}
           <Route path=":orgSlug" element={<OrgSellerLookupPage />} />
@@ -100,7 +98,6 @@ export default function App() {
             there is no skiswap.* subdomain to branch on. */}
         <Route path="checkin" element={<CheckinPage />} />
         {/* Public seller-status page (no auth required) */}
-        <Route path=":orgSlug/ski-swap/status" element={<SellerStatusPage />} />
         {/* Seller website public routes */}
         <Route path="s/:sellerId" element={<SellerItemsPage />} />
         {/* Also on the staff host, for local development where there is no
