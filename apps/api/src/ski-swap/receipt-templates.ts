@@ -4,6 +4,17 @@ function money(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+/** A line's price, or that it has none yet: a ticket priced after check-in. */
+function linePrice(cents: number | null): string {
+  return cents === null ? 'Price to come' : money(cents);
+}
+
+/** "3 items", and how many of them have no price yet. */
+function countText(view: ReceiptView): string {
+  const items = `${view.itemCount} item${view.itemCount === 1 ? '' : 's'}`;
+  return view.unpricedCount ? `${items} · ${view.unpricedCount} with price to come` : items;
+}
+
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 }
@@ -48,7 +59,7 @@ export function receiptEmail(view: ReceiptView): string {
           <span class="muted" style="color: #6b7280; font-size: 12px;">${esc(l.sku)}</span>
         </td>
         <td class="line" style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; text-align: right; vertical-align: top; white-space: nowrap;">
-          <span class="ink" style="color: #111827; font-size: 15px; font-weight: 600;">${money(l.priceCents)}</span>
+          <span class="ink" style="color: #111827; font-size: 15px; font-weight: ${l.priceCents === null ? '400' : '600'};">${linePrice(l.priceCents)}</span>
         </td>
       </tr>`,
     )
@@ -128,9 +139,10 @@ export function receiptEmail(view: ReceiptView): string {
                 ${view.lines.length ? rows : empty}
                 <tr>
                   <td class="total" style="padding: 14px 0 0; border-top: 2px solid #d1d5db;">
-                    <span class="muted" style="color: #6b7280; font-size: 14px;">${view.itemCount} item${view.itemCount === 1 ? '' : 's'}</span>
+                    <span class="muted" style="color: #6b7280; font-size: 14px;">${esc(countText(view))}</span>
                   </td>
                   <td class="total" style="padding: 14px 0 0; border-top: 2px solid #d1d5db; text-align: right;">
+                    ${view.unpricedCount ? '<span class="muted" style="color: #6b7280; font-size: 12px;">Total of priced items</span><br>' : ''}
                     <span class="ink" style="color: #111827; font-size: 20px; font-weight: 700;">${money(view.totalCents)}</span>
                   </td>
                 </tr>
@@ -189,7 +201,7 @@ export function receiptEmail(view: ReceiptView): string {
 export function receiptSms(view: ReceiptView): string {
   const tail = `: your ${view.swapTitle} receipt — ${view.itemCount} item${
     view.itemCount === 1 ? '' : 's'
-  }, ${money(view.totalCents)}. ${view.url}`;
+  }, ${money(view.totalCents)}${view.unpricedCount ? `, ${view.unpricedCount} not yet priced` : ''}. ${view.url}`;
   const room = 160 - tail.length;
   const org = view.orgName.length > room ? `${view.orgName.slice(0, Math.max(1, room - 1))}…` : view.orgName;
   return `${org}${tail}`;

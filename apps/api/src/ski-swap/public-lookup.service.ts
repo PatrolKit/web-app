@@ -7,7 +7,8 @@ import type { SellerFindResponse } from '../contracts/ski-swap.contracts';
 export interface PublicSellerItem {
   itemId: string;
   name: string;
-  priceCents: number;
+  /** Null for a ticket not yet priced (Plan 32). */
+  priceCents: number | null;
   originalQuantity: number;
   inStock: number;
   soldCount: number;

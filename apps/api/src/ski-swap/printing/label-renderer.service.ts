@@ -115,7 +115,8 @@ export class LabelRendererService {
     items: ReceiptItemLine[],
     target: PrintTarget = DEFAULT_TARGET,
   ): Promise<boolean[][][]> {
-    const totalCents = items.reduce((sum, i) => sum + i.priceCents, 0);
+    const totalCents = items.reduce((sum, i) => sum + (i.priceCents ?? 0), 0);
+    const unpricedCount = items.filter((i) => i.priceCents === null).length;
     const pages: boolean[][][] = [];
     let offset = 0;
 
@@ -128,7 +129,7 @@ export class LabelRendererService {
         await this.compose(async (ctx, w, h) => {
           ({ rowsDrawn: drawnThisPage } = await drawTallReceipt(
             ctx, w, h, data, items.slice(offset),
-            { index, itemCount: items.length, totalCents },
+            { index, itemCount: items.length, totalCents, unpricedCount },
           ));
         }, target),
       );
@@ -149,7 +150,7 @@ export class LabelRendererService {
    * per label, in order — the caller enqueues them with ascending `seq`.
    */
   async receiptItems(
-    items: { name: string; sku: string; priceCents: number }[],
+    items: ReceiptItemLine[],
     target: PrintTarget = DEFAULT_TARGET,
   ): Promise<boolean[][][]> {
     // Here as well as in `compose`: an empty list never reaches it, and would

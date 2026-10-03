@@ -118,7 +118,7 @@ export default function ItemsStep({
    * print state is still read live from the summary below.
    */
   const [added, setAdded] = useState<
-    { id: string; name: string; sku: string; priceCents: number } | null
+    { id: string; name: string; sku: string; priceCents: number | null } | null
   >(null);
   const priceRef = useRef<HTMLInputElement>(null);
 

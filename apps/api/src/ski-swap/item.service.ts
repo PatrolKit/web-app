@@ -228,7 +228,9 @@ export class ItemService {
       categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string;
       /** What the client already printed. Honoured only with `alreadyPrinted`. */
       name?: string;
-      description?: string; priceCents: number; quantity: number;
+      description?: string;
+      /** Null or absent only for a legacy ticket (Plan 32); `create` enforces it. */
+      priceCents?: number | null; quantity: number;
       sellerId?: string; donateProceeds?: boolean; sku?: string;
       stationId?: string; alreadyPrinted?: boolean;
       /** `false` queues no tag at the bridge; see `CreateItemSchema.queueTag`. */
@@ -365,7 +367,7 @@ export class ItemService {
    * finish (D17) — and an item that is not on the floor yet cannot be sold at
    * the register in the meantime.
    */
-  async create(orgId: string, swapId: string, data: { id?: string; categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
+  async create(orgId: string, swapId: string, data: { id?: string; categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents?: number | null; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(idempotencyScope(orgId, swapId), idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -411,6 +413,17 @@ export class ItemService {
     }
 
     /**
+     * A legacy ticket may wait for its price (Plan 32): the gear is checked in
+     * with its paper ticket, and staff price it before sales start. Square
+     * sells one still unpriced at a price the clerk types. Anything else needs
+     * a price now, and this is the one place every create path passes through.
+     */
+    const priceCents = data.priceCents ?? null;
+    if (priceCents === null && ticketNumberOf(sku) === null) {
+      throw new BadRequestException('Enter a price. Only a legacy ticket can be added without one.');
+    }
+
+    /**
      * The name is composed here, from the tree, and then frozen (Plan 19 D5).
      *
      * A category is the ordinary path. Without one the item is named by its tag
@@ -449,7 +462,7 @@ export class ItemService {
           : {}),
         // Both, always. `liveSku` is what the unique index watches; `sku` is
         // what the tag says and is never cleared.
-        priceCents: data.priceCents, sku, liveSku: sku, originalQuantity: data.quantity,
+        priceCents, sku, liveSku: sku, originalQuantity: data.quantity,
         donateProceeds: data.donateProceeds ?? false,
         /**
          * The setting is read by the caller and answered here, once. An item
@@ -768,7 +781,7 @@ export class ItemService {
     orgId: string,
     swapId: string,
     sellerId: string,
-    rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+    rows: { sku: string; name?: string; description?: string; priceCents: number | null }[],
     generateSkus = false,
   ): Promise<ImportRowResult[]> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
@@ -794,7 +807,7 @@ export class ItemService {
     orgId: string,
     swapId: string,
     sellerId: string,
-    rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+    rows: { sku: string; name?: string; description?: string; priceCents: number | null }[],
     opts: { selfService: boolean; generateSkus?: boolean; requireAcceptance?: boolean },
   ): Promise<ImportRowResult[]> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
@@ -1031,7 +1044,7 @@ export class ItemService {
    * batched push at check-in finish tells the seller what actually landed, and
    * "Square is not configured" is not a failure to report.
    */
-  private async syncItemToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, item: { id: string; name: string; description: string | null; priceCents: number; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; consignedAt: Date | null }): Promise<PosSyncResult> {
+  private async syncItemToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, item: { id: string; name: string; description: string | null; priceCents: number | null; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; consignedAt: Date | null }): Promise<PosSyncResult> {
     if (!swap.locationId) return 'skipped';
     /*
      * Never before it is accepted. An item is in Square exactly when
@@ -1076,7 +1089,7 @@ export class ItemService {
     return run;
   }
 
-  private async pushToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, pos: IPosAdapter, item: { id: string; name: string; description: string | null; priceCents: number; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null }): Promise<PosSyncResult> {
+  private async pushToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, pos: IPosAdapter, item: { id: string; name: string; description: string | null; priceCents: number | null; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null }): Promise<PosSyncResult> {
     try {
       const result = await pos.syncItem(
         { posItemId: item.squareItemId ?? undefined, posVariationId: item.squareVariationId ?? undefined, name: item.name, description: item.description ?? undefined, priceCents: item.priceCents, sku: item.sku, categoryId: swap.squareCategoryId, categoryName: swap.title },
@@ -1173,7 +1186,7 @@ export class ItemService {
     return this.taxonomy.describeItems(items);
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number> | null, descriptions?: Map<string, ItemDescription>): ItemResponse {
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number | null; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number> | null, descriptions?: Map<string, ItemDescription>): ItemResponse {
     // Only an item in Square has stock to not know about. For everything else
     // the answer is a fact about our own row, whatever Square is doing.
     const inventoryKnown = inventoryMap !== null || !item.squareVariationId;

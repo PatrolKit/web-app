@@ -41,7 +41,8 @@ export interface SendReceiptResponse {
 export interface PublicReceiptLine {
   name: string;
   sku: string;
-  priceCents: number;
+  /** Null for a ticket not yet priced when the receipt was made (Plan 32). */
+  priceCents: number | null;
 }
 
 /** What `/public/receipts/:token` serves the page. */
@@ -53,8 +54,11 @@ export interface PublicReceiptResponse {
   swapTitle: string;
   sellerName: string;
   payoutLabel: string | null;
+  /** Of the priced lines only. */
   totalCents: number;
   itemCount: number;
+  /** Lines with no price yet, which `totalCents` leaves out. */
+  unpricedCount: number;
   createdAt: string;
   url: string;
   lines: PublicReceiptLine[];

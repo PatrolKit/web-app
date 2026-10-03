@@ -59,7 +59,9 @@ export default function PrintReceiptModal({ seller, initialSwapId, onClose }: Pr
   if (!seller) return null;
 
   const isLoading = itemsLoading;
-  const totalCents = items.reduce((sum, it) => sum + it.priceCents * it.inStock, 0);
+  // Priced items only; a ticket checked in before its price is counted apart (Plan 32).
+  const totalCents = items.reduce((sum, it) => sum + (it.priceCents ?? 0) * it.inStock, 0);
+  const unpricedCount = items.filter((it) => it.priceCents === null).length;
 
   async function handleSend() {
     setSending(true);
@@ -122,7 +124,10 @@ export default function PrintReceiptModal({ seller, initialSwapId, onClose }: Pr
           ) : (
             <div className="mt-1 space-y-0.5">
               <p className="text-gray-400 text-xs">{items.length} item{items.length !== 1 ? 's' : ''}</p>
-              <p className="text-gray-400 text-xs">Total value: ${(totalCents / 100).toFixed(2)}</p>
+              <p className="text-gray-400 text-xs">
+                Total value: ${(totalCents / 100).toFixed(2)}
+                {unpricedCount > 0 && ` (${unpricedCount} with price to come)`}
+              </p>
             </div>
           )}
         </div>

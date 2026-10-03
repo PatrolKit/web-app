@@ -59,6 +59,11 @@ export class PrintRecipeService {
           where: { id: recipe.itemId, orgId, deletedAt: null },
         });
         if (!item) throw new NotFoundException('Item no longer exists');
+        // Only a legacy ticket is ever unpriced, and a ticket wears its paper
+        // ticket rather than a printed tag (Plan 32).
+        if (item.priceCents === null) {
+          throw new BadRequestException('This ticket has no price yet, and a ticket has no printed tag.');
+        }
         return [
           await this.renderer.itemTag(
             { name: item.name, priceCents: item.priceCents, sku: item.sku },

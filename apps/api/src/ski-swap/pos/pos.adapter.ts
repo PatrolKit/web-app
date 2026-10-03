@@ -3,7 +3,8 @@ export interface PosItemSync {
   posVariationId?: string;
   name: string;
   description?: string;
-  priceCents: number;
+  /** Null for a ticket not yet priced: sold at a price the clerk types. */
+  priceCents: number | null;
   sku: string;
   categoryId: string;
   categoryName: string;
@@ -23,6 +24,12 @@ export interface PosSaleLine {
   quantity: number;
   /** What the register actually took for this line, after any discount. */
   collectedCents: number;
+  /**
+   * One unit's price as rung up, before discounts: Square's `basePriceMoney`.
+   * For a variable-priced item that is what the clerk typed (Plan 32). Null
+   * when Square didn't say.
+   */
+  unitPriceCents: number | null;
   /** How much of `quantity` came back. */
   refundedQuantity: number;
   soldAt: Date;

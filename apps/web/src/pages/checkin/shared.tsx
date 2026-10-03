@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { PoweredByFooter } from '../public/PoweredByFooter';
 import { PublicPageHeader } from '../public/PublicPageHeader';
 import type { CheckinContext } from '../../lib/api.types';
+import { itemPrice } from '../../lib/money';
 
 /**
  * Where you are, in one line, identical on every screen of the flow.
@@ -115,8 +116,9 @@ export function ErrorNote({ children }: { children: ReactNode }) {
   );
 }
 
-export function formatCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+/** A price, or "Price to come" for a ticket checked in before it had one (Plan 32). */
+export function formatCents(cents: number | null): string {
+  return itemPrice(cents);
 }
 
 /**

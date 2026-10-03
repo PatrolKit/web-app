@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
@@ -14,6 +14,7 @@ export default function ItemsPage() {
   const swapId = selectedSwap?.id ?? null;
   const qc = useQueryClient();
   const [importing, setImporting] = useState(false);
+  const [searchParams] = useSearchParams();
 
   /** The swap's web takes legacy tickets only, so no row may get a generated SKU (Plan 31). */
   const webTicketsOnly = !!selectedSwap?.webLegacyTicketsOnly;
@@ -67,6 +68,7 @@ export default function ItemsPage() {
       swapId={swapId}
       canManage={canManage}
       showSearch
+      initialNeedsPrice={searchParams.get('show') === 'needs-price'}
       sellers={sellers}
       queryKeyPrefix="ski-swap/items"
       labelsPerItem={labelsPerItem}

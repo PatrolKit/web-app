@@ -106,16 +106,16 @@ export default function ProxyItemImportModal({
 
         <div className="text-sm text-gray-400 space-y-2">
           <p>
-            One row per item. The price is required; a name and a description are not.
-            The ticket number is required too
-            {allowGenerate ? ', unless SKUs are generated below' : ''}. Without a name the
-            item is called by its number.
+            One row per item. The ticket number is required
+            {allowGenerate ? ', unless SKUs are generated below' : ''}; a name and a description
+            are not. Without a name the item is called by its number. A ticket row may leave its
+            price blank to price it later; a row without a ticket needs one.
           </p>
           <pre className="bg-surface-100 border border-gray-700 rounded p-3 text-xs text-gray-300 overflow-x-auto">
 {`sku,price,name,description
 67169,250.00,Rossignol Experience 88 skis,"170cm, edges good"
 67170,180.00,Salomon QST boots,27.5 mondo
-67171,45.00,,Poles`}
+67171,,,Poles`}
           </pre>
         </div>
 

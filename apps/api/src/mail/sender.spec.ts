@@ -98,7 +98,7 @@ describe('the plain-text part', () => {
   it('keeps a receipt readable: every item, its price, and the total', () => {
     const text = plainText(receiptEmail({
       id: 'r1', token: 't', orgName: 'Stowe Patrol', orgLogoUrl: null, logoImageUrl: null, swapTitle: 'Fall Swap',
-      sellerName: 'Dana Reyes', payoutLabel: 'Check', totalCents: 13500, itemCount: 2,
+      sellerName: 'Dana Reyes', payoutLabel: 'Check', totalCents: 13500, itemCount: 2, unpricedCount: 0,
       createdAt: new Date('2026-09-17T13:42:00Z'), url: 'https://skiswap.patrolkit.io/r/t',
       trackUrl: 'https://skiswap.patrolkit.io/s/seller123', brandMarkUrl: 'https://skiswap.patrolkit.io/logo-mark.png',
       lines: [

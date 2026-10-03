@@ -139,7 +139,10 @@ export default function FinishStep({
             <h2 className="text-sm font-medium text-gray-300">
               {summary.items.length} item{summary.items.length === 1 ? '' : 's'}
             </h2>
-            <span className="text-sm text-gray-400">{formatCents(summary.totalCents)}</span>
+            <span className="text-sm text-gray-400">
+              {formatCents(summary.totalCents)}
+              {summary.unpricedCount > 0 && ` + ${summary.unpricedCount} price to come`}
+            </span>
           </div>
           <ul className="space-y-1.5">
             {summary.items.map((item) => (

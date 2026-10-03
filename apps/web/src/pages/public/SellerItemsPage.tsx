@@ -1,12 +1,13 @@
 import { useParams } from 'react-router-dom';
+import { itemPrice } from '../../lib/money';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { PoweredByFooter } from './PoweredByFooter';
 import { PublicPageHeader } from './PublicPageHeader';
 import type { PayoutMethod, PublicSellerPayout } from '../../lib/api.types';
 
-function formatPrice(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
+function formatPrice(cents: number | null) {
+  return itemPrice(cents);
 }
 
 /**

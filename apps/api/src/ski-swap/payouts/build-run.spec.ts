@@ -15,7 +15,7 @@ const seller = (over: Partial<RunSeller> = {}): RunSeller => ({
 });
 
 const sale = (over: Partial<PosSaleLine> = {}): PosSaleLine => ({
-  orderId: 'o1', variationId: 'v1', quantity: 1, collectedCents: 10_000,
+  orderId: 'o1', variationId: 'v1', quantity: 1, collectedCents: 10_000, unitPriceCents: 10_000,
   refundedQuantity: 0, soldAt: SOLD_AT, ...over,
 });
 

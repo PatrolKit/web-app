@@ -71,8 +71,7 @@ class SquarePosAdapter implements IPosAdapter {
               itemVariationData: {
                 name: 'Regular',
                 sku: item.sku,
-                pricingType: 'FIXED_PRICING',
-                priceMoney: { amount: BigInt(item.priceCents), currency: 'USD' as const },
+                ...variationPricing(item.priceCents),
                 stockable: true,
                 trackInventory: true,
                 inventoryAlertType: 'LOW_QUANTITY',
@@ -268,6 +267,7 @@ class SquarePosAdapter implements IPosAdapter {
             // `totalMoney` is after discounts, which is what the register took
             // and therefore what the org actually has.
             collectedCents: Number(line.totalMoney?.amount ?? 0n),
+            unitPriceCents: line.basePriceMoney?.amount != null ? Number(line.basePriceMoney.amount) : null,
             refundedQuantity: refundedByLine.get(line.uid ?? '') ?? 0,
             soldAt,
           });
@@ -350,4 +350,18 @@ function refundedQuantities(order: Square.Order): Map<string, number> {
     }
   }
   return out;
+}
+
+/**
+ * How a variation is priced in Square.
+ *
+ * A legacy ticket not yet priced (Plan 32) is `VARIABLE_PRICING` with no
+ * amount: Square's "price is entered at the time of sale", so the register asks
+ * the clerk for one when it's rung up. Once staff price it, the next sync makes
+ * it fixed, as every other item is.
+ */
+export function variationPricing(priceCents: number | null) {
+  return priceCents === null
+    ? { pricingType: 'VARIABLE_PRICING' as const }
+    : { pricingType: 'FIXED_PRICING' as const, priceMoney: { amount: BigInt(priceCents), currency: 'USD' as const } };
 }

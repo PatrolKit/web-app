@@ -15,7 +15,8 @@ export interface RunItem {
   id: string;
   name: string;
   sku: string;
-  priceCents: number;
+  /** Null for a legacy ticket not priced before it sold (Plan 32). */
+  priceCents: number | null;
   squareVariationId: string | null;
   /** This item's proceeds were given to the patrol. Sold, owed to nobody. */
   donateProceeds: boolean;
@@ -38,6 +39,10 @@ export interface BuiltLineItem {
   itemId: string;
   name: string;
   sku: string;
+  /**
+   * The unit price owed on: the item's price, or, for a ticket sold before it
+   * was priced, what the clerk typed for this sale (Plan 32).
+   */
   priceCents: number;
   quantity: number;
   collectedCents: number;
@@ -71,6 +76,19 @@ export interface BuiltRun {
    * nobody looks.
    */
   unmatched: { variationId: string; orderId: string; collectedCents: number }[];
+  /**
+   * Unpriced tickets that sold at one price typed at the register, which
+   * becomes the item's price (Plan 32 D5). One that sold at different prices
+   * keeps none, and each sale is owed on its own.
+   */
+  pricesFromRegister: { itemId: string; priceCents: number }[];
+  /**
+   * Sales of an unpriced ticket that Square reported without the price typed.
+   * Nothing can be owed on those, and paying the rest of the seller's line
+   * without them would underpay quietly, so the run isn't built until staff
+   * price them. Square includes the price on catalog sales, so this is a guard.
+   */
+  unpricedSales: { itemId: string; sku: string; orderId: string }[];
 }
 
 export interface BuildOptions {
@@ -98,6 +116,8 @@ export function buildRun(
 
   const owedBySeller = new Map<string, BuiltLineItem[]>();
   const unmatched: BuiltRun['unmatched'] = [];
+  const unpricedSales: BuiltRun['unpricedSales'] = [];
+  const typedPrices = new Map<string, Set<number>>();
 
   for (const sale of sales) {
     const item = byVariation.get(sale.variationId);
@@ -114,12 +134,25 @@ export function buildRun(
     const soldQty = sale.quantity - sale.refundedQuantity;
     if (soldQty <= 0) continue;
 
+    // A price staff entered always wins. A ticket sold before it had one is
+    // owed on what the clerk typed for this sale (Plan 32 D4).
+    const unitCents = item.priceCents ?? sale.unitPriceCents;
+    if (unitCents === null) {
+      unpricedSales.push({ itemId: item.id, sku: item.sku, orderId: sale.orderId });
+      continue;
+    }
+    if (item.priceCents === null) {
+      const seen = typedPrices.get(item.id) ?? new Set<number>();
+      seen.add(unitCents);
+      typedPrices.set(item.id, seen);
+    }
+
     const list = owedBySeller.get(item.sellerId) ?? [];
     list.push({
       itemId: item.id,
       name: item.name,
       sku: item.sku,
-      priceCents: item.priceCents,
+      priceCents: unitCents,
       quantity: soldQty,
       collectedCents: sale.collectedCents,
       squareOrderId: sale.orderId,
@@ -136,7 +169,8 @@ export function buildRun(
     const soldItems = owedBySeller.get(seller.sellerId);
     if (!soldItems?.length) continue;
 
-    // Listed price, times what actually sold. An item whose proceeds were
+    // The price owed on (listed, or typed for an unpriced ticket), times what
+    // actually sold. An item whose proceeds were
     // given to the patrol is still evidence — it appears on the line at zero,
     // so a seller can see it sold and see why it paid nothing.
     const grossCents = soldItems.reduce(
@@ -175,7 +209,10 @@ export function buildRun(
 
   // Largest first: the biggest payment is the one worth checking hardest.
   lines.sort((a, b) => b.netCents - a.netCents);
-  return { lines, unmatched };
+  const pricesFromRegister = [...typedPrices]
+    .filter(([, prices]) => prices.size === 1)
+    .map(([itemId, prices]) => ({ itemId, priceCents: [...prices][0] }));
+  return { lines, unmatched, pricesFromRegister, unpricedSales };
 }
 
 /**

@@ -6,7 +6,8 @@ import { GenerateSkusSwitch, importedSummary } from './ImportSkuOptions';
 /**
  * A shop's whole inventory in one file.
  *
- * Three columns: the ticket number, an optional name, and a price. Nothing is
+ * Three columns: the ticket number, an optional name, and a price, which a
+ * ticket row may leave blank to be priced later (Plan 32). Nothing is
  * written unless every row passes — a half-imported inventory is worse than a
  * rejected one, because the seller cannot tell which half went in.
  *
@@ -66,13 +67,16 @@ export default function TicketItemImportModal({
 
         <div className="text-sm text-gray-400 space-y-2">
           <p>
-            One row per item. The price is required; a name is optional. The ticket number
-            is required too{allowGenerate ? ', unless SKUs are generated below' : ''}.
+            One row per item. The ticket number is required
+            {allowGenerate ? ', unless SKUs are generated below' : ''}, and a name is optional.
+            A ticket row may leave its price blank to price it later; a row without a ticket
+            needs one.
           </p>
           <pre className="bg-surface-100 border border-gray-700 rounded p-3 text-xs text-gray-300 overflow-x-auto">
 {`sku,name,price
 67169,Rossignol Experience 88 skis 170cm,250.00
-67170,,180.00`}
+67170,,180.00
+67171,Salomon QST boots,`}
           </pre>
         </div>
 

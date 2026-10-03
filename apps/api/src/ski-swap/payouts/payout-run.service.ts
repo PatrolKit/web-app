@@ -9,6 +9,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PosAdapterFactory } from '../pos/pos.adapter';
 import { sellerDisplayName, SELLER_NAME_INCLUDE } from '../seller.service';
+import { ItemService } from '../item.service';
 import { buildRun, discountsOf, type BuiltRun, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
 import { PayPalClient, PayPalError, type PayoutItemRequest } from './paypal.client';
@@ -32,6 +33,7 @@ export class PayoutRunService {
     private readonly prisma: PrismaService,
     private readonly pos: PosAdapterFactory,
     private readonly paypal: PayPalClient,
+    private readonly items: ItemService,
   ) {}
 
   // ─── Building ───────────────────────────────────────────────────────────────
@@ -137,6 +139,18 @@ export class PayoutRunService {
     }));
 
     const built = buildRun(items, sellers, sales, { commissionBasisPoints });
+
+    // A ticket sold before it was priced, with no typed price from Square,
+    // can't be owed on. Paying the rest of that seller's line would underpay
+    // them quietly, so nothing is built until it's priced (Plan 32).
+    if (built.unpricedSales.length) {
+      const tickets = [...new Set(built.unpricedSales.map((s) => s.sku))];
+      throw new BadRequestException(
+        `${tickets.length === 1 ? 'Ticket' : 'Tickets'} ${tickets.join(', ')} sold without a price, and Square ` +
+          'didn’t report what was charged. Enter a price for each on the Items page, then build the run again.',
+      );
+    }
+
     const runId = createId();
 
     await this.prisma.$transaction(async (tx) => {
@@ -155,6 +169,12 @@ export class PayoutRunService {
           unmatchedSales: built.unmatched.length ? (built.unmatched as never) : undefined,
         },
       });
+
+      // What the clerk typed becomes the ticket's price (Plan 32 D5), unless
+      // staff priced it since the sale was read.
+      for (const { itemId, priceCents } of built.pricesFromRegister) {
+        await tx.swapItem.updateMany({ where: { id: itemId, priceCents: null }, data: { priceCents } });
+      }
 
       for (const line of built.lines) {
         const lineId = createId();
@@ -191,6 +211,14 @@ export class PayoutRunService {
         });
       }
     });
+
+    // Square sells them at that price from now on, rather than asking again.
+    // Best-effort, as every Square sync is: the run is already right.
+    for (const { itemId } of built.pricesFromRegister) {
+      await this.items.syncToPos(orgId, swapId, itemId).catch((err: unknown) => {
+        this.logger.warn({ itemId, err }, 'Could not move a priced ticket to a fixed price in Square');
+      });
+    }
 
     await this.audit(orgId, actorId, 'payout_run.created', runId, {
       lines: built.lines.length,

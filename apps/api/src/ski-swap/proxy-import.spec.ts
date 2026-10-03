@@ -96,8 +96,15 @@ describe('reading a shop’s file', () => {
     ]);
   });
 
-  it('refuses a file with no price column', () => {
-    expect(() => service().parseItemCsv(csv('sku,name\n67169,Boots\n'))).toThrow('"price" column');
+  it('reads a file with no price column as tickets priced later (Plan 32)', () => {
+    expect(service().parseItemCsv(csv('sku,name\n67169,Boots\n')).rows).toEqual([
+      { sku: '67169', name: 'Boots', description: undefined, priceCents: null },
+    ]);
+  });
+
+  it('reads a blank price as none, and anything else that isn’t an amount as one to refuse', () => {
+    const { rows } = service().parseItemCsv(csv('sku,price\n67169,\n67170,$\n67171,abc\n67172,$45\n'));
+    expect(rows.map((r) => r.priceCents)).toEqual([null, NaN, NaN, 4500]);
   });
 });
 
@@ -137,12 +144,36 @@ describe('judging the rows before anything is written', () => {
     expect(results[2].error).toBe('Ticket 67169 is also on line 2.');
   });
 
-  it('refuses a row with no price', async () => {
+  it('refuses a price that isn’t an amount', async () => {
     const results = await service().checkImportRows('swap-1', 'seller-1', [
       { sku: '67169', priceCents: NaN },
+      { sku: '67170', priceCents: 0 },
     ], TICKETS);
 
-    expect(results[0].error).toBe('Every row needs a price.');
+    expect(results.map((r) => r.error)).toEqual([
+      'A price has to be an amount above $0.',
+      'A price has to be an amount above $0.',
+    ]);
+  });
+
+  it('lets a ticket row wait for its price (Plan 32)', async () => {
+    const results = await service().checkImportRows('swap-1', 'seller-1', [
+      { sku: '67169', priceCents: null },
+    ], TICKETS);
+
+    expect(results[0]).toMatchObject({ outcome: 'ok' });
+  });
+
+  it('still needs a price on a row that gets a generated SKU', async () => {
+    const results = await service().checkImportRows('swap-1', 'seller-1', [
+      { sku: '', priceCents: null },
+      { sku: '', priceCents: 2500 },
+    ], { ...TICKETS, generateSkus: true });
+
+    expect(results.map((r) => [r.outcome, r.error ?? null])).toEqual([
+      ['error', 'A row without a ticket needs a price.'],
+      ['ok', null],
+    ]);
   });
 
   it('refuses a ticket number that is not just digits', async () => {

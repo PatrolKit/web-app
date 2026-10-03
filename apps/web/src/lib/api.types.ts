@@ -322,7 +322,7 @@ export interface ItemResponse {
   name: string;
   description: string | null;
   sku: string;
-  priceCents: number;
+  priceCents: number | null;
   originalQuantity: number;
   inStock: number;
   soldCount: number;
@@ -431,7 +431,12 @@ export interface SwapStats {
   totalItems: number;
   totalSellers: number;
   itemsSold: number;
+  /** At listed prices, so priced items only. */
   grossRevenueCents: number;
+  /** Units of tickets sold before they were priced, not in the revenue above (Plan 32). */
+  unpricedSold: number;
+  /** Tickets still without a price, sold or not (Plan 32). */
+  unpricedItems: number;
   /** False when Square could not be read; sold and revenue are then 0, not answers. */
   inventoryKnown: boolean;
 }
@@ -446,7 +451,7 @@ export interface SquareConfigResponse {
 export interface PublicSellerItem {
   itemId: string;
   name: string;
-  priceCents: number;
+  priceCents: number | null;
   originalQuantity: number;
   inStock: number;
   soldCount: number;
@@ -502,10 +507,13 @@ export interface CheckinSummary {
     id: string;
     name: string;
     sku: string;
-    priceCents: number;
+    priceCents: number | null;
     hasPrintedTag: boolean;
   }[];
+  /** Of the priced items only. */
   totalCents: number;
+  /** Tickets checked in without a price yet (Plan 32). */
+  unpricedCount: number;
 }
 
 export interface RenderLabelResponse {
@@ -746,7 +754,7 @@ export interface PublicSellerDetailItem {
   itemId: string;
   name: string;
   sku: string;
-  priceCents: number;
+  priceCents: number | null;
   originalQuantity: number;
   inStock: number;
   soldCount: number;
@@ -1022,7 +1030,7 @@ export interface SendReceiptResponse {
 export interface PublicReceiptLine {
   name: string;
   sku: string;
-  priceCents: number;
+  priceCents: number | null;
 }
 
 /** A frozen receipt, as the public page and the create call receive it. */
@@ -1036,8 +1044,11 @@ export interface PublicReceiptResponse {
   swapTitle: string;
   sellerName: string;
   payoutLabel: string | null;
+  /** Of the priced lines only. */
   totalCents: number;
   itemCount: number;
+  /** Lines of tickets not yet priced (Plan 32), which the total leaves out. */
+  unpricedCount: number;
   createdAt: string;
   /** This receipt, frozen. */
   url: string;

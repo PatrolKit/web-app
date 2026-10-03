@@ -602,7 +602,7 @@ export async function drawReceiptHeader(
  */
 export function drawReceiptItems(
   ctx: SKRSContext2D, W: number, H: number,
-  items: { name: string; sku: string; priceCents: number }[],
+  items: ReceiptItemLine[],
   showHeader: boolean,
 ): { rowsDrawn: number } {
   ctx.fillStyle = '#fff';
@@ -628,7 +628,7 @@ export function drawReceiptItems(
     if ((drawn > 0 ? y + ITEM_GAP : y) + itemH > H) break;
     if (drawn > 0) y += ITEM_GAP;
 
-    const priceStr = `$${(item.priceCents / 100).toFixed(2)}`;
+    const priceStr = receiptLinePrice(item.priceCents);
     ctx.font = labelFont(NAME_H, 'bold');
     const priceW = ctx.measureText(priceStr).width;
 
@@ -655,7 +655,13 @@ export function drawReceiptItems(
 export interface ReceiptItemLine {
   name: string;
   sku: string;
-  priceCents: number;
+  /** Null for a ticket not yet priced (Plan 32). */
+  priceCents: number | null;
+}
+
+/** A receipt line's price, or "TBD" for a ticket priced after check-in: short enough to sit beside the name. */
+export function receiptLinePrice(cents: number | null): string {
+  return cents === null ? 'TBD' : `$${(cents / 100).toFixed(2)}`;
 }
 
 /**
@@ -683,7 +689,8 @@ export async function drawTallReceipt(
   H: number,
   data: ReceiptHeaderData,
   remaining: ReceiptItemLine[],
-  page: { index: number; itemCount: number; totalCents: number },
+  /** `totalCents` is of the priced items; `unpricedCount` says how many it leaves out. */
+  page: { index: number; itemCount: number; totalCents: number; unpricedCount: number },
 ): Promise<{ rowsDrawn: number }> {
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
@@ -719,7 +726,7 @@ export async function drawTallReceipt(
     if ((drawn > 0 ? y + ROW_GAP : y) + rowH > listBottom) break;
     if (drawn > 0) y += ROW_GAP;
 
-    const priceStr = `$${(item.priceCents / 100).toFixed(2)}`;
+    const priceStr = receiptLinePrice(item.priceCents);
     ctx.font = labelFont(NAME_H, 'bold');
     const priceW = ctx.measureText(priceStr).width;
 
@@ -747,7 +754,10 @@ export async function drawTallReceipt(
   if (drawn === remaining.length) {
     ctx.font = labelFont(TOTAL_H, 'bold');
     ctx.textAlign = 'left';
-    ctx.fillText(`${page.itemCount} item${page.itemCount === 1 ? '' : 's'}`, 0, fy);
+    ctx.fillText(
+      `${page.itemCount} item${page.itemCount === 1 ? '' : 's'}${page.unpricedCount ? `, ${page.unpricedCount} TBD` : ''}`,
+      0, fy,
+    );
     ctx.textAlign = 'right';
     ctx.fillText(`$${(page.totalCents / 100).toFixed(2)}`, W, fy);
   } else {
@@ -838,7 +848,7 @@ function drawReceiptContinuation(
   ctx.textAlign = 'left';
   ctx.fillText(fit(ctx, sellerName, W * 0.6), 0, 0);
 
-  let y = lineHeight(CONT) + GAP;
+  const y = lineHeight(CONT) + GAP;
   ctx.fillRect(0, y, W, RULE);
   return y + RULE + GAP;
 }
@@ -981,7 +991,8 @@ export interface HelperLabelData {
   itemName: string;
   /** The size as the name would show it — `176cm`, `M` — or null. */
   size: string | null;
-  priceCents: number;
+  /** Null for a ticket not yet priced: printed as a blank to write the price in. */
+  priceCents: number | null;
   sellerName: string;
 }
 
@@ -1005,8 +1016,12 @@ const HELPER_PRICE_GAP = 4;
 /** The Size line with no size, so the row is not mistaken for one the printer skipped. */
 const HELPER_NO_SIZE = '---';
 
-/** `$45`, or `$19.99` for a price that still has cents. */
-export function helperPrice(cents: number): string {
+/**
+ * `$45`, or `$19.99` for a price that still has cents. A ticket not yet priced
+ * gets `$____`, a blank for staff to write the price in (Plan 32).
+ */
+export function helperPrice(cents: number | null): string {
+  if (cents === null) return '$____';
   return cents % 100 === 0
     ? `$${cents / 100}`
     : `$${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;

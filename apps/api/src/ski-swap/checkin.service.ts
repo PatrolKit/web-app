@@ -330,7 +330,7 @@ export class CheckinService {
              * a repeat and different for a seller who came back with more, so
              * they dedupe the first and let the second through.
              */
-            idempotencyKey: `checkin-finish:${swapId}:${seller.id}:${items.length}:${items.reduce((sum, i) => sum + i.priceCents, 0)}`,
+            idempotencyKey: `checkin-finish:${swapId}:${seller.id}:${items.length}:${items.reduce((sum, i) => sum + (i.priceCents ?? 0), 0)}`,
           })
           // Only a real send. `SUPPRESSED` is a deployment with outbound
           // messaging off, and reporting it as sent would leave the finish
@@ -422,7 +422,10 @@ export class CheckinService {
       sellerId: seller.id,
       sellerName: displayName(seller.membership.user, seller.businessName),
       items,
-      totalCents: items.reduce((sum, i) => sum + i.priceCents, 0),
+      // Priced items only; a ticket checked in before its price is counted
+      // apart, never as $0 (Plan 32).
+      totalCents: items.reduce((sum, i) => sum + (i.priceCents ?? 0), 0),
+      unpricedCount: items.filter((i) => i.priceCents === null).length,
     };
   }
 }

@@ -17,7 +17,7 @@ describe('what the item form still needs', () => {
 
   it('a price that rounds to more than nothing', () => {
     for (const price of ['0', '0.00', '0.004', '.']) {
-      expect(missingItemFields({ ...filled, priceDollars: price }, staffAdd)).toEqual(['a price']);
+      expect(missingItemFields({ ...filled, priceDollars: price }, staffAdd)).toEqual(['a price above $0.00']);
     }
     expect(missingItemFields({ ...filled, priceDollars: '0.01' }, staffAdd)).toEqual([]);
   });
@@ -29,5 +29,17 @@ describe('what the item form still needs', () => {
   it('a quantity of at least one when editing', () => {
     expect(missingItemFields({ ...filled, quantity: '0' }, { ...staffAdd, editing: true })).toEqual(['a quantity']);
     expect(missingItemFields({ ...filled, quantity: '' }, { ...staffAdd, editing: true })).toEqual(['a quantity']);
+  });
+
+  it('no price for a legacy ticket, which is priced later (Plan 32)', () => {
+    const ticket = { ...staffAdd, picksSeller: false, priceOptional: true };
+    expect(missingItemFields({ ...filled, priceDollars: '' }, ticket)).toEqual([]);
+    expect(missingItemFields({ ...filled, priceDollars: '  ' }, ticket)).toEqual([]);
+  });
+
+  it('a real amount when a ticket’s price is typed', () => {
+    const ticket = { ...staffAdd, picksSeller: false, priceOptional: true };
+    expect(missingItemFields({ ...filled, priceDollars: '0' }, ticket)).toEqual(['a price above $0.00']);
+    expect(missingItemFields({ ...filled, priceDollars: '45' }, ticket)).toEqual([]);
   });
 });

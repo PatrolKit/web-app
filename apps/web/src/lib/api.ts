@@ -628,7 +628,7 @@ export const api = {
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/consign`,
         { method: 'POST' },
       ),
-    createItem: (orgId: string, swapId: string, data: { categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string; priceCents: number; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string }) =>
+    createItem: (orgId: string, swapId: string, data: { categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string; priceCents: number | null; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string }) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items`, {
         method: 'POST', body: JSON.stringify(data),
       }),
@@ -881,7 +881,7 @@ export const api = {
      */
     sellerCreateItem: (
       orgId: string,
-      data: { swapId: string; categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string; priceCents: number; quantity: number; donateProceeds?: boolean; stationId?: string; sku?: string; generateSku?: boolean },
+      data: { swapId: string; categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string; priceCents: number | null; quantity: number; donateProceeds?: boolean; stationId?: string; sku?: string; generateSku?: boolean },
       idempotencyKey?: string,
     ) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/seller/me/items`, {

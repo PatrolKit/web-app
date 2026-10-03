@@ -9,6 +9,11 @@ function money(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+/** A line's price, or that it has none yet: a ticket priced after check-in (Plan 32). */
+function linePrice(cents: number | null): string {
+  return cents === null ? 'Price to come' : money(cents);
+}
+
 /**
  * A receipt, as emailed or texted (Plan 24 §7).
  *
@@ -79,8 +84,8 @@ export default function ReceiptPage() {
               <span className="block text-sm text-white">{line.name}</span>
               <span className="block text-xs text-gray-500">{line.sku}</span>
             </span>
-            <span className="text-sm font-medium text-white whitespace-nowrap">
-              {money(line.priceCents)}
+            <span className={`text-sm whitespace-nowrap ${line.priceCents === null ? 'text-gray-400' : 'font-medium text-white'}`}>
+              {linePrice(line.priceCents)}
             </span>
           </li>
         ))}
@@ -94,8 +99,12 @@ export default function ReceiptPage() {
       <div className="flex items-baseline justify-between pt-3">
         <span className="text-sm text-gray-400">
           {data.itemCount} item{data.itemCount === 1 ? '' : 's'}
+          {data.unpricedCount > 0 && ` · ${data.unpricedCount} with price to come`}
         </span>
-        <span className="text-lg font-bold text-white">{money(data.totalCents)}</span>
+        <span className="text-right">
+          {data.unpricedCount > 0 && <span className="block text-xs text-gray-500">Total of priced items</span>}
+          <span className="text-lg font-bold text-white">{money(data.totalCents)}</span>
+        </span>
       </div>
 
       {data.payoutLabel && (

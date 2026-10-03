@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { PublicSellerLookupResponse } from '../../lib/api.types';
 import { PoweredByFooter } from './PoweredByFooter';
+import { itemPrice } from '../../lib/money';
 
 export default function SellerStatusPage() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
@@ -84,7 +85,7 @@ export default function SellerStatusPage() {
                     <div key={item.itemId} className="bg-surface-50 border border-gray-700 rounded-lg p-3 flex justify-between items-center">
                       <div>
                         <p className="text-white text-sm font-medium">{item.name}</p>
-                        <p className="text-gray-400 text-xs">${(item.priceCents / 100).toFixed(2)}</p>
+                        <p className="text-gray-400 text-xs">{itemPrice(item.priceCents)}</p>
                       </div>
                       <div className="text-right">
                         {item.soldCount > 0 ? (

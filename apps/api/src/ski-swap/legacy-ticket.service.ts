@@ -394,13 +394,15 @@ export class LegacyTicketService {
   /**
    * Reads the three columns out of a file, whatever they are called.
    *
-   * `sku` and `price` are required; `name` is optional and may be absent from
-   * the file entirely. Aliases follow the seller import's approach so that
+   * `sku` is required. `price` may be blank, or the column absent, for ticket
+   * rows, whose price can come later (Plan 32); `checkImportRows` asks for one
+   * on any row that gets a generated SKU. `name` is optional and may be absent
+   * from the file entirely. Aliases follow the seller import's approach so that
    * `price`, `Price`, `amount` and `cost` all land on the same field.
    */
   parseItemCsv(
     buffer: Buffer,
-  ): { rows: { sku: string; name?: string; description?: string; priceCents: number }[] } {
+  ): { rows: { sku: string; name?: string; description?: string; priceCents: number | null }[] } {
     /**
      * Strict about column counts on purpose, but not about how it says so.
      *
@@ -436,14 +438,16 @@ export class LegacyTicketService {
 
     // No ticket column is a file of rows without tickets: fine when SKUs are
     // generated, and each row says so when they aren't (`checkImportRows`).
-    if (priceAt === -1) throw new BadRequestException('The file needs a "price" column.');
+    // No price column is a file of unpriced tickets, judged the same way.
 
     const rows = dataRows.map((row) => ({
       sku: skuAt === -1 ? '' : (row[skuAt] ?? '').trim(),
       name: nameAt === -1 ? undefined : (row[nameAt] ?? '').trim() || undefined,
       description: descAt === -1 ? undefined : (row[descAt] ?? '').trim() || undefined,
-      // "$250.00" and "250" both mean the same thing to whoever typed it.
-      priceCents: Math.round(parseFloat((row[priceAt] ?? '').replace(/[^0-9.]/g, '')) * 100),
+      // "$250.00" and "250" both mean the same thing to whoever typed it. A
+      // blank cell is no price; anything else that isn't an amount is NaN, and
+      // refused as one.
+      priceCents: priceOf(priceAt === -1 ? '' : (row[priceAt] ?? '')),
     }));
     return { rows };
   }
@@ -475,7 +479,7 @@ export class LegacyTicketService {
   async checkImportRows(
     swapId: string,
     sellerId: string,
-    rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+    rows: { sku: string; name?: string; description?: string; priceCents: number | null }[],
     rules: ImportRules,
   ): Promise<ImportRowResult[]> {
     if (rules.generateSkus && rules.webTicketsOnly) {
@@ -501,11 +505,16 @@ export class LegacyTicketService {
       const sku = row.sku?.trim() ?? '';
       const fail = (error: string) => results.push({ line, sku, outcome: 'error', error });
 
-      if (!Number.isFinite(row.priceCents) || row.priceCents <= 0) {
-        return fail('Every row needs a price.');
+      // A ticket may wait for its price (Plan 32); a price that's there has
+      // to be one.
+      if (row.priceCents !== null && (!Number.isFinite(row.priceCents) || row.priceCents <= 0)) {
+        return fail('A price has to be an amount above $0.');
       }
       if (!sku) {
-        if (rules.generateSkus) return results.push({ line, sku, outcome: 'ok', generated: true });
+        if (rules.generateSkus) {
+          if (row.priceCents === null) return fail('A row without a ticket needs a price.');
+          return results.push({ line, sku, outcome: 'ok', generated: true });
+        }
         return fail(
           rules.webTicketsOnly
             ? 'Every row needs a ticket number.'
@@ -541,4 +550,11 @@ export class LegacyTicketService {
     });
     if (!seller) throw new NotFoundException('Seller not found');
   }
+}
+
+/** A price cell as cents: null when blank, NaN when it isn't an amount. */
+function priceOf(cell: string): number | null {
+  const digits = cell.replace(/[^0-9.]/g, '');
+  if (cell.trim() === '') return null;
+  return digits ? Math.round(parseFloat(digits) * 100) : NaN;
 }

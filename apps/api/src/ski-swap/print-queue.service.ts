@@ -258,6 +258,11 @@ export class PrintQueueService {
   async reprintItem(orgId: string, stationId: string, itemId: string): Promise<void> {
     const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId, deletedAt: null } });
     if (!item) throw new NotFoundException('Item not found');
+    // Refused now rather than when the bridge draws it: only a ticket is ever
+    // unpriced, and a ticket has no printed tag (Plan 32).
+    if (item.priceCents === null) {
+      throw new BadRequestException('This ticket has no price yet, and a ticket has no printed tag.');
+    }
 
     const station = await this.station(orgId, stationId);
     // Asked for by someone, so they are told why not.

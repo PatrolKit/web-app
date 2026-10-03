@@ -525,7 +525,9 @@ model SwapItem {
   sellerId         String?
   name             String
   description      String? @db.Text
-  priceCents       Int
+  /// Null only for a legacy ticket whose price comes after check-in (Plan 32).
+  /// Square then sells it at a price the clerk types.
+  priceCents       Int?
   sku              String
   /// Mirror of `sku`, written only while the item is live.
   ///
@@ -1289,7 +1291,8 @@ model ReceiptLine {
   itemId     String?
   name       String
   sku        String
-  priceCents Int
+  /// The item's price when the receipt was made; null while it had none.
+  priceCents Int?
   position   Int
 
   receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
@@ -1456,7 +1459,8 @@ model PayoutLineItem {
 
   name       String
   sku        String
-  /// What the seller was owed on: `SwapItem.priceCents` at run time.
+  /// What the seller was owed on: `SwapItem.priceCents` at run time, or, for
+  /// a ticket sold before it was priced, what the clerk typed (Plan 32).
   priceCents Int
   quantity   Int
   /// What Square actually took, which may be less. Recorded so the org can see

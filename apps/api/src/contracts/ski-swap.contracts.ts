@@ -309,7 +309,12 @@ export const CreateItemSchema = z
      */
     name: z.string().min(1).max(200).optional(),
     description: z.string().max(2000).optional(),
-    priceCents: z.number().int().positive(),
+    /**
+     * Null or absent only for a legacy ticket, whose price comes after
+     * check-in (Plan 32). The service refuses it for any other SKU: whether
+     * an item is a ticket can depend on the number the server assigns.
+     */
+    priceCents: z.number().int().positive().nullable().optional(),
     quantity: z.number().int().positive(),
     sellerId: z.string().optional(),
     donateProceeds: z.boolean().default(false),
@@ -378,7 +383,8 @@ export const ItemResponseSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   sku: z.string(),
-  priceCents: z.number().int(),
+  /** Null for a legacy ticket not yet priced (Plan 32). */
+  priceCents: z.number().int().nullable(),
   originalQuantity: z.number().int(),
   inStock: z.number().int(),
   soldCount: z.number().int(),
@@ -462,7 +468,8 @@ export type ItemResponse = z.infer<typeof ItemResponseSchema>;
 export const PublicSellerItemSchema = z.object({
   itemId: z.string(),
   name: z.string(),
-  priceCents: z.number().int(),
+  /** Null for a legacy ticket not yet priced (Plan 32). */
+  priceCents: z.number().int().nullable(),
   originalQuantity: z.number().int(),
   inStock: z.number().int(),
   soldCount: z.number().int(),
@@ -531,7 +538,12 @@ export const SellerItemCreateSchema = z
     categoryId: z.string().min(1).optional(),
     attributes: z.array(ItemAttributeInputSchema).max(24).default([]),
     description: z.string().max(2000).optional(),
-    priceCents: z.number().int().positive(),
+    /**
+     * Null or absent only for a legacy ticket, whose price comes after
+     * check-in (Plan 32). The service refuses it for any other SKU: whether
+     * an item is a ticket can depend on the number the server assigns.
+     */
+    priceCents: z.number().int().positive().nullable().optional(),
     quantity: z.number().int().positive(),
     donateProceeds: z.boolean().default(false),
     /**
@@ -849,7 +861,8 @@ export const PublicSellerDetailItemSchema = z.object({
   itemId: z.string(),
   name: z.string(),
   sku: z.string(),
-  priceCents: z.number().int(),
+  /** Null for a legacy ticket not yet priced (Plan 32). */
+  priceCents: z.number().int().nullable(),
   originalQuantity: z.number().int(),
   inStock: z.number().int(),
   soldCount: z.number().int(),

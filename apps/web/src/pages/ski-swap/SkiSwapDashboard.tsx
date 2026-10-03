@@ -77,6 +77,12 @@ export default function SkiSwapDashboard() {
           Square could not be read just now, so sold counts and revenue are unavailable. Reload in a moment.
         </p>
       )}
+      {stats && stockKnown && stats.unpricedSold > 0 && (
+        <p className="text-xs text-gray-400">
+          Revenue leaves out {stats.unpricedSold} ticket{stats.unpricedSold === 1 ? '' : 's'} sold before
+          {stats.unpricedSold === 1 ? ' it was' : ' they were'} priced, at a price typed at the register. A payout run records those prices.
+        </p>
+      )}
 
       {/* Only while there is somebody waiting. Nothing here accepts an item —
           that happens at the table, on the staff iPad — so this says where to
@@ -94,6 +100,19 @@ export default function SkiSwapDashboard() {
 
       {/* Shown only when there is something to act on: a zero here is the
           normal state, and a tile reading zero every day stops being read. */}
+      {(stats?.unpricedItems ?? 0) > 0 && (
+        <Link
+          to="/dashboard/ski-swap/items?show=needs-price"
+          className="block bg-amber-900/30 border border-amber-800 rounded-lg p-4 hover:border-amber-600"
+        >
+          <p className="text-amber-300 text-sm font-medium">
+            {stats!.unpricedItems} {stats!.unpricedItems === 1 ? 'ticket has' : 'tickets have'} no price yet
+          </p>
+          <p className="text-xs text-amber-500/80 mt-0.5">
+            Price them before sales start. One that reaches the register unpriced needs the clerk to type a price.
+          </p>
+        </Link>
+      )}
       {unpayable.length > 0 && (
         <Link
           to="/dashboard/ski-swap/sellers"

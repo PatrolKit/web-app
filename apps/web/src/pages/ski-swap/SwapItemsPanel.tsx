@@ -46,7 +46,8 @@ export interface CreateItemInput {
   categoryId?: string;
   attributes?: ItemAttributeInput[];
   description?: string;
-  priceCents: number;
+  /** Null only for a legacy ticket, priced later (Plan 32). */
+  priceCents: number | null;
   quantity: number;
   sellerId?: string;
   donateProceeds?: boolean;
@@ -105,6 +106,8 @@ export interface SwapItemsPanelProps {
    */
   selfService?: boolean;
   showSearch?: boolean;
+  /** Open with only unpriced tickets showing, as the dashboard's link asks (Plan 32). */
+  initialNeedsPrice?: boolean;
   sellers?: SellerResponse[];
   emptyMessage?: string;
   labelsPerItem?: number;
@@ -132,16 +135,27 @@ interface ItemFormData {
  * A seller is needed only where the form offers one: on staff screens. A
  * seller's own form has no picker, because the item is theirs. Quantity shows
  * only when editing; a new item is always one.
+ *
+ * A legacy ticket may be left without a price, to be priced before sales start
+ * (Plan 32): `priceOptional`. A price that's typed still has to be one.
  */
 export function missingItemFields(
   form: Pick<ItemFormData, 'priceDollars' | 'quantity' | 'sellerId'>,
-  opts: { picksSeller: boolean; editing: boolean },
+  opts: { picksSeller: boolean; editing: boolean; priceOptional?: boolean },
 ): string[] {
   const missing: string[] = [];
-  if (!(Math.round(parseFloat(form.priceDollars) * 100) > 0)) missing.push('a price');
+  const typed = form.priceDollars.trim() !== '';
+  if ((typed || !opts.priceOptional) && !(Math.round(parseFloat(form.priceDollars) * 100) > 0)) {
+    missing.push(typed ? 'a price above $0.00' : 'a price');
+  }
   if (opts.editing && !(parseInt(form.quantity, 10) >= 1)) missing.push('a quantity');
   if (opts.picksSeller && !form.sellerId) missing.push('a seller');
   return missing;
+}
+
+/** The form's price as cents, or null when it's left blank. */
+function formPriceCents(priceDollars: string): number | null {
+  return priceDollars.trim() === '' ? null : Math.round(parseFloat(priceDollars) * 100);
 }
 
 const emptyForm: ItemFormData = { describer: emptyDescriber, description: '', priceDollars: '', quantity: '1', sellerId: '', donateProceeds: false, sku: '' };
@@ -300,13 +314,15 @@ export function itemState(item: ItemResponse): {
 
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService,
-  showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
+  showSearch = false, initialNeedsPrice = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
   tickets, toolbarExtra, addBlockedBecause,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
   const [printFilter, setPrintFilter] = useState<'' | 'not_printed' | 'printed'>('');
   const [stateFilter, setStateFilter] = useState<'' | ItemStateKey>('');
+  /** Only tickets still waiting for a price, to work through before sales start (Plan 32). */
+  const [needsPrice, setNeedsPrice] = useState(initialNeedsPrice);
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ItemResponse | null>(null);
   const [printingItem, setPrintingItem] = useState(false);
@@ -370,7 +386,8 @@ export default function SwapItemsPanel({
         ? { categoryId: form.describer.categoryId, attributes: toAttributeInputs(form.describer) }
         : {}),
       description: form.description || undefined,
-      priceCents: Math.round(parseFloat(form.priceDollars) * 100),
+      // Blank only for a ticket, which the server prices later (Plan 32).
+      priceCents: formPriceCents(form.priceDollars),
       quantity: 1,
       sellerId: form.sellerId || undefined,
       donateProceeds: form.donateProceeds,
@@ -409,7 +426,8 @@ export default function SwapItemsPanel({
           }
         : {}),
       description: form.description || null,
-      priceCents: Math.round(parseFloat(form.priceDollars) * 100),
+      // A price can be set or changed, never cleared: blank sends none.
+      priceCents: formPriceCents(form.priceDollars) ?? undefined,
       quantity: parseInt(form.quantity, 10),
       sellerId: sellers ? (form.sellerId || null) : undefined,
       donateProceeds: form.donateProceeds,
@@ -470,7 +488,8 @@ export default function SwapItemsPanel({
         ),
       },
       description: item.description ?? '',
-      priceDollars: (item.priceCents / 100).toFixed(2),
+      // Empty for a ticket not yet priced, rather than "0.00".
+      priceDollars: item.priceCents === null ? '' : (item.priceCents / 100).toFixed(2),
       quantity: String(item.originalQuantity),
       sellerId: item.seller?.id ?? '',
       // Carried so the shape is complete; editing never changes a ticket
@@ -480,7 +499,15 @@ export default function SwapItemsPanel({
     });
   }
 
-  const missingFields = missingItemFields(form, { picksSeller: !!sellers, editing: !!editItem });
+  /**
+   * Whether this item may go without a price: a legacy ticket (Plan 32). A new
+   * one is a ticket unless the shop left the number blank to print a label.
+   * One being edited may stay unpriced, but a price once set can't be cleared.
+   */
+  const priceOptional = editItem
+    ? editItem.legacyTicket && editItem.priceCents === null
+    : !!tickets && !(tickets.optional && !form.sku.trim());
+  const missingFields = missingItemFields(form, { picksSeller: !!sellers, editing: !!editItem, priceOptional });
 
   function closeForm() {
     setPendingPhoto(null);
@@ -520,7 +547,9 @@ export default function SwapItemsPanel({
     // Through `itemState`, not through the underlying fields again: a filter
     // that decided for itself what "sold" meant could disagree with the column
     // beside it, and the column is the one that had to be corrected.
-    .filter((i) => (stateFilter ? itemState(i).key === stateFilter : true));
+    .filter((i) => (stateFilter ? itemState(i).key === stateFilter : true))
+    .filter((i) => (needsPrice ? i.priceCents === null : true));
+  const unpricedCount = (data?.items ?? []).filter((i) => i.priceCents === null).length;
 
   if (!swapId) return null;
   if (isLoading) return <p className="text-gray-400 text-sm">Loading…</p>;
@@ -576,6 +605,19 @@ export default function SwapItemsPanel({
             <option value="not_printed">Not printed</option>
             <option value="printed">Printed</option>
           </select>
+          {(unpricedCount > 0 || needsPrice) && (
+            <button
+              type="button"
+              onClick={() => setNeedsPrice(!needsPrice)}
+              aria-pressed={needsPrice}
+              title="Legacy tickets checked in without a price. Unpriced at the register, the clerk has to type one."
+              className={`text-sm px-2 py-1.5 rounded border ${
+                needsPrice ? 'border-amber-500 bg-amber-900/30 text-amber-300' : 'border-gray-700 text-amber-400 hover:bg-surface-100'
+              }`}
+            >
+              Needs a price ({unpricedCount})
+            </button>
+          )}
         </div>
         <div className="flex gap-2 items-center">
         {sellerFilter && panelApi.consignAllForSeller && (
@@ -639,7 +681,11 @@ export default function SwapItemsPanel({
                   {item.name}
                   {item.donateProceeds && <span className="ml-1.5 text-xs" title="Donating proceeds to ski patrol">❤️</span>}
                 </td>
-                <td className="py-2 pr-4 text-gray-300">${(item.priceCents / 100).toFixed(2)}</td>
+                <td className="py-2 pr-4 text-gray-300">
+                  {item.priceCents === null
+                    ? <span className="text-amber-400" title="Checked in without a price. Price it before sales start.">No price</span>
+                    : `$${(item.priceCents / 100).toFixed(2)}`}
+                </td>
                 {sellers && <td className="py-2 pr-4 text-gray-400">{item.seller?.displayName ?? '—'}</td>}
                 <td className="py-2 pr-4">
                   {(() => {
@@ -789,14 +835,14 @@ export default function SwapItemsPanel({
             {editItem ? (
               <div className="grid grid-cols-2 gap-3">
                 <input
-                  required
+                  required={!priceOptional}
                   inputMode="decimal"
                   value={form.priceDollars}
                   onChange={(e) => {
                     const val = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*?)\./g, '$1');
                     setForm({ ...form, priceDollars: val });
                   }}
-                  placeholder="Price ($)"
+                  placeholder={priceOptional ? 'Price ($), or blank for later' : 'Price ($)'}
                   className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
                 />
                 <input
@@ -811,14 +857,14 @@ export default function SwapItemsPanel({
               </div>
             ) : (
               <input
-                required
+                required={!priceOptional}
                 inputMode="decimal"
                 value={form.priceDollars}
                 onChange={(e) => {
                   const val = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*?)\./g, '$1');
                   setForm({ ...form, priceDollars: val });
                 }}
-                placeholder="Price ($)"
+                placeholder={priceOptional ? 'Price ($), or leave blank to price it later' : 'Price ($)'}
                 className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
               />
             )}

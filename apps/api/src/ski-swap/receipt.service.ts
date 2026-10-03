@@ -36,8 +36,11 @@ export interface ReceiptView {
   swapTitle: string;
   sellerName: string;
   payoutLabel: string | null;
+  /** Of the priced lines only (Plan 32). */
   totalCents: number;
   itemCount: number;
+  /** Lines of tickets not yet priced, which `totalCents` leaves out. */
+  unpricedCount: number;
   createdAt: Date;
   /** This receipt, frozen. */
   url: string;
@@ -49,7 +52,8 @@ export interface ReceiptView {
   trackUrl: string;
   /** The PatrolKit mark, for the foot of an email led by somebody else's name. */
   brandMarkUrl: string;
-  lines: { name: string; sku: string; priceCents: number }[];
+  /** `priceCents` is null for a ticket not yet priced. */
+  lines: { name: string; sku: string; priceCents: number | null }[];
 }
 
 export type ReceiptChannel = 'EMAIL' | 'SMS';
@@ -130,7 +134,9 @@ export class ReceiptService {
         swapTitle: swap.title,
         sellerName: displayName(user, seller.businessName),
         payoutLabel: payoutLabel(user),
-        totalCents: items.reduce((sum, i) => sum + i.priceCents, 0),
+        // Priced items only: a ticket checked in before its price is "price to
+        // come", never $0 (Plan 32).
+        totalCents: items.reduce((sum, i) => sum + (i.priceCents ?? 0), 0),
         itemCount: items.length,
         lines: {
           create: items.map((item, position) => ({
@@ -196,7 +202,8 @@ export class ReceiptService {
       select: { id: true, name: true, sku: true, priceCents: true },
     });
     if (items.length !== lines.length) return false;
-    const key = (x: { itemId?: string | null; id?: string; name: string; sku: string; priceCents: number }) =>
+    // A price filled in later is a change the seller can see, so it reissues.
+    const key = (x: { itemId?: string | null; id?: string; name: string; sku: string; priceCents: number | null }) =>
       `${x.itemId ?? x.id}|${x.name}|${x.sku}|${x.priceCents}`;
     const have = new Set(lines.map(key));
     return items.every((i) => have.has(key(i)));
@@ -429,6 +436,7 @@ export class ReceiptService {
       payoutLabel: receipt.payoutLabel,
       totalCents: receipt.totalCents,
       itemCount: receipt.itemCount,
+      unpricedCount: lines.filter((l) => l.priceCents === null).length,
       createdAt: receipt.createdAt,
       url: this.urlFor(receipt.token),
       trackUrl: this.sellerSite(`/s/${receipt.sellerId}`),

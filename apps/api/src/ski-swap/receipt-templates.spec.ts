@@ -12,6 +12,7 @@ const view = (over: Partial<ReceiptView> = {}): ReceiptView => ({
   payoutLabel: 'Check',
   totalCents: 13500,
   itemCount: 2,
+  unpricedCount: 0,
   createdAt: new Date('2026-09-17T13:42:00Z'),
   url: 'https://skiswap.patrolkit.io/r/Xk3abcdefghijklmnopqrstuvwxyz012',
   trackUrl: 'https://skiswap.patrolkit.io/s/seller123',

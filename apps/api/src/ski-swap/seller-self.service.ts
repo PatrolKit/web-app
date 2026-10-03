@@ -105,7 +105,7 @@ export class SellerSelfService {
     orgId: string,
     userId: string,
     swapId: string,
-    rows: { sku: string; name?: string; description?: string; priceCents: number }[],
+    rows: { sku: string; name?: string; description?: string; priceCents: number | null }[],
     generateSkus = false,
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
@@ -133,7 +133,8 @@ export class SellerSelfService {
       categoryId?: string;
       attributes?: ItemAttributeInput[];
       description?: string;
-      priceCents: number;
+      /** None only for a legacy ticket (Plan 32); `ItemService.create` decides. */
+      priceCents?: number | null;
       quantity: number;
       donateProceeds?: boolean;
       stationId?: string;

@@ -290,10 +290,13 @@ ok('and imported items count as printed',
 const priced = imported.find((i) => i.sku === '70005');
 ok('a price with a decimal became cents', priced?.priceCents === 18000, String(priced?.priceCents));
 
+// A ticket may wait for its price (Plan 32): it lands unpriced, not refused.
 const noPrice = await upload('sku,name,price\n70003,No price,\n');
-ok('a row with no price is refused',
-   (noPrice.body.data ?? []).some((r) => /needs a price/.test(r.error ?? '')),
-   JSON.stringify((noPrice.body.data ?? []).map((r) => r.error)));
+ok('a ticket row with no price imports, to be priced later',
+   (noPrice.body.data ?? []).every((r) => r.outcome === 'created'),
+   JSON.stringify((noPrice.body.data ?? []).map((r) => r.outcome)));
+const unpriced = await prisma.swapItem.findFirst({ where: { swapId: swap.id, sku: '70003' } });
+ok('...with no price, not $0', unpriced?.priceCents === null, String(unpriced?.priceCents));
 
 const noSkuColumn = await upload('name,price\nSomething,10.00\n');
 // Read as rows without tickets since Plan 31: without "Generate SKUs as
