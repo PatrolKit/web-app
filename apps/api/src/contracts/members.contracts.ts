@@ -17,6 +17,8 @@ export const MemberResponseSchema = z.object({
   joinedAt: z.date(),
   /// Soft removal. Null ⇒ live member; set ⇒ removed but retained as a tombstone.
   removedAt: z.date().nullable(),
+  /// When the member was last emailed an invite to sign in. Null ⇒ never.
+  inviteSentAt: z.date().nullable(),
   permissions: z.array(PermissionKeySchema),
   roles: z.array(z.enum(['seller', 'patroller'])),
 });

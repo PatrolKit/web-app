@@ -39,7 +39,7 @@ export class MembersService {
    * administrator added, who has never been told. Sent by hand, from the
    * Members page, as often as needed.
    */
-  async sendInvite(orgId: string, userId: string): Promise<{ sentTo: string; status: string }> {
+  async sendInvite(orgId: string, userId: string): Promise<{ sentTo: string; status: string; inviteSentAt: Date | null }> {
     const membership = await this.prisma.membership.findUnique({
       where: { userId_orgId: { userId, orgId } },
       include: { user: true, org: true },
@@ -47,8 +47,20 @@ export class MembersService {
     if (!membership || membership.deletedAt) throw new NotFoundException('Member not found');
     const email = membership.user.verifiedEmail ?? membership.user.email;
     if (!email) throw new BadRequestException('This member has no email address to send an invite to.');
-    const outcome = await this.mail.sendMemberInvite(email, membership.org.name);
-    return { sentTo: email, status: outcome.status };
+    const { status, inviteSentAt } = await this.emailInvite(membership.id, email, membership.org.name);
+    return { sentTo: email, status, inviteSentAt };
+  }
+
+  /**
+   * Sends the invite and, if it went, records when on the membership. A
+   * suppressed or failed send leaves the record as it was.
+   */
+  private async emailInvite(membershipId: string, email: string, orgName: string) {
+    const { status } = await this.mail.sendMemberInvite(email, orgName);
+    if (status !== 'sent') return { status, inviteSentAt: null };
+    const inviteSentAt = new Date();
+    await this.prisma.membership.update({ where: { id: membershipId }, data: { inviteSentAt } });
+    return { status, inviteSentAt };
   }
 
   // ─── List ─────────────────────────────────────────────────────────────────
@@ -105,7 +117,8 @@ export class MembersService {
     // people open it. Suppressed globally while OUTBOUND_NOTIFICATIONS is off.
     if (user.email) {
       const org = await this.prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { name: true } });
-      this.mail.sendMemberInvite(user.email, org.name).catch(() => {});
+      // Awaited, so the response carries when it went: the Members page shows it.
+      await this.emailInvite(membership.id, user.email, org.name).catch(() => {});
     }
 
     return this.getMemberResponse(membership.id);
@@ -189,7 +202,7 @@ export class MembersService {
         this.permissionsService.invalidate(user.id, orgId);
 
         if (orgName && user.email) {
-          this.mail.sendMemberInvite(user.email, orgName).catch(() => {});
+          this.emailInvite(membership.id, user.email, orgName).catch(() => {});
           outcomes.push({ row: i + 1, email: email ?? '', outcome: 'invited' });
         } else {
           outcomes.push({ row: i + 1, email: email ?? '', outcome: 'created' });
@@ -292,6 +305,7 @@ type MembershipWithRelations = {
   userId: string;
   joinedAt: Date;
   deletedAt: Date | null;
+  inviteSentAt: Date | null;
   user: {
     email: string | null;
     emailVerifiedAt: Date | null;
@@ -318,6 +332,7 @@ export function toMemberResponse(m: MembershipWithRelations): MemberResponse {
     displayName: displayName(m.user),
     joinedAt: m.joinedAt,
     removedAt: m.deletedAt,
+    inviteSentAt: m.inviteSentAt,
     permissions: m.permissions.map((mp) => mp.permission.key as PermissionKey),
     roles: [
       ...(m.sellerProfile && !m.sellerProfile.deletedAt ? (['seller'] as const) : []),

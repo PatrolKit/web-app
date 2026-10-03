@@ -268,7 +268,7 @@ export const api = {
     list: (orgId: string) => request<import('./api.types').MemberResponse[]>(`/orgs/${orgId}/members`),
     /** Emails a member where and how to sign in. Doesn't expire. */
     sendInvite: (orgId: string, userId: string) =>
-      request<{ sentTo: string; status: string }>(`/orgs/${orgId}/members/${userId}/invite`, { method: 'POST' }),
+      request<{ sentTo: string; status: string; inviteSentAt: string | null }>(`/orgs/${orgId}/members/${userId}/invite`, { method: 'POST' }),
     invite: (orgId: string, data: { email: string; firstName?: string; lastName?: string; phone?: string; permissions: string[] }) =>
       request<import('./api.types').MemberResponse>(`/orgs/${orgId}/members`, {
         method: 'POST',

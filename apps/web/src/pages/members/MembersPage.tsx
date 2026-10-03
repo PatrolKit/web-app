@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { MemberResponse, ImportOutcome } from '../../lib/api.types';
+import { matchesSearch } from './memberSearch';
 
 /** The invite form takes one name field; the API stores the parts separately. */
 function splitInviteName(raw: string): { firstName?: string; lastName?: string } {
@@ -10,6 +11,10 @@ function splitInviteName(raw: string): { firstName?: string; lastName?: string }
   if (parts.length === 0) return {};
   if (parts.length === 1) return { firstName: parts[0] };
   return { firstName: parts.slice(0, -1).join(' '), lastName: parts[parts.length - 1] };
+}
+
+function inviteDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export default function MembersPage() {
@@ -23,12 +28,14 @@ export default function MembersPage() {
   const [showImport, setShowImport] = useState(false);
   const [editingPermsFor, setEditingPermsFor] = useState<string | null>(null);
   const [draftPerms, setDraftPerms] = useState<string[]>([]);
+  const [search, setSearch] = useState('');
 
   const { data: members = [], isLoading } = useQuery({
     queryKey: ['members', orgId],
     queryFn: () => api.members.list(orgId),
     enabled: !!orgId,
   });
+  const shown = useMemo(() => members.filter((m) => matchesSearch(m, search)), [members, search]);
 
   const { data: allPerms = [] } = useQuery({
     queryKey: ['permissions', orgId],
@@ -55,12 +62,15 @@ export default function MembersPage() {
   const [inviteNotes, setInviteNotes] = useState<Record<string, { ok: boolean; text: string }>>({});
   const sendInviteMutation = useMutation({
     mutationFn: (userId: string) => api.members.sendInvite(orgId, userId),
-    onSuccess: (res, userId) => setInviteNotes((n) => ({
-      ...n,
-      [userId]: res.status === 'sent'
-        ? { ok: true, text: `Invite sent to ${res.sentTo}` }
-        : { ok: false, text: `Not sent (${res.status}) — outgoing email may be switched off` },
-    })),
+    onSuccess: (res, userId) => {
+      setInviteNotes((n) => ({
+        ...n,
+        [userId]: res.status === 'sent'
+          ? { ok: true, text: `Invite sent to ${res.sentTo}` }
+          : { ok: false, text: `Not sent (${res.status}) — outgoing email may be switched off` },
+      }));
+      void qc.invalidateQueries({ queryKey: ['members', orgId] });
+    },
     onError: (err: Error, userId) => setInviteNotes((n) => ({ ...n, [userId]: { ok: false, text: err.message } })),
   });
 
@@ -80,6 +90,7 @@ export default function MembersPage() {
     if (!csvFile) return;
     const result = await api.members.importCsv(orgId, csvFile, sendInvites);
     setImportResults(result.data ?? []);
+    void qc.invalidateQueries({ queryKey: ['members', orgId] });
   }
 
   if (isLoading) return <p className="text-gray-400">Loading…</p>;
@@ -143,20 +154,43 @@ export default function MembersPage() {
         </div>
       )}
 
+      <div className="space-y-3">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, email, or phone"
+          aria-label="Search members"
+          className="w-full max-w-md bg-surface-50 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+        />
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead><tr className="text-left text-gray-500 border-b border-gray-800">
             <th className="py-2 pr-4">Name</th><th className="py-2 pr-4">Email</th>
-            <th className="py-2 pr-4">Status</th><th className="py-2 pr-4">Permissions</th>
+            <th className="py-2 pr-4">Status</th><th className="py-2 pr-4">Invited</th><th className="py-2 pr-4">Permissions</th>
             {(perms.has('users:manage') || perms.has('permissions:assign') || perms.has('users:invite')) && <th className="py-2">Actions</th>}
           </tr></thead>
-          <tbody>{members.map((m: MemberResponse) => (
+          <tbody>
+          {shown.length === 0 && (
+            <tr><td colSpan={6} className="py-4 text-gray-500">
+              {search.trim() ? `No members match “${search.trim()}”.` : 'No members yet.'}
+            </td></tr>
+          )}
+          {shown.map((m: MemberResponse) => (
             <React.Fragment key={m.userId}>
               <tr className="border-b border-gray-800">
                 <td className="py-2 pr-4 text-white">{m.displayName}</td>
-                <td className="py-2 pr-4 text-gray-400">{m.email}</td>
+                <td className="py-2 pr-4 text-gray-400">
+                  {m.email}
+                  {m.phone && <div className="text-xs text-gray-500">{m.phone}</div>}
+                </td>
                 <td className="py-2 pr-4">
                   <span className={`text-xs px-2 py-0.5 rounded-full ${m.removedAt === null ? 'bg-green-900 text-green-400' : 'bg-gray-800 text-gray-400'}`}>{m.removedAt === null ? 'active' : 'removed'}</span>
+                </td>
+                <td className="py-2 pr-4 text-xs whitespace-nowrap">
+                  {m.inviteSentAt
+                    ? <span className="text-gray-300" title={new Date(m.inviteSentAt).toLocaleString()}>{inviteDate(m.inviteSentAt)}</span>
+                    : <span className="text-gray-600">Not yet</span>}
                 </td>
                 <td className="py-2 pr-4 text-xs text-gray-500 max-w-xs truncate">{m.permissions.join(', ') || '—'}</td>
                 <td className="py-2 flex gap-3 items-center flex-wrap">
@@ -191,7 +225,7 @@ export default function MembersPage() {
               </tr>
               {editingPermsFor === m.userId && (
                 <tr className="border-b border-gray-800 bg-surface-50">
-                  <td colSpan={5} className="px-4 py-3">
+                  <td colSpan={6} className="px-4 py-3">
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1.5 mb-3">
                       {allPerms.map((p) => (
                         <label key={p.key} className="flex items-center gap-2 text-xs cursor-pointer">
@@ -213,6 +247,7 @@ export default function MembersPage() {
             </React.Fragment>
           ))}</tbody>
         </table>
+      </div>
       </div>
     </div>
   );

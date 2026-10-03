@@ -134,6 +134,9 @@ model Membership {
   /// Soft removal. Memberships are never hard-deleted — offline devices need
   /// the tombstone to learn that someone left the roster.
   deletedAt DateTime?
+  /// When this member was last emailed an invite to sign in, if ever. Only a
+  /// sent email counts, not one suppressed or refused.
+  inviteSentAt DateTime?
 
   user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   org         Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)

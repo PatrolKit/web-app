@@ -109,6 +109,8 @@ export interface MemberResponse {
   joinedAt: string;
   /** Soft removal — null means a live member. */
   removedAt: string | null;
+  /** When the member was last emailed an invite to sign in. Null ⇒ never. */
+  inviteSentAt: string | null;
   permissions: string[];
   roles: OrgRole[];
 }

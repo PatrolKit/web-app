@@ -6,20 +6,33 @@ import { MembersService } from './members.service';
  */
 
 describe('a member invite', () => {
-  function members(user: { email: string | null; verifiedEmail: string | null }) {
+  function members(user: { email: string | null; verifiedEmail: string | null }, status = 'sent') {
     const sent: { to: string; org: string }[] = [];
+    const stamped: Record<string, unknown>[] = [];
     const prisma = {
-      membership: { findUnique: async () => ({ deletedAt: null, user, org: { name: 'BMBWAV Ski Patrol' } }) },
+      membership: {
+        findUnique: async () => ({ id: 'membership-1', deletedAt: null, user, org: { name: 'BMBWAV Ski Patrol' } }),
+        update: async ({ data }: { data: Record<string, unknown> }) => { stamped.push(data); return {}; },
+      },
     };
-    const mail = { sendMemberInvite: async (to: string, org: string) => { sent.push({ to, org }); return { status: 'sent' }; } };
+    const mail = { sendMemberInvite: async (to: string, org: string) => { sent.push({ to, org }); return { status }; } };
     const unused = {} as never;
-    return { svc: new MembersService(prisma as never, unused, unused, unused, mail as never), sent };
+    return { svc: new MembersService(prisma as never, unused, unused, unused, mail as never), sent, stamped };
   }
 
-  it('is emailed to the member’s address, naming the org', async () => {
-    const { svc, sent } = members({ email: 'dana@example.com', verifiedEmail: null });
-    await expect(svc.sendInvite('org-1', 'user-1')).resolves.toEqual({ sentTo: 'dana@example.com', status: 'sent' });
+  it('is emailed to the member’s address, naming the org, and recorded', async () => {
+    const { svc, sent, stamped } = members({ email: 'dana@example.com', verifiedEmail: null });
+    const result = await svc.sendInvite('org-1', 'user-1');
+    expect(result).toMatchObject({ sentTo: 'dana@example.com', status: 'sent' });
+    expect(result.inviteSentAt).toBeInstanceOf(Date);
     expect(sent).toEqual([{ to: 'dana@example.com', org: 'BMBWAV Ski Patrol' }]);
+    expect(stamped).toEqual([{ inviteSentAt: result.inviteSentAt }]);
+  });
+
+  it('isn’t recorded when outgoing email is switched off', async () => {
+    const { svc, stamped } = members({ email: 'dana@example.com', verifiedEmail: null }, 'suppressed');
+    await expect(svc.sendInvite('org-1', 'user-1')).resolves.toMatchObject({ status: 'suppressed', inviteSentAt: null });
+    expect(stamped).toEqual([]);
   });
 
   it('is refused for a member with no email', async () => {
@@ -32,7 +45,10 @@ describe('a member invite', () => {
 describe('adding members', () => {
   function adder() {
     const sent: { to: string; org: string }[] = [];
-    const prisma = { organization: { findUniqueOrThrow: async () => ({ name: 'BMBWAV Ski Patrol' }) } };
+    const prisma = {
+      organization: { findUniqueOrThrow: async () => ({ name: 'BMBWAV Ski Patrol' }) },
+      membership: { update: async () => ({}) },
+    };
     const people = {
       resolve: async () => null,
       resolveOrCreate: async ({ email }: { email?: string }) => ({ user: { id: `user-${email}`, email: email ?? null } }),
