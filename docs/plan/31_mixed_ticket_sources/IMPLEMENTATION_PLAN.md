@@ -226,6 +226,13 @@ printed.
 **The seller's printer** is the one assigned to them (§4), found by the web's printer
 pool as now.
 
+**Printing activates the item.** A label printed from the web for an item whose SKU
+the web made accepts that item onto the floor, and sends it to Square. That's any
+SKU that is neither a ticket nor a station's (which carries a counter letter). No
+counter scan follows. The shop printed the label and brings the gear tagged, and
+the acceptance is recorded as theirs. Ticket items and station SKUs wait for staff
+as before. This is done in the shared item patch, so it holds whoever prints.
+
 ---
 
 ## 8. The iPad
@@ -238,8 +245,8 @@ A short note to the iOS side says:
 - generated-SKU items can belong to a seller with ranges. At the counter they scan as
   ordinary Code-128 tags.
 
-**Worth testing on hardware before the beta:** an iPad in a check-in-tickets-only swap
-accepting the shop's generated-SKU items by scanning their labels.
+The iPad never needs to scan the shop's generated-SKU items: printing their labels
+on the web already accepted them (§7).
 
 ---
 

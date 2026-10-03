@@ -262,7 +262,9 @@ export class SellerSelfService {
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
     const editsItem = Object.entries(data).some(([key, value]) => key !== 'hasPrintedTag' && value !== undefined);
     if (editsItem) this.assertNotAccepted(item);
-    return this.itemService.patch(orgId, item.swapId, itemId, data);
+    // The seller is the actor: printing a label for an item whose SKU the web
+    // made accepts it (Plan 31), and that acceptance is theirs.
+    return this.itemService.patch(orgId, item.swapId, itemId, { ...data, actorId: userId });
   }
 
   /**

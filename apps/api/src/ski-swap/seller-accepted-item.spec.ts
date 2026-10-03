@@ -52,7 +52,7 @@ describe('a seller and their accepted item', () => {
   it('can still record that a tag was printed for it', async () => {
     const { svc, calls } = build(true);
     await svc.updateItem('org-1', 'user-1', 'item-1', { hasPrintedTag: true });
-    expect(calls).toEqual(['patch hasPrintedTag']);
+    expect(calls).toEqual(['patch hasPrintedTag,actorId']);
   });
 });
 
@@ -62,6 +62,6 @@ describe('a seller and an item not yet accepted', () => {
     await svc.updateItem('org-1', 'user-1', 'item-1', { priceCents: 9900, quantity: 2, description: 'x', donateProceeds: true });
     await svc.uploadPhoto('org-1', 'user-1', 'item-1', photo);
     await svc.deletePhoto('org-1', 'user-1', 'item-1', 'photo-1');
-    expect(calls).toEqual(['patch priceCents,quantity,description,donateProceeds', 'upload', 'deletePhoto']);
+    expect(calls).toEqual(['patch priceCents,quantity,description,donateProceeds,actorId', 'upload', 'deletePhoto']);
   });
 });

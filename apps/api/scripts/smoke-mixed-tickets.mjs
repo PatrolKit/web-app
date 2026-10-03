@@ -106,6 +106,19 @@ ok('...the tickets marked printed, the generated ones not',
   ticketed.every((i) => i.hasPrintedTag) && generated.every((i) => !i.hasPrintedTag));
 ok('...and the result names each generated SKU', imported.filter?.((r) => r.generated).every((r) => generated.some((i) => i.sku === r.sku)));
 
+// Printing a label from the web activates a web-made item: no counter scan.
+ok('a shop’s generated items wait until their label is printed', generated.every((i) => i.consignedAt === null));
+const printed = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/${generated[0].id}`, {
+  method: 'PATCH', headers: json(M), body: JSON.stringify({ hasPrintedTag: true }),
+}).then(unwrap);
+const afterPrint = await prisma.swapItem.findUnique({ where: { id: generated[0].id } });
+ok('...and printing one accepts it, by the shop, with no scan', !!afterPrint.consignedAt && afterPrint.consignedBy === mixed.user.id && printed.consignedAt,
+  `${afterPrint.consignedAt?.toISOString()} by ${afterPrint.consignedBy}`);
+await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/${ticketed[0].id}`, {
+  method: 'PATCH', headers: json(M), body: JSON.stringify({ hasPrintedTag: true }),
+});
+ok('...while a ticket item still waits for the counter', (await prisma.swapItem.findUnique({ where: { id: ticketed[0].id } })).consignedAt === null);
+
 const pickable = await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}/items/ticket-sellers`, { headers: S }).then(unwrap);
 ok('staff can upload for a shop without tickets while the web is open', pickable.some((s) => s.sellerId === plain.seller.id),
   JSON.stringify(pickable.map((s) => s.displayName)));

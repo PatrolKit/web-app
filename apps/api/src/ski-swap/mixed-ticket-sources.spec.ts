@@ -211,3 +211,12 @@ describe('an upload to a swap that takes no tickets', () => {
     expect(results[1].error).toMatch(/doesn’t take legacy tickets/);
   });
 });
+
+describe('which SKUs the web made', () => {
+  it('is neither a ticket nor a station’s', async () => {
+    const { isWebMadeSku } = await import('./item.service');
+    expect(isWebMadeSku('MIX-0042')).toBe(true);
+    expect(isWebMadeSku('71001')).toBe(false);
+    expect(isWebMadeSku('SS26-A-0001')).toBe(false);
+  });
+});

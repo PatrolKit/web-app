@@ -18,6 +18,7 @@ import { LegacyTicketService, ticketNumberOf, type ImportRowResult } from './leg
 import { TaxonomyService, type ItemAttributeInput, type ItemDescription } from './taxonomy/taxonomy.service';
 import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
+import { stationCodeOf } from './sku.util';
 import type { ItemResponse } from '../contracts/ski-swap.contracts';
 
 export interface ItemPhotoResponse { id: string; url: string; }
@@ -564,11 +565,23 @@ export class ItemService {
       if (pos) await pos.setInventoryPhysicalCount(updated.squareVariationId, swap.locationId, data.quantity).catch(() => {});
     }
 
-    const [inventoryMap, descriptions] = await Promise.all([
-      this.fetchInventoryMap(orgId, swap, [updated]),
-      this.fetchDescriptions([updated]),
-    ]);
-    const response = this.toResponse(updated, inventoryMap, descriptions);
+    /*
+     * A label printed from the web for an item whose SKU the web made (Plan 31)
+     * is that item going on the floor: no counter scan follows for it. The
+     * shop printed it at home and brings the gear tagged, so it is accepted
+     * here, by whoever printed it, and reaches Square. A ticket or a station
+     * SKU keeps waiting for staff as before.
+     */
+    const response =
+      data.hasPrintedTag === true && !existing.consignedAt && isWebMadeSku(updated.sku)
+        ? await this.consign(orgId, swapId, itemId, data.actorId ?? null)
+        : await (async () => {
+            const [inventoryMap, descriptions] = await Promise.all([
+              this.fetchInventoryMap(orgId, swap, [updated]),
+              this.fetchDescriptions([updated]),
+            ]);
+            return this.toResponse(updated, inventoryMap, descriptions);
+          })();
     if (idempotencyKey) {
       await this.idempotency.save(
         `item-patch:${orgId}:${swapId}`,
@@ -1206,6 +1219,15 @@ export class ItemService {
  * same on the tag the iPad prints, in the web, and in Square, so an item can be
  * found by the one thing written on it.
  */
+/**
+ * A SKU the web made: neither a legacy ticket number nor a station's, which
+ * carries its counter's letter (`SS26-A-0001`). What a shop prints its own
+ * label for (Plan 31).
+ */
+export function isWebMadeSku(sku: string): boolean {
+  return ticketNumberOf(sku) === null && stationCodeOf(sku) === null;
+}
+
 export function uncategorisedName(sku: string): string {
   return `Item #${sku}`;
 }
