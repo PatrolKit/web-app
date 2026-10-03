@@ -5,6 +5,7 @@ import {
   NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PersonService } from '../common/identity/person.service';
@@ -21,6 +22,24 @@ import { MailService } from '../mail/mail.service';
 import { ALL_PERMISSION_KEYS, type PermissionKey } from '../contracts/org.contracts';
 
 const MAX_CSV_ROWS = 500;
+
+/**
+ * Who the Members page is for: patrollers, anyone given permissions, and anyone
+ * invited here plainly. A ski swap seller has a membership too, because that's
+ * where a seller profile hangs, but someone who is only a seller here isn't a
+ * member and is managed under Ski Swap > Sellers.
+ */
+const IS_MEMBER: Prisma.MembershipWhereInput = {
+  OR: [
+    { sellerProfile: { is: null } },
+    { sellerProfile: { is: { deletedAt: { not: null } } } },
+    { patrollerProfile: { is: { deletedAt: null } } },
+    { permissions: { some: {} } },
+  ],
+};
+
+const SELLER_ONLY_MESSAGE =
+  'This person is a ski swap seller here, not a member. Give them permissions, or add them to the patroller roster, to make them one.';
 
 @Injectable()
 export class MembersService {
@@ -44,7 +63,9 @@ export class MembersService {
       where: { userId_orgId: { userId, orgId } },
       include: { user: true, org: true },
     });
-    if (!membership || membership.deletedAt) throw new NotFoundException('Member not found');
+    if (!membership || membership.deletedAt || !(await this.isMember(membership.id))) {
+      throw new NotFoundException('Member not found');
+    }
     const email = membership.user.verifiedEmail ?? membership.user.email;
     if (!email) throw new BadRequestException('This member has no email address to send an invite to.');
     const { status, inviteSentAt } = await this.emailInvite(membership.id, email, membership.org.name);
@@ -63,11 +84,15 @@ export class MembersService {
     return { status, inviteSentAt };
   }
 
+  private async isMember(membershipId: string): Promise<boolean> {
+    return (await this.prisma.membership.count({ where: { id: membershipId, ...IS_MEMBER } })) > 0;
+  }
+
   // ─── List ─────────────────────────────────────────────────────────────────
 
   async listMembers(orgId: string): Promise<MemberResponse[]> {
     const memberships = await this.prisma.membership.findMany({
-      where: { orgId, deletedAt: null },
+      where: { orgId, deletedAt: null, ...IS_MEMBER },
       include: {
         user: true,
         permissions: { include: { permission: true } },
@@ -95,7 +120,9 @@ export class MembersService {
         where: { userId_orgId: { userId: existingUser.id, orgId } },
       });
       if (membership && membership.deletedAt === null) {
-        throw new BadRequestException('User is already a member of this org');
+        // A seller here becomes a member by being given something to do.
+        if (await this.isMember(membership.id)) throw new BadRequestException('User is already a member of this org');
+        if (data.permissions.length === 0) throw new BadRequestException(SELLER_ONLY_MESSAGE);
       }
     }
 
@@ -188,8 +215,15 @@ export class MembersService {
           : null;
 
         if (existingMembership && existingMembership.deletedAt === null) {
-          outcomes.push({ row: i + 1, email: email ?? '', outcome: 'already_member' });
-          continue;
+          if (await this.isMember(existingMembership.id)) {
+            outcomes.push({ row: i + 1, email: email ?? '', outcome: 'already_member' });
+            continue;
+          }
+          // Only a seller here: the row's permissions make them a member.
+          if (permKeys.length === 0) {
+            outcomes.push({ row: i + 1, email: email ?? '', outcome: 'error', error: SELLER_ONLY_MESSAGE });
+            continue;
+          }
         }
 
         const { user } = await this.people.resolveOrCreate({ email, phone, firstName, lastName });
