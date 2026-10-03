@@ -9,6 +9,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { parse as parseCsv } from 'csv-parse/sync';
 import { SmsService } from '../sms/sms.service';
 import type { PersonSearchResult, SellerResponse } from '../contracts/ski-swap.contracts';
+import { unverifyChangedContacts } from '../common/identity/contact-verification';
 
 // ─── Address normalisation ────────────────────────────────────────────────────
 
@@ -718,15 +719,25 @@ export class SellerService {
 
     if (Object.keys(update).length === 0) return;
 
-    assertPayoutIsCoherent({
-      method: 'payoutMethod' in update ? (update.payoutMethod as string | null) : current.payoutMethod,
-      target: 'payoutTarget' in update ? (update.payoutTarget as string | null) : current.payoutTarget,
-      handle: 'payoutHandle' in update ? (update.payoutHandle as string | null) : current.payoutHandle,
-      emailVerified: !!current.emailVerifiedAt,
-      phoneVerified: !!current.phoneVerifiedAt,
+    const unverify = unverifyChangedContacts(current, {
+      email: update.email as string | null | undefined,
+      phone: update.phone as string | null | undefined,
     });
 
-    await this.prisma.user.update({ where: { id: userId }, data: update });
+    // A payout target written now is judged against the contacts as they'll
+    // stand after this write. One already stored isn't re-judged: an address
+    // corrected under it leaves the next payout run to flag it, where somebody
+    // can fix it, rather than refusing the correction.
+    const targetWritten = 'payoutTarget' in update;
+    assertPayoutIsCoherent({
+      method: 'payoutMethod' in update ? (update.payoutMethod as string | null) : current.payoutMethod,
+      target: targetWritten ? (update.payoutTarget as string | null) : current.payoutTarget,
+      handle: 'payoutHandle' in update ? (update.payoutHandle as string | null) : current.payoutHandle,
+      emailVerified: !!current.emailVerifiedAt && !(targetWritten && 'verifiedEmail' in unverify),
+      phoneVerified: !!current.phoneVerifiedAt && !(targetWritten && 'verifiedPhone' in unverify),
+    });
+
+    await this.prisma.user.update({ where: { id: userId }, data: { ...update, ...unverify } });
     await this.touch.touchAllForUser(userId);
   }
 }

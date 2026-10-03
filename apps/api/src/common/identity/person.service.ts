@@ -5,6 +5,7 @@ import type { Prisma, User } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MembershipTouchService } from './membership-touch.service';
 import { normalizeEmail, normalizeNamePart, normalizeNspId, normalizePhone } from '../util/person';
+import { unverifyChangedContacts } from './contact-verification';
 
 export interface PersonIdentifiers {
   email?: string | null;
@@ -87,7 +88,12 @@ export class PersonService {
       };
       if (Object.keys(fill).length === 0) return { user: existing, created: false };
 
-      const user = await this.prisma.user.update({ where: { id: existing.id }, data: fill });
+      // Fills only gaps, but a gap can sit under a verification left from an
+      // address since cleared, and that proves nothing about this one.
+      const user = await this.prisma.user.update({
+        where: { id: existing.id },
+        data: { ...fill, ...unverifyChangedContacts(existing, { email: fill.email as string | undefined, phone: fill.phone as string | undefined }) },
+      });
       await this.touch.touchAllForUser(user.id);
       return { user, created: false };
     }

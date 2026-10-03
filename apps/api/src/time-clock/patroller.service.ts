@@ -9,6 +9,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { parse as parseCsv } from 'csv-parse/sync';
 import { SmsService } from '../sms/sms.service';
 import type { PatrollerResponse } from '../contracts/time-clock.contracts';
+import { unverifyChangedContacts } from '../common/identity/contact-verification';
 
 export { normalizeNspId };
 
@@ -145,15 +146,17 @@ export class PatrollerService {
       await this.assertNspAvailable(nspId, userId);
     }
 
+    const phone = data.phone !== undefined ? normalizePhone(data.phone) : undefined;
     await this.prisma.user.update({
       where: { id: userId },
       data: {
+        ...unverifyChangedContacts(existing.membership.user, { email: data.email, phone }),
         ...(data.firstName !== undefined ? { firstName: normalizeNamePart(data.firstName) } : {}),
         ...(data.lastName !== undefined ? { lastName: normalizeNamePart(data.lastName) } : {}),
         ...(nspId !== undefined ? { nspId } : {}),
         ...(data.patrolLevel !== undefined ? { patrolLevel: data.patrolLevel?.trim() || null } : {}),
         ...(data.email !== undefined ? { email: data.email } : {}),
-        ...(data.phone !== undefined ? { phone: normalizePhone(data.phone) } : {}),
+        ...(phone !== undefined ? { phone } : {}),
       },
     });
 

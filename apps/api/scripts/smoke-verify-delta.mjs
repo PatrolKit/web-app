@@ -1,4 +1,4 @@
-// A verified contact reaches a delta-syncing iPad.
+// A verified contact reaches a delta-syncing iPad, and a changed one is unverified.
 //
 // The iPads sync sellers with `?updatedSince=`, which reads Membership.updatedAt.
 // Verifying a contact writes only the user, so confirming one has to move every
@@ -21,7 +21,9 @@ const ok = (label, cond, extra = '') => {
 };
 
 const EMAIL = 'verify-delta-seller@patrolkit.invalid';
-await prisma.user.deleteMany({ where: { OR: [{ email: EMAIL }, { verifiedEmail: EMAIL }] } });
+await prisma.user.deleteMany({
+  where: { OR: [{ email: EMAIL }, { verifiedEmail: EMAIL }, { email: 'verify-delta-new@patrolkit.invalid' }] },
+});
 
 const org = await smokeOrg(prisma);
 const { user: staffUser } = await smokeStaff(prisma, org, ['ski_swap:report', 'ski_swap:manage', 'ski_swap:admin']);
@@ -63,6 +65,20 @@ ok('the verification link is confirmed', confirmed.ok, `HTTP ${confirmed.status}
 const after = (await delta()).find((s) => s.id === profile.id);
 ok('after verifying, a delta from before carries the seller', !!after);
 ok('...with the email verified', !!after?.emailVerifiedAt, String(after?.emailVerifiedAt));
+
+// Staff correcting the email unverifies it: the new address is unproven, and
+// the old one is no longer where receipts and payouts go.
+const changed = await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers/${profile.id}`, {
+  method: 'PATCH', headers: { ...SH, 'content-type': 'application/json' },
+  body: JSON.stringify({ email: 'verify-delta-new@patrolkit.invalid' }),
+});
+ok('staff can change the verified email', changed.ok, `HTTP ${changed.status}`);
+const unverified = (await delta()).find((s) => s.id === profile.id);
+ok('...which unverifies it, and a delta says so',
+  unverified?.email === 'verify-delta-new@patrolkit.invalid' && unverified?.emailVerifiedAt === null,
+  JSON.stringify({ email: unverified?.email, emailVerifiedAt: unverified?.emailVerifiedAt }));
+const row = await prisma.user.findUnique({ where: { id: seller.id }, select: { verifiedEmail: true } });
+ok('...and receipts no longer go to the old address', row?.verifiedEmail === null, String(row?.verifiedEmail));
 
 await prisma.user.delete({ where: { id: seller.id } });
 console.log(failed ? `${failed} failed` : 'All assertions passed');
