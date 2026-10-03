@@ -24,7 +24,7 @@ const EMAIL = 'verify-delta-seller@patrolkit.invalid';
 await prisma.user.deleteMany({ where: { OR: [{ email: EMAIL }, { verifiedEmail: EMAIL }] } });
 
 const org = await smokeOrg(prisma);
-const { user: staffUser } = await smokeStaff(prisma, org, ['ski_swap:manage']);
+const { user: staffUser } = await smokeStaff(prisma, org, ['ski_swap:report', 'ski_swap:manage', 'ski_swap:admin']);
 const SH = { authorization: `Bearer ${await smokeSession(prisma, BASE, staffUser, unwrap)}` };
 
 // A seller whose row last changed well before the cursor.
@@ -37,8 +37,12 @@ const profile = await prisma.sellerProfile.create({ data: { id: createId(), memb
 await prisma.membership.update({ where: { id: membership.id }, data: { updatedAt: long_ago } });
 
 const cursor = new Date(Date.now() - 1000).toISOString();
-const delta = () => fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers?updatedSince=${encodeURIComponent(cursor)}`, { headers: SH })
-  .then(unwrap).then((r) => r.sellers ?? []);
+// A refusal must not read as an empty delta, or the first check passes on it.
+const delta = async () => {
+  const r = await fetch(`${BASE}/orgs/${org.id}/ski-swap/sellers?updatedSince=${encodeURIComponent(cursor)}`, { headers: SH }).then(unwrap);
+  if (!Array.isArray(r?.sellers)) throw new Error(`The sellers delta failed: ${JSON.stringify(r).slice(0, 200)}`);
+  return r.sellers;
+};
 
 ok('before verifying, the seller is not in the delta', !(await delta()).some((s) => s.id === profile.id));
 
