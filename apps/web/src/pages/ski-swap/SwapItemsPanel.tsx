@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
 import type { ItemAttributeInput, ItemResponse, SellerResponse } from '../../lib/api.types';
@@ -300,17 +300,30 @@ export default function SwapItemsPanel({
 
   const [sellerFilter, setSellerFilter] = useState('');
 
-  const queryKey = [queryKeyPrefix, orgId, swapId, query, sellerFilter];
+  // The box updates as it's typed in; the search waits for a pause, so a word
+  // is one request rather than one per letter.
+  const [searchTerm, setSearchTerm] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(query.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [query]);
 
-  const { data, isLoading } = useQuery({
+  const queryKey = [queryKeyPrefix, orgId, swapId, searchTerm, sellerFilter];
+
+  const { data, isLoading, isFetching } = useQuery({
     queryKey,
+    // The last results stay up while the next load, so the table and its
+    // search box stay on screen rather than giving way to "Loading…" each time.
+    // Not across swaps: another swap's items aren't a stand-in for these.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === swapId ? keepPreviousData(previous) : undefined,
     // Every page, not the first. The filters above the table are applied to
     // what came back, so a list cut off at the server's default of fifty was a
     // list that silently did not have the items a filter was looking for.
     queryFn: async () => {
       const PAGE = 200;
       const scope = {
-        ...(query ? { query } : {}),
+        ...(searchTerm ? { query: searchTerm } : {}),
         ...(sellerFilter ? { sellerId: sellerFilter } : {}),
       };
       const first = await panelApi.fetchItems(swapId!, { ...scope, skip: 0, take: PAGE });
@@ -506,7 +519,8 @@ export default function SwapItemsPanel({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search name, SKU, seller…"
-              className="bg-surface-50 border border-gray-700 rounded px-3 py-1.5 text-sm text-white w-72"
+              aria-busy={isFetching}
+              className={`bg-surface-50 border border-gray-700 rounded px-3 py-1.5 text-sm text-white w-72 ${isFetching ? 'opacity-70' : ''}`}
             />
           )}
           <select
