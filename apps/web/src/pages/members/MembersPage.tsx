@@ -114,7 +114,7 @@ export default function MembersPage() {
                 className="text-sm text-gray-300" />
               <label className="flex items-center gap-2 text-sm text-gray-400">
                 <input type="checkbox" checked={sendInvites} onChange={(e) => setSendInvites(e.target.checked)} />
-                Send onboarding emails
+                Send invite emails
               </label>
               <button type="submit" disabled={!csvFile}
                 className="bg-surface-100 hover:bg-surface-200 text-white text-sm px-3 py-1.5 rounded">

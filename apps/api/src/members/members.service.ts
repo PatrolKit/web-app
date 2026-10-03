@@ -6,7 +6,6 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuthService } from '../auth/auth.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PersonService } from '../common/identity/person.service';
 import { MembershipTouchService } from '../common/identity/membership-touch.service';
@@ -27,7 +26,6 @@ const MAX_CSV_ROWS = 500;
 export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly authService: AuthService,
     private readonly permissionsService: PermissionsService,
     private readonly people: PersonService,
     private readonly touch: MembershipTouchService,
@@ -103,9 +101,11 @@ export class MembersService {
 
     this.permissionsService.invalidate(user.id, orgId);
 
-    // Onboarding is suppressed globally while OUTBOUND_NOTIFICATIONS is off.
+    // The invite email, not a sign-in link: a link expires long before some
+    // people open it. Suppressed globally while OUTBOUND_NOTIFICATIONS is off.
     if (user.email) {
-      this.authService.requestLogin({ email: user.email }).catch(() => {});
+      const org = await this.prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { name: true } });
+      this.mail.sendMemberInvite(user.email, org.name).catch(() => {});
     }
 
     return this.getMemberResponse(membership.id);
@@ -135,6 +135,9 @@ export class MembersService {
     }
 
     const outcomes: ImportOutcome[] = [];
+    const orgName = sendInvites
+      ? (await this.prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { name: true } })).name
+      : null;
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -185,8 +188,8 @@ export class MembersService {
 
         this.permissionsService.invalidate(user.id, orgId);
 
-        if (sendInvites && user.email) {
-          this.authService.requestLogin({ email: user.email }).catch(() => {});
+        if (orgName && user.email) {
+          this.mail.sendMemberInvite(user.email, orgName).catch(() => {});
           outcomes.push({ row: i + 1, email: email ?? '', outcome: 'invited' });
         } else {
           outcomes.push({ row: i + 1, email: email ?? '', outcome: 'created' });

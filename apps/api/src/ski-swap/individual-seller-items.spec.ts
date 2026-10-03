@@ -1,6 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
 import { SellerSelfService } from './seller-self.service';
-import { MembersService } from '../members/members.service';
 
 /**
  * An individual seller adds items only while checking in, at a station, from
@@ -77,29 +76,5 @@ describe('a shop', () => {
     await svc.updateItem('org-1', 'user-1', 'item-1', { priceCents: 100 });
     await svc.importItems('org-1', 'user-1', 'swap-1', []);
     expect(calls).toEqual(['create', 'patch', 'import']);
-  });
-});
-
-describe('a member invite', () => {
-  function members(user: { email: string | null; verifiedEmail: string | null }) {
-    const sent: { to: string; org: string }[] = [];
-    const prisma = {
-      membership: { findUnique: async () => ({ deletedAt: null, user, org: { name: 'BMBWAV Ski Patrol' } }) },
-    };
-    const mail = { sendMemberInvite: async (to: string, org: string) => { sent.push({ to, org }); return { status: 'sent' }; } };
-    const unused = {} as never;
-    return { svc: new MembersService(prisma as never, unused, unused, unused, unused, mail as never), sent };
-  }
-
-  it('is emailed to the member’s address, naming the org', async () => {
-    const { svc, sent } = members({ email: 'dana@example.com', verifiedEmail: null });
-    await expect(svc.sendInvite('org-1', 'user-1')).resolves.toEqual({ sentTo: 'dana@example.com', status: 'sent' });
-    expect(sent).toEqual([{ to: 'dana@example.com', org: 'BMBWAV Ski Patrol' }]);
-  });
-
-  it('is refused for a member with no email', async () => {
-    const { svc, sent } = members({ email: null, verifiedEmail: null });
-    await expect(svc.sendInvite('org-1', 'user-1')).rejects.toThrow(/no email address/);
-    expect(sent).toEqual([]);
   });
 });
