@@ -72,6 +72,8 @@ describe('Devices contracts', () => {
   it('DeviceMeResponseSchema includes orgName and role but not status', () => {
     const fields = Object.keys(DeviceMeResponseSchema.shape);
     expect(fields).toContain('orgName');
+    // For a swap's status-page link, built offline (Plan 36).
+    expect(fields).toContain('orgSlug');
     expect(fields).toContain('role');
     expect(fields).not.toContain('status');
   });

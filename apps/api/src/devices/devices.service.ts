@@ -418,6 +418,7 @@ export class DevicesService {
       role: device.role as DeviceRole,
       orgId: device.orgId,
       orgName: device.org.name,
+      orgSlug: device.org.slug,
       /// Null until bound. A client that mints SKUs itself cannot do so without
       /// a station, and should say so rather than failing at the first item.
       station,

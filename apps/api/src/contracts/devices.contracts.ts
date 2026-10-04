@@ -139,6 +139,11 @@ export const DeviceMeResponseSchema = z.object({
   orgId: z.string(),
   orgName: z.string(),
   /**
+   * The org's slug, so the iPad can build a swap's public status-page link
+   * while it's offline (Plan 36): `<seller site>/<orgSlug>/<swap slug>/status`.
+   */
+  orgSlug: z.string(),
+  /**
    * The station this device is bound to, or null.
    *
    * The code is the station's, not the device's: it names the counter, so a
