@@ -442,8 +442,26 @@ export const PatchItemSchema = z
     sellerId: z.string().nullable().optional(),
     donateProceeds: z.boolean().optional(),
     hasPrintedTag: z.boolean().optional(),
+    /**
+     * Only if the item has no price yet (Plan 37): a ticket priced meanwhile,
+     * on another screen or from the register, is refused with `TICKET_PRICED`
+     * rather than overwritten.
+     */
+    ifUnpriced: z.literal(true).optional(),
   })
   .strict();
+
+/** A ticket still waiting for its price, for the fast edit's SKU field (Plan 37). */
+export const UnpricedTicketSchema = z.object({
+  id: z.string(),
+  sku: z.string(),
+  name: z.string(),
+  /** The name is still the "Item #<sku>" stand-in: nobody has described it. */
+  placeholderName: z.boolean(),
+  categoryId: z.string().nullable(),
+  sellerName: z.string().nullable(),
+});
+export type UnpricedTicket = z.infer<typeof UnpricedTicketSchema>;
 
 export const ItemResponseSchema = z.object({
   id: z.string(),

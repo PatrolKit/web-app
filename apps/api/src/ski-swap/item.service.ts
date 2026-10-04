@@ -19,7 +19,7 @@ import { TaxonomyService, type ItemAttributeInput, type ItemDescription } from '
 import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
 import { stationCodeOf } from './sku.util';
-import type { ItemResponse } from '../contracts/ski-swap.contracts';
+import type { ItemResponse, UnpricedTicket } from '../contracts/ski-swap.contracts';
 
 export interface ItemPhotoResponse { id: string; url: string; }
 
@@ -520,7 +520,31 @@ export class ItemService {
     return response;
   }
 
-  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
+  /**
+   * The swap's tickets that still need a price (Plan 37), in number order: the
+   * fast edit's SKU suggestions. Only what a suggestion shows, so it stays
+   * cheap to fetch on every open.
+   */
+  async unpricedTickets(orgId: string, swapId: string): Promise<UnpricedTicket[]> {
+    await this.findSwapOrThrow(orgId, swapId);
+    const rows = await this.prisma.swapItem.findMany({
+      where: { orgId, swapId, deletedAt: null, priceCents: null },
+      select: { id: true, sku: true, name: true, categoryId: true, seller: { include: SELLER_NAME_INCLUDE } },
+    });
+    return rows
+      .filter((r) => ticketNumberOf(r.sku) !== null)
+      .sort((a, b) => ticketNumberOf(a.sku)! - ticketNumberOf(b.sku)!)
+      .map((r) => ({
+        id: r.id,
+        sku: r.sku,
+        name: r.name,
+        placeholderName: r.name === uncategorisedName(r.sku),
+        categoryId: r.categoryId,
+        sellerName: sellerDisplayName(r.seller),
+      }));
+  }
+
+  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; ifUnpriced?: true; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(`item-patch:${orgId}:${swapId}`, idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -528,6 +552,8 @@ export class ItemService {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const existing = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId, deletedAt: null }, include: { attributes: true } });
     if (!existing) throw new NotFoundException('Item not found');
+    // Said before anything is redescribed; the write below checks again.
+    if (data.ifUnpriced && existing.priceCents !== null) throw ticketPriced(existing.sku, existing.priceCents);
     if (data.sellerId) await this.sellerService.findOrThrow(orgId, data.sellerId);
 
     /**
@@ -544,7 +570,9 @@ export class ItemService {
         : null;
 
     const updated = await this.prisma.swapItem.update({
-      where: { id: itemId },
+      // With `ifUnpriced`, the write itself requires no price, so a price set
+      // between the check above and here is refused rather than overwritten.
+      where: { id: itemId, ...(data.ifUnpriced ? { priceCents: null } : {}) },
       data: {
         // An explicit name replaces the derivation, and survives a redescribe in
         // the same request: the client is stating what its tag says.
@@ -569,6 +597,13 @@ export class ItemService {
         ...(data.hasPrintedTag !== undefined ? { hasPrintedTag: data.hasPrintedTag } : {}),
       },
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
+    }).catch(async (err: unknown) => {
+      // No row matched: priced since the check above (Plan 37).
+      if (data.ifUnpriced && (err as { code?: string }).code === 'P2025') {
+        const now = await this.prisma.swapItem.findFirst({ where: { id: itemId, deletedAt: null }, select: { priceCents: true } });
+        throw ticketPriced(existing.sku, now?.priceCents ?? null);
+      }
+      throw err;
     });
 
     await this.syncItemToPos(orgId, swap, updated);
@@ -1241,6 +1276,12 @@ export class ItemService {
  */
 export function isWebMadeSku(sku: string): boolean {
   return ticketNumberOf(sku) === null && stationCodeOf(sku) === null;
+}
+
+/** A ticket the fast edit found priced: refused, saying at what (Plan 37). */
+function ticketPriced(sku: string, priceCents: number | null): ConflictException {
+  const price = priceCents === null ? 'a price' : `a price ($${(priceCents / 100).toFixed(2)})`;
+  return new ConflictException({ code: 'TICKET_PRICED', message: `${sku} already has ${price}.` });
 }
 
 export function uncategorisedName(sku: string): string {

@@ -1243,3 +1243,6 @@ export interface PublicSkuStatus {
   soldCount?: number;
   quantity?: number;
 }
+
+/** A ticket still waiting for its price, for the fast edit (Plan 37). */
+export type { UnpricedTicket } from '@patrolkit/contracts/ski-swap.contracts';

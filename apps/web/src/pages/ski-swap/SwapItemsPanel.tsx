@@ -9,6 +9,7 @@ import ItemDescriber, {
 } from '../../components/ItemDescriber';
 import { usePrinter } from '../../contexts/PrinterContext';
 import { isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
+import { priceInput, priceInputCents } from '../../lib/money';
 
 // ─── API adapter interface ────────────────────────────────────────────────────
 
@@ -154,9 +155,7 @@ export function missingItemFields(
 }
 
 /** The form's price as cents, or null when it's left blank. */
-function formPriceCents(priceDollars: string): number | null {
-  return priceDollars.trim() === '' ? null : Math.round(parseFloat(priceDollars) * 100);
-}
+const formPriceCents = priceInputCents;
 
 const emptyForm: ItemFormData = { describer: emptyDescriber, description: '', priceDollars: '', quantity: '1', sellerId: '', donateProceeds: false, sku: '' };
 
@@ -839,8 +838,7 @@ export default function SwapItemsPanel({
                   inputMode="decimal"
                   value={form.priceDollars}
                   onChange={(e) => {
-                    const val = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*?)\./g, '$1');
-                    setForm({ ...form, priceDollars: val });
+                    setForm({ ...form, priceDollars: priceInput(e.target.value) });
                   }}
                   placeholder={priceOptional ? 'Price ($), or blank for later' : 'Price ($)'}
                   className="bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"

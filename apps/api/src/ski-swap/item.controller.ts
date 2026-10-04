@@ -75,6 +75,13 @@ export class ItemController {
    * item; `?query=` is the fuzzy search that already exists and would match
    * more than the tag in someone's hand.
    */
+  /** Tickets with no price yet, for the fast edit (Plan 37). Light: no Square, no photos. */
+  @Get('unpriced-tickets')
+  @RequirePermissions('ski_swap:manage')
+  unpricedTickets(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    return this.itemService.unpricedTickets(orgId, swapId);
+  }
+
   @Get('by-sku/:sku')
   @RequirePermissions('ski_swap:report')
   findBySku(

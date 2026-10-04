@@ -6,6 +6,7 @@ import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SwapItemsPanel from './SwapItemsPanel';
 import ProxyItemImportModal from './ProxyItemImportModal';
+import TicketFastEdit from './TicketFastEdit';
 
 export default function ItemsPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
@@ -14,6 +15,7 @@ export default function ItemsPage() {
   const swapId = selectedSwap?.id ?? null;
   const qc = useQueryClient();
   const [importing, setImporting] = useState(false);
+  const [fastEditing, setFastEditing] = useState(false);
   const [searchParams] = useSearchParams();
 
   /** The swap's web takes no print tickets, so no row may get a generated SKU (Plan 34). */
@@ -45,6 +47,15 @@ export default function ItemsPage() {
         : 'No business sellers yet. Add a shop on the Sellers page.'
       : '';
 
+  /** Tickets still needing a price, for the fast edit's button (Plan 37). */
+  const { data: unpriced } = useQuery({
+    queryKey: ['ski-swap/unpriced-tickets', orgId, swapId],
+    queryFn: () => api.skiSwap.unpricedTickets(orgId, swapId!),
+    enabled: !!swapId && canManage,
+  });
+  const unpricedCount = unpriced?.length ?? 0;
+  const takesTickets = !!selectedSwap && (selectedSwap.allowLegacyCheckin || selectedSwap.allowLegacyWeb);
+
   const { data: sellers = [] } = useQuery<SellerResponse[]>({
     queryKey: ['ski-swap/sellers', orgId],
     queryFn: () => api.skiSwap.listSellers(orgId),
@@ -74,18 +85,34 @@ export default function ItemsPage() {
       labelsPerItem={labelsPerItem}
       toolbarExtra={
         canManage ? (
-          // The title sits on the wrapper, not the button: a disabled control
-          // takes no pointer events in some browsers, and the tooltip explaining
-          // why it is disabled is exactly the one nobody would then see.
-          <span title={importBlockedBecause || undefined}>
-            <button
-              onClick={() => setImporting(true)}
-              disabled={!!importBlockedBecause}
-              className="bg-surface-100 hover:bg-surface-200 text-gray-200 px-4 py-2 rounded text-sm disabled:opacity-40 disabled:hover:bg-surface-100"
-            >
-              Import for a seller
-            </button>
-          </span>
+          <>
+            {/* Where the swap takes legacy tickets, or has some waiting for a
+                price (Plan 37). */}
+            {(takesTickets || unpricedCount > 0) && (
+              <span title={unpricedCount === 0 ? 'No tickets need a price.' : undefined}>
+                <button
+                  onClick={() => setFastEditing(true)}
+                  disabled={unpricedCount === 0}
+                  className="bg-surface-100 hover:bg-surface-200 text-gray-200 px-4 py-2 rounded text-sm disabled:opacity-40 disabled:hover:bg-surface-100"
+                >
+                  Fast Edit Tickets ({unpricedCount})
+                </button>
+              </span>
+            )}
+            {/* The title sits on the wrapper, not the button: a disabled control
+                takes no pointer events in some browsers, and the tooltip
+                explaining why it is disabled is exactly the one nobody would
+                then see. */}
+            <span title={importBlockedBecause || undefined}>
+              <button
+                onClick={() => setImporting(true)}
+                disabled={!!importBlockedBecause}
+                className="bg-surface-100 hover:bg-surface-200 text-gray-200 px-4 py-2 rounded text-sm disabled:opacity-40 disabled:hover:bg-surface-100"
+              >
+                Import for a seller
+              </button>
+            </span>
+          </>
         ) : undefined
       }
       panelApi={{
@@ -100,6 +127,18 @@ export default function ItemsPage() {
         consignAllForSeller: (sid, sellerId) => api.skiSwap.consignAllForSeller(orgId, sid, sellerId),
       }}
     />
+
+    {fastEditing && swapId && (
+      <TicketFastEdit
+        orgId={orgId}
+        swapId={swapId}
+        onClose={() => {
+          setFastEditing(false);
+          void qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId] });
+          void qc.invalidateQueries({ queryKey: ['ski-swap/unpriced-tickets', orgId, swapId] });
+        }}
+      />
+    )}
 
     {importing && swapId && (
       <ProxyItemImportModal

@@ -18,3 +18,13 @@ export const PRICE_TO_COME = 'Price to come';
 export function itemPrice(cents: number | null): string {
   return cents === null ? PRICE_TO_COME : `$${(cents / 100).toFixed(2)}`;
 }
+
+/** What a price field keeps of what's typed: digits and one decimal point. */
+export function priceInput(typed: string): string {
+  return typed.replace(/[^0-9.]/g, '').replace(/(\..*?)\./g, '$1');
+}
+
+/** A price field's dollars as cents, or null when it's left blank. */
+export function priceInputCents(dollars: string): number | null {
+  return dollars.trim() === '' ? null : Math.round(parseFloat(dollars) * 100);
+}

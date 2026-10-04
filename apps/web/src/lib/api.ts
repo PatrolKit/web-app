@@ -660,10 +660,26 @@ export const api = {
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items`, {
         method: 'POST', body: JSON.stringify(data),
       }),
-    patchItem: (orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[]; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean }) =>
+    patchItem: (
+      orgId: string, swapId: string, itemId: string,
+      data: {
+        categoryId?: string; attributes?: import('./api.types').ItemAttributeInput[];
+        /** Replaces the derived name outright. */
+        name?: string;
+        description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null;
+        donateProceeds?: boolean; hasPrintedTag?: boolean;
+        /** Refused with `TICKET_PRICED` if the item has a price by now (Plan 37). */
+        ifUnpriced?: true;
+      },
+      idempotencyKey?: string,
+    ) =>
       request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}`, {
         method: 'PATCH', body: JSON.stringify(data),
+        ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
       }),
+    /** The swap's tickets with no price yet, in number order (Plan 37). */
+    unpricedTickets: (orgId: string, swapId: string) =>
+      request<import('./api.types').UnpricedTicket[]>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/unpriced-tickets`),
     deleteItem: (orgId: string, swapId: string, itemId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}`, { method: 'DELETE' }),
     uploadPhoto: async (orgId: string, swapId: string, itemId: string, file: File): Promise<{ id: string; url: string }> => {
@@ -814,6 +830,9 @@ export const api = {
     /** The resolved tree the item form is generated from. */
     taxonomy: (orgId: string) =>
       request<import('./api.types').ResolvedTaxonomy>(`/orgs/${orgId}/ski-swap/taxonomy`),
+    /** The whole tree, every deferred branch expanded, for matching typed text (Plan 37). */
+    taxonomyFull: (orgId: string) =>
+      request<import('./api.types').ResolvedTaxonomy>(`/orgs/${orgId}/ski-swap/taxonomy?depth=full`),
     /** A deferred branch — a manufacturer's model list — fetched when opened. */
     taxonomyChildren: (orgId: string, nodeId: string) =>
       request<import('./api.types').TaxonomyChildrenResponse>(
