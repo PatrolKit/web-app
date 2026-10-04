@@ -51,9 +51,12 @@ export class SellerSelfService {
 
   // ─── Active swaps (for swap selector) ────────────────────────────────────
 
-  async listActiveSwaps(orgId: string): Promise<{ id: string; title: string; labelsPerItem: number }[]> {
+  async listActiveSwaps(orgId: string, userId: string): Promise<{ id: string; title: string; labelsPerItem: number }[]> {
+    // An individual sees only swaps with Authenticated Seller Status on; a
+    // shop, which manages its own inventory, sees every one (Plan 33).
+    const seller = await this.getSellerRecord(orgId, userId);
     const swaps = await this.prisma.skiSwap.findMany({
-      where: { orgId, active: true },
+      where: { orgId, active: true, ...(seller.businessName ? {} : { sellerLoginEnabled: true }) },
       // `labelsPerItem` because a business seller prints its own tags, as
       // many per item as the swap asks for.
       select: { id: true, title: true, labelsPerItem: true },

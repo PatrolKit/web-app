@@ -48,7 +48,7 @@ function harness() {
   const usage = new LimitUsageService(prisma as never, resolver);
 
   const challenges = new ContactChallengeService(prisma as never, mail as never, sms as never, config as never, usage, {} as never);
-  const auth = new AuthService(prisma as never, {} as never, challenges, config as never, sms as never);
+  const auth = new AuthService(prisma as never, {} as never, challenges, config as never, sms as never, { mayUseApp: async () => true } as never);
 
   const issue = (target = PHONE, whenLimited?: 'refuse' | 'decoy') =>
     challenges.issue({ userId: 'u1', channel: 'phone', target, purpose: 'verify', whenLimited });

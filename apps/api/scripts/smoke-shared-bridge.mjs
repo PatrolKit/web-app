@@ -46,7 +46,7 @@ const selfService = await prisma.checkinStation.create({ data: { orgId: org.id, 
 
 // Two tags an item, so each counter's save is a batch of more than one.
 const swap = await prisma.skiSwap.create({
-  data: { orgId: org.id, title: 'Shared bridge swap', squareCategoryId: 'smoke', skuPrefix: 'SHB', active: true, activeSkuPrefix: 'SHB', labelsPerItem: 2 },
+  data: { orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Shared bridge swap', squareCategoryId: 'smoke', skuPrefix: 'SHB', active: true, activeSkuPrefix: 'SHB', labelsPerItem: 2 },
 });
 
 const { user } = await smokeStaff(prisma, org, ['ski_swap:admin', 'ski_swap:manage', 'ski_swap:report']);

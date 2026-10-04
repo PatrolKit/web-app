@@ -1,3 +1,4 @@
+import { CheckinSessionAllowed } from '../common/decorators/checkin-session-allowed.decorator';
 import { Body, Controller, Get, HttpCode, Patch, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -11,9 +12,10 @@ import type { MeResponse } from '../contracts/org.contracts';
 export class MeController {
   constructor(private readonly meService: MeService) {}
 
+  @CheckinSessionAllowed()
   @Get()
   getMe(@CurrentUser() user: AuthenticatedUser): Promise<MeResponse> {
-    return this.meService.getMe(user.userId);
+    return this.meService.getMe(user.userId, user.scope ?? 'full');
   }
 
   @Patch()

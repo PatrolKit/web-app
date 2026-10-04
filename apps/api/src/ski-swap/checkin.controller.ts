@@ -1,3 +1,4 @@
+import { CheckinSessionAllowed } from '../common/decorators/checkin-session-allowed.decorator';
 import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Limit } from '../common/limits/limit.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -53,6 +54,7 @@ export class PublicCheckinController {
  * the credential — it is physically at the venue — and both ids are validated
  * against a running swap on every call.
  */
+@CheckinSessionAllowed()
 @Controller('orgs/:orgId/ski-swap/checkin')
 @UseGuards(JwtAuthGuard, ModuleEnabledGuard)
 @RequireModule('ski_swap')

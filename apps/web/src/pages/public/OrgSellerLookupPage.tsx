@@ -74,6 +74,11 @@ export default function OrgSellerLookupPage() {
           </p>
         </div>
 
+        {/* No swap shows seller status publicly (Plan 33): say so, rather
+            than offer a form that can't find anybody. */}
+        {branding && !branding.sellerLookupOpen ? (
+          <p className="text-gray-400 text-sm text-center">Item status isn’t available here right now.</p>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-3">
           <input
             type="email"
@@ -103,6 +108,7 @@ export default function OrgSellerLookupPage() {
             {loading ? 'Looking up…' : 'Find My Items'}
           </button>
         </form>
+        )}
 
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}
         <PoweredByFooter />

@@ -32,7 +32,7 @@ await prisma.sellerProfile.deleteMany({ where: { businessName: 'Quiet Shop', mem
 
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: 'Proxy import smoke', squareCategoryId: 'proxy-smoke',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Proxy import smoke', squareCategoryId: 'proxy-smoke',
     skuPrefix: 'PRX', active: true, activeSkuPrefix: 'PRX', legacyTicketsEnabled: true,
     // Tickets only on the web, so the picker keeps to ticket holders. With it
     // off, every business seller is offered (Plan 31; smoke-mixed-tickets).

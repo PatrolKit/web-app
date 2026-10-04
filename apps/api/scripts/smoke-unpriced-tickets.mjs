@@ -32,7 +32,7 @@ await prisma.user.deleteMany({ where: { email: SHOP_EMAIL } });
 
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: TITLE, squareCategoryId: 'unpriced-smoke',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: TITLE, squareCategoryId: 'unpriced-smoke',
     skuPrefix: 'UPS', active: true, activeSkuPrefix: 'UPS', legacyTicketsEnabled: true,
   },
 });

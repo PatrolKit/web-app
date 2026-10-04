@@ -52,7 +52,7 @@ for (const phone of [EMAIL_PHONE, SMS_PHONE, NEITHER_PHONE]) {
 }
 
 const swap = await prisma.skiSwap.create({
-  data: { orgId: org.id, title: 'Receipt smoke swap', squareCategoryId: 'rcpt',
+  data: { orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Receipt smoke swap', squareCategoryId: 'rcpt',
           skuPrefix: 'RCP', active: true, activeSkuPrefix: 'RCP' },
 });
 const device = await prisma.device.create({

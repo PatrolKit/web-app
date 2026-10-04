@@ -31,7 +31,7 @@ for (const email of ['ticket-shop@patrolkit.invalid', 'ticket-other@patrolkit.in
 
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: 'Ticket smoke swap', squareCategoryId: 'ticket-smoke',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Ticket smoke swap', squareCategoryId: 'ticket-smoke',
     skuPrefix: 'TKS', active: true, activeSkuPrefix: 'TKS',
   },
 });

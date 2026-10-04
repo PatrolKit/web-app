@@ -37,15 +37,34 @@ export class PublicSellerService {
     });
     if (!orgModule?.enabled) throw new NotFoundException('Seller not found');
 
+    // Only swaps with Unauthenticated Seller Status on (Plan 33): this page
+    // needs no sign-in, so each swap decides whether it's shown here.
     const activeSwaps = await this.prisma.skiSwap.findMany({
-      where: { orgId: seller.orgId, active: true },
+      where: { orgId: seller.orgId, active: true, sellerLookupEnabled: true },
     });
     // Read before the early return: a seller whose swap has ended still has
     // money to account for, and that is exactly when they come looking.
     const payouts = await this.payoutsFor(seller.id);
 
+    const hasOpenItems = activeSwaps.length > 0 && (await this.prisma.swapItem.count({
+      where: { sellerId: seller.id, swapId: { in: activeSwaps.map((s) => s.id) }, deletedAt: null },
+    })) > 0;
+    if (!hasOpenItems && !payouts.length) {
+      // Says nothing about the seller, not even that there is one here.
+      return {
+        available: false,
+        sellerName: null,
+        orgName: seller.org.name,
+        orgLogoUrl: seller.org.logoUrl ?? null,
+        payoutMethod: null,
+        swaps: [],
+        payouts: [],
+      };
+    }
+
     if (!activeSwaps.length) {
       return {
+        available: true,
         sellerName: seller.name,
         orgName: seller.org.name,
         orgLogoUrl: seller.org.logoUrl ?? null,
@@ -138,6 +157,7 @@ export class PublicSellerService {
     );
 
     return {
+      available: true,
       sellerName: seller.name,
       orgName: seller.org.name,
       orgLogoUrl: seller.org.logoUrl ?? null,
@@ -156,7 +176,8 @@ export class PublicSellerService {
    */
   private async payoutsFor(sellerId: string): Promise<PublicSellerPayout[]> {
     const lines = await this.prisma.payoutLine.findMany({
-      where: { sellerId },
+      // Swaps with Unauthenticated Seller Status on only, active or not (Plan 33).
+      where: { sellerId, run: { swap: { sellerLookupEnabled: true } } },
       orderBy: { createdAt: 'desc' },
       include: {
         run: { select: { commissionBasisPoints: true, swap: { select: { title: true } } } },

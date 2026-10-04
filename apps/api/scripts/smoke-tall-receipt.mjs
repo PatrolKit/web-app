@@ -42,7 +42,7 @@ const priorUser = await prisma.user.findFirst({ where: { phone: PHONE } });
 if (priorUser) await prisma.user.delete({ where: { id: priorUser.id } });
 
 const swap = await prisma.skiSwap.create({
-  data: { orgId: org.id, title: 'Tall receipt swap', squareCategoryId: 'tall',
+  data: { orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Tall receipt swap', squareCategoryId: 'tall',
           skuPrefix: 'TRS', active: true, activeSkuPrefix: 'TRS' },
 });
 const device = await prisma.device.create({

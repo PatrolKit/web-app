@@ -7,10 +7,15 @@ import type { SellerFindResponse } from '../contracts/ski-swap.contracts';
 export class PublicLookupService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getOrgBranding(orgSlug: string): Promise<{ orgName: string; logoUrl: string | null }> {
+  async getOrgBranding(
+    orgSlug: string,
+  ): Promise<{ orgName: string; logoUrl: string | null; sellerLookupOpen: boolean }> {
     const org = await this.prisma.organization.findFirst({ where: { slug: orgSlug.toLowerCase() } });
     if (!org) throw new NotFoundException('Organization not found');
-    return { orgName: org.name, logoUrl: org.logoUrl ?? null };
+    // Whether the email and last-4 lookup can find anybody (Plan 33), so the
+    // page can say so rather than offer a form that always fails.
+    const open = await this.prisma.skiSwap.count({ where: { orgId: org.id, active: true, sellerLookupEnabled: true } });
+    return { orgName: org.name, logoUrl: org.logoUrl ?? null, sellerLookupOpen: open > 0 };
   }
 
   async findByEmailAndLast4(orgSlug: string, email: string, last4: string): Promise<SellerFindResponse> {
@@ -26,6 +31,8 @@ export class PublicLookupService {
       where: {
         deletedAt: null,
         membership: { orgId: org.id, deletedAt: null, user: { email: email.toLowerCase() } },
+        // Only a seller in a swap with Unauthenticated Seller Status on (Plan 33).
+        swapItems: { some: { deletedAt: null, swap: { active: true, sellerLookupEnabled: true } } },
       },
       include: { membership: { select: { user: { select: { phone: true } } } } },
     });

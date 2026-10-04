@@ -4,31 +4,20 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
 import type { SwapResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
+import { useAuth } from '../../contexts/AuthContext';
+import SwapSettingsModal from './SwapSettingsModal';
 
 function mutationError(err: unknown): string {
   return err instanceof ApiError ? err.message : 'Something went wrong';
 }
 
-interface SwapForm {
-  title: string;
-  locationId: string;
-  legacyTicketsEnabled: boolean;
-  legacyTicketsOnly: boolean;
-  webLegacyTicketsOnly: boolean;
-  printLegacyHelperLabels: boolean;
-  labelsPerItem: number;
-}
-const emptyForm: SwapForm = {
-  title: '', locationId: '', legacyTicketsEnabled: false, legacyTicketsOnly: false,
-  webLegacyTicketsOnly: false, printLegacyHelperLabels: false, labelsPerItem: 1,
-};
-
 export default function SwapsPage() {
   const { orgId, perms, setSelectedSwapId } = useOutletContext<SkiSwapContext>();
+  const { user } = useAuth();
+  const orgSlug = user?.memberships.find((m) => m.orgId === orgId)?.orgSlug ?? '';
   const qc = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [editSwap, setEditSwap] = useState<SwapResponse | null>(null);
-  const [form, setForm] = useState<SwapForm>(emptyForm);
+  /** The swap being edited in the dialog; `'new'` while creating one. */
+  const [editing, setEditing] = useState<SwapResponse | 'new' | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [titleSort, setTitleSort] = useState<'creation' | 'asc' | 'desc'>('creation');
 
@@ -38,51 +27,13 @@ export default function SwapsPage() {
     queryFn: () => api.skiSwap.listSwaps(orgId),
     enabled: !!orgId,
   });
-  const { data: locationsData, isLoading: locationsLoading, error: locationsError } = useQuery({
-    queryKey: ['ski-swap/locations', orgId],
-    queryFn: () => api.skiSwap.listLocations(orgId),
-    enabled: !!orgId && showForm,
-    staleTime: 60_000,
-  });
 
-  const locations = locationsData?.locations ?? [];
-
-  // Auto-select when only one location
-  if (locations.length === 1 && !form.locationId) {
-    setForm((f) => ({ ...f, locationId: locations[0].id }));
+  function saved(swap: SwapResponse) {
+    qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] });
+    qc.invalidateQueries({ queryKey: ['ski-swap/swaps-all', orgId] });
+    if (editing === 'new') setSelectedSwapId(swap.id);
+    setEditing(null);
   }
-
-  const createMutation = useMutation({
-    mutationFn: () => api.skiSwap.createSwap(orgId, form.title, form.locationId),
-    onSuccess: (swap) => {
-      qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] }); qc.invalidateQueries({ queryKey: ['ski-swap/swaps-all', orgId] });
-      setSelectedSwapId(swap.id);
-      setShowForm(false);
-      setForm(emptyForm);
-    },
-  });
-
-  const patchMutation = useMutation({
-    mutationFn: (s: SwapResponse) => api.skiSwap.patchSwap(orgId, s.id, {
-      title: form.title !== s.title ? form.title : undefined,
-      locationId: form.locationId !== s.locationId ? form.locationId : undefined,
-      legacyTicketsEnabled:
-        form.legacyTicketsEnabled !== s.legacyTicketsEnabled ? form.legacyTicketsEnabled : undefined,
-      legacyTicketsOnly:
-        form.legacyTicketsOnly !== s.legacyTicketsOnly ? form.legacyTicketsOnly : undefined,
-      webLegacyTicketsOnly:
-        form.webLegacyTicketsOnly !== s.webLegacyTicketsOnly ? form.webLegacyTicketsOnly : undefined,
-      printLegacyHelperLabels:
-        form.printLegacyHelperLabels !== s.printLegacyHelperLabels ? form.printLegacyHelperLabels : undefined,
-      labelsPerItem: form.labelsPerItem !== s.labelsPerItem ? form.labelsPerItem : undefined,
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] }); qc.invalidateQueries({ queryKey: ['ski-swap/swaps-all', orgId] });
-      setEditSwap(null);
-      setForm(emptyForm);
-      setShowForm(false);
-    },
-  });
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, active }: { id: string; active: boolean }) =>
@@ -90,34 +41,7 @@ export default function SwapsPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/swaps', orgId] }); qc.invalidateQueries({ queryKey: ['ski-swap/swaps-all', orgId] }); },
   });
 
-  function openCreate() {
-    setEditSwap(null);
-    setForm(emptyForm);
-    setShowForm(true);
-  }
-
-  function openEdit(s: SwapResponse) {
-    setEditSwap(s);
-    setForm({
-      title: s.title,
-      locationId: s.locationId,
-      legacyTicketsEnabled: s.legacyTicketsEnabled,
-      legacyTicketsOnly: s.legacyTicketsOnly,
-      webLegacyTicketsOnly: s.webLegacyTicketsOnly,
-      printLegacyHelperLabels: s.printLegacyHelperLabels,
-      labelsPerItem: s.labelsPerItem,
-    });
-    setShowForm(true);
-  }
-
-  function closeForm() {
-    setShowForm(false);
-    setEditSwap(null);
-    setForm(emptyForm);
-  }
-
-  const isSubmitting = createMutation.isPending || patchMutation.isPending;
-  const mutError = createMutation.error ?? patchMutation.error ?? toggleMutation.error;
+  const mutError = toggleMutation.error;
 
   return (
     <div className="space-y-4">
@@ -134,8 +58,8 @@ export default function SwapsPage() {
           </select>
 
         </div>
-        {perms.has('ski_swap:admin') && !showForm && (
-          <button onClick={openCreate}
+        {perms.has('ski_swap:admin') && (
+          <button onClick={() => setEditing('new')}
             className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">
             + New Swap
           </button>
@@ -144,183 +68,14 @@ export default function SwapsPage() {
 
       {mutError && <p className="text-red-400 text-sm">{mutationError(mutError)}</p>}
 
-      {showForm && (
-        <form
-          onSubmit={(e) => { e.preventDefault(); if (editSwap) patchMutation.mutate(editSwap); else createMutation.mutate(); }}
-          className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-4"
-        >
-          <h3 className="text-white font-medium">{editSwap ? 'Edit Swap' : 'New Swap'}</h3>
-
-          <label className="block">
-            <span className="text-gray-400 text-xs uppercase">Title</span>
-            <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder='e.g. "Ski Swap 2026"'
-              className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
-          </label>
-
-          {/* These come from Square, not from PatrolKit — the list is whatever
-              the connected Square account has. Saying so avoids it reading as a
-              venue or an address, which is what "Location" suggests on its own. */}
-          <label className="block">
-            <span className="text-gray-400 text-xs uppercase">Square Location</span>
-            {locationsLoading ? (
-              <p className="mt-1 text-gray-500 text-sm">Loading locations from Square…</p>
-            ) : locationsError ? (
-              <p className="mt-1 text-red-400 text-sm">
-                {locationsError instanceof ApiError ? locationsError.message : 'Could not load locations from Square'}
-              </p>
-            ) : locations.length === 0 ? (
-              <p className="mt-1 text-red-400 text-sm">
-                No active locations found in Square. Check your Square credentials under Administration.
-              </p>
-            ) : (
-              <>
-                <select required value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })}
-                  className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white">
-                  {locations.length > 1 && <option value="">Select a Square location…</option>}
-                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
-                <p className="mt-1 text-gray-500 text-xs">
-                  {locations.length === 1 ? 'One Square location found — selected automatically. ' : ''}
-                  Items in this swap are listed and their inventory tracked against this
-                  location in your Square account. It is not the venue address.
-                </p>
-              </>
-            )}
-          </label>
-
-          {/* Edit only. A new swap starts off — that is what "default off"
-              means — and turning it on is a decision about a swap that exists,
-              usually taken when the first box of old tickets turns up. */}
-          {editSwap && (
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={form.legacyTicketsEnabled}
-                // Clearing the parent clears the child, the same rule the
-                // server keeps: "only tickets" cannot outlive taking them.
-                onChange={(e) => setForm({
-                  ...form,
-                  legacyTicketsEnabled: e.target.checked,
-                  legacyTicketsOnly: e.target.checked ? form.legacyTicketsOnly : false,
-                  webLegacyTicketsOnly: e.target.checked ? form.webLegacyTicketsOnly : false,
-                  printLegacyHelperLabels: e.target.checked ? form.printLegacyHelperLabels : false,
-                })}
-                className="mt-0.5"
-              />
-              <span>
-                <span className="block text-sm text-white">Accept legacy tickets</span>
-                <span className="block text-gray-500 text-xs mt-0.5">
-                  For gear that arrives already carrying a numbered ticket from the old
-                  stockpile, instead of a tag printed at check-in. Turns on issuing ticket
-                  blocks to business sellers, and the staff iPad's option to scan a loose
-                  one during an individual's check-in.
-                </span>
-              </span>
-            </label>
-          )}
-
-          {/* Nested, because "only" means anything once tickets are taken at
-              all. It appears rather than greying out: the question does not
-              exist for a swap on printed tags. Two settings since Plan 31: the
-              counter and the web can each be tickets-only, or not, on their own. */}
-          {editSwap && form.legacyTicketsEnabled && (
-            <div className="pl-7 space-y-3">
-              <span className="block text-sm text-white">Legacy tickets only</span>
-
-              <label className="flex items-start gap-3 pl-7">
-                <input
-                  type="checkbox"
-                  checked={form.legacyTicketsOnly}
-                  onChange={(e) => setForm({
-                    ...form,
-                    legacyTicketsOnly: e.target.checked,
-                    printLegacyHelperLabels: e.target.checked ? form.printLegacyHelperLabels : false,
-                  })}
-                  className="mt-0.5"
-                />
-                <span>
-                  <span className="block text-sm text-white">Staff Check-In</span>
-                  <span className="block text-gray-500 text-xs mt-0.5">
-                    Every item checked in at the counter comes in on a numbered ticket. The
-                    staff iPad reads this to decide what it offers.
-                  </span>
-                </span>
-              </label>
-
-              {/* One level further in: helper labels are the staff iPad's, and
-                  only mean anything when the counter takes tickets only. */}
-              {form.legacyTicketsOnly && (
-                <label className="flex items-start gap-3 pl-14">
-                  <input
-                    type="checkbox"
-                    checked={form.printLegacyHelperLabels}
-                    onChange={(e) => setForm({ ...form, printLegacyHelperLabels: e.target.checked })}
-                    className="mt-0.5"
-                  />
-                  <span>
-                    <span className="block text-sm text-white">Print legacy helper labels</span>
-                    <span className="block text-gray-500 text-xs mt-0.5">
-                      The staff iPad prints a helper label to go with each legacy ticket.
-                    </span>
-                  </span>
-                </label>
-              )}
-
-              <label className="flex items-start gap-3 pl-7">
-                <input
-                  type="checkbox"
-                  checked={form.webLegacyTicketsOnly}
-                  onChange={(e) => setForm({ ...form, webLegacyTicketsOnly: e.target.checked })}
-                  className="mt-0.5"
-                />
-                <span>
-                  <span className="block text-sm text-white">Web UI</span>
-                  <span className="block text-gray-500 text-xs mt-0.5">
-                    Every item entered on the web, by a seller or by staff for one, must be a
-                    ticket from the seller's issued blocks. Off, a business seller can also
-                    print labels with generated SKUs.
-                  </span>
-                </span>
-              </label>
-            </div>
-          )}
-
-          {/* Edit only, like the ticket settings: a new swap starts with its
-              org's last swap's number, which is what a patrol usually wants. */}
-          {editSwap && (
-            <div className="flex items-center justify-between gap-4">
-              <span>
-                <span className="block text-sm text-white">Labels per item</span>
-                <span className="block text-gray-500 text-xs mt-0.5">
-                  Price tags printed each time an item's tag is printed, for this swap.
-                </span>
-              </span>
-              <span className="flex items-center gap-2" role="group" aria-label="Labels per item">
-                {[1, 2, 3].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    aria-pressed={form.labelsPerItem === n}
-                    onClick={() => setForm({ ...form, labelsPerItem: n })}
-                    className={`w-9 h-9 rounded text-sm font-medium transition ${form.labelsPerItem === n ? 'bg-brand-600 text-white' : 'bg-surface-100 text-gray-300 hover:bg-surface-200'}`}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </span>
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <button type="submit" disabled={isSubmitting || !form.locationId || !form.title}
-              className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium">
-              {editSwap ? 'Save' : 'Create'}
-            </button>
-            <button type="button" onClick={closeForm}
-              className="text-gray-400 hover:text-white text-sm px-3 py-2">Cancel</button>
-          </div>
-        </form>
+      {editing && (
+        <SwapSettingsModal
+          orgId={orgId}
+          orgSlug={orgSlug}
+          swap={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={saved}
+        />
       )}
 
       {allSwaps.length === 0 ? (
@@ -342,6 +97,7 @@ export default function SwapsPage() {
                 </span>
               </th>
               <th className="pb-2 pr-4">SKU Prefix</th>
+              <th className="pb-2 pr-4">Slug</th>
               <th className="pb-2 pr-4">Status</th>
               {perms.has('ski_swap:admin') && <th className="pb-2">Actions</th>}
             </tr>
@@ -358,6 +114,7 @@ export default function SwapsPage() {
               <tr key={s.id} className="border-b border-gray-900">
                 <td className="py-2 pr-4 text-white">{s.title}</td>
                 <td className="py-2 pr-4 text-gray-400 font-mono">{s.skuPrefix}</td>
+                <td className="py-2 pr-4 text-gray-400 font-mono">{s.slug}</td>
                 <td className="py-2 pr-4">
                   <span className={`text-xs px-2 py-0.5 rounded ${s.active ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-400'}`}>
                     {s.active ? 'Active' : 'Inactive'}
@@ -390,7 +147,7 @@ export default function SwapsPage() {
                 </td>
                 {perms.has('ski_swap:admin') && (
                   <td className="py-2 flex gap-3">
-                    <button onClick={() => openEdit(s)}
+                    <button onClick={() => setEditing(s)}
                       className="text-xs text-brand-500 hover:underline">Edit</button>
                     <button onClick={() => toggleMutation.mutate({ id: s.id, active: !s.active })}
                       disabled={toggleMutation.isPending}

@@ -1,3 +1,4 @@
+import { CheckinSessionAllowed } from '../common/decorators/checkin-session-allowed.decorator';
 import {
   Body,
   Controller,
@@ -76,6 +77,7 @@ export class SellerSelfController {
 
   // ─── Profile ──────────────────────────────────────────────────────────────
 
+  @CheckinSessionAllowed()
   @Get()
   getProfile(
     @Param('orgId') orgId: string,
@@ -84,6 +86,7 @@ export class SellerSelfController {
     return this.sellerSelfService.getProfile(orgId, user.userId);
   }
 
+  @CheckinSessionAllowed()
   @Patch()
   updateProfile(
     @Param('orgId') orgId: string,
@@ -96,8 +99,8 @@ export class SellerSelfController {
   // ─── Active swaps (swap selector) ─────────────────────────────────────────
 
   @Get('swaps')
-  listSwaps(@Param('orgId') orgId: string) {
-    return this.sellerSelfService.listActiveSwaps(orgId);
+  listSwaps(@Param('orgId') orgId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.sellerSelfService.listActiveSwaps(orgId, user.userId);
   }
 
   // ─── Items ────────────────────────────────────────────────────────────────
@@ -116,6 +119,7 @@ export class SellerSelfController {
     });
   }
 
+  @CheckinSessionAllowed()
   @Post('items')
   createItem(
     @Param('orgId') orgId: string,
@@ -129,6 +133,7 @@ export class SellerSelfController {
   }
 
   /** For a tag that jammed, smudged, or never came out. */
+  @CheckinSessionAllowed()
   @Post('items/:itemId/reprint')
   @HttpCode(202)
   reprintItem(
@@ -171,6 +176,7 @@ export class SellerSelfController {
 
   // ─── Photos ───────────────────────────────────────────────────────────────
 
+  @CheckinSessionAllowed()
   @Post('items/:itemId/photos')
   @UseInterceptors(FileInterceptor('image'))
   uploadPhoto(

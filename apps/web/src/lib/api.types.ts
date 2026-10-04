@@ -74,6 +74,8 @@ export interface MembershipSummary {
 }
 
 export interface MeResponse {
+  /** `checkin` for a session started at a station: check-in only (Plan 33). */
+  sessionScope: 'full' | 'checkin';
   id: string;
   email: string | null;
   emailVerified: boolean;
@@ -259,6 +261,14 @@ export interface SwapResponse {
   printLegacyHelperLabels: boolean;
   /** Price tags printed each time an item's tag is printed, 1 to 3. */
   labelsPerItem: number;
+  /** The public address segment: `<org>/<slug>/status` (Plan 33). */
+  slug: string;
+  /** Unauthenticated SKU Lookup. */
+  skuLookupEnabled: boolean;
+  /** Unauthenticated Seller Status: the email and last-4 lookup, and `/s/`. */
+  sellerLookupEnabled: boolean;
+  /** Authenticated Seller Status: an individual seller here may sign in. */
+  sellerLoginEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -762,7 +772,9 @@ export interface PublicSellerDetailSwap {
 }
 
 export interface PublicSellerDetailResponse {
-  sellerName: string;
+  /** False when none of the seller's swaps shows their status publicly (Plan 33). */
+  available: boolean;
+  sellerName: string | null;
   orgName: string;
   orgLogoUrl: string | null;
   swaps: PublicSellerDetailSwap[];
@@ -782,6 +794,8 @@ export interface SellerFindResponse {
 export interface OrgBrandingResponse {
   orgName: string;
   logoUrl: string | null;
+  /** Whether the email and last-4 lookup can find anybody: a swap has it on (Plan 33). */
+  sellerLookupOpen: boolean;
 }
 
 export interface ResortResponse {
@@ -1182,4 +1196,20 @@ export interface PlatformSettings {
   updatedBy: string | null;
   /** Whether a text would actually leave with the switch on. */
   smsReadiness: { originationNumber: boolean; outboundNotifications: boolean };
+}
+
+/** The SKU lookup page's header (Plan 33). */
+export interface PublicSwapStatusPage {
+  orgName: string;
+  orgLogoUrl: string | null;
+  swapTitle: string;
+}
+
+/** One SKU's status, as the public is told it (Plan 33): its name and status, nothing else. */
+export interface PublicSkuStatus {
+  sku: string;
+  name: string;
+  status: 'not_received' | 'for_sale' | 'sold' | 'unknown';
+  soldCount?: number;
+  quantity?: number;
 }

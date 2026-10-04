@@ -1,3 +1,4 @@
+import { Reflector } from '@nestjs/core';
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { generateKeyPairSync } from 'crypto';
@@ -39,7 +40,7 @@ describe('JwtAuthGuard', () => {
   beforeAll(async () => {
     const { svc } = await makeJwtService();
     jwtService = svc;
-    guard = new JwtAuthGuard(jwtService);
+    guard = new JwtAuthGuard(jwtService, new Reflector());
   });
 
   it('allows a valid bearer token and sets req.user', async () => {

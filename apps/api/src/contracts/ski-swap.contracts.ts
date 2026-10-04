@@ -23,8 +23,31 @@ export type SquareConfigResponse = z.infer<typeof SquareConfigResponseSchema>;
 
 // ─── Swaps ────────────────────────────────────────────────────────────────────
 
+/** A swap's public address segment (Plan 33). Mirrors `SWAP_SLUG_PATTERN`. */
+const SwapSlug = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9-]{1,40}$/, 'A slug is up to 40 lowercase letters, digits and hyphens');
+
+/** The Status Page tab's three switches (Plan 33). */
+const StatusPageToggles = {
+  /** Unauthenticated SKU Lookup: anyone may check one SKU's status. */
+  skuLookupEnabled: z.boolean().optional(),
+  /** Unauthenticated Seller Status: the email and last-4 lookup, and `/s/`. */
+  sellerLookupEnabled: z.boolean().optional(),
+  /** Authenticated Seller Status: an individual seller here may sign in. */
+  sellerLoginEnabled: z.boolean().optional(),
+};
+
 export const CreateSwapSchema = z
-  .object({ title: z.string().min(1).max(100), locationId: z.string().min(1) })
+  .object({
+    title: z.string().min(1).max(100),
+    locationId: z.string().min(1),
+    /** Derived from the title when absent. */
+    slug: SwapSlug.optional(),
+    ...StatusPageToggles,
+  })
   .strict();
 
 export const PatchSwapSchema = z
@@ -40,6 +63,9 @@ export const PatchSwapSchema = z
     /** Refused unless check-in is, or is being made, legacy-tickets-only. */
     printLegacyHelperLabels: z.boolean().optional(),
     labelsPerItem: z.number().int().min(1).max(3).optional(),
+    /** Changes the status page's address; a rename doesn't (Plan 33). */
+    slug: SwapSlug.optional(),
+    ...StatusPageToggles,
   })
   .strict()
   // Counted rather than named, so a field added above cannot be silently
@@ -91,6 +117,11 @@ export const SwapResponseSchema = z.object({
   printLegacyHelperLabels: z.boolean(),
   /** Price tags printed each time an item's tag is printed, 1 to 3. */
   labelsPerItem: z.number().int(),
+  /** The public address segment: `<org>/<slug>/status` (Plan 33). */
+  slug: z.string(),
+  skuLookupEnabled: z.boolean(),
+  sellerLookupEnabled: z.boolean(),
+  sellerLoginEnabled: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -911,7 +942,12 @@ export const PublicSellerPayoutSchema = z.object({
 });
 
 export const PublicSellerDetailResponseSchema = z.object({
-  sellerName: z.string(),
+  /**
+   * False when none of this seller's swaps has Unauthenticated Seller Status
+   * on (Plan 33). Nothing about them is sent then: no name, items or payouts.
+   */
+  available: z.boolean(),
+  sellerName: z.string().nullable(),
   orgName: z.string(),
   orgLogoUrl: z.string().nullable(),
   /**

@@ -39,6 +39,11 @@ export const MembershipSummarySchema = z.object({
 });
 
 export const MeResponseSchema = z.object({
+  /**
+   * `checkin` when this session was started at a station (Plan 33): it reaches
+   * the check-in flow only, and the web shows nothing else.
+   */
+  sessionScope: z.enum(['full', 'checkin']),
   id: z.string(),
   email: z.string().nullable(),
   emailVerified: z.boolean(),

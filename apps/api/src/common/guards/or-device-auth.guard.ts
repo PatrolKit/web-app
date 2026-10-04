@@ -1,12 +1,17 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
-import { JwtService } from '../../auth/jwt.service';
+import { JwtService, type AccessTokenPayload } from '../../auth/jwt.service';
+import { assertSessionScopeAllowed } from './session-scope';
 import type { AuthenticatedDevice } from './device-auth.guard';
 import type { AuthenticatedUser } from './jwt-auth.guard';
 
 @Injectable()
 export class OrDeviceAuthGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly reflector: Reflector,
+  ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx
@@ -20,12 +25,16 @@ export class OrDeviceAuthGuard implements CanActivate {
 
     const token = authHeader.slice(7);
 
+    let user: AccessTokenPayload | null = null;
     try {
-      const payload = await this.jwtService.verifyAccessToken(token);
-      req.user = { userId: payload.sub };
-      return true;
+      user = await this.jwtService.verifyAccessToken(token);
     } catch {
       // not a user token — try device token
+    }
+    if (user) {
+      assertSessionScopeAllowed(this.reflector, ctx, user.scope);
+      req.user = { userId: user.sub, scope: user.scope };
+      return true;
     }
 
     try {

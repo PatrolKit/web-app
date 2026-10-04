@@ -1,3 +1,4 @@
+import { CheckinSessionAllowed } from '../common/decorators/checkin-session-allowed.decorator';
 import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Limit } from '../common/limits/limit.decorator';
 import { JwtAuthGuard, type AuthenticatedUser } from '../common/guards/jwt-auth.guard';
@@ -121,6 +122,7 @@ export class ReceiptController {
 export class SellerReceiptController {
   constructor(private readonly receipts: ReceiptService) {}
 
+  @CheckinSessionAllowed()
   @Post('receipts/send')
   send(
     @Param('orgId') orgId: string,

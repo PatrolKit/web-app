@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SquareClientService } from './square-client.service';
-import { deriveSkuPrefix } from './sku.util';
+import { deriveSkuPrefix, deriveSwapSlug } from './sku.util';
 import { isUniqueViolation } from '../common/util/prisma-errors';
 import { createId } from '@paralleldrive/cuid2';
 import { v4 as uuidv4 } from 'uuid';
@@ -42,8 +42,16 @@ export class SwapService {
     title: string,
     locationId: string,
     actorId: string,
+    extras: {
+      slug?: string;
+      skuLookupEnabled?: boolean; sellerLookupEnabled?: boolean; sellerLoginEnabled?: boolean;
+    } = {},
   ): Promise<SwapResponse> {
     const client = await this.squareOrExplain(orgId, 'creating a swap');
+
+    // A slug someone typed is theirs or refused; a derived one is made unique.
+    if (extras.slug) await this.assertSlugFree(orgId, extras.slug);
+    const slug = extras.slug ?? (await this.resolveUniqueSlug(orgId, deriveSwapSlug(title)));
 
     const basePrefix = deriveSkuPrefix(title);
     const skuPrefix = await this.resolveUniquePrefix(orgId, basePrefix);
@@ -68,9 +76,19 @@ export class SwapService {
         locationId,
         active: false,
         skuPrefix,
+        slug,
+        skuLookupEnabled: extras.skuLookupEnabled ?? false,
+        sellerLookupEnabled: extras.sellerLookupEnabled ?? false,
+        sellerLoginEnabled: extras.sellerLoginEnabled ?? false,
         labelsPerItem: previous?.labelsPerItem ?? 1,
         createdBy: actorId,
       },
+    }).catch((err: unknown) => {
+      // Two creates racing for one derived slug.
+      if (isUniqueViolation(err) && uniqueTarget(err).includes('slug')) {
+        throw new ConflictException(`Another swap already uses the slug "${slug}".`);
+      }
+      throw err;
     });
 
     return this.toResponse(swap);
@@ -83,9 +101,11 @@ export class SwapService {
       title?: string; active?: boolean; locationId?: string;
       legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean; webLegacyTicketsOnly?: boolean;
       printLegacyHelperLabels?: boolean; labelsPerItem?: number;
+      slug?: string; skuLookupEnabled?: boolean; sellerLookupEnabled?: boolean; sellerLoginEnabled?: boolean;
     },
   ): Promise<SwapResponse> {
     const swap = await this.findOrThrow(orgId, swapId);
+    if (data.slug !== undefined && data.slug !== swap.slug) await this.assertSlugFree(orgId, data.slug, swapId);
 
     // What "tickets only" will be once this patch lands: turning acceptance
     // off clears it, below.
@@ -191,10 +211,19 @@ export class SwapService {
               ? { printLegacyHelperLabels: data.printLegacyHelperLabels }
               : {}),
           ...(data.labelsPerItem !== undefined ? { labelsPerItem: data.labelsPerItem } : {}),
+          // The slug moves only when asked; a rename leaves it (Plan 33).
+          ...(data.slug !== undefined ? { slug: data.slug } : {}),
+          ...(data.skuLookupEnabled !== undefined ? { skuLookupEnabled: data.skuLookupEnabled } : {}),
+          ...(data.sellerLookupEnabled !== undefined ? { sellerLookupEnabled: data.sellerLookupEnabled } : {}),
+          ...(data.sellerLoginEnabled !== undefined ? { sellerLoginEnabled: data.sellerLoginEnabled } : {}),
           activeSkuPrefix: willBeActive ? newSkuPrefix : null,
         },
       })
       .catch((err: unknown) => {
+        // Two saves racing for one slug.
+        if (isUniqueViolation(err) && uniqueTarget(err).includes('slug')) {
+          throw new ConflictException(`Another swap already uses the slug "${data.slug}".`);
+        }
         // A collision on the (orgId, activeSkuPrefix) index — two live swaps,
         // one prefix.
         if (isUniqueViolation(err)) {
@@ -252,6 +281,33 @@ export class SwapService {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId } });
     if (!swap) throw new NotFoundException('Swap not found');
     return swap;
+  }
+
+  /**
+   * A slug no other swap of the org has, active or not: `base`, then `base-2`,
+   * `base-3`… Not sliced, so a suffix can't fold back onto the base the way a
+   * 6-character prefix's can.
+   */
+  private async resolveUniqueSlug(orgId: string, base: string): Promise<string> {
+    const taken = new Set(
+      (await this.prisma.skiSwap.findMany({
+        where: { orgId, slug: { startsWith: base } },
+        select: { slug: true },
+      })).map((s) => s.slug),
+    );
+    if (!taken.has(base)) return base;
+    for (let n = 2; ; n++) {
+      if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
+    }
+  }
+
+  /** Refuses a slug another swap of the org already has, naming that swap. */
+  private async assertSlugFree(orgId: string, slug: string, excludeSwapId?: string): Promise<void> {
+    const other = await this.prisma.skiSwap.findFirst({
+      where: { orgId, slug, ...(excludeSwapId ? { id: { not: excludeSwapId } } : {}) },
+      select: { title: true },
+    });
+    if (other) throw new ConflictException(`"${other.title}" already uses the slug "${slug}".`);
   }
 
   /**
@@ -350,6 +406,10 @@ export class SwapService {
     webLegacyTicketsOnly: boolean;
     printLegacyHelperLabels: boolean;
     labelsPerItem: number;
+    slug: string;
+    skuLookupEnabled: boolean;
+    sellerLookupEnabled: boolean;
+    sellerLoginEnabled: boolean;
     createdAt: Date;
     updatedAt: Date;
   }): SwapResponse {
@@ -366,8 +426,18 @@ export class SwapService {
       webLegacyTicketsOnly: swap.webLegacyTicketsOnly,
       printLegacyHelperLabels: swap.printLegacyHelperLabels,
       labelsPerItem: swap.labelsPerItem,
+      slug: swap.slug,
+      skuLookupEnabled: swap.skuLookupEnabled,
+      sellerLookupEnabled: swap.sellerLookupEnabled,
+      sellerLoginEnabled: swap.sellerLoginEnabled,
       createdAt: swap.createdAt.toISOString(),
       updatedAt: swap.updatedAt.toISOString(),
     };
   }
+}
+
+/** Which unique index a P2002 hit, as Prisma reports it on MySQL. */
+function uniqueTarget(err: unknown): string {
+  const target = (err as { meta?: { target?: unknown } }).meta?.target;
+  return Array.isArray(target) ? target.join(',') : String(target ?? '');
 }

@@ -37,6 +37,17 @@ export function deriveSkuPrefix(title: string): string {
   return (letters + yearSuffix).replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'SK';
 }
 
+/** What a swap slug may be: lowercase letters, digits and hyphens (Plan 33). */
+export const SWAP_SLUG_PATTERN = /^[a-z0-9-]{1,40}$/;
+
+/**
+ * A swap's slug, by the same derivation as its SKU prefix, lowercased:
+ * "Ski Swap 2026" → "ss26". One derivation, so the two read alike.
+ */
+export function deriveSwapSlug(title: string): string {
+  return deriveSkuPrefix(title).toLowerCase();
+}
+
 /**
  * Formats a SKU. With a station or device code the shape is `PREFIX-C-NNNN`;
  * without one — a staff-entered item — it stays `PREFIX-NNNN`.

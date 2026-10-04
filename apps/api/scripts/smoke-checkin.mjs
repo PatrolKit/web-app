@@ -45,7 +45,7 @@ if (priorUser) await prisma.user.delete({ where: { id: priorUser.id } });
 
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: 'Check-in smoke swap', squareCategoryId: 'smoke',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Check-in smoke swap', squareCategoryId: 'smoke',
     skuPrefix: 'CIS', active: true, activeSkuPrefix: 'CIS',
   },
 });

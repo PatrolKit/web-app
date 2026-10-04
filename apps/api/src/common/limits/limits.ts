@@ -67,6 +67,12 @@ export const LIMITS = {
     label: 'Public lookups and receipts',
     limit: 200, windowMs: MINUTE, keyedBy: 'ip',
   },
+  // Tighter, because SKUs are sequential: this slows anyone stepping through a
+  // swap's numbers to list what's sold (Plan 33).
+  'public.skuLookup': {
+    label: 'Public SKU lookups',
+    limit: 30, windowMs: MINUTE, keyedBy: 'ip',
+  },
   // Every delivery comes from PayPal, so a batch of payouts arrives from one
   // address. Raised rather than skipped: verifying one costs a call to PayPal.
   'webhooks.paypal': {

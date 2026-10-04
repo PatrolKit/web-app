@@ -65,7 +65,7 @@ await prisma.user.deleteMany({ where: { email: { startsWith: 'rush-' }, AND: { e
 await prisma.taxonomyNode.deleteMany({ where: { orgId: org.id, label: { startsWith: 'Rush ' } } });
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: `Venue rush ${RUN}`, squareCategoryId: 'load',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: `Venue rush ${RUN}`, squareCategoryId: 'load',
     skuPrefix: 'VR', active: true, activeSkuPrefix: `VR${RUN}`.slice(0, 8),
   },
 });

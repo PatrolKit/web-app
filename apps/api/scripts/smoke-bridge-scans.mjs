@@ -31,7 +31,7 @@ await prisma.device.deleteMany({ where: { orgId: org.id, name: 'Scan smoke bridg
 
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: 'Scan smoke swap', squareCategoryId: 'scan-smoke',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Scan smoke swap', squareCategoryId: 'scan-smoke',
     skuPrefix: 'SCN', active: true, activeSkuPrefix: 'SCN',
   },
 });
@@ -193,7 +193,7 @@ ok('a bare legacy ticket number scans the same as one of ours',
 // to whatever is running now.
 const oldSwap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: 'Scan smoke last year', squareCategoryId: 'scan-old',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Scan smoke last year', squareCategoryId: 'scan-old',
     skuPrefix: 'OLD', active: false,
   },
 });

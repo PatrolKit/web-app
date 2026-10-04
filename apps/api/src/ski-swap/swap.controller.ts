@@ -42,7 +42,8 @@ export class SwapController {
     @Body() body: CreateSwapDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.swapService.create(orgId, body.title, body.locationId, user.userId);
+    const { title, locationId, ...extras } = body;
+    return this.swapService.create(orgId, title, locationId, user.userId, extras);
   }
 
   @Get(':swapId')

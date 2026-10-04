@@ -11,7 +11,7 @@ export class MeService {
     private readonly touch: MembershipTouchService,
   ) {}
 
-  async getMe(userId: string): Promise<MeResponse> {
+  async getMe(userId: string, sessionScope: MeResponse['sessionScope'] = 'full'): Promise<MeResponse> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -26,6 +26,7 @@ export class MeService {
     });
 
     return {
+      sessionScope,
       id: user.id,
       email: user.email,
       emailVerified: user.emailVerifiedAt !== null,

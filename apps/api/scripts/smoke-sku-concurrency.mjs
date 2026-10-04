@@ -20,7 +20,7 @@ const ok = (label, cond, extra = '') =>
 const org = await smokeOrg(prisma);
 await prisma.skiSwap.deleteMany({ where: { orgId: org.id, title: 'SKU concurrency swap' } });
 const swap = await prisma.skiSwap.create({
-  data: { orgId: org.id, title: 'SKU concurrency swap', squareCategoryId: 'sku', skuPrefix: 'SKU' },
+  data: { orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'SKU concurrency swap', squareCategoryId: 'sku', skuPrefix: 'SKU' },
 });
 
 // The real service against the real database — the guarantee lives in the SQL,

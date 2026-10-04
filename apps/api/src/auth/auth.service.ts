@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, InternalServerErrorException, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { JwtService } from './jwt.service';
+import { JwtService, type SessionScope } from './jwt.service';
+import { SignInPolicy } from '../common/identity/sign-in-policy.service';
 import { ContactChallengeService, type IssuedChallenge } from './contact-challenge.service';
 import { createId } from '@paralleldrive/cuid2';
 import { createHash, randomBytes } from 'crypto';
@@ -12,6 +13,14 @@ import { normalizeEmail, normalizePhone } from '../common/util/person';
 import { SmsService } from '../sms/sms.service';
 
 const REFRESH_COOKIE = 'refresh_token';
+
+/** A check-in session lives a day (Plan 33 D6): long enough for one swap. */
+const CHECKIN_SESSION_TTL_S = 24 * 60 * 60;
+
+const SIGN_IN_CLOSED = {
+  message: "Sign-in isn't open for sellers at this swap. To check in, scan the swap's check-in QR code.",
+  code: 'SIGN_IN_CLOSED',
+};
 
 function sha256(input: string): string {
   return createHash('sha256').update(input).digest('hex');
@@ -27,6 +36,7 @@ export class AuthService {
     private readonly challenges: ContactChallengeService,
     private readonly config: ConfigService,
     private readonly sms: SmsService,
+    private readonly policy: SignInPolicy,
   ) {}
 
   // ─── Login (email or phone) ──────────────────────────────────────────────────
@@ -66,6 +76,14 @@ export class AuthService {
       where: email ? { email } : { phone: phone! },
     });
     if (!user) return { challengeId: createId(), channel };
+
+    // Someone not allowed in gets exactly what an unknown address gets: a
+    // decoy, and nothing sent (Plan 33 D7). Nothing tells whoever typed the
+    // address that it belongs to a seller. Checking in at a station is never
+    // refused; its session reaches the check-in flow only.
+    if (!input.context && !(await this.policy.mayUseApp(user.id))) {
+      return { challengeId: createId(), channel };
+    }
 
     return this.challenges.issue({
       userId: user.id,
@@ -112,8 +130,16 @@ export class AuthService {
 
     if (purpose === 'verify') return { accessToken: null, verified: true, context };
 
-    const accessToken = await this.jwtService.signAccessToken(userId);
-    await this.issueRefreshCookie(userId, res, meta);
+    // A sign-in at a station is a check-in session (Plan 33 D6). Any other is
+    // checked again here: a link sent while sign-in was open may be opened
+    // after it closed. The contact is still stamped verified; it was proven.
+    const scope: SessionScope = context ? 'checkin' : 'full';
+    if (scope === 'full' && !(await this.policy.mayUseApp(userId))) {
+      throw new ForbiddenException(SIGN_IN_CLOSED);
+    }
+
+    const accessToken = await this.jwtService.signAccessToken(userId, scope);
+    await this.issueRefreshCookie(userId, res, meta, { scope });
     return { accessToken, verified: true, context };
   }
 
@@ -150,8 +176,20 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    const accessToken = await this.jwtService.signAccessToken(record.userId);
-    await this.issueRefreshCookie(record.userId, res, meta);
+    // Turning a swap's sign-in off ends its sellers' sessions here, within an
+    // access token's life (Plan 33). A check-in session keeps its scope and its
+    // original expiry: rotating it doesn't make it last longer.
+    const scope: SessionScope = record.scope === 'checkin' ? 'checkin' : 'full';
+    if (scope === 'full' && !(await this.policy.mayUseApp(record.userId))) {
+      this.clearRefreshCookie(res);
+      throw new UnauthorizedException(SIGN_IN_CLOSED);
+    }
+
+    const accessToken = await this.jwtService.signAccessToken(record.userId, scope);
+    await this.issueRefreshCookie(record.userId, res, meta, {
+      scope,
+      ...(scope === 'checkin' ? { expiresAt: record.expiresAt } : {}),
+    });
 
     return { accessToken };
   }
@@ -177,11 +215,15 @@ export class AuthService {
     userId: string,
     res: Response,
     meta: { ipAddress?: string; userAgent?: string },
+    session: { scope?: SessionScope; expiresAt?: Date } = {},
   ): Promise<void> {
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = sha256(rawToken);
-    const ttl = this.config.get<number>('app.refreshTokenTtl', 2592000);
-    const expiresAt = new Date(Date.now() + ttl * 1000);
+    const scope = session.scope ?? 'full';
+    const expiresAt = session.expiresAt ?? new Date(
+      Date.now() + (scope === 'checkin' ? CHECKIN_SESSION_TTL_S : this.config.get<number>('app.refreshTokenTtl', 2592000)) * 1000,
+    );
+    const ttl = Math.max(0, Math.round((expiresAt.getTime() - Date.now()) / 1000));
     const cookieDomain = this.config.get<string>('app.cookieDomain', '');
     const isProduction = this.config.get<string>('app.nodeEnv') === 'production';
 
@@ -191,6 +233,7 @@ export class AuthService {
         userId,
         tokenHash,
         expiresAt,
+        scope,
         ipAddress: meta.ipAddress,
         userAgent: meta.userAgent,
       },

@@ -47,7 +47,7 @@ const station = await prisma.checkinStation.create({
           attendantDeviceId: ipad.id, bridgeDeviceId: bridge.id },
 });
 const swap = await prisma.skiSwap.create({
-  data: { orgId: org.id, title: 'Station print swap', squareCategoryId: 'smoke', skuPrefix: 'SPS', active: true, activeSkuPrefix: 'SPS' },
+  data: { orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Station print swap', squareCategoryId: 'smoke', skuPrefix: 'SPS', active: true, activeSkuPrefix: 'SPS' },
 });
 
 const tokenFor = async (clientId) => (await fetch(`${BASE}/auth/device/token`, {

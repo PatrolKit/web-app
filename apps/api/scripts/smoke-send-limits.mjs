@@ -45,7 +45,7 @@ await prisma.user.deleteMany({ where: { phone: { in: [PHONE, NOBODY] } } });
 
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: 'Send limits swap', squareCategoryId: 'smoke',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Send limits swap', squareCategoryId: 'smoke',
     skuPrefix: 'SLS', active: true, activeSkuPrefix: 'SLS',
   },
 });

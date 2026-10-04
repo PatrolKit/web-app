@@ -217,6 +217,9 @@ model RefreshToken {
   tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
+  /// `full`, or `checkin` for a session started at a station (Plan 33): it
+  /// reaches the check-in flow only, and lives a day.
+  scope     String    @default("full")
   userAgent String?
   ipAddress String?
   createdAt DateTime  @default(now())
@@ -437,6 +440,15 @@ model SkiSwap {
   /// at each end, another's on a single hang tag. It used to be an org setting
   /// (`SkiSwapSettings`), and each swap took that value when it moved here.
   labelsPerItem        Int      @default(1)
+  /// The swap's public address, `<org>/<slug>/status` (Plan 33). Derived from
+  /// the title like `skuPrefix`, lowercased, once; a rename doesn't move it.
+  slug                 String
+  /// Unauthenticated SKU Lookup: anyone may check one SKU's status.
+  skuLookupEnabled     Boolean  @default(false)
+  /// Unauthenticated Seller Status: the email and last-4 lookup, and `/s/`.
+  sellerLookupEnabled  Boolean  @default(false)
+  /// Authenticated Seller Status: an individual seller here may sign in.
+  sellerLoginEnabled   Boolean  @default(false)
   createdBy            String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -450,6 +462,7 @@ model SkiSwap {
 
   @@unique([orgId, title])
   @@unique([orgId, activeSkuPrefix])
+  @@unique([orgId, slug])
   @@index([orgId, active])
 }
 

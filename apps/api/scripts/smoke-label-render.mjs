@@ -49,7 +49,7 @@ const seller = await prisma.sellerProfile.upsert({
   create: { membershipId: membership.id },
 });
 const swap = await prisma.skiSwap.create({
-  data: { orgId: org.id, title: 'Render smoke swap', squareCategoryId: 'smoke', skuPrefix: 'RS' },
+  data: { orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Render smoke swap', squareCategoryId: 'smoke', skuPrefix: 'RS' },
 });
 const item = await prisma.swapItem.create({
   data: {

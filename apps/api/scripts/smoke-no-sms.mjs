@@ -36,7 +36,7 @@ await prisma.user.deleteMany({ where: { OR: [{ phone: { in: [PHONE, SELLER_PHONE
 for (const target of [PHONE, SELLER_PHONE, SELLER_EMAIL]) await forgetSentCodes(prisma, target);
 
 const swap = await prisma.skiSwap.create({
-  data: { orgId: org.id, title: 'No SMS swap', squareCategoryId: 'nosms', skuPrefix: 'NSM', active: true, activeSkuPrefix: 'NSM' },
+  data: { orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'No SMS swap', squareCategoryId: 'nosms', skuPrefix: 'NSM', active: true, activeSkuPrefix: 'NSM' },
 });
 const station = await prisma.checkinStation.create({ data: { orgId: org.id, name: 'No SMS station', code: 'Z' } });
 // Someone with an account, known only by a phone: what phone sign-in would find.

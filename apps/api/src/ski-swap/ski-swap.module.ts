@@ -18,6 +18,8 @@ import { StatsService } from './stats.service';
 import { StatsController } from './stats.controller';
 import { PublicLookupService } from './public-lookup.service';
 import { PublicLookupController } from './public-lookup.controller';
+import { PublicStatusService } from './public-status.service';
+import { PublicStatusController } from './public-status.controller';
 import { PublicSellerService } from './public-seller.service';
 import { PublicSellerController } from './public-seller.controller';
 import { S3Service } from './s3.service';
@@ -83,6 +85,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     ItemController,
     StatsController,
     PublicLookupController,
+    PublicStatusController,
     PublicSellerController,
     SellerSelfController,
     BusinessSellerController,
@@ -127,6 +130,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     ItemService,
     StatsService,
     PublicLookupService,
+    PublicStatusService,
     PublicSellerService,
     SellerSelfService,
     LegacyTicketService,

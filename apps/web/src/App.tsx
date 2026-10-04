@@ -39,6 +39,7 @@ import BusinessSellerPage from './pages/ski-swap/BusinessSellerPage';
 import SellerProfilePage from './pages/ski-swap/SellerProfilePage';
 import SellerItemsPage from './pages/public/SellerItemsPage';
 import OrgSellerLookupPage from './pages/public/OrgSellerLookupPage';
+import SkuStatusPage from './pages/public/SkuStatusPage';
 import OrgAdminLayout from './pages/org/OrgAdminLayout';
 import OrgGeneralPage from './pages/org/OrgGeneralPage';
 import OrgResortsPage from './pages/org/OrgResortsPage';
@@ -79,6 +80,8 @@ export default function App() {
           {/* A receipt link from an email or a text. Public: the token is
               the credential, and it names one check-in rather than a seller. */}
           <Route path="r/:token" element={<ReceiptPage />} />
+          {/* A swap's public SKU lookup (Plan 33). */}
+          <Route path=":orgSlug/:swapSlug/status" element={<SkuStatusPage />} />
           {/* Last: a bare slug is the org lookup, so it must not shadow the
               static segments above it. */}
           <Route path=":orgSlug" element={<OrgSellerLookupPage />} />
@@ -154,6 +157,8 @@ export default function App() {
             <Route path="devices" element={<SignageDevicesPage />} />
           </Route>
         </Route>
+        {/* Local development: the seller site's SKU lookup (Plan 33). */}
+        <Route path=":orgSlug/:swapSlug/status" element={<SkuStatusPage />} />
         {/* Org seller lookup — broad catch-all; must be before the * redirect */}
         <Route path=":orgSlug" element={<OrgSellerLookupPage />} />
         <Route path="*" element={<Navigate to="auth/login" replace />} />

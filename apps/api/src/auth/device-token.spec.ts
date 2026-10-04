@@ -27,7 +27,7 @@ async function build(opts: { device?: boolean; verify?: typeof argon2.verify } =
     },
   };
   const jwt = { signDeviceToken: async () => 'token-1' };
-  const svc = new AuthService(prisma as never, jwt as never, {} as never, {} as never, {} as never);
+  const svc = new AuthService(prisma as never, jwt as never, {} as never, {} as never, {} as never, {} as never);
   if (opts.verify) verify.mockImplementationOnce(opts.verify);
   return svc;
 }

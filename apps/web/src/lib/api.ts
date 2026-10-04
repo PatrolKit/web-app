@@ -89,6 +89,14 @@ export class ApiError extends Error {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+/** A swap's slug and its Status Page switches (Plan 33), on create or patch. */
+export type SwapSettingsWrite = {
+  slug?: string;
+  skuLookupEnabled?: boolean;
+  sellerLookupEnabled?: boolean;
+  sellerLoginEnabled?: boolean;
+};
+
 /** Person fields are global (they live on User); businessName is org-scoped. */
 export type SellerWrite = Partial<{
   firstName: string | null;
@@ -534,14 +542,14 @@ export const api = {
     // Swaps
     listSwaps: (orgId: string, active?: boolean) =>
       request<import('./api.types').SwapResponse[]>(`/orgs/${orgId}/ski-swap/swaps${active !== undefined ? `?active=${active}` : ''}`),
-    createSwap: (orgId: string, title: string, locationId: string) =>
+    createSwap: (orgId: string, data: SwapSettingsWrite & { title: string; locationId: string }) =>
       request<import('./api.types').SwapResponse>(`/orgs/${orgId}/ski-swap/swaps`, {
-        method: 'POST', body: JSON.stringify({ title, locationId }),
+        method: 'POST', body: JSON.stringify(data),
       }),
     patchSwap: (
       orgId: string,
       swapId: string,
-      data: {
+      data: SwapSettingsWrite & {
         title?: string; active?: boolean; locationId?: string;
         legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean; webLegacyTicketsOnly?: boolean;
         printLegacyHelperLabels?: boolean; labelsPerItem?: number;
@@ -1309,6 +1317,15 @@ export const api = {
       request<import('./api.types').PublicSellerDetailResponse>(`/public/sellers/${sellerId}`),
     getOrgBranding: (orgSlug: string) =>
       request<import('./api.types').OrgBrandingResponse>(`/public/${encodeURIComponent(orgSlug)}/ski-swap/branding`),
+    /** The SKU lookup page (Plan 33); 404 unless the swap has it on. */
+    getSwapStatusPage: (orgSlug: string, swapSlug: string) =>
+      request<import('./api.types').PublicSwapStatusPage>(
+        `/public/${encodeURIComponent(orgSlug)}/swaps/${encodeURIComponent(swapSlug)}`,
+      ),
+    getSkuStatus: (orgSlug: string, swapSlug: string, sku: string) =>
+      request<import('./api.types').PublicSkuStatus>(
+        `/public/${encodeURIComponent(orgSlug)}/swaps/${encodeURIComponent(swapSlug)}/sku/${encodeURIComponent(sku)}`,
+      ),
     findSeller: (orgSlug: string, email: string, last4: string) =>
       request<import('./api.types').SellerFindResponse>(
         `/public/${encodeURIComponent(orgSlug)}/ski-swap/seller-find?email=${encodeURIComponent(email)}&last4=${encodeURIComponent(last4)}`,

@@ -4,8 +4,15 @@ import { SignJWT, jwtVerify, importPKCS8, importSPKI } from 'jose';
 import { generateKeyPairSync } from 'crypto';
 import type { KeyLike } from 'jose';
 
+/**
+ * `checkin` for a session started at a station from its QR code (Plan 33): it
+ * reaches the check-in flow and nothing else. `full` for every other sign-in.
+ */
+export type SessionScope = 'full' | 'checkin';
+
 export interface AccessTokenPayload {
   sub: string; // userId
+  scope: SessionScope;
 }
 
 export interface DeviceTokenPayload {
@@ -58,8 +65,8 @@ export class JwtService implements OnModuleInit {
     this.deviceTtl = this.config.get<number>('app.deviceTokenTtl', 3600);
   }
 
-  async signAccessToken(userId: string): Promise<string> {
-    return new SignJWT({})
+  async signAccessToken(userId: string, scope: SessionScope = 'full'): Promise<string> {
+    return new SignJWT(scope === 'checkin' ? { scope } : {})
       .setProtectedHeader({ alg: 'EdDSA' })
       .setSubject(userId)
       .setIssuedAt()
@@ -89,7 +96,8 @@ export class JwtService implements OnModuleInit {
     const { payload } = await jwtVerify(token, this.publicKey, { algorithms: ['EdDSA'] });
     if (!payload.sub) throw new Error('Token missing sub claim');
     if (payload['deviceId']) throw new Error('Cannot use device token as access token');
-    return { sub: payload.sub };
+    // Absent is `full`: every token minted before scopes existed was one.
+    return { sub: payload.sub, scope: payload['scope'] === 'checkin' ? 'checkin' : 'full' };
   }
 
   async verifyDeviceToken(token: string): Promise<DeviceTokenPayload> {

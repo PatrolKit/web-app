@@ -30,7 +30,7 @@ if (priorSeller) await prisma.user.delete({ where: { id: priorSeller.id } });
 
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: 'Consign smoke swap', squareCategoryId: 'consign-smoke',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Consign smoke swap', squareCategoryId: 'consign-smoke',
     skuPrefix: 'CNS', active: true, activeSkuPrefix: 'CNS',
   },
 });

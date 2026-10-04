@@ -208,6 +208,19 @@ export default function SellerItemsPage() {
     );
   }
 
+  // None of this seller's swaps shows their status publicly (Plan 33). Said
+  // without a reason, and without saying whether there's a seller at all.
+  if (!data.available) {
+    return (
+      <div className="min-h-screen bg-surface px-4 py-8">
+        <div className="max-w-xl mx-auto space-y-6">
+          <PublicPageHeader title="Your items" subtitle={[data.orgName]} logoUrl={data.orgLogoUrl} />
+          <p className="text-gray-400 text-sm text-center">Item status isn’t available here.</p>
+        </div>
+      </div>
+    );
+  }
+
   const hasItems = data.swaps.some((s) => s.items.length > 0);
 
   return (
@@ -224,7 +237,7 @@ export default function SellerItemsPage() {
           */}
         <PublicPageHeader
           title="Your items"
-          subtitle={[data.orgName, data.sellerName]}
+          subtitle={[data.orgName, data.sellerName ?? '']}
           logoUrl={data.orgLogoUrl}
         />
 

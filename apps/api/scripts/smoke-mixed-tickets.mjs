@@ -37,7 +37,7 @@ for (const email of EMAILS) {
 
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: TITLE, squareCategoryId: 'mixed-smoke', skuPrefix: 'MIX', active: true, activeSkuPrefix: 'MIX',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: TITLE, squareCategoryId: 'mixed-smoke', skuPrefix: 'MIX', active: true, activeSkuPrefix: 'MIX',
     // The beta's shape: the counter on tickets, the web open.
     legacyTicketsEnabled: true, legacyTicketsOnly: true, webLegacyTicketsOnly: false,
   },

@@ -74,6 +74,23 @@ export default function AppShell() {
   }
   if (!user) return <Navigate to="/auth/login" replace />;
 
+  // A session started at a station reaches the check-in flow only (Plan 33):
+  // the dashboard would only be refused, one request at a time.
+  if (user.sessionScope === 'checkin') {
+    return (
+      <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-4 text-center gap-4">
+        <p className="text-white font-medium">You’re signed in to check in at the swap.</p>
+        <p className="text-gray-400 text-sm">Sign in again to use PatrolKit.</p>
+        <button
+          onClick={() => { void handleLogout(); }}
+          className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
+        >
+          Sign out
+        </button>
+      </div>
+    );
+  }
+
   function isModuleEnabled(key: string) {
     // If org data isn't loaded (user lacks org:read), assume enabled so the nav shows.
     // Without org data (the caller lacks org:read) assume enabled so the nav shows.

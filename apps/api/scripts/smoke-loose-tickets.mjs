@@ -33,7 +33,7 @@ for (const email of ['loose-shop@patrolkit.invalid', 'loose-walkin@patrolkit.inv
 
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: 'Loose ticket smoke', squareCategoryId: 'loose-smoke',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Loose ticket smoke', squareCategoryId: 'loose-smoke',
     skuPrefix: 'LSE', active: true, activeSkuPrefix: 'LSE',
     // Off to start: the switch is what the iPad reads, so it gets exercised.
     legacyTicketsEnabled: false,

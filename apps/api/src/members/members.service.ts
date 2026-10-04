@@ -5,7 +5,7 @@ import {
   NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { IS_MEMBER } from '../common/identity/membership-kinds';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PersonService } from '../common/identity/person.service';
@@ -22,21 +22,6 @@ import { MailService } from '../mail/mail.service';
 import { ALL_PERMISSION_KEYS, type PermissionKey } from '../contracts/org.contracts';
 
 const MAX_CSV_ROWS = 500;
-
-/**
- * Who the Members page is for: patrollers, anyone given permissions, and anyone
- * invited here plainly. A ski swap seller has a membership too, because that's
- * where a seller profile hangs, but someone who is only a seller here isn't a
- * member and is managed under Ski Swap > Sellers.
- */
-const IS_MEMBER: Prisma.MembershipWhereInput = {
-  OR: [
-    { sellerProfile: { is: null } },
-    { sellerProfile: { is: { deletedAt: { not: null } } } },
-    { patrollerProfile: { is: { deletedAt: null } } },
-    { permissions: { some: {} } },
-  ],
-};
 
 const SELLER_ONLY_MESSAGE =
   'This person is a ski swap seller here, not a member. Give them permissions, or add them to the patroller roster, to make them one.';

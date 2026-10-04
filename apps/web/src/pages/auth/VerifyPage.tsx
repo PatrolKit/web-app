@@ -27,6 +27,8 @@ export default function VerifyPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [error, setError] = useState('');
+  /** Sign-in is closed for this person (Plan 33): not a broken link, so not "ask for another". */
+  const [closed, setClosed] = useState('');
   const [busy, setBusy] = useState(false);
   // A bare `verify` challenge proves a contact without minting a session.
   const [verifiedOnly, setVerifiedOnly] = useState(false);
@@ -67,6 +69,7 @@ export default function VerifyPage() {
       }
       navigate('/dashboard', { replace: true });
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'SIGN_IN_CLOSED') { setClosed(err.message); return; }
       setError(
         err instanceof ApiError
           ? err.message
@@ -75,6 +78,14 @@ export default function VerifyPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (closed) {
+    return (
+      <Shell icon={faTriangleExclamationDuo} tone="amber" title="Sign-in isn’t open">
+        <p className="text-center text-sm text-gray-400">{closed}</p>
+      </Shell>
+    );
   }
 
   if (malformed || error) {

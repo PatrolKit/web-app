@@ -87,7 +87,7 @@ await prisma.skiSwapSettings.upsert({
 
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: 'Payout smoke swap', squareCategoryId: 'pay',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Payout smoke swap', squareCategoryId: 'pay',
     locationId: 'stub-location', skuPrefix: 'PAY', active: true, activeSkuPrefix: 'PAY',
   },
 });

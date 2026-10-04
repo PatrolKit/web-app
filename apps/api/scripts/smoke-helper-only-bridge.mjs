@@ -47,7 +47,7 @@ const station = await prisma.checkinStation.create({
 });
 const swap = await prisma.skiSwap.create({
   data: {
-    orgId: org.id, title: 'Helper labels swap', squareCategoryId: 'smoke', skuPrefix: 'HLP', active: true, activeSkuPrefix: 'HLP',
+    orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Helper labels swap', squareCategoryId: 'smoke', skuPrefix: 'HLP', active: true, activeSkuPrefix: 'HLP',
     legacyTicketsEnabled: true, legacyTicketsOnly: true, printLegacyHelperLabels: true,
   },
 });
