@@ -16,8 +16,8 @@ export default function ItemsPage() {
   const [importing, setImporting] = useState(false);
   const [searchParams] = useSearchParams();
 
-  /** The swap's web takes legacy tickets only, so no row may get a generated SKU (Plan 31). */
-  const webTicketsOnly = !!selectedSwap?.webLegacyTicketsOnly;
+  /** The swap's web takes no print tickets, so no row may get a generated SKU (Plan 34). */
+  const webTicketsOnly = selectedSwap ? !selectedSwap.allowPrintWeb : false;
 
   /**
    * Who could be uploaded for: sellers holding tickets in this swap, and, when

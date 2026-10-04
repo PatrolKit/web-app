@@ -99,7 +99,7 @@ export class SwapService {
     swapId: string,
     data: {
       title?: string; active?: boolean; locationId?: string;
-      legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean; webLegacyTicketsOnly?: boolean;
+      allowLegacyCheckin?: boolean; allowLegacyWeb?: boolean; allowPrintCheckin?: boolean; allowPrintWeb?: boolean;
       printLegacyHelperLabels?: boolean; labelsPerItem?: number;
       slug?: string; skuLookupEnabled?: boolean; sellerLookupEnabled?: boolean; sellerLoginEnabled?: boolean;
     },
@@ -107,16 +107,20 @@ export class SwapService {
     const swap = await this.findOrThrow(orgId, swapId);
     if (data.slug !== undefined && data.slug !== swap.slug) await this.assertSlugFree(orgId, data.slug, swapId);
 
-    // What "tickets only" will be once this patch lands: turning acceptance
-    // off clears it, below.
-    const willAccept = data.legacyTicketsEnabled ?? swap.legacyTicketsEnabled;
-    if (!willAccept && (data.legacyTicketsOnly === true || data.webLegacyTicketsOnly === true)) {
-      throw new BadRequestException('Tickets only applies only to a swap that accepts legacy tickets');
+    // How items come in once this patch lands (Plan 34). Each place takes at
+    // least one way: a place that takes neither has no way to add an item.
+    const legacyCheckin = data.allowLegacyCheckin ?? swap.allowLegacyCheckin;
+    const printCheckin = data.allowPrintCheckin ?? swap.allowPrintCheckin;
+    const legacyWeb = data.allowLegacyWeb ?? swap.allowLegacyWeb;
+    const printWeb = data.allowPrintWeb ?? swap.allowPrintWeb;
+    if (!legacyCheckin && !printCheckin) {
+      throw new BadRequestException('Staff check-in needs legacy tickets, print tickets, or both.');
     }
-    const willBeTicketsOnly =
-      data.legacyTicketsEnabled === false ? false : (data.legacyTicketsOnly ?? swap.legacyTicketsOnly);
-    if (data.printLegacyHelperLabels === true && !willBeTicketsOnly) {
-      throw new BadRequestException('Helper labels apply only to a swap that takes legacy tickets only');
+    if (!legacyWeb && !printWeb) {
+      throw new BadRequestException('The web needs legacy tickets, print tickets, or both.');
+    }
+    if (data.printLegacyHelperLabels === true && !legacyCheckin) {
+      throw new BadRequestException('Helper labels go with legacy tickets at staff check-in, which this swap doesn’t take.');
     }
 
     let newSkuPrefix = swap.skuPrefix;
@@ -184,28 +188,13 @@ export class SwapService {
             : {}),
           ...(data.active !== undefined ? { active: data.active } : {}),
           ...(data.locationId !== undefined ? { locationId: data.locationId } : {}),
-          ...(data.legacyTicketsEnabled !== undefined
-            ? { legacyTicketsEnabled: data.legacyTicketsEnabled }
-            : {}),
-          /**
-           * "Only tickets" cannot outlive accepting them. Turning acceptance
-           * off clears it here rather than leaving a stored contradiction for
-           * every client to have to remember to ignore — the iPad reads these
-           * to decide what it offers, and one of the two alone is a lie.
-           */
-          ...(data.legacyTicketsEnabled === false
-            ? { legacyTicketsOnly: false }
-            : data.legacyTicketsOnly !== undefined
-              ? { legacyTicketsOnly: data.legacyTicketsOnly }
-              : {}),
-          // The web's own "only" (Plan 31), cleared by the same rule.
-          ...(data.legacyTicketsEnabled === false
-            ? { webLegacyTicketsOnly: false }
-            : data.webLegacyTicketsOnly !== undefined
-              ? { webLegacyTicketsOnly: data.webLegacyTicketsOnly }
-              : {}),
-          // And helper labels cannot outlive "tickets only", by the same rule.
-          ...(!willBeTicketsOnly
+          ...(data.allowLegacyCheckin !== undefined ? { allowLegacyCheckin: data.allowLegacyCheckin } : {}),
+          ...(data.allowLegacyWeb !== undefined ? { allowLegacyWeb: data.allowLegacyWeb } : {}),
+          ...(data.allowPrintCheckin !== undefined ? { allowPrintCheckin: data.allowPrintCheckin } : {}),
+          ...(data.allowPrintWeb !== undefined ? { allowPrintWeb: data.allowPrintWeb } : {}),
+          // Helper labels can't outlive legacy tickets at check-in: cleared
+          // here rather than left as a contradiction the iPad has to ignore.
+          ...(!legacyCheckin
             ? { printLegacyHelperLabels: false }
             : data.printLegacyHelperLabels !== undefined
               ? { printLegacyHelperLabels: data.printLegacyHelperLabels }
@@ -401,9 +390,10 @@ export class SwapService {
     locationId: string;
     active: boolean;
     skuPrefix: string;
-    legacyTicketsEnabled: boolean;
-    legacyTicketsOnly: boolean;
-    webLegacyTicketsOnly: boolean;
+    allowLegacyCheckin: boolean;
+    allowLegacyWeb: boolean;
+    allowPrintCheckin: boolean;
+    allowPrintWeb: boolean;
     printLegacyHelperLabels: boolean;
     labelsPerItem: number;
     slug: string;
@@ -421,9 +411,10 @@ export class SwapService {
       locationId: swap.locationId,
       active: swap.active,
       skuPrefix: swap.skuPrefix,
-      legacyTicketsEnabled: swap.legacyTicketsEnabled,
-      legacyTicketsOnly: swap.legacyTicketsOnly,
-      webLegacyTicketsOnly: swap.webLegacyTicketsOnly,
+      allowLegacyCheckin: swap.allowLegacyCheckin,
+      allowPrintCheckin: swap.allowPrintCheckin,
+      allowLegacyWeb: swap.allowLegacyWeb,
+      allowPrintWeb: swap.allowPrintWeb,
       printLegacyHelperLabels: swap.printLegacyHelperLabels,
       labelsPerItem: swap.labelsPerItem,
       slug: swap.slug,

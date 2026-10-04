@@ -400,39 +400,22 @@ model SkiSwap {
   /// many NULLs in a unique index, so inactive swaps never collide — which is
   /// what stops two live swaps issuing the same SKU.
   activeSkuPrefix      String?
-  /// Whether this swap accepts gear that arrives already carrying a numbered
-  /// ticket from the stockpile, instead of a tag printed at check-in.
+  /// How items come in, said positively, per place (Plan 34). Two ways: a
+  /// legacy ticket, already on the gear from the old stockpile, or a print
+  /// ticket, a tag printed here. Two places: staff check-in (the iPad) and the
+  /// web (a seller's own entry and uploads, and staff uploading for one).
   ///
-  /// One pile of tickets, spent two ways: a business seller is handed a block
-  /// and fills them in beforehand (`LegacyTicketRange`), and an individual can
-  /// be given a loose one at the counter, scanned in on the staff iPad. This
-  /// says whether either is on offer at this swap.
-  ///
-  /// Per swap rather than per org because a patrol can run one swap clearing
-  /// old stock and the next entirely on printed tags — and it retires itself
-  /// when the stockpile is gone. Off unless somebody asks for it.
-  legacyTicketsEnabled Boolean  @default(false)
-  /// Whether the stockpile is the *only* way in for this swap — no printed
-  /// tags, every item arriving on a numbered ticket.
-  ///
-  /// Meaningless without `legacyTicketsEnabled`, and cleared whenever that goes
-  /// off, so the pair can never say "only tickets" about a swap that takes
-  /// none. Nothing enforces it yet; it is read by the staff iPad to decide what
-  /// it offers.
-  legacyTicketsOnly    Boolean  @default(false)
-  /// Whether every item entered on the web — by a seller or by staff for one,
-  /// by hand or by upload — must be a legacy ticket (Plan 31). Off, a business
-  /// seller may also print labels with generated SKUs. `legacyTicketsOnly`
-  /// above is the staff check-in's setting and the iPad's; this is the web's.
-  ///
-  /// Meaningless without `legacyTicketsEnabled`, and cleared with it.
-  webLegacyTicketsOnly Boolean  @default(false)
+  /// Each place takes at least one way; the server refuses a swap where a place
+  /// takes neither. Legacy tickets anywhere also means ticket blocks can be
+  /// issued to business sellers.
+  allowLegacyCheckin   Boolean  @default(false)
+  allowLegacyWeb       Boolean  @default(false)
+  allowPrintCheckin    Boolean  @default(true)
+  allowPrintWeb        Boolean  @default(true)
   /// Whether the staff iPad prints a helper label to go with each legacy
-  /// ticket. The iPad decides what one is and prints it itself; the server
-  /// only keeps the switch.
-  ///
-  /// Meaningful only with `legacyTicketsOnly`, and cleared whenever that goes
-  /// off, for the same reason that one is cleared with `legacyTicketsEnabled`.
+  /// ticket at check-in. The iPad decides what one is and prints it itself;
+  /// the server keeps the switch. Only with `allowLegacyCheckin`, and cleared
+  /// when that goes off.
   printLegacyHelperLabels Boolean @default(false)
   /// Price tags printed each time an item's tag is printed, 1 to 3.
   ///

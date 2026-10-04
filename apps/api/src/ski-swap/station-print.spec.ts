@@ -25,7 +25,8 @@ function harness(opts: {
   bridge?: boolean;
   lastSeenMsAgo?: number;
   printerLink?: string | null;
-  legacyTicketsOnly?: boolean;
+  /** No print tickets at staff check-in (Plan 34). */
+  noPrintCheckin?: boolean;
   helperLabelsOn?: boolean;
 } = {}) {
   const jobs: Record<string, unknown>[] = [];
@@ -46,7 +47,7 @@ function harness(opts: {
     },
     skiSwap: {
       findFirst: async ({ where }: { where: { id: string } }) =>
-        where.id === 'swap-1' ? { legacyTicketsOnly: !!opts.legacyTicketsOnly, printLegacyHelperLabels: opts.helperLabelsOn ?? true } : null,
+        where.id === 'swap-1' ? { allowPrintCheckin: !opts.noPrintCheckin, printLegacyHelperLabels: opts.helperLabelsOn ?? true } : null,
     },
     swapItem: { findFirst: async ({ where }: { where: { id: string } }) => (where.id === 'item-1' ? { id: 'item-1' } : null) },
     sellerProfile: { findFirst: async ({ where }: { where: { id: string } }) => (where.id === 'seller-1' ? { id: 'seller-1' } : null) },
@@ -113,7 +114,7 @@ describe('printing what the iPad drew', () => {
     ['NO_PRINTER', { paperSize: null }, 'item_tag'],
     ['PRINTER_OFFLINE', { printerLink: 'down' }, 'item_tag'],
     ['PRINTER_OFFLINE', { printerLink: null }, 'receipt'],
-    ['TAGS_OFF', { legacyTicketsOnly: true }, 'item_tag'],
+    ['TAGS_OFF', { noPrintCheckin: true }, 'item_tag'],
   ] as const)('refuses with %s, queuing nothing', async (code, opts, kind) => {
     const { queue, jobs } = harness(opts);
     expect(await refusal(queue.printDrawn('ipad-1', 'org-1', 'station-1', request('62x100', { kind })))).toBe(code);

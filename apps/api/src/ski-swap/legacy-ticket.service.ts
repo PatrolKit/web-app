@@ -115,9 +115,9 @@ export class LegacyTicketService {
    * a list of shops rather than of ranges.
    */
   /**
-   * Who an upload can be for: everyone holding tickets in this swap, and, when
-   * its web isn't tickets-only, every business seller too, with no ranges
-   * (Plan 31). Their rows get generated SKUs.
+   * Who an upload can be for: everyone holding tickets in this swap when its
+   * web takes legacy tickets, and every business seller when its web takes
+   * print tickets (Plan 34). Rows without a ticket get generated SKUs.
    */
   async sellersWithRanges(orgId: string, swapId: string): Promise<TicketSeller[]> {
     const [rows, swap] = await Promise.all([
@@ -126,13 +126,15 @@ export class LegacyTicketService {
         orderBy: { startNumber: 'asc' },
         include: { seller: { include: { membership: { include: { user: true } } } } },
       }),
-      this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { webLegacyTicketsOnly: true } }),
+      this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { allowLegacyWeb: true, allowPrintWeb: true } }),
     ]);
 
-    const used = rows.length ? await this.usedNumbers(swapId) : new Set<number>();
+    // Ranges count only where the web takes legacy tickets.
+    const ranges = swap?.allowLegacyWeb ? rows : [];
+    const used = ranges.length ? await this.usedNumbers(swapId) : new Set<number>();
     const bySeller = new Map<string, TicketSeller>();
 
-    if (swap && !swap.webLegacyTicketsOnly) {
+    if (swap?.allowPrintWeb) {
       const shops = await this.prisma.sellerProfile.findMany({
         where: { deletedAt: null, businessName: { not: null }, membership: { orgId, deletedAt: null } },
         include: { membership: { include: { user: true } } },
@@ -148,7 +150,7 @@ export class LegacyTicketService {
       }
     }
 
-    for (const r of rows) {
+    for (const r of ranges) {
       const entry = bySeller.get(r.sellerId) ?? {
         sellerId: r.sellerId,
         displayName: displayName(r.seller.membership.user, r.seller.businessName),
@@ -338,13 +340,17 @@ export class LegacyTicketService {
     const [ranges, used, swap] = await Promise.all([
       this.listForSeller(swapId, sellerId),
       this.usedNumbers(swapId),
-      this.prisma.skiSwap.findUnique({ where: { id: swapId }, select: { webLegacyTicketsOnly: true } }),
+      this.prisma.skiSwap.findUnique({ where: { id: swapId }, select: { allowLegacyWeb: true, allowPrintWeb: true } }),
     ]);
+    // A swap whose web takes no legacy tickets offers none on the web, whatever
+    // blocks a seller holds (Plan 34): they're for staff check-in there.
+    const offered = swap?.allowLegacyWeb ? ranges : [];
     return {
-      ranges,
-      suggested: suggestNext(ranges, used),
-      exhausted: ranges.length > 0 && !hasAnyUnused(ranges, used),
-      webTicketsOnly: !!swap?.webLegacyTicketsOnly,
+      ranges: offered,
+      suggested: suggestNext(offered, used),
+      exhausted: offered.length > 0 && !hasAnyUnused(offered, used),
+      // The web takes legacy tickets only: no print tickets there.
+      webTicketsOnly: swap ? !swap.allowPrintWeb : false,
     };
   }
 

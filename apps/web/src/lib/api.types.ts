@@ -240,24 +240,14 @@ export interface SwapResponse {
   active: boolean;
   skuPrefix: string;
   /**
-   * Whether this swap takes gear already carrying a numbered ticket from the
-   * stockpile, rather than a tag printed at check-in — for a business seller
-   * working through a block, or an individual handed a loose one at the counter.
+   * How items come in, per place (Plan 34): a legacy ticket already on the
+   * gear, or a print ticket, a tag printed here. Each place takes at least one.
    */
-  legacyTicketsEnabled: boolean;
-  /**
-   * Whether the stockpile is the only way in — no printed tags at all.
-   *
-   * Only meaningful alongside `legacyTicketsEnabled`; the server clears this
-   * when that goes off, so the two can never contradict each other.
-   */
-  legacyTicketsOnly: boolean;
-  /** The web takes legacy tickets only (Plan 31); `legacyTicketsOnly` is staff check-in's. */
-  webLegacyTicketsOnly: boolean;
-  /**
-   * Whether the staff iPad prints a helper label with each legacy ticket.
-   * Only ever true alongside `legacyTicketsOnly`; the server clears it with that.
-   */
+  allowLegacyCheckin: boolean;
+  allowPrintCheckin: boolean;
+  allowLegacyWeb: boolean;
+  allowPrintWeb: boolean;
+  /** The iPad prints a helper label with each legacy ticket at check-in. Only with `allowLegacyCheckin`. */
   printLegacyHelperLabels: boolean;
   /** Price tags printed each time an item's tag is printed, 1 to 3. */
   labelsPerItem: number;

@@ -7,6 +7,11 @@ import type { SkiSwapContext } from './SkiSwapLayout';
 import { useAuth } from '../../contexts/AuthContext';
 import SwapSettingsModal from './SwapSettingsModal';
 
+/** "check-in", "web", or both, for a badge. */
+function places(checkin: boolean, web: boolean): string {
+  return [checkin && 'check-in', web && 'web'].filter(Boolean).join(', ') || 'none';
+}
+
 function mutationError(err: unknown): string {
   return err instanceof ApiError ? err.message : 'Something went wrong';
 }
@@ -119,29 +124,25 @@ export default function SwapsPage() {
                   <span className={`text-xs px-2 py-0.5 rounded ${s.active ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-400'}`}>
                     {s.active ? 'Active' : 'Inactive'}
                   </span>
-                  {s.legacyTicketsEnabled && (
+                  {/* How items come in, said positively (Plan 34). Shown only
+                      where it differs from a new swap's: print tickets in both
+                      places, no legacy tickets. */}
+                  {(s.allowLegacyCheckin || s.allowLegacyWeb) && (
                     <span
                       className="ml-2 text-xs px-2 py-0.5 rounded bg-surface-100 text-gray-400"
-                      title="Accepts gear that arrives on a numbered ticket from the old stockpile"
+                      title="Takes gear that arrives on a numbered ticket from the old stockpile"
                     >
-                      Legacy tickets
+                      Legacy: {places(s.allowLegacyCheckin, s.allowLegacyWeb)}
                     </span>
                   )}
-                  {/* Coloured rather than a second grey pill: the two settings
-                      differ by one trailing word, and a column of near-identical
-                      badges is read by its colour, not by its text. */}
-                  {(s.legacyTicketsOnly || s.webLegacyTicketsOnly) && (
+                  {/* Amber: a place without print tickets is the one that
+                      surprises somebody at a counter. */}
+                  {!(s.allowPrintCheckin && s.allowPrintWeb) && (
                     <span
                       className="ml-2 text-xs px-2 py-0.5 rounded bg-amber-900/40 text-amber-300"
-                      title={s.legacyTicketsOnly && s.webLegacyTicketsOnly
-                        ? 'Every item comes in on a numbered ticket, at the counter and on the web'
-                        : s.legacyTicketsOnly
-                          ? 'Every item checked in at the counter comes in on a numbered ticket'
-                          : 'Every item entered on the web must be a numbered ticket'}
+                      title="Where an item can get a printed tag"
                     >
-                      {s.legacyTicketsOnly && s.webLegacyTicketsOnly
-                        ? 'Tickets only'
-                        : s.legacyTicketsOnly ? 'Tickets only (check-in)' : 'Tickets only (web)'}
+                      Print: {places(s.allowPrintCheckin, s.allowPrintWeb)}
                     </span>
                   )}
                 </td>

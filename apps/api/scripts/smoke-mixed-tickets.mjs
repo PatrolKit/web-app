@@ -39,7 +39,7 @@ const swap = await prisma.skiSwap.create({
   data: {
     orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: TITLE, squareCategoryId: 'mixed-smoke', skuPrefix: 'MIX', active: true, activeSkuPrefix: 'MIX',
     // The beta's shape: the counter on tickets, the web open.
-    legacyTicketsEnabled: true, legacyTicketsOnly: true, webLegacyTicketsOnly: false,
+    allowLegacyCheckin: true, allowLegacyWeb: true, allowPrintCheckin: false, allowPrintWeb: true,
   },
 });
 const category = await prisma.taxonomyNode.findFirst({ where: { kind: 'CATEGORY', label: 'Skis' } });
@@ -85,8 +85,8 @@ const staffUpload = (sellerId, csv, generateSkus) => {
 
 // ─── The swap ────────────────────────────────────────────────────────────────
 const swapNow = await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}`, { headers: S }).then(unwrap);
-ok('the swap reports the two settings apart', swapNow.legacyTicketsOnly === true && swapNow.webLegacyTicketsOnly === false,
-  `check-in ${swapNow.legacyTicketsOnly}, web ${swapNow.webLegacyTicketsOnly}`);
+ok('the swap reports the two places apart', swapNow.allowPrintCheckin === false && swapNow.allowPrintWeb === true,
+  `print at check-in ${swapNow.allowPrintCheckin}, on the web ${swapNow.allowPrintWeb}`);
 
 // ─── Uploads ─────────────────────────────────────────────────────────────────
 const refused = await selfUpload(M, FILE, false);
@@ -138,7 +138,7 @@ ok('...and gets a generated SKU, with a label to print, when asked', !/^\d+$/.te
   handLabel.sku);
 
 // ─── The web turned tickets-only ─────────────────────────────────────────────
-await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}`, { method: 'PATCH', headers: json(S), body: JSON.stringify({ webLegacyTicketsOnly: true }) });
+await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}`, { method: 'PATCH', headers: json(S), body: JSON.stringify({ allowPrintWeb: false }) });
 const noGen = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items`, {
   method: 'POST', headers: json(M), body: JSON.stringify({ swapId: swap.id, categoryId: category?.id, priceCents: 9900, quantity: 1, generateSku: true }),
 });
@@ -154,7 +154,7 @@ ok('...and a shop without tickets can’t add anything', plainHand.status === 40
 const pickableLater = await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}/items/ticket-sellers`, { headers: S }).then(unwrap);
 ok('...and staff are offered only ticket holders to upload for', !pickableLater.some((s) => s.sellerId === plain.seller.id));
 const swapAfter = await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}`, { headers: S }).then(unwrap);
-ok('the counter’s setting, what the iPad reads, never moved', swapAfter.legacyTicketsOnly === true);
+ok('the counter’s setting, what the iPad reads, never moved', swapAfter.allowPrintCheckin === false);
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
 await prisma.swapItem.deleteMany({ where: { swapId: swap.id } });

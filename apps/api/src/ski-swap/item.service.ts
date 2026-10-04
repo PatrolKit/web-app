@@ -785,14 +785,14 @@ export class ItemService {
     generateSkus = false,
   ): Promise<ImportRowResult[]> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
-    // Staff upload ticket rows only for a swap that takes tickets; generated
-    // rows go in either way (Plan 31), and ticket rows among them are refused.
-    if (!swap.legacyTicketsEnabled && !generateSkus) {
-      throw new BadRequestException('This swap does not accept legacy tickets.');
+    // Staff upload ticket rows only for a swap whose web takes legacy tickets;
+    // generated rows go in either way, and ticket rows among them are refused.
+    if (!swap.allowLegacyWeb && !generateSkus) {
+      throw new BadRequestException('This swap doesn’t take legacy tickets on the web.');
     }
     await this.sellerService.findOrThrow(orgId, sellerId);
     // Staff uploaded it, so the goods are already accounted for.
-    return this.importItems(orgId, swapId, sellerId, rows, { selfService: false, generateSkus, requireAcceptance: true });
+    return this.importItems(orgId, swapId, sellerId, rows, { selfService: false, generateSkus });
   }
 
   /**
@@ -808,13 +808,15 @@ export class ItemService {
     swapId: string,
     sellerId: string,
     rows: { sku: string; name?: string; description?: string; priceCents: number | null }[],
-    opts: { selfService: boolean; generateSkus?: boolean; requireAcceptance?: boolean },
+    opts: { selfService: boolean; generateSkus?: boolean },
   ): Promise<ImportRowResult[]> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const results = await this.tickets.checkImportRows(swapId, sellerId, rows, {
       generateSkus: !!opts.generateSkus,
-      webTicketsOnly: swap.webLegacyTicketsOnly,
-      acceptsTickets: opts.requireAcceptance ? swap.legacyTicketsEnabled : true,
+      webTicketsOnly: !swap.allowPrintWeb,
+      // Ticket rows only where the web takes legacy tickets (Plan 34), for a
+      // shop's own file as well as staff's.
+      acceptsTickets: swap.allowLegacyWeb,
     });
     if (results.some((r) => r.outcome === 'error')) return results;
 

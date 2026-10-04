@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import { SwapService } from './swap.service';
 import { LegacyTicketService } from './legacy-ticket.service';
 import { SellerSelfService } from './seller-self.service';
@@ -13,12 +12,12 @@ import { PrinterService } from './printer.service';
  * the ticket blank, unless the swap's web takes tickets only.
  */
 
-// ─── The two settings ────────────────────────────────────────────────────────
+// ─── How items come in, per place (Plan 34) ──────────────────────────────────
 
 function swapHarness(start: Record<string, unknown> = {}) {
   const swap: Record<string, unknown> = {
     id: 'swap-1', orgId: 'org-1', title: 'Fall', squareCategoryId: 'cat', locationId: 'loc', active: false,
-    skuPrefix: 'FAL', legacyTicketsEnabled: false, legacyTicketsOnly: false, webLegacyTicketsOnly: false,
+    skuPrefix: 'FAL', allowLegacyCheckin: false, allowLegacyWeb: false, allowPrintCheckin: true, allowPrintWeb: true,
     printLegacyHelperLabels: false, labelsPerItem: 1, createdAt: new Date(), updatedAt: new Date(), ...start,
   };
   const prisma = {
@@ -34,28 +33,30 @@ function swapHarness(start: Record<string, unknown> = {}) {
   return { swaps: new SwapService(prisma as never, {} as never), swap };
 }
 
-describe('the web’s own “legacy tickets only”', () => {
-  it('is set apart from staff check-in’s, and sent back with the swap', async () => {
-    const { swaps } = swapHarness({ legacyTicketsEnabled: true });
-    await expect(swaps.patch('org-1', 'swap-1', { webLegacyTicketsOnly: true }))
-      .resolves.toMatchObject({ webLegacyTicketsOnly: true, legacyTicketsOnly: false });
-  });
-
-  it('is refused, like check-in’s, for a swap that doesn’t accept tickets', async () => {
+describe('how items come in, at staff check-in and on the web', () => {
+  it('starts on print tickets in both places, and no legacy tickets', async () => {
     const { swaps } = swapHarness();
-    await expect(swaps.patch('org-1', 'swap-1', { webLegacyTicketsOnly: true })).rejects.toBeInstanceOf(BadRequestException);
-    await expect(swaps.patch('org-1', 'swap-1', { legacyTicketsOnly: true })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(swaps.get('org-1', 'swap-1')).resolves.toMatchObject({
+      allowLegacyCheckin: false, allowLegacyWeb: false, allowPrintCheckin: true, allowPrintWeb: true,
+    });
   });
 
-  it('is cleared with check-in’s when the swap stops accepting tickets', async () => {
-    const { swaps } = swapHarness({ legacyTicketsEnabled: true, legacyTicketsOnly: true, webLegacyTicketsOnly: true });
-    await expect(swaps.patch('org-1', 'swap-1', { legacyTicketsEnabled: false }))
-      .resolves.toMatchObject({ legacyTicketsOnly: false, webLegacyTicketsOnly: false });
+  it('sets each place on its own, and sends them all back', async () => {
+    const { swaps } = swapHarness();
+    await expect(swaps.patch('org-1', 'swap-1', { allowLegacyWeb: true, allowPrintWeb: false }))
+      .resolves.toMatchObject({ allowLegacyWeb: true, allowPrintWeb: false, allowLegacyCheckin: false, allowPrintCheckin: true });
   });
 
-  it('leaves helper labels to staff check-in’s setting alone', async () => {
-    const { swaps } = swapHarness({ legacyTicketsEnabled: true, webLegacyTicketsOnly: true });
-    await expect(swaps.patch('org-1', 'swap-1', { printLegacyHelperLabels: true })).rejects.toBeInstanceOf(BadRequestException);
+  it('refuses leaving a place with no way in', async () => {
+    const { swaps } = swapHarness();
+    await expect(swaps.patch('org-1', 'swap-1', { allowPrintCheckin: false })).rejects.toThrow(/Staff check-in needs/);
+    await expect(swaps.patch('org-1', 'swap-1', { allowPrintWeb: false })).rejects.toThrow(/The web needs/);
+  });
+
+  it('takes the switch in one change from print tickets to legacy tickets', async () => {
+    const { swaps } = swapHarness();
+    await expect(swaps.patch('org-1', 'swap-1', { allowLegacyCheckin: true, allowPrintCheckin: false }))
+      .resolves.toMatchObject({ allowLegacyCheckin: true, allowPrintCheckin: false });
   });
 });
 
@@ -70,7 +71,7 @@ function tickets(opts: { ranges?: { startNumber: number; endNumber: number }[]; 
       })),
     },
     swapItem: { findMany: async () => [] },
-    skiSwap: { findFirst: async () => ({ webLegacyTicketsOnly: !!opts.webTicketsOnly }) },
+    skiSwap: { findFirst: async () => ({ allowLegacyWeb: true, allowPrintWeb: !opts.webTicketsOnly }) },
     sellerProfile: {
       findMany: async () => (opts.shops ?? []).map((s) => ({
         ...s, membership: { user: { firstName: null, lastName: null, email: null, phone: null } },
@@ -131,7 +132,7 @@ function selfService(opts: { webTicketsOnly?: boolean; holdsTickets?: boolean })
   const created: Record<string, unknown>[] = [];
   const prisma = {
     sellerProfile: { findFirst: async () => ({ id: 'seller-1', businessName: 'Alpine Sports' }) },
-    skiSwap: { findFirst: async () => ({ id: 'swap-1', webLegacyTicketsOnly: !!opts.webTicketsOnly }) },
+    skiSwap: { findFirst: async () => ({ id: 'swap-1', allowLegacyWeb: true, allowPrintWeb: !opts.webTicketsOnly }) },
   };
   const ticketService = {
     isLegacySeller: async () => !!opts.holdsTickets,
@@ -218,5 +219,54 @@ describe('which SKUs the web made', () => {
     expect(isWebMadeSku('MIX-0042')).toBe(true);
     expect(isWebMadeSku('71001')).toBe(false);
     expect(isWebMadeSku('SS26-A-0001')).toBe(false);
+  });
+});
+
+// ─── Legacy tickets off on the web, on at check-in (Plan 34) ─────────────────
+
+describe('a swap whose web takes no legacy tickets', () => {
+  const ranges = [{ startNumber: 67000, endNumber: 67099 }];
+
+  it('offers a shop no tickets on the web, whatever blocks it holds', async () => {
+    const prisma = {
+      legacyTicketRange: { findMany: async () => ranges },
+      swapItem: { findMany: async () => [] },
+      skiSwap: { findUnique: async () => ({ allowLegacyWeb: false, allowPrintWeb: true }) },
+    };
+    await expect(new LegacyTicketService(prisma as never).formState('swap-1', 'seller-1'))
+      .resolves.toEqual({ ranges: [], suggested: null, exhausted: false, webTicketsOnly: false });
+  });
+
+  it('lists shops for staff upload without their blocks', async () => {
+    const prisma = {
+      legacyTicketRange: {
+        findMany: async () => ranges.map((r) => ({
+          ...r, sellerId: 'seller-1',
+          seller: { businessName: 'Alpine Sports', membership: { user: { firstName: null, lastName: null, email: null, phone: null } } },
+        })),
+      },
+      swapItem: { findMany: async () => [] },
+      skiSwap: { findFirst: async () => ({ allowLegacyWeb: false, allowPrintWeb: true }) },
+      sellerProfile: {
+        findMany: async () => [{ id: 'seller-1', businessName: 'Alpine Sports', membership: { user: { firstName: null, lastName: null, email: null, phone: null } } }],
+      },
+    };
+    const sellers = await new LegacyTicketService(prisma as never).sellersWithRanges('org-1', 'swap-1');
+    expect(sellers.map((s) => [s.displayName, s.ranges.length])).toEqual([['Alpine Sports', 0]]);
+  });
+
+  it('gives a shop that holds tickets a generated SKU, and refuses a ticket number', async () => {
+    const created: Record<string, unknown>[] = [];
+    const prisma = {
+      sellerProfile: { findFirst: async () => ({ id: 'seller-1', businessName: 'Alpine Sports' }) },
+      skiSwap: { findFirst: async () => ({ id: 'swap-1', allowLegacyWeb: false, allowPrintWeb: true }) },
+    };
+    const ticketService = { isLegacySeller: async () => true };
+    const items = { createAtStation: async (_o: string, _s: string, data: Record<string, unknown>) => { created.push(data); return data; } };
+    const svc = new SellerSelfService(prisma as never, items as never, {} as never, {} as never, {} as never, ticketService as never);
+    await svc.createItem('org-1', 'user-1', { swapId: 'swap-1', categoryId: 'cat-skis', priceCents: 2500, quantity: 1 });
+    expect(created[0].sku).toBeUndefined();
+    await expect(svc.createItem('org-1', 'user-1', { swapId: 'swap-1', categoryId: 'cat-skis', priceCents: 2500, quantity: 1, sku: '67001' }))
+      .rejects.toThrow(/doesn’t take legacy tickets on the web/);
   });
 });

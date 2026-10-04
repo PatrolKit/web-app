@@ -551,7 +551,7 @@ export const api = {
       swapId: string,
       data: SwapSettingsWrite & {
         title?: string; active?: boolean; locationId?: string;
-        legacyTicketsEnabled?: boolean; legacyTicketsOnly?: boolean; webLegacyTicketsOnly?: boolean;
+        allowLegacyCheckin?: boolean; allowPrintCheckin?: boolean; allowLegacyWeb?: boolean; allowPrintWeb?: boolean;
         printLegacyHelperLabels?: boolean; labelsPerItem?: number;
       },
     ) =>

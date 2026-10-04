@@ -13,7 +13,7 @@ function build(businessName: string | null) {
   const prisma = {
     sellerProfile: { findFirst: async () => ({ id: 'seller-1', businessName }) },
     checkinStation: { findFirst: async ({ where }: { where: { id: string } }) => (where.id === 'station-1' ? { id: 'station-1' } : null) },
-    skiSwap: { findFirst: async () => ({ id: 'swap-1', webLegacyTicketsOnly: false }) },
+    skiSwap: { findFirst: async () => ({ id: 'swap-1', allowLegacyWeb: true, allowPrintWeb: true }) },
     swapItem: { findFirst: async () => item, findFirstOrThrow: async () => item },
   };
   const tickets = { isLegacySeller: async () => false };

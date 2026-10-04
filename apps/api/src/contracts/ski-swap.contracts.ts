@@ -55,12 +55,16 @@ export const PatchSwapSchema = z
     title: z.string().min(1).max(100).optional(),
     active: z.boolean().optional(),
     locationId: z.string().min(1).optional(),
-    legacyTicketsEnabled: z.boolean().optional(),
-    /** Staff check-in: the iPad takes tickets only. Refused unless legacy tickets are accepted. */
-    legacyTicketsOnly: z.boolean().optional(),
-    /** The web takes tickets only (Plan 31). Refused unless legacy tickets are accepted. */
-    webLegacyTicketsOnly: z.boolean().optional(),
-    /** Refused unless check-in is, or is being made, legacy-tickets-only. */
+    /**
+     * How items come in, per place (Plan 34). Each place must take legacy
+     * tickets, print tickets, or both; a patch leaving one with neither is
+     * refused.
+     */
+    allowLegacyCheckin: z.boolean().optional(),
+    allowLegacyWeb: z.boolean().optional(),
+    allowPrintCheckin: z.boolean().optional(),
+    allowPrintWeb: z.boolean().optional(),
+    /** Refused unless staff check-in takes, or is being made to take, legacy tickets. */
     printLegacyHelperLabels: z.boolean().optional(),
     labelsPerItem: z.number().int().min(1).max(3).optional(),
     /** Changes the status page's address; a rename doesn't (Plan 33). */
@@ -83,36 +87,22 @@ export const SwapResponseSchema = z.object({
   active: z.boolean(),
   skuPrefix: z.string(),
   /**
-   * Whether this swap takes gear already carrying a numbered ticket from the
-   * stockpile, rather than a tag printed at check-in.
+   * How items come in, said positively, per place (Plan 34). A legacy ticket is
+   * already on the gear, from the old stockpile; a print ticket is a tag
+   * printed here. Each place takes at least one.
    *
-   * The staff iPad reads it on its ordinary swap sync and shows or hides its
-   * Add Legacy Ticket button. Absent reads as off, so an older server cannot
-   * switch the button on by omission.
+   * Staff check-in is the iPad's: `allowLegacyCheckin` shows its Add Legacy
+   * Ticket option, and `allowPrintCheckin` false means no printed tags there,
+   * so a bridge refuses item tags (`TAGS_OFF`). The web is a seller's own entry
+   * and uploads, and staff uploading for one; the iPad doesn't read those two.
    */
-  legacyTicketsEnabled: z.boolean(),
+  allowLegacyCheckin: z.boolean(),
+  allowPrintCheckin: z.boolean(),
+  allowLegacyWeb: z.boolean(),
+  allowPrintWeb: z.boolean(),
   /**
-   * Whether the stockpile is the only way in — no printed tags, every item on
-   * a numbered ticket.
-   *
-   * Only meaningful alongside `legacyTicketsEnabled`, which the server keeps
-   * true whenever this is: turning acceptance off clears this too, so a client
-   * can never be told "tickets only" about a swap that takes no tickets.
-   * Absent reads as off.
-   */
-  legacyTicketsOnly: z.boolean(),
-  /**
-   * Whether every item entered on the web must be a legacy ticket (Plan 31):
-   * a seller's hand entry and uploads, and staff uploading for one. Off, a
-   * business seller may also print labels with generated SKUs. Independent of
-   * `legacyTicketsOnly`, which is the staff check-in's; cleared, like it, when
-   * `legacyTicketsEnabled` goes off. The iPad doesn't read it.
-   */
-  webLegacyTicketsOnly: z.boolean(),
-  /**
-   * Whether the staff iPad prints a helper label with each legacy ticket. The
-   * iPad decides what one looks like and prints it; the server keeps the
-   * switch. Only ever true alongside `legacyTicketsOnly`, which clears it.
+   * Whether the staff iPad prints a helper label with each legacy ticket at
+   * check-in. Only ever true alongside `allowLegacyCheckin`, which clears it.
    */
   printLegacyHelperLabels: z.boolean(),
   /** Price tags printed each time an item's tag is printed, 1 to 3. */

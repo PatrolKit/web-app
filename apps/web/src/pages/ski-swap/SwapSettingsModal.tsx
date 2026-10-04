@@ -4,7 +4,7 @@ import { api, ApiError } from '../../lib/api';
 import type { SwapResponse } from '../../lib/api.types';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
 import { deriveSwapSlug, SWAP_SLUG_PATTERN, swapStatusUrl } from '../../lib/swapSlug';
-import { changes, formFor, type SwapForm } from './swapSettingsForm';
+import { changes, formFor, ticketSettingsProblem, type SwapForm } from './swapSettingsForm';
 
 type Tab = 'general' | 'tickets' | 'status';
 
@@ -248,7 +248,7 @@ export default function SwapSettingsModal({
         <div className="flex gap-2 px-5 py-4 shrink-0 border-t border-gray-700">
           <button
             type="submit"
-            disabled={save.isPending || !form.locationId || !form.title.trim() || !form.slug}
+            disabled={save.isPending || !form.locationId || !form.title.trim() || !form.slug || !!ticketSettingsProblem(form)}
             className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
           >
             {save.isPending ? 'Saving…' : swap ? 'Save' : 'Create'}
@@ -263,15 +263,17 @@ export default function SwapSettingsModal({
   );
 }
 
-function Toggle({ checked, onChange, title, description, children }: {
+function Toggle({ checked, onChange, title, description, children, indent = 0 }: {
   checked: boolean;
   onChange: (on: boolean) => void;
   title: string;
   description: string;
   children?: ReactNode;
+  /** Nesting under a heading: 0, 1 or 2 steps in. */
+  indent?: 0 | 1 | 2;
 }) {
   return (
-    <label className="flex items-start gap-3">
+    <label className={`flex items-start gap-3 ${['', 'pl-7', 'pl-14'][indent]}`}>
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5" />
       <span className="min-w-0">
         <span className="block text-sm text-white">{title}</span>
@@ -282,93 +284,77 @@ function Toggle({ checked, onChange, title, description, children }: {
   );
 }
 
-/** The ticket settings, as they were inline: nested, each appearing once its parent is on. */
+/**
+ * How items come in, said positively, per place (Plan 34). The two "Allow"
+ * lines are headings; the toggles under them are the settings. Each place must
+ * keep at least one way in, which `ticketSettingsProblem` says before saving.
+ */
 function TicketSettings({ form, setForm }: { form: SwapForm; setForm: (f: SwapForm) => void }) {
+  const problem = ticketSettingsProblem(form);
   return (
     <>
-      <label className="flex items-start gap-3">
-        <input
-          type="checkbox"
-          checked={form.legacyTicketsEnabled}
-          // Clearing the parent clears the children, the same rule the server
-          // keeps: "only tickets" can't outlive taking them.
-          onChange={(e) => setForm({
-            ...form,
-            legacyTicketsEnabled: e.target.checked,
-            legacyTicketsOnly: e.target.checked ? form.legacyTicketsOnly : false,
-            webLegacyTicketsOnly: e.target.checked ? form.webLegacyTicketsOnly : false,
-            printLegacyHelperLabels: e.target.checked ? form.printLegacyHelperLabels : false,
-          })}
-          className="mt-0.5"
-        />
-        <span>
-          <span className="block text-sm text-white">Accept legacy tickets</span>
+      <div className="space-y-3">
+        <div>
+          <span className="block text-sm text-white">Allow Legacy Tickets</span>
           <span className="block text-gray-500 text-xs mt-0.5">
-            For gear that arrives already carrying a numbered ticket from the old stockpile, instead of a
-            tag printed at check-in. Turns on issuing ticket blocks to business sellers, and the staff
-            iPad’s option to scan a loose one during an individual’s check-in.
+            Gear that arrives already carrying a numbered ticket from the old stockpile. Ticket blocks can be
+            issued to business sellers when either place takes them.
           </span>
-        </span>
-      </label>
-
-      {form.legacyTicketsEnabled && (
-        <div className="pl-7 space-y-3">
-          <span className="block text-sm text-white">Legacy tickets only</span>
-
-          <label className="flex items-start gap-3 pl-7">
-            <input
-              type="checkbox"
-              checked={form.legacyTicketsOnly}
-              onChange={(e) => setForm({
-                ...form,
-                legacyTicketsOnly: e.target.checked,
-                printLegacyHelperLabels: e.target.checked ? form.printLegacyHelperLabels : false,
-              })}
-              className="mt-0.5"
-            />
-            <span>
-              <span className="block text-sm text-white">Staff Check-In</span>
-              <span className="block text-gray-500 text-xs mt-0.5">
-                Every item checked in at the counter comes in on a numbered ticket. The staff iPad reads
-                this to decide what it offers.
-              </span>
-            </span>
-          </label>
-
-          {form.legacyTicketsOnly && (
-            <label className="flex items-start gap-3 pl-14">
-              <input
-                type="checkbox"
-                checked={form.printLegacyHelperLabels}
-                onChange={(e) => setForm({ ...form, printLegacyHelperLabels: e.target.checked })}
-                className="mt-0.5"
-              />
-              <span>
-                <span className="block text-sm text-white">Print legacy helper labels</span>
-                <span className="block text-gray-500 text-xs mt-0.5">
-                  The staff iPad prints a helper label to go with each legacy ticket.
-                </span>
-              </span>
-            </label>
-          )}
-
-          <label className="flex items-start gap-3 pl-7">
-            <input
-              type="checkbox"
-              checked={form.webLegacyTicketsOnly}
-              onChange={(e) => setForm({ ...form, webLegacyTicketsOnly: e.target.checked })}
-              className="mt-0.5"
-            />
-            <span>
-              <span className="block text-sm text-white">Web UI</span>
-              <span className="block text-gray-500 text-xs mt-0.5">
-                Every item entered on the web, by a seller or by staff for one, must be a ticket from the
-                seller’s issued blocks. Off, a business seller can also print labels with generated SKUs.
-              </span>
-            </span>
-          </label>
         </div>
-      )}
+        <Toggle
+          indent={1}
+          checked={form.allowLegacyCheckin}
+          onChange={(on) => setForm({
+            ...form,
+            allowLegacyCheckin: on,
+            // Helper labels go with legacy tickets at check-in, and go with them.
+            printLegacyHelperLabels: on ? form.printLegacyHelperLabels : false,
+          })}
+          title="Staff Check-In"
+          description="The staff iPad can scan a legacy ticket in at the counter."
+        />
+        {form.allowLegacyCheckin && (
+          <Toggle
+            indent={2}
+            checked={form.printLegacyHelperLabels}
+            onChange={(on) => setForm({ ...form, printLegacyHelperLabels: on })}
+            title="Print Helper Labels"
+            description="The staff iPad prints a helper label to go with each legacy ticket."
+          />
+        )}
+        <Toggle
+          indent={1}
+          checked={form.allowLegacyWeb}
+          onChange={(on) => setForm({ ...form, allowLegacyWeb: on })}
+          title="Web UI"
+          description="A shop can enter its tickets, or upload them, on the web, and staff can upload them for one."
+        />
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <span className="block text-sm text-white">Allow Print Tickets</span>
+          <span className="block text-gray-500 text-xs mt-0.5">
+            A tag printed here, with a SKU PatrolKit makes.
+          </span>
+        </div>
+        <Toggle
+          indent={1}
+          checked={form.allowPrintCheckin}
+          onChange={(on) => setForm({ ...form, allowPrintCheckin: on })}
+          title="Staff Check-In"
+          description="Items checked in at the counter can get a printed tag."
+        />
+        <Toggle
+          indent={1}
+          checked={form.allowPrintWeb}
+          onChange={(on) => setForm({ ...form, allowPrintWeb: on })}
+          title="Web UI"
+          description="Items entered or uploaded on the web can get a printed tag."
+        />
+      </div>
+
+      {problem && <p className="text-sm text-amber-400">{problem}</p>}
 
       <div className="flex items-center justify-between gap-4">
         <span>

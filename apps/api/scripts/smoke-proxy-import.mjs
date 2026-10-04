@@ -33,10 +33,10 @@ await prisma.sellerProfile.deleteMany({ where: { businessName: 'Quiet Shop', mem
 const swap = await prisma.skiSwap.create({
   data: {
     orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Proxy import smoke', squareCategoryId: 'proxy-smoke',
-    skuPrefix: 'PRX', active: true, activeSkuPrefix: 'PRX', legacyTicketsEnabled: true,
+    skuPrefix: 'PRX', active: true, activeSkuPrefix: 'PRX', allowLegacyCheckin: true, allowLegacyWeb: true,
     // Tickets only on the web, so the picker keeps to ticket holders. With it
     // off, every business seller is offered (Plan 31; smoke-mixed-tickets).
-    webLegacyTicketsOnly: true,
+    allowPrintWeb: false,
   },
 });
 
@@ -145,12 +145,12 @@ ok('and says to quote it', (unquotedBody.error ?? '').includes('quotes'), String
 // ─── The swap switch ─────────────────────────────────────────────────────────
 
 await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}`, {
-  method: 'PATCH', headers: JH, body: JSON.stringify({ legacyTicketsEnabled: false }),
+  method: 'PATCH', headers: JH, body: JSON.stringify({ allowLegacyWeb: false, allowPrintWeb: true }),
 });
 const off = await upload(alpine.seller.id, 'sku,price\n67182,20.00\n');
-ok('a swap that does not take legacy tickets refuses the upload', off.status === 400, String(off.status));
+ok('a swap whose web takes no legacy tickets refuses the upload', off.status === 400, String(off.status));
 await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}`, {
-  method: 'PATCH', headers: JH, body: JSON.stringify({ legacyTicketsEnabled: true }),
+  method: 'PATCH', headers: JH, body: JSON.stringify({ allowLegacyWeb: true, allowPrintWeb: false }),
 });
 
 // ─── Adding a shop without writing to it ─────────────────────────────────────

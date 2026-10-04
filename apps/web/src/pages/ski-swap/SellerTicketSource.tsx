@@ -61,8 +61,10 @@ export default function SellerTicketSource({
 
   const mine = printers.find((p) => p.assignedSellerId === sellerId) ?? null;
   const hasRanges = ranges.length > 0;
-  const legacyTicketsEnabled = swap?.legacyTicketsEnabled ?? false;
-  const webTicketsOnly = swap?.webLegacyTicketsOnly ?? false;
+  // Blocks are for legacy tickets anywhere: a shop's own entry on the web, or
+  // at staff check-in (Plan 34).
+  const legacyTicketsEnabled = !!swap && (swap.allowLegacyCheckin || swap.allowLegacyWeb);
+  const webTicketsOnly = swap ? !swap.allowPrintWeb : false;
 
   /**
    * Issued tickets are on offer when this swap takes them. Ranges already

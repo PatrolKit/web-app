@@ -36,7 +36,7 @@ const swap = await prisma.skiSwap.create({
     orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Loose ticket smoke', squareCategoryId: 'loose-smoke',
     skuPrefix: 'LSE', active: true, activeSkuPrefix: 'LSE',
     // Off to start: the switch is what the iPad reads, so it gets exercised.
-    legacyTicketsEnabled: false,
+    allowLegacyCheckin: false,
   },
 });
 const station = await prisma.checkinStation.create({
@@ -84,50 +84,46 @@ const scan = (sku, sellerId) =>
     }),
   });
 
-// ─── The switch ──────────────────────────────────────────────────────────────
+// ─── The switches (Plan 34) ──────────────────────────────────────────────────
 
 const before = await fetch(swapUrl, { headers: H }).then(unwrap);
-ok('a swap reports whether it takes legacy tickets',
-   before.legacyTicketsEnabled === false, String(before.legacyTicketsEnabled));
+ok('a swap reports how staff check-in takes items: print tickets, no legacy ones',
+   before.allowLegacyCheckin === false && before.allowPrintCheckin === true,
+   `legacy=${before.allowLegacyCheckin} print=${before.allowPrintCheckin}`);
 
 // Square is not configured for the smoke org, and turning this on must not
 // need it — the old code asked for a client before reading what had changed.
 const turnedOn = await fetch(swapUrl, {
-  method: 'PATCH', headers: H, body: JSON.stringify({ legacyTicketsEnabled: true }),
+  method: 'PATCH', headers: H, body: JSON.stringify({ allowLegacyCheckin: true }),
 });
-ok('it can be switched on without Square connected', turnedOn.status === 200, String(turnedOn.status));
+ok('legacy tickets at check-in can be switched on without Square connected', turnedOn.status === 200, String(turnedOn.status));
 
 const after = await fetch(swapUrl, { headers: H }).then(unwrap);
-ok('and the change sticks', after.legacyTicketsEnabled === true, String(after.legacyTicketsEnabled));
+ok('and the change sticks', after.allowLegacyCheckin === true, String(after.allowLegacyCheckin));
 
 const listed = await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps`, { headers: H }).then(unwrap);
 ok('the list the iPad syncs carries it too',
-   listed.find((s) => s.id === swap.id)?.legacyTicketsEnabled === true,
-   String(listed.find((s) => s.id === swap.id)?.legacyTicketsEnabled));
+   listed.find((s) => s.id === swap.id)?.allowLegacyCheckin === true,
+   String(listed.find((s) => s.id === swap.id)?.allowLegacyCheckin));
+ok('and the old field is gone', !('legacyTicketsEnabled' in (listed.find((s) => s.id === swap.id) ?? {})));
 
-// ─── Tickets only ────────────────────────────────────────────────────────────
+// ─── Legacy tickets only, at check-in ────────────────────────────────────────
 
-ok('a swap is not tickets-only by default', after.legacyTicketsOnly === false,
-   String(after.legacyTicketsOnly));
-
-await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ legacyTicketsOnly: true }) });
+await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ allowPrintCheckin: false }) });
 const onlyOn = await fetch(swapUrl, { headers: H }).then(unwrap);
-ok('it can be set, and travels with the swap', onlyOn.legacyTicketsOnly === true,
-   String(onlyOn.legacyTicketsOnly));
+ok('print tickets at check-in can be switched off, and that travels with the swap',
+   onlyOn.allowPrintCheckin === false && onlyOn.allowLegacyCheckin === true,
+   `legacy=${onlyOn.allowLegacyCheckin} print=${onlyOn.allowPrintCheckin}`);
 
-// The pair must never say "only tickets" about a swap that takes none.
-await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ legacyTicketsEnabled: false }) });
-const bothOff = await fetch(swapUrl, { headers: H }).then(unwrap);
-ok('turning acceptance off clears tickets-only with it',
-   bothOff.legacyTicketsEnabled === false && bothOff.legacyTicketsOnly === false,
-   `enabled=${bothOff.legacyTicketsEnabled} only=${bothOff.legacyTicketsOnly}`);
+// Check-in must take one or the other.
+const neither = await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ allowLegacyCheckin: false }) });
+ok('leaving check-in with neither is refused', neither.status === 400, String(neither.status));
 
-// Back on for the rest of the run; the flag stays off until asked for again.
-await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ legacyTicketsEnabled: true }) });
+// Print tickets back on for the rest of the run.
+await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ allowPrintCheckin: true }) });
 const backOn = await fetch(swapUrl, { headers: H }).then(unwrap);
-ok('and turning it back on does not restore tickets-only',
-   backOn.legacyTicketsEnabled === true && backOn.legacyTicketsOnly === false,
-   `enabled=${backOn.legacyTicketsEnabled} only=${backOn.legacyTicketsOnly}`);
+ok('and check-in can take both', backOn.allowLegacyCheckin === true && backOn.allowPrintCheckin === true,
+   `legacy=${backOn.allowLegacyCheckin} print=${backOn.allowPrintCheckin}`);
 
 // ─── A loose ticket ──────────────────────────────────────────────────────────
 
@@ -163,9 +159,9 @@ ok('a number just past the end of a block is free', nextDoor.status === 201 || n
 
 // ─── Switching it back off ───────────────────────────────────────────────────
 
-await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ legacyTicketsEnabled: false }) });
+await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ allowLegacyCheckin: false }) });
 const off = await fetch(swapUrl, { headers: H }).then(unwrap);
-ok('it can be switched off again', off.legacyTicketsEnabled === false, String(off.legacyTicketsEnabled));
+ok('it can be switched off again', off.allowLegacyCheckin === false, String(off.allowLegacyCheckin));
 
 const rangesAfterOff = await prisma.legacyTicketRange.count({ where: { swapId: swap.id } });
 ok('and blocks already issued are left where they are', rangesAfterOff === 1, String(rangesAfterOff));

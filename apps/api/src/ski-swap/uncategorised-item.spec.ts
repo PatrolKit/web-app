@@ -10,7 +10,7 @@ import { ItemService, uncategorisedName } from './item.service';
  * column — and carries no answers.
  */
 
-const SWAP = { id: 'swap-1', orgId: 'org-1', skuPrefix: 'SS26', squareCategoryId: 'cat', title: 'Fall', legacyTicketsEnabled: true, webLegacyTicketsOnly: false };
+const SWAP = { id: 'swap-1', orgId: 'org-1', skuPrefix: 'SS26', squareCategoryId: 'cat', title: 'Fall', allowLegacyCheckin: true, allowLegacyWeb: true, allowPrintCheckin: true, allowPrintWeb: true };
 const STATION = { id: 'station-1', code: 'A', bridgeDeviceId: null };
 
 function harness() {

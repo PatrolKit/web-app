@@ -6,22 +6,21 @@ import { SkiSwapSettingsService } from './ski-swap-settings.service';
  * The swap's printing settings: how many tags an item gets, and whether the
  * iPad prints a helper label with each legacy ticket.
  *
- * The helper-label switch belongs to "legacy tickets only", the way that one
- * belongs to "legacy tickets": it is refused without it, and cleared when it
- * goes, so the iPad is never told to print helpers for a swap that is not
- * tickets-only.
+ * The helper-label switch belongs to legacy tickets at staff check-in (Plan
+ * 34): it is refused without them, and cleared when they go, so the iPad is
+ * never told to print helpers for tickets it doesn't take.
  */
 
 type Swap = {
   id: string; orgId: string; title: string; squareCategoryId: string; locationId: string;
-  active: boolean; skuPrefix: string; legacyTicketsEnabled: boolean; legacyTicketsOnly: boolean;
-  printLegacyHelperLabels: boolean; labelsPerItem: number; createdAt: Date; updatedAt: Date;
+  active: boolean; skuPrefix: string; allowLegacyCheckin: boolean; allowLegacyWeb: boolean;
+  allowPrintCheckin: boolean; allowPrintWeb: boolean; printLegacyHelperLabels: boolean; labelsPerItem: number; createdAt: Date; updatedAt: Date;
 };
 
 function harness(start: Partial<Swap>) {
   const swap: Swap = {
     id: 'swap-1', orgId: 'org-1', title: 'Fall', squareCategoryId: 'cat', locationId: 'loc', active: false,
-    skuPrefix: 'FAL', legacyTicketsEnabled: false, legacyTicketsOnly: false, printLegacyHelperLabels: false,
+    skuPrefix: 'FAL', allowLegacyCheckin: false, allowLegacyWeb: false, allowPrintCheckin: true, allowPrintWeb: true, printLegacyHelperLabels: false,
     labelsPerItem: 1, createdAt: new Date(), updatedAt: new Date(), ...start,
   };
   const prisma = {
@@ -57,38 +56,38 @@ describe('labels per item, on the swap', () => {
 });
 
 describe('legacy helper labels', () => {
-  it('can be turned on for a swap that takes legacy tickets only', async () => {
-    const { swaps } = harness({ legacyTicketsEnabled: true, legacyTicketsOnly: true });
+  it('can be turned on for a swap that takes legacy tickets at staff check-in', async () => {
+    const { swaps } = harness({ allowLegacyCheckin: true });
     await expect(swaps.patch('org-1', 'swap-1', { printLegacyHelperLabels: true }))
       .resolves.toMatchObject({ printLegacyHelperLabels: true });
   });
 
-  it('can be turned on in the same change that makes the swap tickets-only', async () => {
-    const { swaps } = harness({ legacyTicketsEnabled: true });
-    await expect(swaps.patch('org-1', 'swap-1', { legacyTicketsOnly: true, printLegacyHelperLabels: true }))
-      .resolves.toMatchObject({ legacyTicketsOnly: true, printLegacyHelperLabels: true });
+  it('can be turned on in the same change that takes legacy tickets at check-in', async () => {
+    const { swaps } = harness({});
+    await expect(swaps.patch('org-1', 'swap-1', { allowLegacyCheckin: true, printLegacyHelperLabels: true }))
+      .resolves.toMatchObject({ allowLegacyCheckin: true, printLegacyHelperLabels: true });
   });
 
-  it('is refused for a swap that also prints tags', async () => {
-    const { swaps } = harness({ legacyTicketsEnabled: true, legacyTicketsOnly: false });
+  it('works beside print tickets at check-in, too', async () => {
+    const { swaps } = harness({ allowLegacyCheckin: true, allowPrintCheckin: true });
+    await expect(swaps.patch('org-1', 'swap-1', { printLegacyHelperLabels: true }))
+      .resolves.toMatchObject({ printLegacyHelperLabels: true });
+  });
+
+  it('is refused for a swap that takes no legacy tickets at check-in', async () => {
+    const { swaps } = harness({ allowLegacyWeb: true });
     await expect(swaps.patch('org-1', 'swap-1', { printLegacyHelperLabels: true }))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('is cleared when the swap stops being tickets-only', async () => {
-    const { swaps } = harness({ legacyTicketsEnabled: true, legacyTicketsOnly: true, printLegacyHelperLabels: true });
-    await expect(swaps.patch('org-1', 'swap-1', { legacyTicketsOnly: false }))
+  it('is cleared when check-in stops taking legacy tickets', async () => {
+    const { swaps } = harness({ allowLegacyCheckin: true, printLegacyHelperLabels: true });
+    await expect(swaps.patch('org-1', 'swap-1', { allowLegacyCheckin: false }))
       .resolves.toMatchObject({ printLegacyHelperLabels: false });
   });
 
-  it('is cleared when the swap stops taking legacy tickets at all', async () => {
-    const { swaps } = harness({ legacyTicketsEnabled: true, legacyTicketsOnly: true, printLegacyHelperLabels: true });
-    await expect(swaps.patch('org-1', 'swap-1', { legacyTicketsEnabled: false }))
-      .resolves.toMatchObject({ legacyTicketsOnly: false, printLegacyHelperLabels: false });
-  });
-
   it('survives an unrelated change', async () => {
-    const { swaps } = harness({ legacyTicketsEnabled: true, legacyTicketsOnly: true, printLegacyHelperLabels: true });
+    const { swaps } = harness({ allowLegacyCheckin: true, printLegacyHelperLabels: true });
     await expect(swaps.patch('org-1', 'swap-1', { labelsPerItem: 2 }))
       .resolves.toMatchObject({ printLegacyHelperLabels: true, labelsPerItem: 2 });
   });

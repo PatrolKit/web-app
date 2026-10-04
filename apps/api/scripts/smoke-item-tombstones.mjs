@@ -66,7 +66,7 @@ const swap = await prisma.skiSwap.create({
   data: {
     orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Tombstone smoke swap', squareCategoryId: 'tomb',
     locationId: '', skuPrefix: 'TMB', active: true, activeSkuPrefix: 'TMB',
-    legacyTicketsEnabled: true,
+    allowLegacyCheckin: true, allowLegacyWeb: true,
   },
 });
 

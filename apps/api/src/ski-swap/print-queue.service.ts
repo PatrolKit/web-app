@@ -425,11 +425,12 @@ export class PrintQueueService {
 
     const swap = await this.prisma.skiSwap.findFirst({
       where: { id: request.swapId, orgId },
-      select: { legacyTicketsOnly: true, printLegacyHelperLabels: true },
+      select: { allowPrintCheckin: true, printLegacyHelperLabels: true },
     });
     if (!swap) throw new NotFoundException('Swap not found');
-    if (request.kind === 'item_tag' && swap.legacyTicketsOnly) {
-      throw printRefusal('TAGS_OFF', 'this swap uses legacy tickets, so it prints no item tags.');
+    // A station is staff check-in, so its tags follow check-in's setting (Plan 34).
+    if (request.kind === 'item_tag' && !swap.allowPrintCheckin) {
+      throw printRefusal('TAGS_OFF', 'this swap doesn’t take print tickets at staff check-in, so it prints no item tags.');
     }
     if (request.kind === 'helper_labels' && !swap.printLegacyHelperLabels) {
       throw printRefusal('HELPER_LABELS_OFF', 'this swap does not print helper labels.');

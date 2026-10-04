@@ -155,16 +155,17 @@ export class SellerSelfService {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: data.swapId, orgId, active: true } });
     if (!swap) throw new NotFoundException('Active swap not found');
 
-    const holdsTickets = await this.tickets.isLegacySeller(data.swapId, seller.id);
+    // Blocks count on the web only where the web takes legacy tickets (Plan 34).
+    const holdsTickets = swap.allowLegacyWeb && (await this.tickets.isLegacySeller(data.swapId, seller.id));
 
-    // Plan 31. With the swap's web on tickets only, every item entered here is
-    // one: a seller with no block has nothing to enter it on, and none may ask
-    // for a generated SKU. Off, a seller who holds tickets may still ask for
-    // one, for an item they will print a label for.
+    // With no print tickets on the web, every item entered here is a legacy
+    // ticket: a seller with no block has nothing to enter it on, and none may
+    // ask for a generated SKU. With print tickets too, a seller who holds
+    // tickets may still ask for one, for an item they will print a label for.
     if (data.generateSku && data.sku !== undefined) {
       throw new BadRequestException('Give a ticket number or ask for a generated SKU, not both.');
     }
-    if (swap.webLegacyTicketsOnly) {
+    if (!swap.allowPrintWeb) {
       if (data.generateSku) {
         throw new BadRequestException('This swap takes legacy tickets only, so SKUs can’t be generated.');
       }
@@ -180,7 +181,9 @@ export class SellerSelfService {
     // it from anyone else would let them mint a SKU that collides with the
     // counter's sequence.
     if (data.sku !== undefined && !onTickets) {
-      throw new BadRequestException('This seller does not use issued tickets.');
+      throw new BadRequestException(
+        swap.allowLegacyWeb ? 'This seller does not use issued tickets.' : 'This swap doesn’t take legacy tickets on the web.',
+      );
     }
 
     // Described through the tree is the ordinary path now (Plan 19). A ticket

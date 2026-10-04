@@ -18,8 +18,8 @@ type SwapRow = Record<string, unknown> & { id: string; orgId: string; title: str
 function swaps(existing: Partial<SwapRow>[] = []) {
   const rows: SwapRow[] = existing.map((r, i) => ({
     id: `swap-${i}`, orgId: 'org-1', title: `Swap ${i}`, slug: `s${i}`, squareCategoryId: 'cat', locationId: 'loc',
-    active: false, skuPrefix: 'SS26', activeSkuPrefix: null, legacyTicketsEnabled: false, legacyTicketsOnly: false,
-    webLegacyTicketsOnly: false, printLegacyHelperLabels: false, labelsPerItem: 1, skuLookupEnabled: false,
+    active: false, skuPrefix: 'SS26', activeSkuPrefix: null, allowLegacyCheckin: false, allowLegacyWeb: false, allowPrintCheckin: true, allowPrintWeb: true,
+    printLegacyHelperLabels: false, labelsPerItem: 1, skuLookupEnabled: false,
     sellerLookupEnabled: false, sellerLoginEnabled: false, createdAt: new Date(), updatedAt: new Date(), ...r,
   }));
   const matches = (r: SwapRow, where: Record<string, unknown>) =>
