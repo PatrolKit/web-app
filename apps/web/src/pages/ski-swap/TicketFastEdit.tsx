@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
-import { priceInput, priceInputCents } from '../../lib/money';
+import { priceInputCents } from '../../lib/money';
 import type { ResolvedTaxonomy, UnpricedTicket } from '../../lib/api.types';
 import {
   acceptSuggestion, describeParsed, detailsSuggestions, fastEditKey, parseDetails,
@@ -274,7 +274,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
       }
       case 'focus': return focus(action.field);
       case 'save': return save();
-      case 'needPrice': return setMessage({ tone: 'error', text: 'Type a price above $0.00.' });
+      case 'needPrice': return setMessage({ tone: 'error', text: 'Type a price in whole dollars, $1 or more.' });
       case 'closeSuggestions': return setClosed(true);
       case 'clearTicket': return clearTicket();
       case 'exit': return exit();
@@ -385,18 +385,22 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
           </Field>
 
           <Field label="Price">
+            {/* Whole dollars: a stub's price is written that way, and a
+                stray "." or letter is a slip, not a price. The sign stays
+                put whatever is typed. */}
+            <span className={`absolute left-3 bottom-2 text-sm pointer-events-none ${ticket ? 'text-gray-300' : 'text-gray-600'}`}>$</span>
             <input
               ref={priceRef}
               value={priceText}
-              onChange={(e) => { setPriceText(priceInput(e.target.value)); setMessage(null); }}
+              onChange={(e) => { setPriceText(e.target.value.replace(/\D/g, '')); setMessage(null); }}
               onKeyDown={(e) => onKeyDown(e, 'price')}
               onFocus={() => setField('price')}
               disabled={!ticket}
-              inputMode="decimal"
+              inputMode="numeric"
+              pattern="[0-9]*"
               autoComplete="off"
-              aria-label="Price"
-              placeholder="$"
-              className={`${inputClass} text-right disabled:opacity-50`}
+              aria-label="Price in dollars"
+              className={`${inputClass} pl-7 text-right disabled:opacity-50`}
             />
           </Field>
         </div>
