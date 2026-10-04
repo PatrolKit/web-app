@@ -62,7 +62,7 @@ export default function SkuStatusPage() {
     <div className="min-h-screen bg-surface px-4 py-8">
       <div className="max-w-md mx-auto space-y-6">
         <PublicPageHeader
-          title="Has it sold?"
+          title="Check the status of your items"
           subtitle={[page.data.orgName, page.data.swapTitle]}
           logoUrl={page.data.orgLogoUrl}
         />
