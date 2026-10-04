@@ -84,10 +84,8 @@ ok('a slug that isn’t one is refused', bad.status === 400, `HTTP ${bad.status}
 
 // ─── SKU Lookup ──────────────────────────────────────────────────────────────
 
-const pageUrl = `${BASE}/public/smoke-tests/swaps/status-smoke-2`;
 const orgSlug = (await prisma.organization.findUnique({ where: { id: org.id }, select: { slug: true } })).slug;
 const lookup = (swapSlug, sku) => fetch(`${BASE}/public/${orgSlug}/swaps/${swapSlug}${sku !== undefined ? `/sku/${sku}` : ''}`);
-void pageUrl;
 
 ok('off, the lookup page is a 404', (await lookup('status-smoke-2')).status === 404);
 ok('off, a SKU is a 404', (await lookup('status-smoke-2', '91001')).status === 404);
