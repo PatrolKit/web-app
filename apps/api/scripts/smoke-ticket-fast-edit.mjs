@@ -80,7 +80,7 @@ const refused = await patch(priced.id, { priceCents: 5000, ifUnpriced: true });
 const refusedBody = await refused.json();
 ok('a ticket that already has a price is refused', refused.status === 409 && refusedBody.code === 'TICKET_PRICED',
   `HTTP ${refused.status} ${refusedBody.code}`);
-ok('...saying what it is', /already has a price \(\$45\.00\)/.test(refusedBody.message ?? ''), refusedBody.message);
+ok('...saying what it is', /already has a price \(\$45\.00\)/.test(refusedBody.error ?? ''), refusedBody.error);
 const kept = await prisma.swapItem.findUnique({ where: { id: priced.id }, select: { priceCents: true } });
 ok('...and its price is untouched', kept.priceCents === 4500, String(kept.priceCents));
 
