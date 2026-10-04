@@ -101,6 +101,8 @@ for (const s of SELLERS) {
       ...(s.email ? { email: s.email, verifiedEmail: s.email, emailVerifiedAt: new Date() } : {}),
       street: '12 Summit Rd', city: 'Stowe', state: 'VT', zip: '05672',
       payoutMethod: s.method, payoutTarget: s.target, payoutHandle: s.handle,
+      // Scanned from the seller's code at the counter: only then is Venmo paid (Plan 35).
+      payoutHandleScannedAt: s.method === 'VENMO' ? new Date() : null,
     },
   });
   const membership = await prisma.membership.create({

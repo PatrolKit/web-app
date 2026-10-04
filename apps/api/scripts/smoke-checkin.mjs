@@ -304,12 +304,19 @@ blocked = await fetch(`${BASE}/orgs/${org.id}/ski-swap/checkin/finish`, {
 });
 ok('finishing without a payout method is refused', blocked.status === 400, String(blocked.status));
 
-// Venmo, so the typed-ID path is the one exercised end to end.
-const paid = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me`, {
+// A typed Venmo account is only somebody's word for it (Plan 35): only the
+// staff iPad, scanning the seller's code, can set one.
+const typedVenmo = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me`, {
   method: 'PATCH', headers: H,
   body: JSON.stringify({ payoutMethod: 'VENMO', payoutTarget: 'VENMO_ID', payoutHandle: '@dana-reyes' }),
 });
-ok('a payout destination is accepted', paid.status === 200, String(paid.status));
+ok('a typed Venmo account is refused at check-in', typedVenmo.status === 400, String(typedVenmo.status));
+
+const paid = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me`, {
+  method: 'PATCH', headers: H,
+  body: JSON.stringify({ payoutMethod: 'CHECK', payoutTarget: null, payoutHandle: null }),
+});
+ok('a payout the seller can choose is accepted', paid.status === 200, String(paid.status));
 
 const mismatch = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me`, {
   method: 'PATCH', headers: H,
