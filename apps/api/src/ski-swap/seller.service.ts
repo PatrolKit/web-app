@@ -100,6 +100,7 @@ type SellerRow = {
       emailVerifiedAt: Date | null; phoneVerifiedAt: Date | null;
       verifiedEmail: string | null; verifiedPhone: string | null;
       payoutMethod: string | null; payoutTarget: string | null; payoutHandle: string | null;
+      payoutHandleScannedAt: Date | null;
     };
   };
 };
@@ -134,6 +135,9 @@ export function toSellerResponse(
     payoutMethod: u.payoutMethod as SellerResponse['payoutMethod'],
     payoutTarget: u.payoutTarget as SellerResponse['payoutTarget'],
     payoutHandle: u.payoutHandle,
+    // Whether a Venmo account was read from the seller's code (Plan 35), so
+    // every iPad can flag one that wasn't, and the payout run won't pay it.
+    payoutHandleScanned: u.payoutHandleScannedAt !== null,
     emailVerifiedAt: u.emailVerifiedAt?.toISOString() ?? null,
     phoneVerifiedAt: u.phoneVerifiedAt?.toISOString() ?? null,
     // The same precedence the send uses, from the same columns. A claim in
@@ -343,6 +347,7 @@ export class SellerService {
       businessName?: string | null;
       street?: string | null; city?: string | null; state?: string | null; zip?: string | null;
       payoutMethod?: string | null; payoutTarget?: string | null; payoutHandle?: string | null;
+      payoutHandleSource?: 'SCAN';
     },
     idempotencyKey?: string,
   ): Promise<SellerResponse> {
@@ -397,6 +402,7 @@ export class SellerService {
       businessName?: string | null;
       street?: string | null; city?: string | null; state?: string | null; zip?: string | null;
       payoutMethod?: string | null; payoutTarget?: string | null; payoutHandle?: string | null;
+      payoutHandleSource?: 'SCAN';
       baseUpdatedAt?: string;
     },
     idempotencyKey?: string,
@@ -676,6 +682,7 @@ export class SellerService {
       phone?: string | null; email?: string | null;
       street?: string | null; city?: string | null; state?: string | null; zip?: string | null;
       payoutMethod?: string | null; payoutTarget?: string | null; payoutHandle?: string | null;
+      payoutHandleSource?: 'SCAN';
     },
     opts: { overwrite?: boolean } = {},
   ): Promise<void> {
@@ -729,6 +736,18 @@ export class SellerService {
     // corrected under it leaves the next payout run to flag it, where somebody
     // can fix it, rather than refusing the correction.
     const targetWritten = 'payoutTarget' in update;
+    const payoutWritten = 'payoutMethod' in update || targetWritten || 'payoutHandle' in update;
+    const scanned = payoutWritten
+      ? payoutHandleScannedAt(
+          {
+            method: 'payoutMethod' in update ? (update.payoutMethod as string | null) : current.payoutMethod,
+            target: targetWritten ? (update.payoutTarget as string | null) : current.payoutTarget,
+            handle: 'payoutHandle' in update ? (update.payoutHandle as string | null) : current.payoutHandle,
+          },
+          { handle: current.payoutHandle, scannedAt: current.payoutHandleScannedAt },
+          data.payoutHandleSource,
+        )
+      : undefined;
     assertPayoutIsCoherent({
       method: 'payoutMethod' in update ? (update.payoutMethod as string | null) : current.payoutMethod,
       target: targetWritten ? (update.payoutTarget as string | null) : current.payoutTarget,
@@ -737,9 +756,46 @@ export class SellerService {
       phoneVerified: !!current.phoneVerifiedAt && !(targetWritten && 'verifiedPhone' in unverify),
     });
 
-    await this.prisma.user.update({ where: { id: userId }, data: { ...update, ...unverify } });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { ...update, ...unverify, ...(scanned !== undefined ? { payoutHandleScannedAt: scanned } : {}) },
+    });
     await this.touch.touchAllForUser(userId);
   }
+}
+
+/**
+ * Only a proven destination may be set as a payout (Plan 35): the owner's rule
+ * is no unverified electronic payment target. Judged only when a payout is
+ * being written, so one already on file never blocks an unrelated edit; the
+ * payout run flags it instead.
+ *
+ * - PayPal pays the seller's verified email, and nothing else: a typed PayPal
+ *   ID or a phone is only somebody's word for the account.
+ * - Venmo pays the account on the seller's Venmo code, scanned at the counter.
+ *   A write that sets or changes the handle must say it was scanned
+ *   (`payoutHandleSource: 'SCAN'`). Re-saving a scanned handle unchanged is
+ *   fine.
+ *
+ * Returns what `payoutHandleScannedAt` becomes: now for a scan, unchanged for
+ * the same scanned handle, and null once there's no Venmo handle.
+ */
+export function payoutHandleScannedAt(
+  next: { method: string | null; target: string | null; handle: string | null },
+  current: { handle: string | null; scannedAt: Date | null },
+  source: 'SCAN' | undefined,
+): Date | null {
+  if (next.method === 'PAYPAL' && next.target !== null && next.target !== 'EMAIL') {
+    throw new BadRequestException('PayPal pays the seller’s verified email only.');
+  }
+  if (next.method !== 'VENMO' || !next.handle) return null;
+
+  if (source === 'SCAN') return new Date();
+  if (next.handle === current.handle && current.scannedAt) return current.scannedAt;
+  throw new BadRequestException({
+    message: 'A Venmo account can only be set by scanning the seller’s Venmo code at the counter.',
+    code: 'VENMO_NOT_SCANNED',
+  });
 }
 
 /** normalizeNamePart, but absent stays absent. */

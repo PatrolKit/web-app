@@ -82,8 +82,20 @@ const PAYOUT_TARGET_LABELS: Partial<Record<NonNullable<SellerResponse['payoutTar
 
 function payoutDisplay(s: SellerResponse): string {
   const key = payoutOf(s);
+  // Only a proven destination is paid (Plan 35): say so where it isn't.
+  if (!payoutProven(s)) return `${payoutLabel(key)} (won’t be paid)`;
   if (key !== 'PAYPAL' || !s.payoutTarget) return payoutLabel(key);
   return `PayPal (${PAYOUT_TARGET_LABELS[s.payoutTarget] ?? s.payoutTarget})`;
+}
+
+/**
+ * Whether the payout run can pay this seller's electronic payout (Plan 35):
+ * PayPal to a verified email, or a Venmo account scanned at the counter.
+ */
+function payoutProven(s: SellerResponse): boolean {
+  if (s.payoutMethod === 'PAYPAL') return s.payoutTarget === 'EMAIL' && !!s.emailVerifiedAt;
+  if (s.payoutMethod === 'VENMO') return s.payoutHandleScanned;
+  return true;
 }
 
 /** Where the money actually goes, for the tooltip. */
@@ -193,9 +205,15 @@ export default function SellersPage() {
       phone: form.phone || null, email: form.email || null,
       street: form.street || null, city: form.city || null,
       state: form.state || null, zip: form.zip || null,
-      payoutMethod: form.payoutMethod || null,
-      payoutTarget: form.payoutTarget || null,
-      payoutHandle: form.payoutHandle.trim() || null,
+      // Only when it changed: a payout on file that the rules no longer allow
+      // (an unscanned Venmo account) mustn't block correcting an address.
+      ...(form.payoutMethod !== (s.payoutMethod ?? '') || form.payoutTarget !== (s.payoutTarget ?? '')
+        ? {
+            payoutMethod: form.payoutMethod || null,
+            payoutTarget: form.payoutTarget || null,
+            payoutHandle: form.payoutHandle.trim() || null,
+          }
+        : {}),
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] }); setEditSeller(null); setForm(emptyForm); },
   });
@@ -524,48 +542,48 @@ export default function SellersPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <label className="block">
                         <span className="text-gray-400 text-xs">Method</span>
-                        <select value={form.payoutMethod} onChange={(e) => setForm({ ...form, payoutMethod: e.target.value, payoutTarget: '', payoutHandle: '' })}
+                        {/* Only proven destinations (Plan 35). PayPal pays the
+                            seller's verified email; Venmo is set by scanning the
+                            seller's code on the staff iPad, so it's offered here
+                            only to keep one already on file. */}
+                        <select value={form.payoutMethod}
+                          onChange={(e) => {
+                            const m = e.target.value;
+                            const keepVenmo = m === 'VENMO' && editSeller?.payoutMethod === 'VENMO';
+                            setForm({
+                              ...form,
+                              payoutMethod: m,
+                              payoutTarget: m === 'PAYPAL' ? 'EMAIL' : keepVenmo ? 'VENMO_ID' : '',
+                              payoutHandle: keepVenmo ? (editSeller?.payoutHandle ?? '') : '',
+                            });
+                          }}
                           className="mt-0.5 w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white">
                           <option value="">— not set —</option>
                           <option value="PAYPAL">PayPal</option>
-                          <option value="VENMO">Venmo</option>
+                          {editSeller?.payoutMethod === 'VENMO' && <option value="VENMO">Venmo</option>}
                           <option value="CHECK">Check</option>
                           <option value="DONATE">Donate</option>
                         </select>
                       </label>
-                      {(form.payoutMethod === 'PAYPAL' || form.payoutMethod === 'VENMO') && (
-                        <label className="block">
-                          <span className="text-gray-400 text-xs">Send to</span>
-                          <select value={form.payoutTarget}
-                            onChange={(e) => setForm({ ...form, payoutTarget: e.target.value as SellerForm['payoutTarget'], payoutHandle: '' })}
-                            className="mt-0.5 w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white">
-                            <option value="">— select —</option>
-                            {form.payoutMethod === 'PAYPAL' && <option value="PAYPAL_ID">Their PayPal ID</option>}
-                            {form.payoutMethod === 'PAYPAL' && <option value="EMAIL">Their email</option>}
-                            {/* Paid to a verified phone only, and none can be verified while texting is off. */}
-                            {form.payoutMethod === 'PAYPAL' && (sms || editSeller?.phoneVerifiedAt || form.payoutTarget === 'PHONE') && (
-                              <option value="PHONE">Their phone</option>
-                            )}
-                            {form.payoutMethod === 'VENMO' && <option value="VENMO_ID">Their Venmo ID</option>}
-                          </select>
-                        </label>
-                      )}
-                      {(form.payoutTarget === 'PAYPAL_ID' || form.payoutTarget === 'VENMO_ID') && (
-                        <label className="col-span-2 block">
-                          <span className="text-gray-400 text-xs">
-                            {form.payoutTarget === 'PAYPAL_ID' ? 'PayPal ID' : 'Venmo ID'}
-                          </span>
-                          <input value={form.payoutHandle}
-                            onChange={(e) => setForm({ ...form, payoutHandle: e.target.value })}
-                            className="mt-0.5 w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white" />
-                        </label>
-                      )}
-                      {(form.payoutTarget === 'EMAIL' || form.payoutTarget === 'PHONE') && (
+                      {form.payoutMethod === 'PAYPAL' && (
                         <p className="col-span-2 text-xs text-gray-500">
                           {/* Resolved from the contact when the money moves, so it
-                              cannot be paid until the seller has proved it. */}
-                          Paid to the seller&apos;s {form.payoutTarget === 'EMAIL' ? 'email' : 'phone'}, which
-                          must be verified first.
+                              can't be paid until the seller has proved it. */}
+                          Paid to the seller&apos;s email, which must be verified first.
+                        </p>
+                      )}
+                      {form.payoutMethod === 'VENMO' && (
+                        <p className="col-span-2 text-xs text-gray-500">
+                          Venmo {editSeller?.payoutHandle}
+                          {editSeller?.payoutHandleScanned
+                            ? ', scanned at the counter.'
+                            : '. Never scanned, so it won’t be paid until staff scan the seller’s Venmo code on the iPad.'}
+                          {' '}A Venmo account is set or changed on the staff iPad, by scanning the seller&apos;s code.
+                        </p>
+                      )}
+                      {!editSeller && form.payoutMethod === '' && (
+                        <p className="col-span-2 text-xs text-gray-500">
+                          For Venmo, scan the seller&apos;s Venmo code on the staff iPad.
                         </p>
                       )}
                     </div>

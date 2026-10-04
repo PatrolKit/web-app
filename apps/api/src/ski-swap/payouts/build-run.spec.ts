@@ -11,7 +11,7 @@ const item = (over: Partial<RunItem> = {}): RunItem => ({
 
 const seller = (over: Partial<RunSeller> = {}): RunSeller => ({
   sellerId: 's1', name: 'Dana Reyes', method: 'PAYPAL', target: 'EMAIL',
-  handle: null, verifiedEmail: 'dana@example.com', verifiedPhone: '+15550101001', ...over,
+  handle: null, handleScanned: false, verifiedEmail: 'dana@example.com', verifiedPhone: '+15550101001', ...over,
 });
 
 const sale = (over: Partial<PosSaleLine> = {}): PosSaleLine => ({
@@ -126,18 +126,20 @@ describe('buildRun', () => {
 });
 
 describe('resolveDestination', () => {
-  it('reads a contact destination from the verified contact, not a stored copy', () => {
+  it('pays PayPal to the verified email, not a stored copy', () => {
     expect(resolveDestination(seller({ target: 'EMAIL' })))
       .toEqual({ destination: 'dana@example.com', destinationType: 'EMAIL' });
-    expect(resolveDestination(seller({ target: 'PHONE' })))
-      .toEqual({ destination: '+15550101001', destinationType: 'PHONE' });
   });
 
-  it('reads a typed id from the handle', () => {
-    expect(resolveDestination(seller({ target: 'PAYPAL_ID', handle: 'ABC' })))
-      .toEqual({ destination: 'ABC', destinationType: 'PAYPAL_ID' });
-    expect(resolveDestination(seller({ method: 'VENMO', target: 'VENMO_ID', handle: '@dana' })))
+  it('pays no PayPal ID or phone: only somebody’s word for the account (Plan 35)', () => {
+    expect(resolveDestination(seller({ target: 'PAYPAL_ID', handle: 'ABC' })).destination).toBeNull();
+    expect(resolveDestination(seller({ target: 'PHONE' })).destination).toBeNull();
+  });
+
+  it('pays a Venmo handle only once it was scanned from the seller’s code', () => {
+    expect(resolveDestination(seller({ method: 'VENMO', target: 'VENMO_ID', handle: '@dana', handleScanned: true })))
       .toEqual({ destination: '@dana', destinationType: 'VENMO_ID' });
+    expect(resolveDestination(seller({ method: 'VENMO', target: 'VENMO_ID', handle: '@dana' })).destination).toBeNull();
   });
 
   it('has nowhere to send a check or a donation', () => {

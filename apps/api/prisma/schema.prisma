@@ -51,6 +51,10 @@ model User {
   /// the money moves — storing a copy would let someone change their email and
   /// leave the payout pointed at the old one.
   payoutHandle String?
+  /// When `payoutHandle` was read from the seller's Venmo code, scanned at the
+  /// counter (Plan 35). Only a scanned Venmo account is paid: a typed one is
+  /// only somebody's word for it. Cleared when the handle goes.
+  payoutHandleScannedAt DateTime?
 
   /// Claims. Indexed for matching, deliberately NOT unique — an unverified
   /// claim may collide with another unverified claim.

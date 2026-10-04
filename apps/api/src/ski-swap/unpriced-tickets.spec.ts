@@ -104,7 +104,7 @@ const ticket = (over: Partial<RunItem> = {}): RunItem => ({
 });
 const seller: RunSeller = {
   sellerId: 's1', name: 'Dana Reyes', method: 'CHECK', target: null,
-  handle: null, verifiedEmail: null, verifiedPhone: null,
+  handle: null, handleScanned: false, verifiedEmail: null, verifiedPhone: null,
 };
 const sale = (over: Partial<PosSaleLine> = {}): PosSaleLine => ({
   orderId: 'o1', variationId: 'v1', quantity: 1, collectedCents: 4000, unitPriceCents: 4000,

@@ -29,6 +29,8 @@ import { SellerService } from './seller.service';
 import { ContactChallengeService } from '../auth/contact-challenge.service';
 import { NOT_NORTH_AMERICAN, SMS_OFF, SmsService } from '../sms/sms.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CurrentDevice } from '../common/decorators/current-device.decorator';
+import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { AddTicketRangeDto, CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto } from '../contracts/ski-swap.contracts';
 import { LegacyTicketService } from './legacy-ticket.service';
@@ -96,8 +98,10 @@ export class SellerController {
   create(
     @Param('orgId') orgId: string,
     @Body() body: CreateSellerDto,
+    @CurrentDevice() device: AuthenticatedDevice | undefined,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
+    assertScanFromDevice(body, device);
     return this.sellerService.create(orgId, body, idempotencyKey);
   }
 
@@ -113,11 +117,13 @@ export class SellerController {
     @Param('orgId') orgId: string,
     @Param('sellerId') sellerId: string,
     @Body() body: PatchSellerDto,
+    @CurrentDevice() device: AuthenticatedDevice | undefined,
     // The offline queue retries, and a retried patch is a retried conflict
     // once `baseUpdatedAt` is in play: the first attempt moves the watermark,
     // so the second would be refused for having been overtaken by itself.
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
+    assertScanFromDevice(body, device);
     return this.sellerService.patch(orgId, sellerId, body, idempotencyKey);
   }
 
@@ -220,5 +226,16 @@ export class SellerController {
   ) {
     const mapping = JSON.parse(mappingJson) as Record<string, string>;
     return this.sellerService.importSellers(orgId, file.buffer, mapping, duplicateStrategy);
+  }
+}
+
+/**
+ * A Venmo code is scanned at the counter, on the staff iPad (Plan 35). A scan
+ * claimed by anything else (the staff web, a script with a user's session)
+ * is refused, so `payoutHandleSource: 'SCAN'` means what it says.
+ */
+export function assertScanFromDevice(body: { payoutHandleSource?: 'SCAN' }, device: AuthenticatedDevice | undefined): void {
+  if (body.payoutHandleSource === 'SCAN' && !device) {
+    throw new BadRequestException('Only the staff iPad can scan a Venmo code.');
   }
 }

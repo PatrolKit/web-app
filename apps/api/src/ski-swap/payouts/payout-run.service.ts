@@ -115,7 +115,7 @@ export class PayoutRunService {
             user: {
               select: {
                 firstName: true, lastName: true, email: true, phone: true,
-                payoutMethod: true, payoutTarget: true, payoutHandle: true,
+                payoutMethod: true, payoutTarget: true, payoutHandle: true, payoutHandleScannedAt: true,
                 verifiedEmail: true, verifiedPhone: true,
               },
             },
@@ -134,6 +134,7 @@ export class PayoutRunService {
       method: (s.membership.user.payoutMethod as PayoutMethod | null) ?? 'CHECK',
       target: (s.membership.user.payoutTarget as PayoutTarget | null) ?? null,
       handle: s.membership.user.payoutHandle,
+      handleScanned: s.membership.user.payoutHandleScannedAt !== null,
       verifiedEmail: s.membership.user.verifiedEmail,
       verifiedPhone: s.membership.user.verifiedPhone,
     }));

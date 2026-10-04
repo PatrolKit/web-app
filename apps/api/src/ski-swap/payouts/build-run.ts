@@ -31,6 +31,8 @@ export interface RunSeller {
   target: PayoutTarget | null;
   /** A typed PayPal or Venmo id. Null when the destination is a contact. */
   handle: string | null;
+  /** The Venmo handle was scanned from the seller's code (Plan 35). */
+  handleScanned: boolean;
   verifiedEmail: string | null;
   verifiedPhone: string | null;
 }
@@ -230,19 +232,17 @@ export function resolveDestination(
     case 'CHECK':
     case 'DONATE':
       return { destination: null, destinationType: null };
+    // Only a proven destination is paid (Plan 35). An unscanned Venmo handle,
+    // a typed PayPal ID and a phone are only somebody's word for the account,
+    // so the line is left with no usable destination for somebody to fix.
     case 'VENMO':
-      return { destination: seller.handle, destinationType: 'VENMO_ID' };
+      return seller.handleScanned
+        ? { destination: seller.handle, destinationType: 'VENMO_ID' }
+        : { destination: null, destinationType: null };
     case 'PAYPAL':
-      switch (seller.target) {
-        case 'EMAIL':
-          return { destination: seller.verifiedEmail, destinationType: 'EMAIL' };
-        case 'PHONE':
-          return { destination: seller.verifiedPhone, destinationType: 'PHONE' };
-        case 'PAYPAL_ID':
-          return { destination: seller.handle, destinationType: 'PAYPAL_ID' };
-        default:
-          return { destination: null, destinationType: null };
-      }
+      return seller.target === 'EMAIL'
+        ? { destination: seller.verifiedEmail, destinationType: 'EMAIL' }
+        : { destination: null, destinationType: null };
   }
 }
 

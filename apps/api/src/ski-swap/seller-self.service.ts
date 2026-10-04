@@ -44,6 +44,10 @@ export class SellerSelfService {
     data: Parameters<SellerService['patch']>[2],
   ): Promise<SellerResponse> {
     const existing = await this.getSellerRecord(orgId, userId);
+    // A seller's own pages can't scan a Venmo code; only the staff iPad can (Plan 35).
+    if (data.payoutHandleSource) {
+      throw new BadRequestException('A Venmo account is set by scanning your Venmo code at the swap.');
+    }
     // A business seller may not rename their own business; staff own that field.
     const { businessName: _ignored, ...safe } = data;
     return this.sellerService.patch(orgId, existing.id, safe);

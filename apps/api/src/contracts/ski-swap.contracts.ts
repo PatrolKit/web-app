@@ -142,6 +142,12 @@ const PayoutFields = {
   payoutMethod: z.enum(PAYOUT_METHODS).nullable().optional(),
   payoutTarget: z.enum(PAYOUT_TARGETS).nullable().optional(),
   payoutHandle: z.string().trim().min(1).max(191).nullable().optional(),
+  /**
+   * Where a Venmo handle came from (Plan 35). `SCAN`: read from the seller's
+   * Venmo code at the counter. Required to set or change one; a typed handle
+   * is refused.
+   */
+  payoutHandleSource: z.enum(['SCAN']).optional(),
 };
 
 /** Person fields live on User and are global; they are edited through the seller API for convenience. */
@@ -225,6 +231,8 @@ export const SellerResponseSchema = z.object({
   payoutMethod: z.enum(PAYOUT_METHODS).nullable(),
   payoutTarget: z.enum(PAYOUT_TARGETS).nullable(),
   payoutHandle: z.string().nullable(),
+  /** Whether the Venmo handle was scanned from the seller's code (Plan 35). Unscanned isn't paid. */
+  payoutHandleScanned: z.boolean(),
   emailVerifiedAt: z.string().datetime().nullable(),
   phoneVerifiedAt: z.string().datetime().nullable(),
   /**

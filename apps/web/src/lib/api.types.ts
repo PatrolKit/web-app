@@ -284,6 +284,8 @@ export interface SellerResponse {
   payoutTarget: 'EMAIL' | 'PHONE' | 'PAYPAL_ID' | 'VENMO_ID' | null;
   /** The typed value, for PAYPAL_ID and VENMO_ID only. */
   payoutHandle: string | null;
+  /** The Venmo handle was scanned from the seller's code (Plan 35). Unscanned isn't paid. */
+  payoutHandleScanned: boolean;
   emailVerifiedAt: string | null;
   phoneVerifiedAt: string | null;
   /** Where a receipt would go, or null when there is nowhere to send one. */
