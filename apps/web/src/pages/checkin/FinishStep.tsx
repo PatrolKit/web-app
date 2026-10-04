@@ -5,7 +5,7 @@ import { faCheck as faCheckDuo, faEnvelope as faEnvelopeDuo, faMessage as faMess
 import { api, ApiError } from '../../lib/api';
 import { useFeatures } from '../../lib/features';
 import { CheckinShell, contextLine, ErrorNote, formatCents, secondaryButtonClass } from './shared';
-import { RECEIPT_LINK_LABELS } from '../public/receiptLayout';
+import { RECEIPT_LINK_BUTTON } from '../public/receiptLayout';
 import type { CheckinContext, CheckinSummary, ReceiptLayout } from '../../lib/api.types';
 
 /** What finishing reported, as this screen needs it. */
@@ -186,7 +186,7 @@ export default function FinishStep({
           {/* Where the swap's receipts point, if anywhere that's on. */}
           {link && (
             <a href={link.url} className="block text-center text-sm text-brand-600 hover:underline py-3">
-              {RECEIPT_LINK_LABELS[link.kind].button}
+              {RECEIPT_LINK_BUTTON}
             </a>
           )}
         </div>

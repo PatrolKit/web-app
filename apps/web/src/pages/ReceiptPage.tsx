@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { PublicPageHeader } from './public/PublicPageHeader';
 import { PoweredByFooter } from './public/PoweredByFooter';
-import { FinePrintCallout, RECEIPT_LINK_LABELS } from './public/receiptLayout';
+import { FinePrintCallout, RECEIPT_LINK_BUTTON, RECEIPT_THANKS } from './public/receiptLayout';
 import type { PublicReceiptResponse } from '../lib/api.types';
 
 function money(cents: number): string {
@@ -142,7 +142,8 @@ export default function ReceiptPage() {
         </>
       ) : (
         <div className="mt-4 text-center">
-          <p className="text-white">Your {itemCount} {data.itemCount === 1 ? 'is' : 'are'} checked in.</p>
+          {/* No count: a status-only receipt doesn't list the items in any form. */}
+          <p className="text-white">{RECEIPT_THANKS}</p>
           {/* The page linked to has been turned off since: say so rather
               than leave the receipt blank. */}
           {!link && <p className="mt-1 text-sm text-gray-500">The swap’s status page isn’t available right now.</p>}
@@ -159,15 +160,12 @@ export default function ReceiptPage() {
           happened since — gets a way out to the page that can, when the swap
           links to one that's on. */}
       {link && (
-        <>
-          <a
-            href={link.url}
-            className="block text-center bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg py-3 mt-6"
-          >
-            {RECEIPT_LINK_LABELS[link.kind].button}
-          </a>
-          <p className="mt-2 text-center text-xs text-gray-500">{RECEIPT_LINK_LABELS[link.kind].caption}</p>
-        </>
+        <a
+          href={link.url}
+          className="block text-center bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg py-3 mt-6"
+        >
+          {RECEIPT_LINK_BUTTON}
+        </a>
       )}
 
       {layout.finePrint && (

@@ -83,12 +83,11 @@ function receiptLink(swap: LayoutSwap, urls: LayoutUrls): ReceiptLayout['link'] 
   }
 }
 
-/** What a link is for, in the words the receipt uses beside it. */
-export const LINK_LABELS: Record<LinkKind, { button: string; scan: string }> = {
-  SKU_LOOKUP: { button: 'Check an item', scan: 'Scan to check an item' },
-  SELLER_STATUS: { button: 'Track your items', scan: 'Scan to track your items' },
-  SELLER_LOGIN: { button: 'Sign in to see your items', scan: 'Scan to sign in and see your items' },
-};
+/** The receipt's button, whichever status page it opens. */
+export const RECEIPT_LINK_BUTTON = 'Click here to check the status of your items';
+
+/** What a status-page-only receipt says in place of its items. */
+export const RECEIPT_THANKS = 'Thank you for participating in our ski swap!';
 
 /** The receipt-off and printing refusals (D4, D10, D11), worded once. */
 export const RECEIPTS_OFF = { code: 'RECEIPTS_OFF', message: 'This swap doesn’t give receipts.' };

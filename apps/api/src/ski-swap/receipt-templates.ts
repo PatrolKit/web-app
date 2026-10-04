@@ -1,14 +1,9 @@
 import type { ReceiptView } from './receipt.service';
-import { LINK_LABELS, type LinkKind } from './receipt-layout';
+import { RECEIPT_LINK_BUTTON, RECEIPT_THANKS } from './receipt-layout';
 import { swapTimeText } from './swap-time-zone';
 import { sanitizeFinePrint } from './receipt-settings';
 
 /** What each link is for, under its button (Plan 36). */
-const LINK_CAPTIONS: Record<LinkKind, string> = {
-  SKU_LOOKUP: 'Enter a SKU to see whether it has sold.',
-  SELLER_STATUS: 'See what has sold and what is still on the floor.',
-  SELLER_LOGIN: 'Sign in to see everything you’re selling.',
-};
 
 /**
  * Fine print for an email (Plan 36 D12): sanitized again here, then given
@@ -128,11 +123,12 @@ export function receiptEmail(view: ReceiptView): string {
                 </tr>
               </table>`;
 
-  // Status page only: no items, just where to follow them (D6). If the page
-  // has since been turned off, say so rather than leave the receipt blank (D2).
+  // Status page only: no items and no count, just thanks and where to follow
+  // them (D6). If the page has since been turned off, say so rather than leave
+  // the receipt with nowhere to go (D2).
   const statusOnly = `
               <p class="ink" style="color: #111827; font-size: 16px; margin: 20px 0 0;">
-                Your ${itemCountText(view)} ${view.itemCount === 1 ? 'is' : 'are'} checked in.
+                ${esc(RECEIPT_THANKS)}
               </p>
               ${layout.link ? '' : '<p class="muted" style="color: #6b7280; font-size: 14px; margin: 8px 0 0;">The swap’s status page isn’t available right now.</p>'}`;
 
@@ -141,13 +137,10 @@ export function receiptEmail(view: ReceiptView): string {
               <table role="presentation" width="100%" style="border-collapse: collapse; margin: 28px 0 0;">
                 <tr>
                   <td align="center" bgcolor="#dc2626" style="border-radius: 6px;">
-                    <a href="${esc(layout.link.url)}" style="display: inline-block; padding: 13px 30px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px;">${esc(LINK_LABELS[layout.link.kind].button)}</a>
+                    <a href="${esc(layout.link.url)}" style="display: inline-block; padding: 13px 30px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px;">${esc(RECEIPT_LINK_BUTTON)}</a>
                   </td>
                 </tr>
-              </table>
-              <p class="muted" style="color: #6b7280; font-size: 13px; margin: 12px 0 0; text-align: center;">
-                ${esc(LINK_CAPTIONS[layout.link.kind])}
-              </p>`
+              </table>`
     : '';
 
   // The fine print's callout sits above the separator before the foot (D12).
@@ -260,7 +253,7 @@ export function receiptSms(view: ReceiptView): string {
   // Status page only carries the status link itself; everything else links to
   // the receipt page (Plan 36). Price off leaves the total out.
   const tail = layout.mode === 'STATUS_ONLY' && layout.link
-    ? `: your ${view.swapTitle} items are checked in. ${LINK_LABELS[layout.link.kind].button}: ${layout.link.url}`
+    ? `: ${RECEIPT_THANKS} Check the status of your items: ${layout.link.url}`
     : `: your ${view.swapTitle} receipt — ${itemCountText(view)}${
         layout.show.price
           ? `, ${money(view.totalCents)}${view.unpricedCount ? `, ${view.unpricedCount} not yet priced` : ''}`

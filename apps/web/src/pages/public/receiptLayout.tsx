@@ -1,13 +1,8 @@
-import type { ReceiptLayout } from '../../lib/api.types';
+/** A receipt's button, whichever status page it opens: the email's words. */
+export const RECEIPT_LINK_BUTTON = 'Click here to check the status of your items';
 
-type LinkKind = NonNullable<ReceiptLayout['link']>['kind'];
-
-/** A receipt's link, said by where it goes (Plan 36): the email's words. */
-export const RECEIPT_LINK_LABELS: Record<LinkKind, { button: string; caption: string }> = {
-  SKU_LOOKUP: { button: 'Check an item', caption: 'Enter a SKU to see whether it has sold.' },
-  SELLER_STATUS: { button: 'Track your items', caption: 'See what has sold and what is still on the floor.' },
-  SELLER_LOGIN: { button: 'Sign in to see your items', caption: 'Sign in to see everything you’re selling.' },
-};
+/** What a status-page-only receipt says in place of its items. */
+export const RECEIPT_THANKS = 'Thank you for participating in our ski swap!';
 
 /**
  * A swap's fine print, in its callout (Plan 36 D12). The HTML is the server's,

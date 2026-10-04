@@ -170,8 +170,8 @@ describe('receiptEmail', () => {
     /** The one thing the email cannot do itself: say what has happened since. */
     it('sends the button to the seller\'s live page, not to this receipt', () => {
       const html = receiptEmail(view());
-      expect(html).toContain('>Track your items</a>');
-      const button = html.slice(html.indexOf('Track your items') - 400, html.indexOf('Track your items'));
+      expect(html).toContain('>Click here to check the status of your items</a>');
+      const button = html.slice(html.indexOf('Click here to check the status of your items') - 400, html.indexOf('Click here to check the status of your items'));
       expect(button).toContain('https://skiswap.patrolkit.io/s/seller123');
     });
   });
@@ -203,6 +203,6 @@ describe('receiptEmail', () => {
     expect(html).toContain('Powered by');
     expect(html).toContain('https://skiswap.patrolkit.io/logo-mark.png');
     // Below the receipt, not above it.
-    expect(html.indexOf('Powered by')).toBeGreaterThan(html.indexOf('Track your items'));
+    expect(html.indexOf('Powered by')).toBeGreaterThan(html.indexOf('Click here to check the status of your items'));
   });
 });

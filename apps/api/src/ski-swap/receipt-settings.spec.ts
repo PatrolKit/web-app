@@ -145,17 +145,22 @@ describe('the emailed receipt', () => {
     expect(skuOnly).toContain('67169');
   });
 
-  it('labels its link by what it opens, and has none without one', () => {
-    expect(receiptEmail(view({ link: { kind: 'SKU_LOOKUP', url: 'https://x/status' } }))).toContain('Check an item');
-    expect(receiptEmail(view({ link: { kind: 'SELLER_LOGIN', url: 'https://x/login' } }))).toContain('Sign in to see your items');
-    expect(receiptEmail(view())).not.toContain('Track your items');
+  it('says one thing on its button, whatever it opens, with no caption, and has none without a link', () => {
+    for (const kind of ['SKU_LOOKUP', 'SELLER_STATUS', 'SELLER_LOGIN'] as const) {
+      const html = receiptEmail(view({ link: { kind, url: 'https://x/page' } }));
+      expect(html).toContain('>Click here to check the status of your items</a>');
+      expect(html).not.toMatch(/whether it has sold|still on the floor|everything you’re selling/);
+    }
+    expect(receiptEmail(view())).not.toContain('Click here to check the status of your items');
   });
 
   it('is just the link when it’s status page only', () => {
     const html = receiptEmail(view({ mode: 'STATUS_ONLY', link: { kind: 'SELLER_STATUS', url: 'https://x/s/1' } }));
-    expect(html).toContain('checked in');
+    expect(html).toContain('Thank you for participating in our ski swap!');
+    // No count either: a status-only receipt doesn't list the items in any form.
+    expect(html).not.toMatch(/\d+ items?\b/);
     expect(html).not.toContain('Rossignol Skis');
-    expect(html).toContain('Track your items');
+    expect(html).toContain('Click here to check the status of your items');
   });
 
   it('says the status page isn’t available when a status-only link has gone', () => {
@@ -180,7 +185,9 @@ describe('the texted receipt', () => {
 
   it('carries the status link itself when it’s status page only', () => {
     const sms = receiptSms(view({ mode: 'STATUS_ONLY', link: { kind: 'SKU_LOOKUP', url: 'https://skiswap.patrolkit.io/bmbwavsp/ss26/status' } }));
-    expect(sms).toContain('checked in');
+    expect(sms).toContain('Thank you for participating in our ski swap!');
+    expect(sms).not.toMatch(/\d+ items?\b/);
+    expect(sms.length).toBeLessThanOrEqual(160);
     expect(sms).toContain('https://skiswap.patrolkit.io/bmbwavsp/ss26/status');
     expect(sms).not.toContain('/r/');
   });
