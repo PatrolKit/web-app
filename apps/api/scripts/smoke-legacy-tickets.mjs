@@ -33,6 +33,8 @@ const swap = await prisma.skiSwap.create({
   data: {
     orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Ticket smoke swap', squareCategoryId: 'ticket-smoke',
     skuPrefix: 'TKS', active: true, activeSkuPrefix: 'TKS',
+    // A shop's blocks work on the web only where the web takes legacy tickets (Plan 34).
+    allowLegacyCheckin: true, allowLegacyWeb: true,
   },
 });
 
