@@ -14,6 +14,7 @@ const view = (over: Partial<ReceiptView> = {}): ReceiptView => ({
   itemCount: 2,
   unpricedCount: 0,
   createdAt: new Date('2026-09-17T13:42:00Z'),
+  timeZone: 'America/New_York',
   url: 'https://skiswap.patrolkit.io/r/Xk3abcdefghijklmnopqrstuvwxyz012',
   trackUrl: 'https://skiswap.patrolkit.io/s/seller123',
   brandMarkUrl: 'https://skiswap.patrolkit.io/logo-mark.png',
@@ -54,6 +55,12 @@ describe('receiptSms', () => {
 });
 
 describe('receiptEmail', () => {
+  it('gives the check-in time in the swap’s zone, and says which', () => {
+    // 13:42 UTC on Sep 17 is 9:42 in the morning in Vermont.
+    expect(receiptEmail(view())).toContain('Sep 17, 2026, 9:42 AM EDT');
+    expect(receiptEmail(view({ timeZone: 'America/Denver' }))).toContain('Sep 17, 2026, 7:42 AM MDT');
+  });
+
   it('carries the receipt in the body rather than only a link', () => {
     const html = receiptEmail(view());
     expect(html).toContain('Rossignol 172cm Red Skis');

@@ -161,7 +161,7 @@ describe('paying for a ticket sold before it was priced', () => {
 const view = (over: Partial<ReceiptView> = {}): ReceiptView => ({
   id: 'r1', token: 't', orgName: 'Stowe Patrol', orgLogoUrl: null, logoImageUrl: null, swapTitle: 'Fall Swap',
   sellerName: 'Dana Reyes', payoutLabel: 'Check', totalCents: 4500, itemCount: 2, unpricedCount: 1,
-  createdAt: new Date('2026-09-17T13:42:00Z'), url: 'https://skiswap.patrolkit.io/r/t',
+  createdAt: new Date('2026-09-17T13:42:00Z'), timeZone: 'America/New_York', url: 'https://skiswap.patrolkit.io/r/t',
   trackUrl: 'https://skiswap.patrolkit.io/s/s1', brandMarkUrl: 'https://skiswap.patrolkit.io/logo-mark.png',
   layout: { mode: 'ITEMIZED', show: { sku: true, name: true, price: true }, link: { url: 'https://skiswap.patrolkit.io/s/seller123', kind: 'SELLER_STATUS' }, print: { paperSize: '62x100' }, finePrint: null },
   lines: [

@@ -576,7 +576,9 @@ export async function drawReceiptHeader(
     }
   }
 
-  const DATE_H = Math.round(20 * k), PHONE_H = Math.round(20 * k), LINE_GAP = 2;
+  // The date carries its zone now, so it shrinks rather than reach the logo.
+  const DATE_H = fitSize(ctx, data.date, Math.round(20 * k), 12, W - (LOGO_SIZE + 8));
+  const PHONE_H = Math.round(20 * k), LINE_GAP = 2;
   // The block sits to the right of the logo, so that is the width the name has
   // to live in. Bounded rather than given the full column: at 26 a long name
   // set across the whole width would run over the org's mark.
@@ -855,11 +857,11 @@ async function drawReceiptMasthead(
     }
   }
 
-  const DATE_H = Math.round(W * 0.04);
   const PHONE_H = Math.round(W * 0.042);
   // Bounded by what the logo leaves, so a long name shrinks rather than running
-  // back over the org's mark.
+  // back over the org's mark. The date too, now that it carries its zone.
   const textW = W - LOGO - GAP;
+  const DATE_H = fitSize(ctx, data.date, Math.round(W * 0.04), 12, textW);
   const NAME_H = fitSize(ctx, data.sellerName, Math.round(W * 0.075), 14, textW);
 
   let ty = 0;

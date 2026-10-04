@@ -43,6 +43,8 @@ export interface ReceiptView {
   /** Lines of tickets not yet priced, which `totalCents` leaves out. */
   unpricedCount: number;
   createdAt: Date;
+  /** The swap's zone, which `createdAt` is given in wherever it's shown. */
+  timeZone: string;
   /** This receipt, frozen. */
   url: string;
   /**
@@ -452,17 +454,23 @@ export class ReceiptService {
 
   /** This seller's receipt layout at this swap, per its settings now (Plan 36). */
   async layoutFor(swapId: string, sellerId: string, receiptToken: string | null): Promise<ReceiptLayout> {
+    return (await this.layoutAndZone(swapId, sellerId, receiptToken)).layout;
+  }
+
+  /** The layout, and the swap's time zone beside it, from one read of the swap. */
+  private async layoutAndZone(swapId: string, sellerId: string, receiptToken: string | null) {
     const swap = await this.prisma.skiSwap.findUniqueOrThrow({
       where: { id: swapId },
       include: { org: { select: { slug: true } } },
     });
-    return receiptLayout(swap, {
+    const layout = receiptLayout(swap, {
       sellerSiteUrl: this.config.get<string>('app.sellerSiteUrl', 'http://localhost:3000'),
       appUrl: this.config.get<string>('app.appUrl', 'http://localhost:3000'),
       orgSlug: swap.org.slug,
       sellerId,
       receiptToken,
     });
+    return { layout, timeZone: swap.timeZone };
   }
 
   private async view(receipt: Receipt): Promise<ReceiptView> {
@@ -471,7 +479,7 @@ export class ReceiptService {
       orderBy: { position: 'asc' },
       select: { name: true, sku: true, priceCents: true },
     });
-    const layout = await this.layoutFor(receipt.swapId, receipt.sellerId, receipt.token);
+    const { layout, timeZone } = await this.layoutAndZone(receipt.swapId, receipt.sellerId, receipt.token);
     return {
       id: receipt.id,
       token: receipt.token,
@@ -485,6 +493,7 @@ export class ReceiptService {
       itemCount: receipt.itemCount,
       unpricedCount: lines.filter((l) => l.priceCents === null).length,
       createdAt: receipt.createdAt,
+      timeZone,
       url: this.urlFor(receipt.token),
       // Kept for iPad builds that read it; `layout.link` is the answer now.
       trackUrl: layout.link?.url ?? this.sellerSite(`/s/${receipt.sellerId}`),

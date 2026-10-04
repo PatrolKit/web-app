@@ -14,6 +14,7 @@ import { isUniqueViolation } from '../common/util/prisma-errors';
 import { createId } from '@paralleldrive/cuid2';
 import { v4 as uuidv4 } from 'uuid';
 import type { SwapResponse } from '../contracts/ski-swap.contracts';
+import { DEFAULT_SWAP_TIME_ZONE } from './swap-time-zone';
 import type { SquareClient } from 'square';
 
 @Injectable()
@@ -44,7 +45,7 @@ export class SwapService {
     locationId: string,
     actorId: string,
     extras: {
-      slug?: string;
+      slug?: string; timeZone?: string;
       skuLookupEnabled?: boolean; sellerLookupEnabled?: boolean; sellerLoginEnabled?: boolean;
     } & Partial<ReceiptSettings> = {},
   ): Promise<SwapResponse> {
@@ -79,6 +80,7 @@ export class SwapService {
         active: false,
         skuPrefix,
         slug,
+        timeZone: extras.timeZone ?? DEFAULT_SWAP_TIME_ZONE,
         skuLookupEnabled: extras.skuLookupEnabled ?? false,
         sellerLookupEnabled: extras.sellerLookupEnabled ?? false,
         sellerLoginEnabled: extras.sellerLoginEnabled ?? false,
@@ -104,7 +106,8 @@ export class SwapService {
       title?: string; active?: boolean; locationId?: string;
       allowLegacyCheckin?: boolean; allowLegacyWeb?: boolean; allowPrintCheckin?: boolean; allowPrintWeb?: boolean;
       printLegacyHelperLabels?: boolean; labelsPerItem?: number;
-      slug?: string; skuLookupEnabled?: boolean; sellerLookupEnabled?: boolean; sellerLoginEnabled?: boolean;
+      slug?: string; timeZone?: string;
+      skuLookupEnabled?: boolean; sellerLookupEnabled?: boolean; sellerLoginEnabled?: boolean;
     } & Partial<ReceiptSettings>,
   ): Promise<SwapResponse> {
     const swap = await this.findOrThrow(orgId, swapId);
@@ -207,6 +210,7 @@ export class SwapService {
           ...(data.labelsPerItem !== undefined ? { labelsPerItem: data.labelsPerItem } : {}),
           // The slug moves only when asked; a rename leaves it (Plan 33).
           ...(data.slug !== undefined ? { slug: data.slug } : {}),
+          ...(data.timeZone !== undefined ? { timeZone: data.timeZone } : {}),
           ...(data.skuLookupEnabled !== undefined ? { skuLookupEnabled: data.skuLookupEnabled } : {}),
           ...(data.sellerLookupEnabled !== undefined ? { sellerLookupEnabled: data.sellerLookupEnabled } : {}),
           ...(data.sellerLoginEnabled !== undefined ? { sellerLoginEnabled: data.sellerLoginEnabled } : {}),
@@ -406,6 +410,7 @@ export class SwapService {
     skuLookupEnabled: boolean;
     sellerLookupEnabled: boolean;
     sellerLoginEnabled: boolean;
+    timeZone: string;
     createdAt: Date;
     updatedAt: Date;
   } & ReceiptSettings): SwapResponse {
@@ -427,6 +432,7 @@ export class SwapService {
       skuLookupEnabled: swap.skuLookupEnabled,
       sellerLookupEnabled: swap.sellerLookupEnabled,
       sellerLoginEnabled: swap.sellerLoginEnabled,
+      timeZone: swap.timeZone,
       receiptMode: swap.receiptMode as SwapResponse['receiptMode'],
       receiptShowSku: swap.receiptShowSku,
       receiptShowName: swap.receiptShowName,

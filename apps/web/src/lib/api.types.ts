@@ -259,6 +259,8 @@ export interface SwapResponse {
   sellerLookupEnabled: boolean;
   /** Authenticated Seller Status: an individual seller here may sign in. */
   sellerLoginEnabled: boolean;
+  /** Where the swap happens, as an IANA zone: receipt times are given in it. */
+  timeZone: string;
   /** Receipt settings (Plan 36). */
   receiptMode: ReceiptMode;
   receiptShowSku: boolean;
@@ -1064,6 +1066,8 @@ export interface PublicReceiptResponse {
   url: string;
   /** The seller's live page: everything they have, not only what is on here. */
   trackUrl: string;
+  /** The swap's zone: `createdAt` is shown in it, not in the viewer's. */
+  timeZone: string;
   /** What this receipt shows, per its swap's settings now (Plan 36). */
   layout: ReceiptLayout;
   lines: PublicReceiptLine[];

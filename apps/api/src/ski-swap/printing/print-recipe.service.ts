@@ -5,6 +5,7 @@ import { LabelRendererService } from './label-renderer.service';
 import { DEFAULT_TARGET, printTarget, type PrintTarget } from './geometry';
 import { displayName } from '../../common/util/person';
 import { receiptLayout, receiptPrintRefusal, type ReceiptLayout } from '../receipt-layout';
+import { DEFAULT_SWAP_TIME_ZONE, swapTimeText } from '../swap-time-zone';
 import type { ReceiptHeaderData } from './label-templates';
 
 /** The two lines beside a receipt's QR, per what it opens (Plan 36). */
@@ -104,12 +105,14 @@ export class PrintRecipeService {
         if (target.size.tier === 'tall') return [];
         const seller = await this.seller(orgId, recipe.sellerId);
         // An older client sends no swap; its header is drawn as it always was.
-        if (!recipe.swapId) return [await this.renderer.receiptHeader(this.masthead(seller), target)];
+        if (!recipe.swapId) {
+          return [await this.renderer.receiptHeader(this.masthead(seller, await this.orgTimeZone(orgId)), target)];
+        }
         // Settings that refuse this print give nothing, so a job queued
         // before they changed settles unprinted at claim (Plan 36).
         const gate = await this.receiptGate(orgId, recipe.swapId, recipe.sellerId!, target);
         if (!gate) return [];
-        return [await this.renderer.receiptHeader(this.masthead(seller, gate), target)];
+        return [await this.renderer.receiptHeader(this.masthead(seller, gate.timeZone, gate.layout), target)];
       }
 
       case 'receipt_items': {
@@ -118,7 +121,8 @@ export class PrintRecipeService {
         }
         const gate = await this.receiptGate(orgId, recipe.swapId, recipe.sellerId, target);
         if (!gate) return [];
-        const statusOnly = gate.mode === 'STATUS_ONLY';
+        const { layout } = gate;
+        const statusOnly = layout.mode === 'STATUS_ONLY';
         const items = statusOnly ? [] : await this.prisma.swapItem.findMany({
           where: { orgId, swapId: recipe.swapId, sellerId: recipe.sellerId, deletedAt: null },
           orderBy: { createdAt: 'asc' },
@@ -129,11 +133,13 @@ export class PrintRecipeService {
         // no header job and there is nothing here to concatenate.
         if (target.size.tier === 'tall') {
           const seller = await this.seller(orgId, recipe.sellerId);
-          return this.renderer.tallReceipt(this.masthead(seller, gate), items, target, { show: gate.show, statusOnly });
+          return this.renderer.tallReceipt(
+            this.masthead(seller, gate.timeZone, layout), items, target, { show: layout.show, statusOnly },
+          );
         }
         // A compact status-only receipt is its header label alone.
         if (statusOnly) return [];
-        return this.renderer.receiptItems(items, target, gate.show);
+        return this.renderer.receiptItems(items, target, layout.show);
       }
 
       default:
@@ -151,10 +157,13 @@ export class PrintRecipeService {
   }
 
   /**
-   * This receipt's layout, when the swap's settings let it print on this
-   * target; null when they don't: no receipts, printing off, or other paper.
+   * This receipt's layout and its swap's time zone, when the swap's settings
+   * let it print on this target; null when they don't: no receipts, printing
+   * off, or other paper.
    */
-  private async receiptGate(orgId: string, swapId: string, sellerId: string, target: PrintTarget): Promise<ReceiptLayout | null> {
+  private async receiptGate(
+    orgId: string, swapId: string, sellerId: string, target: PrintTarget,
+  ): Promise<{ layout: ReceiptLayout; timeZone: string } | null> {
     const swap = await this.prisma.skiSwap.findFirst({
       where: { id: swapId, orgId },
       include: { org: { select: { slug: true } } },
@@ -166,13 +175,27 @@ export class PrintRecipeService {
       orderBy: { createdAt: 'desc' },
       select: { token: true },
     });
-    return receiptLayout(swap, {
+    const layout = receiptLayout(swap, {
       sellerSiteUrl: this.config.get<string>('app.sellerSiteUrl', 'http://localhost:3000'),
       appUrl: this.config.get<string>('app.appUrl', 'http://localhost:3000'),
       orgSlug: swap.org.slug,
       sellerId,
       receiptToken: receipt?.token ?? null,
     });
+    return { layout, timeZone: swap.timeZone };
+  }
+
+  /**
+   * The zone for a header an older client asked for without naming its swap:
+   * the org's newest running swap's, which is the one at the counter.
+   */
+  private async orgTimeZone(orgId: string): Promise<string> {
+    const swap = await this.prisma.skiSwap.findFirst({
+      where: { orgId, active: true },
+      orderBy: { createdAt: 'desc' },
+      select: { timeZone: true },
+    });
+    return swap?.timeZone ?? DEFAULT_SWAP_TIME_ZONE;
   }
 
   /** Who the receipt is for, however the tier chooses to lay it out. */
@@ -183,6 +206,8 @@ export class PrintRecipeService {
       phone: string | null;
       statusUrl: string;
     },
+    /** The swap's zone, which the date is given in. */
+    timeZone: string,
     /** The swap's receipt layout (Plan 36); absent for an older client's header. */
     layout?: ReceiptLayout,
   ): ReceiptHeaderData {
@@ -195,10 +220,7 @@ export class PrintRecipeService {
       orgLogoUrl: seller.orgLogoUrl,
       // Rendered at claim rather than at enqueue, so it is when the receipt
       // actually printed.
-      date: new Date().toLocaleString('en-US', {
-        month: 'short', day: 'numeric', year: 'numeric',
-        hour: 'numeric', minute: '2-digit',
-      }),
+      date: swapTimeText(new Date(), timeZone),
       sellerName: seller.name,
       phone: seller.phone ?? '',
     };

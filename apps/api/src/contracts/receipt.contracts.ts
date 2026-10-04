@@ -60,6 +60,8 @@ export interface PublicReceiptResponse {
   /** Lines with no price yet, which `totalCents` leaves out. */
   unpricedCount: number;
   createdAt: string;
+  /** The swap's zone ("America/New_York"): show `createdAt` in it, not the viewer's. */
+  timeZone: string;
   url: string;
   /** The status page this receipt links to; `layout.link` says the same, and is the answer now. */
   trackUrl: string;

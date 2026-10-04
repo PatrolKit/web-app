@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { SwapResponse } from '../../lib/api.types';
 import {
-  changes, finePrintText, formFor, receiptLinkOptions, receiptSettingsProblem, ticketSettingsProblem,
+  browserTimeZone, changes, finePrintText, formFor, otherTimeZones, receiptLinkOptions, receiptSettingsProblem,
+  ticketSettingsProblem, US_TIME_ZONES,
 } from './swapSettingsForm';
 
 const swap = {
-  id: 'swap-1', title: 'Ski Swap 2026', locationId: 'loc', slug: 'ss26', allowLegacyCheckin: false,
+  id: 'swap-1', title: 'Ski Swap 2026', locationId: 'loc', slug: 'ss26', timeZone: 'America/New_York', allowLegacyCheckin: false,
   allowPrintCheckin: true, allowLegacyWeb: false, allowPrintWeb: true, printLegacyHelperLabels: false, labelsPerItem: 1,
   skuLookupEnabled: false, sellerLookupEnabled: false, sellerLoginEnabled: false,
   receiptMode: 'ITEMIZED', receiptShowSku: true, receiptShowName: true, receiptShowPrice: true, receiptLink: 'NONE',
@@ -77,5 +78,22 @@ describe('the receipt settings (Plan 36)', () => {
   it('count fine print by its text, not its markup', () => {
     expect(finePrintText('<p><strong>All</strong> sales&nbsp;final.</p><ul><li><p>No refunds</p></li></ul>'))
       .toBe('All sales final.No refunds');
+  });
+});
+
+describe('the time zone', () => {
+  it('starts a new swap where the browser is, and keeps a saved one', () => {
+    expect(formFor(null).timeZone).toBe(browserTimeZone());
+    expect(formFor({ ...swap, timeZone: 'America/Denver' }).timeZone).toBe('America/Denver');
+  });
+
+  it('saves only when changed', () => {
+    expect(changes({ ...formFor(swap), timeZone: 'America/Chicago' }, swap)).toEqual({ timeZone: 'America/Chicago' });
+  });
+
+  it('lists the US zones once, first', () => {
+    const others = otherTimeZones();
+    expect(US_TIME_ZONES.some((z) => others.includes(z.value))).toBe(false);
+    expect(others).toContain('Europe/Zurich');
   });
 });

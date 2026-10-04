@@ -4,6 +4,7 @@ export interface SwapForm {
   title: string;
   locationId: string;
   slug: string;
+  timeZone: string;
   allowLegacyCheckin: boolean;
   allowPrintCheckin: boolean;
   allowLegacyWeb: boolean;
@@ -29,6 +30,8 @@ export function formFor(swap: SwapResponse | null): SwapForm {
     title: swap?.title ?? '',
     locationId: swap?.locationId ?? '',
     slug: swap?.slug ?? '',
+    // A new swap is wherever the person making it is, as a guess they can change.
+    timeZone: swap?.timeZone ?? browserTimeZone(),
     // A new swap takes print tickets in both places, and no legacy tickets.
     allowLegacyCheckin: swap?.allowLegacyCheckin ?? false,
     allowPrintCheckin: swap?.allowPrintCheckin ?? true,
@@ -57,7 +60,7 @@ export function formFor(swap: SwapResponse | null): SwapForm {
 export function changes(form: SwapForm, swap: SwapResponse) {
   const keys = [
     'title', 'locationId', 'slug', 'allowLegacyCheckin', 'allowPrintCheckin', 'allowLegacyWeb', 'allowPrintWeb',
-    'printLegacyHelperLabels', 'labelsPerItem', 'skuLookupEnabled', 'sellerLookupEnabled', 'sellerLoginEnabled',
+    'printLegacyHelperLabels', 'labelsPerItem', 'skuLookupEnabled', 'sellerLookupEnabled', 'sellerLoginEnabled', 'timeZone',
     'receiptMode', 'receiptShowSku', 'receiptShowName', 'receiptShowPrice', 'receiptLink',
     'receiptPrintEnabled', 'receiptPaperSize', 'receiptFinePrintEnabled', 'receiptFinePrint',
   ] as const;
@@ -109,4 +112,38 @@ export function receiptSettingsProblem(form: SwapForm): string | null {
     if (text.length > FINE_PRINT_MAX_CHARS) return `Fine print is limited to ${FINE_PRINT_MAX_CHARS.toLocaleString('en-US')} characters.`;
   }
   return null;
+}
+
+/** The zone a swap is in when nobody has said: the US ones by name, first. */
+export const US_TIME_ZONES = [
+  { value: 'America/New_York', label: 'Eastern' },
+  { value: 'America/Chicago', label: 'Central' },
+  { value: 'America/Denver', label: 'Mountain' },
+  { value: 'America/Phoenix', label: 'Arizona, no daylight saving' },
+  { value: 'America/Los_Angeles', label: 'Pacific' },
+  { value: 'America/Anchorage', label: 'Alaska' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii' },
+] as const;
+
+const DEFAULT_TIME_ZONE = 'America/New_York';
+
+/** This browser's zone, or the default where it can't say. */
+export function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIME_ZONE;
+  } catch {
+    return DEFAULT_TIME_ZONE;
+  }
+}
+
+/** Every other zone this browser knows, for a swap outside the US. */
+export function otherTimeZones(): string[] {
+  const us = new Set<string>(US_TIME_ZONES.map((z) => z.value));
+  try {
+    // ES2022, which this build's lib predates; every browser we support has it.
+    const all = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone') ?? [];
+    return all.filter((z) => !us.has(z));
+  } catch {
+    return [];
+  }
 }

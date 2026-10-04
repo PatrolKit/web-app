@@ -5,7 +5,8 @@ import type { SwapResponse } from '../../lib/api.types';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
 import { deriveSwapSlug, SWAP_SLUG_PATTERN, swapStatusUrl } from '../../lib/swapSlug';
 import {
-  changes, formFor, receiptLinkOptions, receiptSettingsProblem, ticketSettingsProblem, type SwapForm,
+  changes, formFor, otherTimeZones, receiptLinkOptions, receiptSettingsProblem, ticketSettingsProblem,
+  US_TIME_ZONES, type SwapForm,
 } from './swapSettingsForm';
 
 // The editor comes with the dialog, not with the rest of the app.
@@ -57,18 +58,19 @@ export default function SwapSettingsModal({
   }, [locations, form.locationId]);
 
   const slugValid = SWAP_SLUG_PATTERN.test(form.slug);
+  const otherZones = useMemo(otherTimeZones, []);
   const statusUrl = swapStatusUrl(SELLER_SITE_URL, orgSlug, form.slug || '…');
 
   const save = useMutation({
     mutationFn: () => {
       if (!swap) {
         const {
-          title, locationId, slug, skuLookupEnabled, sellerLookupEnabled, sellerLoginEnabled,
+          title, locationId, slug, timeZone, skuLookupEnabled, sellerLookupEnabled, sellerLoginEnabled,
           receiptMode, receiptShowSku, receiptShowName, receiptShowPrice, receiptLink,
           receiptPrintEnabled, receiptPaperSize, receiptFinePrintEnabled, receiptFinePrint,
         } = form;
         return api.skiSwap.createSwap(orgId, {
-          title, locationId, slug, skuLookupEnabled, sellerLookupEnabled, sellerLoginEnabled,
+          title, locationId, slug, timeZone, skuLookupEnabled, sellerLookupEnabled, sellerLoginEnabled,
           receiptMode, receiptShowSku, receiptShowName, receiptShowPrice, receiptLink,
           receiptPrintEnabled, receiptPaperSize, receiptFinePrintEnabled, receiptFinePrint,
         });
@@ -209,6 +211,29 @@ export default function SwapSettingsModal({
                 />
                 <span className="mt-1 block text-gray-500 text-xs break-all">
                   The swap’s public address: {statusUrl}
+                </span>
+              </label>
+
+              <label className="block">
+                <span className="text-gray-400 text-xs uppercase">Time Zone</span>
+                <select
+                  value={form.timeZone}
+                  onChange={(e) => setForm({ ...form, timeZone: e.target.value })}
+                  className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+                >
+                  <optgroup label="United States">
+                    {US_TIME_ZONES.map((z) => <option key={z.value} value={z.value}>{z.label} ({z.value})</option>)}
+                  </optgroup>
+                  <optgroup label="Elsewhere">
+                    {/* A stored zone this browser doesn't list stays chosen. */}
+                    {!US_TIME_ZONES.some((z) => z.value === form.timeZone) && !otherZones.includes(form.timeZone) && (
+                      <option value={form.timeZone}>{form.timeZone}</option>
+                    )}
+                    {otherZones.map((z) => <option key={z} value={z}>{z}</option>)}
+                  </optgroup>
+                </select>
+                <span className="mt-1 block text-gray-500 text-xs">
+                  Where the swap happens. Receipts give their check-in times in it.
                 </span>
               </label>
             </>

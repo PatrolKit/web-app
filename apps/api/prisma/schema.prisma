@@ -452,6 +452,8 @@ model SkiSwap {
   /// Optional fine print for the email and receipt page: sanitized HTML (D13).
   receiptFinePrintEnabled Boolean @default(false)
   receiptFinePrint     String?  @db.Text
+  /// IANA zone the swap happens in: receipts give their times in it.
+  timeZone             String   @default("America/New_York")
   createdBy            String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

@@ -10,6 +10,18 @@ function money(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+/** "Oct 4, 2026, 2:30 PM EDT", in the swap's zone, or the viewer's if the browser doesn't know it. */
+function checkinTime(iso: string, timeZone: string | undefined): string {
+  const options: Intl.DateTimeFormatOptions = {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  };
+  try {
+    return new Date(iso).toLocaleString('en-US', { ...options, timeZone });
+  } catch {
+    return new Date(iso).toLocaleString('en-US', options);
+  }
+}
+
 /** A line's price, or that it has none yet: a ticket priced after check-in (Plan 32). */
 function linePrice(cents: number | null): string {
   return cents === null ? 'Price to come' : money(cents);
@@ -62,9 +74,9 @@ export default function ReceiptPage() {
   const itemized = layout.mode === 'ITEMIZED';
   const itemCount = `${data.itemCount} item${data.itemCount === 1 ? '' : 's'}`;
 
-  const when = new Date(data.createdAt).toLocaleString(undefined, {
-    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
-  });
+  // In the swap's zone, and saying which: the same time the email and the
+  // printed receipt give, wherever the seller opens this.
+  const when = checkinTime(data.createdAt, data.timeZone);
 
   return (
     <Frame

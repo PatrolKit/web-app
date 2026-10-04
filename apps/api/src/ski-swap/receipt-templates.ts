@@ -1,5 +1,6 @@
 import type { ReceiptView } from './receipt.service';
 import { LINK_LABELS, type LinkKind } from './receipt-layout';
+import { swapTimeText } from './swap-time-zone';
 import { sanitizeFinePrint } from './receipt-settings';
 
 /** What each link is for, under its button (Plan 36). */
@@ -44,11 +45,6 @@ function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 }
 
-function whenText(d: Date): string {
-  return d.toLocaleString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
-  });
-}
 
 /**
  * The receipt, in the body.
@@ -211,7 +207,7 @@ export function receiptEmail(view: ReceiptView): string {
               </table>
 
               <p class="muted" style="color: #6b7280; font-size: 13px; margin: 16px 0 0;">
-                Checked in ${esc(whenText(view.createdAt))} · ${esc(view.sellerName)}
+                Checked in ${esc(swapTimeText(view.createdAt, view.timeZone))} · ${esc(view.sellerName)}
               </p>
 
               ${layout.mode === 'STATUS_ONLY' ? statusOnly : itemized}

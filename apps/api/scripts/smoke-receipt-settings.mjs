@@ -77,6 +77,12 @@ ok('a swap starts itemized, every column, no link, printing on 62 × 100, no fin
   listed.receiptLink === 'NONE' && listed.receiptPrintEnabled && listed.receiptPaperSize === '62x100' &&
   !listed.receiptFinePrintEnabled && listed.receiptFinePrint === null, JSON.stringify(listed && { mode: listed.receiptMode, link: listed.receiptLink }));
 
+ok('a swap starts in Eastern time', listed?.timeZone === 'America/New_York', listed?.timeZone);
+const badZone = await patch({ timeZone: 'Mars/Olympus' });
+ok('a zone that isn’t one is refused', badZone.status === 400, `HTTP ${badZone.status}`);
+const denver = await patch({ timeZone: 'America/Denver' });
+ok('a real zone saves', denver.ok && (await unwrap(denver)).timeZone === 'America/Denver', `HTTP ${denver.status}`);
+
 const statusNoLink = await patch({ receiptMode: 'STATUS_ONLY' });
 ok('status page only with no link is refused', statusNoLink.status === 400, `HTTP ${statusNoLink.status}`);
 const namesNothing = await patch({ receiptShowSku: false, receiptShowName: false });
@@ -114,6 +120,7 @@ ok('...linking to the seller’s status page', mintedBody.layout?.link?.kind ===
   mintedBody.layout.link.url.endsWith(`/s/${verified.profile.id}`), JSON.stringify(mintedBody.layout?.link));
 
 const page = await publicReceipt(mintedBody.token).then(unwrap);
+ok('the receipt page carries its swap’s zone', page.timeZone === 'America/Denver', page.timeZone);
 ok('the receipt page carries the layout and the fine print',
   page.layout?.show?.price === false && page.layout.finePrint?.includes('<strong>All sales final.</strong>'), JSON.stringify(page.layout));
 

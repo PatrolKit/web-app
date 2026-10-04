@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { PAYOUT_LINE_STATUSES } from './payouts.contracts';
+import { isTimeZone } from '../ski-swap/swap-time-zone';
 
 // ─── Square Config ────────────────────────────────────────────────────────────
 
@@ -44,6 +45,9 @@ const ReceiptSettingsFields = {
   receiptFinePrint: z.string().max(20000).nullable().optional(),
 };
 
+/** Where the swap happens, as an IANA zone: its receipts give times in it. */
+const SwapTimeZone = z.string().max(64).refine(isTimeZone, 'Not a time zone we know');
+
 /** The Status Page tab's three switches (Plan 33). */
 const StatusPageToggles = {
   /** Unauthenticated SKU Lookup: anyone may check one SKU's status. */
@@ -60,6 +64,8 @@ export const CreateSwapSchema = z
     locationId: z.string().min(1),
     /** Derived from the title when absent. */
     slug: SwapSlug.optional(),
+    /** America/New_York when absent. */
+    timeZone: SwapTimeZone.optional(),
     ...StatusPageToggles,
     ...ReceiptSettingsFields,
   })
@@ -84,6 +90,7 @@ export const PatchSwapSchema = z
     labelsPerItem: z.number().int().min(1).max(3).optional(),
     /** Changes the status page's address; a rename doesn't (Plan 33). */
     slug: SwapSlug.optional(),
+    timeZone: SwapTimeZone.optional(),
     ...StatusPageToggles,
     ...ReceiptSettingsFields,
   })
@@ -128,6 +135,8 @@ export const SwapResponseSchema = z.object({
   skuLookupEnabled: z.boolean(),
   sellerLookupEnabled: z.boolean(),
   sellerLoginEnabled: z.boolean(),
+  /** Where the swap happens, as an IANA zone ("America/New_York"): receipt times are given in it. */
+  timeZone: z.string(),
   /** Receipt settings (Plan 36). The iPad reads all but the fine print. */
   receiptMode: z.enum(['ITEMIZED', 'STATUS_ONLY', 'NONE']),
   receiptShowSku: z.boolean(),

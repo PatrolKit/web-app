@@ -127,7 +127,7 @@ describe('whether a receipt may print here', () => {
 const view = (layoutOver: Partial<ReceiptView['layout']> = {}): ReceiptView => ({
   id: 'r1', token: 'tok123', orgName: 'BMBWAV Ski Patrol', orgLogoUrl: null, logoImageUrl: null, swapTitle: 'Ski Swap 2026',
   sellerName: 'Dana Reyes', payoutLabel: 'Check', totalCents: 4500, itemCount: 1, unpricedCount: 0,
-  createdAt: new Date('2026-10-04T13:00:00Z'), url: 'https://skiswap.patrolkit.io/r/tok123',
+  createdAt: new Date('2026-10-04T13:00:00Z'), timeZone: 'America/New_York', url: 'https://skiswap.patrolkit.io/r/tok123',
   trackUrl: 'https://skiswap.patrolkit.io/s/seller-1', brandMarkUrl: 'https://skiswap.patrolkit.io/logo-mark.png',
   layout: { mode: 'ITEMIZED', show: { sku: true, name: true, price: true }, link: null, print: null, finePrint: null, ...layoutOver },
   lines: [{ name: 'Rossignol Skis', sku: '67169', priceCents: 4500 }],

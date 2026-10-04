@@ -92,6 +92,8 @@ export class ApiError extends Error {
 /** A swap's slug and its Status Page switches (Plan 33), on create or patch. */
 export type SwapSettingsWrite = {
   slug?: string;
+  /** An IANA zone, for the times on receipts. */
+  timeZone?: string;
   skuLookupEnabled?: boolean;
   sellerLookupEnabled?: boolean;
   sellerLoginEnabled?: boolean;
