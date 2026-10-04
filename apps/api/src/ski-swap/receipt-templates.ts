@@ -205,9 +205,9 @@ export function receiptEmail(view: ReceiptView): string {
 
               ${layout.mode === 'STATUS_ONLY' ? statusOnly : itemized}
 
-              ${payout}
-
               ${linkButton}
+
+              ${payout}
 
               ${finePrint}
 

@@ -177,6 +177,12 @@ describe('receiptEmail', () => {
   });
 
   describe('payout', () => {
+    it('comes after the status button, not before it', () => {
+      const html = receiptEmail(view());
+      expect(html.indexOf('Click here to check the status of your items'))
+        .toBeLessThan(html.indexOf('Payment goes to'));
+    });
+
     it('is a panel rather than a line of small print', () => {
       const html = receiptEmail(view({ payoutLabel: 'Venmo — @dana' }));
       expect(html).toContain('Payment goes to');

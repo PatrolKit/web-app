@@ -150,15 +150,9 @@ export default function ReceiptPage() {
         </div>
       )}
 
-      {data.payoutLabel && (
-        <p className="text-xs text-gray-500 mt-4">
-          Payment goes to <span className="text-gray-300">{data.payoutLabel}</span>
-        </p>
-      )}
-
       {/* The receipt is frozen, so the question it cannot answer — what has
           happened since — gets a way out to the page that can, when the swap
-          links to one that's on. */}
+          links to one that's on. Right under the items, above the payout. */}
       {link && (
         <a
           href={link.url}
@@ -166,6 +160,12 @@ export default function ReceiptPage() {
         >
           {RECEIPT_LINK_BUTTON}
         </a>
+      )}
+
+      {data.payoutLabel && (
+        <p className="text-xs text-gray-500 mt-4">
+          Payment goes to <span className="text-gray-300">{data.payoutLabel}</span>
+        </p>
       )}
 
       {layout.finePrint && (
