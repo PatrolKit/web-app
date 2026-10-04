@@ -112,7 +112,7 @@ type SellerRow = {
 export function toSellerResponse(
   s: SellerRow,
   smsOn: boolean,
-  receiptSwaps: { id: string; title: string }[] = [],
+  receiptSwaps: ReceiptSwap[] = [],
 ): SellerResponse {
   const u = s.membership.user;
   // Either row can carry the tombstone: a seller can be removed from the swap,
@@ -150,6 +150,10 @@ export function toSellerResponse(
   };
 }
 
+
+/** A swap a seller's receipt can be made for. */
+type ReceiptSwap = { id: string; title: string; printPaperSize: string | null };
+
 @Injectable()
 export class SellerService {
   constructor(
@@ -171,19 +175,28 @@ export class SellerService {
    * first: the swaps a receipt can be printed for. One query, whatever the
    * number of sellers.
    */
-  private async receiptSwapsFor(sellerIds: string[]): Promise<Map<string, { id: string; title: string }[]>> {
-    const bySeller = new Map<string, { id: string; title: string }[]>();
+  private async receiptSwapsFor(sellerIds: string[]): Promise<Map<string, ReceiptSwap[]>> {
+    const bySeller = new Map<string, ReceiptSwap[]>();
     if (sellerIds.length === 0) return bySeller;
     const pairs = await this.prisma.swapItem.findMany({
-      where: { sellerId: { in: sellerIds }, deletedAt: null, swap: { active: true } },
+      // Only swaps that give receipts (Plan 36 D4).
+      where: { sellerId: { in: sellerIds }, deletedAt: null, swap: { active: true, receiptMode: { not: 'NONE' } } },
       distinct: ['sellerId', 'swapId'],
-      select: { sellerId: true, swap: { select: { id: true, title: true, createdAt: true } } },
+      select: {
+        sellerId: true,
+        swap: { select: { id: true, title: true, createdAt: true, receiptPrintEnabled: true, receiptPaperSize: true } },
+      },
     });
     pairs.sort((a, b) => b.swap.createdAt.getTime() - a.swap.createdAt.getTime());
     for (const { sellerId, swap } of pairs) {
       if (!sellerId) continue;
       const list = bySeller.get(sellerId) ?? [];
-      list.push({ id: swap.id, title: swap.title });
+      list.push({
+        id: swap.id,
+        title: swap.title,
+        // The paper its receipts print on, or null when they don't print (Plan 36).
+        printPaperSize: swap.receiptPrintEnabled ? swap.receiptPaperSize : null,
+      });
       bySeller.set(sellerId, list);
     }
     return bySeller;

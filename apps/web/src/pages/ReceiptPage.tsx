@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { PublicPageHeader } from './public/PublicPageHeader';
 import { PoweredByFooter } from './public/PoweredByFooter';
+import { FinePrintCallout, RECEIPT_LINK_LABELS } from './public/receiptLayout';
 import type { PublicReceiptResponse } from '../lib/api.types';
 
 function money(cents: number): string {
@@ -22,6 +23,10 @@ function linePrice(cents: number | null): string {
  * than inlined here: that one answers "has my stuff sold?", and widening a
  * receipt link to mean the same thing is what the separate token exists to
  * avoid.
+ *
+ * What it shows follows the swap's receipt settings (Plan 36): the columns, a
+ * status-page-only receipt with no table, the link by where it goes, and the
+ * fine print. A swap that gives no receipts answers 404, as a wrong link does.
  */
 export default function ReceiptPage() {
   const { token = '' } = useParams();
@@ -52,6 +57,11 @@ export default function ReceiptPage() {
     );
   }
 
+  const { layout } = data;
+  const { show, link } = layout;
+  const itemized = layout.mode === 'ITEMIZED';
+  const itemCount = `${data.itemCount} item${data.itemCount === 1 ? '' : 's'}`;
+
   const when = new Date(data.createdAt).toLocaleString(undefined, {
     month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
   });
@@ -74,38 +84,58 @@ export default function ReceiptPage() {
         Checked in {when} · {data.sellerName}
       </p>
 
-      <ul className="mt-4 border-t border-gray-800">
-        {data.lines.map((line) => (
-          <li
-            key={line.sku}
-            className="flex items-start justify-between gap-3 py-2.5 border-b border-gray-800"
-          >
-            <span className="min-w-0">
-              <span className="block text-sm text-white">{line.name}</span>
-              <span className="block text-xs text-gray-500">{line.sku}</span>
-            </span>
-            <span className={`text-sm whitespace-nowrap ${line.priceCents === null ? 'text-gray-400' : 'font-medium text-white'}`}>
-              {linePrice(line.priceCents)}
-            </span>
-          </li>
-        ))}
-        {data.lines.length === 0 && (
-          <li className="py-3 text-sm text-gray-500 border-b border-gray-800">
-            No items were checked in.
-          </li>
-        )}
-      </ul>
+      {itemized ? (
+        <>
+          <ul className="mt-4 border-t border-gray-800">
+            {data.lines.map((line) => (
+              <li
+                key={line.sku}
+                className="flex items-start justify-between gap-3 py-2.5 border-b border-gray-800"
+              >
+                <span className="min-w-0">
+                  {show.name && <span className="block text-sm text-white">{line.name}</span>}
+                  {show.sku && (
+                    <span className={show.name ? 'block text-xs text-gray-500' : 'block text-sm text-white font-mono'}>
+                      {line.sku}
+                    </span>
+                  )}
+                </span>
+                {show.price && (
+                  <span className={`text-sm whitespace-nowrap ${line.priceCents === null ? 'text-gray-400' : 'font-medium text-white'}`}>
+                    {linePrice(line.priceCents)}
+                  </span>
+                )}
+              </li>
+            ))}
+            {data.lines.length === 0 && (
+              <li className="py-3 text-sm text-gray-500 border-b border-gray-800">
+                No items were checked in.
+              </li>
+            )}
+          </ul>
 
-      <div className="flex items-baseline justify-between pt-3">
-        <span className="text-sm text-gray-400">
-          {data.itemCount} item{data.itemCount === 1 ? '' : 's'}
-          {data.unpricedCount > 0 && ` · ${data.unpricedCount} with price to come`}
-        </span>
-        <span className="text-right">
-          {data.unpricedCount > 0 && <span className="block text-xs text-gray-500">Total of priced items</span>}
-          <span className="text-lg font-bold text-white">{money(data.totalCents)}</span>
-        </span>
-      </div>
+          <div className="flex items-baseline justify-between pt-3">
+            <span className="text-sm text-gray-400">
+              {itemCount}
+              {show.price && data.unpricedCount > 0 && ` · ${data.unpricedCount} with price to come`}
+            </span>
+            {/* Price off takes the total with it. */}
+            {show.price && (
+              <span className="text-right">
+                {data.unpricedCount > 0 && <span className="block text-xs text-gray-500">Total of priced items</span>}
+                <span className="text-lg font-bold text-white">{money(data.totalCents)}</span>
+              </span>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="mt-4 text-center">
+          <p className="text-white">Your {itemCount} {data.itemCount === 1 ? 'is' : 'are'} checked in.</p>
+          {/* The page linked to has been turned off since: say so rather
+              than leave the receipt blank. */}
+          {!link && <p className="mt-1 text-sm text-gray-500">The swap’s status page isn’t available right now.</p>}
+        </div>
+      )}
 
       {data.payoutLabel && (
         <p className="text-xs text-gray-500 mt-4">
@@ -114,13 +144,25 @@ export default function ReceiptPage() {
       )}
 
       {/* The receipt is frozen, so the question it cannot answer — what has
-          happened since — gets a way out to the page that can. */}
-      <a
-        href={data.trackUrl}
-        className="block text-center bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg py-3 mt-6"
-      >
-        Track your items
-      </a>
+          happened since — gets a way out to the page that can, when the swap
+          links to one that's on. */}
+      {link && (
+        <>
+          <a
+            href={link.url}
+            className="block text-center bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg py-3 mt-6"
+          >
+            {RECEIPT_LINK_LABELS[link.kind].button}
+          </a>
+          <p className="mt-2 text-center text-xs text-gray-500">{RECEIPT_LINK_LABELS[link.kind].caption}</p>
+        </>
+      )}
+
+      {layout.finePrint && (
+        <div className="mt-6">
+          <FinePrintCallout html={layout.finePrint} />
+        </div>
+      )}
 
       <p className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-800">
         This is a record of what you dropped off. It does not change as items sell.

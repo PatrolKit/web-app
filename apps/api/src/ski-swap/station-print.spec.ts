@@ -47,7 +47,11 @@ function harness(opts: {
     },
     skiSwap: {
       findFirst: async ({ where }: { where: { id: string } }) =>
-        where.id === 'swap-1' ? { allowPrintCheckin: !opts.noPrintCheckin, printLegacyHelperLabels: opts.helperLabelsOn ?? true } : null,
+        where.id === 'swap-1' ? {
+          allowPrintCheckin: !opts.noPrintCheckin, printLegacyHelperLabels: opts.helperLabelsOn ?? true,
+          // Receipts on whatever the station is loaded with (Plan 36).
+          receiptMode: 'ITEMIZED', receiptPrintEnabled: true, receiptPaperSize: paperSize ?? '62x100',
+        } : null,
     },
     swapItem: { findFirst: async ({ where }: { where: { id: string } }) => (where.id === 'item-1' ? { id: 'item-1' } : null) },
     sellerProfile: { findFirst: async ({ where }: { where: { id: string } }) => (where.id === 'seller-1' ? { id: 'seller-1' } : null) },

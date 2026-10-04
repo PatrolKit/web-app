@@ -13,6 +13,8 @@ import {
   type ItemLabelData,
   type ReceiptHeaderData,
   type ReceiptItemLine,
+  type ReceiptColumns,
+  ALL_COLUMNS,
   calibrationPattern,
   type HelperLabelData,
   drawHelperItem,
@@ -114,6 +116,8 @@ export class LabelRendererService {
     data: ReceiptHeaderData,
     items: ReceiptItemLine[],
     target: PrintTarget = DEFAULT_TARGET,
+    /** Columns and whether items are listed (Plan 36); everything, by default. */
+    layout: { show: ReceiptColumns; statusOnly: boolean } = { show: ALL_COLUMNS, statusOnly: false },
   ): Promise<boolean[][][]> {
     const totalCents = items.reduce((sum, i) => sum + (i.priceCents ?? 0), 0);
     const unpricedCount = items.filter((i) => i.priceCents === null).length;
@@ -130,6 +134,7 @@ export class LabelRendererService {
           ({ rowsDrawn: drawnThisPage } = await drawTallReceipt(
             ctx, w, h, data, items.slice(offset),
             { index, itemCount: items.length, totalCents, unpricedCount },
+            layout,
           ));
         }, target),
       );
@@ -152,6 +157,7 @@ export class LabelRendererService {
   async receiptItems(
     items: ReceiptItemLine[],
     target: PrintTarget = DEFAULT_TARGET,
+    show: ReceiptColumns = ALL_COLUMNS,
   ): Promise<boolean[][][]> {
     // Here as well as in `compose`: an empty list never reaches it, and would
     // otherwise answer "no pages" for stock that cannot take any.
@@ -163,7 +169,7 @@ export class LabelRendererService {
       let drawnThisPage = 0;
       pages.push(
         await this.compose((ctx, w, h) => {
-          drawnThisPage = drawReceiptItems(ctx, w, h, items.slice(offset), isFirst).rowsDrawn;
+          drawnThisPage = drawReceiptItems(ctx, w, h, items.slice(offset), isFirst, show).rowsDrawn;
         }, target),
       );
       // A single item too tall to fit would otherwise loop forever.

@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { SquareClientService } from './square-client.service';
 import { deriveSkuPrefix, deriveSwapSlug } from './sku.util';
+import { assertReceiptSettings, sanitizeFinePrint, type ReceiptSettings } from './receipt-settings';
 import { isUniqueViolation } from '../common/util/prisma-errors';
 import { createId } from '@paralleldrive/cuid2';
 import { v4 as uuidv4 } from 'uuid';
@@ -45,8 +46,9 @@ export class SwapService {
     extras: {
       slug?: string;
       skuLookupEnabled?: boolean; sellerLookupEnabled?: boolean; sellerLoginEnabled?: boolean;
-    } = {},
+    } & Partial<ReceiptSettings> = {},
   ): Promise<SwapResponse> {
+    const receipt = receiptSettingsAfter(DEFAULT_RECEIPT_SETTINGS, extras);
     const client = await this.squareOrExplain(orgId, 'creating a swap');
 
     // A slug someone typed is theirs or refused; a derived one is made unique.
@@ -80,6 +82,7 @@ export class SwapService {
         skuLookupEnabled: extras.skuLookupEnabled ?? false,
         sellerLookupEnabled: extras.sellerLookupEnabled ?? false,
         sellerLoginEnabled: extras.sellerLoginEnabled ?? false,
+        ...receipt,
         labelsPerItem: previous?.labelsPerItem ?? 1,
         createdBy: actorId,
       },
@@ -102,9 +105,11 @@ export class SwapService {
       allowLegacyCheckin?: boolean; allowLegacyWeb?: boolean; allowPrintCheckin?: boolean; allowPrintWeb?: boolean;
       printLegacyHelperLabels?: boolean; labelsPerItem?: number;
       slug?: string; skuLookupEnabled?: boolean; sellerLookupEnabled?: boolean; sellerLoginEnabled?: boolean;
-    },
+    } & Partial<ReceiptSettings>,
   ): Promise<SwapResponse> {
     const swap = await this.findOrThrow(orgId, swapId);
+    // Judged as they'll stand after this write (Plan 36).
+    const receipt = receiptSettingsAfter(swap, data);
     if (data.slug !== undefined && data.slug !== swap.slug) await this.assertSlugFree(orgId, data.slug, swapId);
 
     // How items come in once this patch lands (Plan 34). Each place takes at
@@ -205,6 +210,7 @@ export class SwapService {
           ...(data.skuLookupEnabled !== undefined ? { skuLookupEnabled: data.skuLookupEnabled } : {}),
           ...(data.sellerLookupEnabled !== undefined ? { sellerLookupEnabled: data.sellerLookupEnabled } : {}),
           ...(data.sellerLoginEnabled !== undefined ? { sellerLoginEnabled: data.sellerLoginEnabled } : {}),
+          ...receipt,
           activeSkuPrefix: willBeActive ? newSkuPrefix : null,
         },
       })
@@ -402,7 +408,7 @@ export class SwapService {
     sellerLoginEnabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-  }): SwapResponse {
+  } & ReceiptSettings): SwapResponse {
     return {
       id: swap.id,
       orgId: swap.orgId,
@@ -421,6 +427,15 @@ export class SwapService {
       skuLookupEnabled: swap.skuLookupEnabled,
       sellerLookupEnabled: swap.sellerLookupEnabled,
       sellerLoginEnabled: swap.sellerLoginEnabled,
+      receiptMode: swap.receiptMode as SwapResponse['receiptMode'],
+      receiptShowSku: swap.receiptShowSku,
+      receiptShowName: swap.receiptShowName,
+      receiptShowPrice: swap.receiptShowPrice,
+      receiptLink: swap.receiptLink as SwapResponse['receiptLink'],
+      receiptPrintEnabled: swap.receiptPrintEnabled,
+      receiptPaperSize: swap.receiptPaperSize as SwapResponse['receiptPaperSize'],
+      receiptFinePrintEnabled: swap.receiptFinePrintEnabled,
+      receiptFinePrint: swap.receiptFinePrint,
       createdAt: swap.createdAt.toISOString(),
       updatedAt: swap.updatedAt.toISOString(),
     };
@@ -431,4 +446,36 @@ export class SwapService {
 function uniqueTarget(err: unknown): string {
   const target = (err as { meta?: { target?: unknown } }).meta?.target;
   return Array.isArray(target) ? target.join(',') : String(target ?? '');
+}
+
+/** A new swap's receipt settings (Plan 36 D9). */
+const DEFAULT_RECEIPT_SETTINGS: ReceiptSettings = {
+  receiptMode: 'ITEMIZED', receiptShowSku: true, receiptShowName: true, receiptShowPrice: true,
+  receiptLink: 'NONE', receiptPrintEnabled: true, receiptPaperSize: '62x100',
+  receiptFinePrintEnabled: false, receiptFinePrint: null,
+};
+
+/**
+ * The receipt settings once a write lands: the current ones, overlaid with
+ * what was sent, fine print sanitized. Refused if they can't make a receipt.
+ */
+function receiptSettingsAfter(current: ReceiptSettings, sent: Partial<ReceiptSettings>): ReceiptSettings {
+  const next: ReceiptSettings = { ...pickReceiptSettings(current) };
+  for (const key of Object.keys(DEFAULT_RECEIPT_SETTINGS) as (keyof ReceiptSettings)[]) {
+    if (sent[key] !== undefined) (next as unknown as Record<string, unknown>)[key] = sent[key];
+  }
+  if (sent.receiptFinePrint !== undefined) {
+    next.receiptFinePrint = sent.receiptFinePrint === null ? null : sanitizeFinePrint(sent.receiptFinePrint) || null;
+  }
+  assertReceiptSettings(next);
+  return next;
+}
+
+function pickReceiptSettings(s: ReceiptSettings): ReceiptSettings {
+  return {
+    receiptMode: s.receiptMode, receiptShowSku: s.receiptShowSku, receiptShowName: s.receiptShowName,
+    receiptShowPrice: s.receiptShowPrice, receiptLink: s.receiptLink, receiptPrintEnabled: s.receiptPrintEnabled,
+    receiptPaperSize: s.receiptPaperSize, receiptFinePrintEnabled: s.receiptFinePrintEnabled,
+    receiptFinePrint: s.receiptFinePrint,
+  };
 }

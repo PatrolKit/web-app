@@ -302,7 +302,7 @@ export function PrinterProvider({ orgId, userId, isSeller, canPrint, children }:
     // Header first, then the item pages. Two calls rather than one because the
     // header is a single label and the item list paginates; keeping them apart
     // means a long receipt does not re-render the header per page.
-    await renderAndPrint(target.printer.id, target.conn, { kind: 'receipt_header', sellerId });
+    await renderAndPrint(target.printer.id, target.conn, { kind: 'receipt_header', sellerId, swapId });
     await renderAndPrint(target.printer.id, target.conn, { kind: 'receipt_items', sellerId, swapId });
   }, [previewMode, renderAndPrint, resolveTarget]);
 

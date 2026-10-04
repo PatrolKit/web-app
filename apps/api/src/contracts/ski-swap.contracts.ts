@@ -30,6 +30,20 @@ const SwapSlug = z
   .toLowerCase()
   .regex(/^[a-z0-9-]{1,40}$/, 'A slug is up to 40 lowercase letters, digits and hyphens');
 
+/** The Receipts tab (Plan 36). Which combinations are legal is the service's to say. */
+const ReceiptSettingsFields = {
+  receiptMode: z.enum(['ITEMIZED', 'STATUS_ONLY', 'NONE']).optional(),
+  receiptShowSku: z.boolean().optional(),
+  receiptShowName: z.boolean().optional(),
+  receiptShowPrice: z.boolean().optional(),
+  receiptLink: z.enum(['NONE', 'SKU_LOOKUP', 'SELLER_STATUS', 'SELLER_LOGIN']).optional(),
+  receiptPrintEnabled: z.boolean().optional(),
+  receiptPaperSize: z.enum(['62x100', '50x30']).optional(),
+  receiptFinePrintEnabled: z.boolean().optional(),
+  /** HTML; sanitized to a small subset on save. Generous here, the 2,000-character text limit is the service's. */
+  receiptFinePrint: z.string().max(20000).nullable().optional(),
+};
+
 /** The Status Page tab's three switches (Plan 33). */
 const StatusPageToggles = {
   /** Unauthenticated SKU Lookup: anyone may check one SKU's status. */
@@ -47,6 +61,7 @@ export const CreateSwapSchema = z
     /** Derived from the title when absent. */
     slug: SwapSlug.optional(),
     ...StatusPageToggles,
+    ...ReceiptSettingsFields,
   })
   .strict();
 
@@ -70,6 +85,7 @@ export const PatchSwapSchema = z
     /** Changes the status page's address; a rename doesn't (Plan 33). */
     slug: SwapSlug.optional(),
     ...StatusPageToggles,
+    ...ReceiptSettingsFields,
   })
   .strict()
   // Counted rather than named, so a field added above cannot be silently
@@ -112,6 +128,16 @@ export const SwapResponseSchema = z.object({
   skuLookupEnabled: z.boolean(),
   sellerLookupEnabled: z.boolean(),
   sellerLoginEnabled: z.boolean(),
+  /** Receipt settings (Plan 36). The iPad reads all but the fine print. */
+  receiptMode: z.enum(['ITEMIZED', 'STATUS_ONLY', 'NONE']),
+  receiptShowSku: z.boolean(),
+  receiptShowName: z.boolean(),
+  receiptShowPrice: z.boolean(),
+  receiptLink: z.enum(['NONE', 'SKU_LOOKUP', 'SELLER_STATUS', 'SELLER_LOGIN']),
+  receiptPrintEnabled: z.boolean(),
+  receiptPaperSize: z.enum(['62x100', '50x30']),
+  receiptFinePrintEnabled: z.boolean(),
+  receiptFinePrint: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -251,7 +277,12 @@ export const SellerResponseSchema = z.object({
    * The active swaps this seller has items in: what a receipt can be printed
    * for. Empty when there are none, and the staff list then offers no receipt.
    */
-  receiptSwaps: z.array(z.object({ id: z.string(), title: z.string() })),
+  receiptSwaps: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    /** The paper its receipts print on, or null when it doesn't print them (Plan 36). */
+    printPaperSize: z.string().nullable(),
+  })),
   /**
    * Set once the seller has been removed, from the swap or from the org.
    * Returned only to a caller passing `updatedSince` — a soft removal exists so

@@ -9,6 +9,7 @@ import { geometryOf, type PrintTarget } from './printing/geometry';
 import type { HelperLabelData } from './printing/label-templates';
 import type { StationPrintKind, StationPrintRequest, StationQueueResponse } from '../contracts/ski-swap.contracts';
 import { TelemetryService } from '../telemetry/telemetry.service';
+import { receiptPrintRefusal } from './receipt-layout';
 
 /** How long a claimed job is held before it returns to the queue. */
 const CLAIM_SECONDS = 90;
@@ -302,6 +303,13 @@ export class PrintQueueService {
     // A side effect of finishing a check-in: skipped, never refused. The
     // emailed receipt still goes.
     if (this.helperOnly(station)) return;
+    // Nor while the swap's settings refuse it: no receipts, printing off, or
+    // other paper at this printer (Plan 36).
+    const swap = await this.prisma.skiSwap.findFirst({
+      where: { id: params.swapId, orgId: params.orgId },
+      select: { receiptMode: true, receiptPrintEnabled: true, receiptPaperSize: true },
+    });
+    if (!swap || receiptPrintRefusal(swap, station.bridge?.bridgedPrinter?.paperSize ?? null)) return;
     const base = {
       orgId: params.orgId,
       stationId: station.id,
@@ -425,7 +433,10 @@ export class PrintQueueService {
 
     const swap = await this.prisma.skiSwap.findFirst({
       where: { id: request.swapId, orgId },
-      select: { allowPrintCheckin: true, printLegacyHelperLabels: true },
+      select: {
+        allowPrintCheckin: true, printLegacyHelperLabels: true,
+        receiptMode: true, receiptPrintEnabled: true, receiptPaperSize: true,
+      },
     });
     if (!swap) throw new NotFoundException('Swap not found');
     // A station is staff check-in, so its tags follow check-in's setting (Plan 34).
@@ -457,6 +468,13 @@ export class PrintQueueService {
       );
     }
     this.assertPrinterReady(station, bridge);
+
+    // A receipt the iPad drew is refused for the swap's settings too (Plan 36),
+    // after the printer's own refusals, which a person can fix on the spot.
+    if (request.kind === 'receipt') {
+      const refusal = receiptPrintRefusal(swap, printer?.paperSize ?? null);
+      if (refusal) throw new ConflictException(refusal);
+    }
 
     // For the record. Only a tag is tied to its item: acknowledging a job with
     // an item marks that item's tag printed, which a receipt must not do.

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faEnvelopeOpenText as faEnvelopeOpenTextDuo,
@@ -27,7 +28,22 @@ export default function LoginPage() {
   // Texting off (Plan 29): email is the only way in, and the page says nothing
   // about phones at all.
   const { sms } = useFeatures();
-  const active: Channel = sms ? channel : 'email';
+  // Signing in from a receipt (Plan 36 D3): `?r=` is the receipt's token. The
+  // server says whose verified email it would send to, masked, and the email
+  // itself never reaches this page. A wrong or retired token is a 404, and the
+  // page is the ordinary one.
+  const [params] = useSearchParams();
+  const receiptToken = params.get('r') ?? '';
+  const [skipReceipt, setSkipReceipt] = useState(false);
+  const receiptHint = useQuery({
+    queryKey: ['public/receipt-sign-in', receiptToken],
+    queryFn: () => api.public.receiptSignIn(receiptToken),
+    enabled: !!receiptToken,
+    retry: false,
+    staleTime: Infinity,
+  });
+  const emailHint = !skipReceipt ? receiptHint.data?.emailHint : undefined;
+  const active: Channel = sms && !emailHint ? channel : 'email';
 
   // If the silent refresh already restored a session, skip the login page
   if (!isLoading && user) return <Navigate to="/dashboard" replace />;
@@ -44,6 +60,22 @@ export default function LoginPage() {
       // from success, so the page says the same thing either way.
       setChallengeId(res.challengeId);
       setDevCode(res.devCode);
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleReceiptRequest() {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await api.auth.login({ receiptToken });
+      setChallengeId(res.challengeId);
+      setDevCode(res.devCode);
+      setContact(emailHint ?? '');
       setSent(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
@@ -132,13 +164,62 @@ export default function LoginPage() {
             )}
 
             <button
-              onClick={() => { setSent(false); setCode(''); setError(''); }}
+              onClick={() => {
+                setSent(false); setCode(''); setError('');
+                if (emailHint) { setSkipReceipt(true); setContact(''); }
+              }}
               className="mt-6 w-full text-center text-sm text-gray-400 hover:text-white"
             >
               Use a different {active === 'email' ? 'email' : 'number'}
             </button>
           </div>
           <PoweredByFooter />
+        </div>
+      </div>
+    );
+  }
+
+  // Asking the server whose receipt this is: a moment, not a form that
+  // changes under the seller's finger.
+  if (receiptToken && !skipReceipt && receiptHint.isLoading) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center px-4 py-10">
+        <p className="text-sm text-gray-500">Loading…</p>
+      </div>
+    );
+  }
+
+  if (emailHint) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center px-4 py-10">
+        <div className="max-w-md w-full bg-surface-50 rounded-xl p-8">
+          <div className="mb-7 text-center">
+            <img src="/logo-mark.png" alt="" className="mx-auto mb-3 h-14 w-14" />
+            <h1 className="text-3xl font-bold">
+              <span className="text-brand-600">Patrol</span>Kit
+            </h1>
+            <p className="text-gray-400 text-sm mt-1.5">Sign in to see your items</p>
+          </div>
+          <p className="text-center text-sm text-gray-400">Sign in as</p>
+          <p className="my-3 rounded-lg border border-gray-700 bg-surface-100 px-4 py-2.5 text-center text-white font-medium break-all">
+            {emailHint}
+          </p>
+          {error && <p className="mb-3 text-red-400 text-sm">{error}</p>}
+          <button
+            type="button"
+            onClick={() => void handleReceiptRequest()}
+            disabled={loading}
+            className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold rounded-lg px-4 py-3"
+          >
+            {loading ? 'Sending…' : 'Send sign-in link'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSkipReceipt(true); setError(''); }}
+            className="mt-6 w-full text-center text-sm text-gray-400 hover:text-white"
+          >
+            Sign in another way
+          </button>
         </div>
       </div>
     );

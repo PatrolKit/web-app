@@ -25,7 +25,7 @@ export default function PrintReceiptModal({ seller, initialSwapId, onClose }: Pr
     swaps.find((s) => s.id === initialSwapId)?.id ?? swaps[0]?.id ?? null,
   );
   const { sms } = useFeatures();
-  const { printReceipt } = usePrinter();
+  const { printReceipt, preferredPrinter } = usePrinter();
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -33,6 +33,13 @@ export default function PrintReceiptModal({ seller, initialSwapId, onClose }: Pr
   const [sent, setSent] = useState<{ destination: string; status: string } | null>(null);
 
   const enabled = !!seller && !!swapId;
+  // The swap's printing rules (Plan 36): off means no Print at all; on means
+  // only a printer loaded with its paper.
+  const swap = swaps.find((s) => s.id === swapId) ?? null;
+  const printPaper = swap?.printPaperSize ?? null;
+  const paperMismatch = !!printPaper && !!preferredPrinter && preferredPrinter.paperSize !== printPaper
+    ? `This swap prints receipts on ${paperLabel(printPaper)} mm labels; this printer has ${paperLabel(preferredPrinter.paperSize)}.`
+    : null;
 
   const { data: itemsData, isLoading: itemsLoading, error: itemsError } = useQuery({
     queryKey: ['ski-swap/items', orgId, swapId, seller?.id],
@@ -132,13 +139,18 @@ export default function PrintReceiptModal({ seller, initialSwapId, onClose }: Pr
           )}
         </div>
 
-        <button
-          onClick={handlePrint}
-          disabled={printing || isLoading || !swapId}
-          className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white py-2 rounded text-sm font-medium"
-        >
-          {printing ? 'Printing…' : 'Print Receipt'}
-        </button>
+        {printPaper && (
+          <>
+            <button
+              onClick={handlePrint}
+              disabled={printing || isLoading || !swapId || !!paperMismatch}
+              className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white py-2 rounded text-sm font-medium"
+            >
+              {printing ? 'Printing…' : 'Print Receipt'}
+            </button>
+            {paperMismatch && <p className="text-xs text-center text-amber-400">{paperMismatch}</p>}
+          </>
+        )}
 
         {/* Paper and a copy are the same receipt, which is why they sit
             together: this modal already answers "what is on it". */}
@@ -193,4 +205,9 @@ export default function PrintReceiptModal({ seller, initialSwapId, onClose }: Pr
       </div>
     </div>
   );
+}
+
+/** "62x100" as people say it: "62 × 100". */
+function paperLabel(size: string): string {
+  return size.replace('x', ' × ');
 }

@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { receiptPrintRefusal } from '../receipt-layout';
 import { PrinterService } from '../printer.service';
 import { LabelRendererService } from './label-renderer.service';
 import { PrintRecipeService, printTargetFor, type PrintRecipeKind } from './print-recipe.service';
@@ -14,6 +16,7 @@ import type { RenderLabelResponse } from '../../contracts/ski-swap.contracts';
 @Injectable()
 export class LabelRenderService {
   constructor(
+    private readonly prisma: PrismaService,
     private readonly printers: PrinterService,
     private readonly recipes: PrintRecipeService,
     private readonly renderer: LabelRendererService,
@@ -33,6 +36,18 @@ export class LabelRenderService {
   ): Promise<RenderLabelResponse> {
     const printer = await this.printers.assertPrinterAccess(orgId, printerId, userId);
     const target = printTargetFor(printer);
+
+    // A receipt asked for here is refused, with the reason, when the swap's
+    // settings don't let it print on this printer (Plan 36). The claim path
+    // settles one quietly instead; a person pressed this.
+    if ((body.kind === 'receipt_header' || body.kind === 'receipt_items') && body.swapId) {
+      const swap = await this.prisma.skiSwap.findFirst({
+        where: { id: body.swapId, orgId },
+        select: { receiptMode: true, receiptPrintEnabled: true, receiptPaperSize: true },
+      });
+      const refusal = swap ? receiptPrintRefusal(swap, target.size.id) : null;
+      if (refusal) throw new ConflictException(refusal);
+    }
 
     const pages = await this.recipes.resolve(
       orgId,

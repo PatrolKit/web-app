@@ -18,6 +18,7 @@ import {
   parsePriceCents, primaryButtonClass, secondaryButtonClass,
 } from './shared';
 import type { CheckinContext, CheckinSummary } from '../../lib/api.types';
+import type { CheckinFinished } from './FinishStep';
 
 /**
  * A key unique to one save attempt.
@@ -64,7 +65,7 @@ export default function ItemsStep({
   onFinished,
 }: {
   context: CheckinContext;
-  onFinished: (result: { awaitingConsignment: number; emailedTo: string | null }) => void;
+  onFinished: (result: CheckinFinished) => void;
 }) {
   const qc = useQueryClient();
   const summaryKey = ['checkin/summary', context.orgId, context.swapId];
@@ -212,12 +213,21 @@ export default function ItemsStep({
       onFinished({
         awaitingConsignment: result.awaitingConsignment,
         emailedTo: result.emailedTo,
+        receipt: result.receipt,
+        receiptPrinted: result.receiptPrinted,
+        receiptPrintRefusal: result.receiptPrintRefusal,
+        receiptLink: result.receiptLink,
       });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not finish check-in');
       setFinishing(false);
     }
   }
+
+  // "Print my receipt" only where one will print (Plan 36).
+  const finishLabel = context.receiptPrints
+    ? (finishing ? 'Printing your receipt…' : "I'm done — print my receipt")
+    : (finishing ? 'Finishing…' : "I'm done");
 
   const items = summary?.items ?? [];
   // The snapshot names it; the summary says whether its tag has come out yet.
@@ -275,7 +285,7 @@ export default function ItemsStep({
             Add another item
           </button>
           <button className={finishButtonClass} disabled={finishing} onClick={finish}>
-            {finishing ? 'Printing your receipt…' : "I'm done — print my receipt"}
+            {finishLabel}
           </button>
         </div>
       ) : (
@@ -422,7 +432,7 @@ export default function ItemsStep({
               question asked twice. */}
           {!added && (
             <button className={primaryButtonClass} disabled={finishing} onClick={finish}>
-              {finishing ? 'Printing your receipt…' : "I'm done — print my receipt"}
+              {finishLabel}
             </button>
           )}
         </div>

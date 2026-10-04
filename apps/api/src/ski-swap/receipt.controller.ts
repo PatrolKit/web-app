@@ -162,4 +162,10 @@ export class PublicReceiptController {
   get(@Param('token') token: string) {
     return this.receipts.byToken(token);
   }
+
+  /** The sign-in page's hint, from a receipt's "Sign in to see your items" link (Plan 36). */
+  @Get(':token/sign-in')
+  signIn(@Param('token') token: string) {
+    return this.receipts.signInHint(token);
+  }
 }

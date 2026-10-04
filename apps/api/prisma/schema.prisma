@@ -436,6 +436,22 @@ model SkiSwap {
   sellerLookupEnabled  Boolean  @default(false)
   /// Authenticated Seller Status: an individual seller here may sign in.
   sellerLoginEnabled   Boolean  @default(false)
+  /// What a seller's receipt is (Plan 36): ITEMIZED, STATUS_ONLY or NONE.
+  receiptMode          String   @default("ITEMIZED")
+  /// An itemized receipt's columns. SKU or name must stay on (D7).
+  receiptShowSku       Boolean  @default(true)
+  receiptShowName      Boolean  @default(true)
+  receiptShowPrice     Boolean  @default(true)
+  /// Which status page a receipt links to: NONE, SKU_LOOKUP, SELLER_STATUS or
+  /// SELLER_LOGIN. Resolved when the receipt is shown; a page that's since
+  /// been turned off gives no link (D2).
+  receiptLink          String   @default("NONE")
+  /// Whether receipts are printed at all, and on which stock: 62x100 or 50x30.
+  receiptPrintEnabled  Boolean  @default(true)
+  receiptPaperSize     String   @default("62x100")
+  /// Optional fine print for the email and receipt page: sanitized HTML (D13).
+  receiptFinePrintEnabled Boolean @default(false)
+  receiptFinePrint     String?  @db.Text
   createdBy            String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

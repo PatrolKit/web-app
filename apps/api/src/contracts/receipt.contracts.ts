@@ -61,5 +61,9 @@ export interface PublicReceiptResponse {
   unpricedCount: number;
   createdAt: string;
   url: string;
+  /** The status page this receipt links to; `layout.link` says the same, and is the answer now. */
+  trackUrl: string;
+  /** What the receipt shows, per its swap's settings now (Plan 36). */
+  layout: import('../ski-swap/receipt-layout').ReceiptLayout;
   lines: PublicReceiptLine[];
 }

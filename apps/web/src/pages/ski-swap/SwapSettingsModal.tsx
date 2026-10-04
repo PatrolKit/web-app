@@ -1,17 +1,22 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
 import type { SwapResponse } from '../../lib/api.types';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
 import { deriveSwapSlug, SWAP_SLUG_PATTERN, swapStatusUrl } from '../../lib/swapSlug';
-import { changes, formFor, ticketSettingsProblem, type SwapForm } from './swapSettingsForm';
+import {
+  changes, formFor, receiptLinkOptions, receiptSettingsProblem, ticketSettingsProblem, type SwapForm,
+} from './swapSettingsForm';
 
-type Tab = 'general' | 'tickets' | 'status';
+// The editor comes with the dialog, not with the rest of the app.
+const FinePrintEditor = lazy(() => import('./FinePrintEditor'));
+
+type Tab = 'general' | 'tickets' | 'status' | 'receipts';
 
 /**
- * A swap's settings, in a dialog with three tabs (Plan 33): General, Tickets
- * (once the swap exists, as before) and Status Page. One Save sends what
- * changed.
+ * A swap's settings, in a dialog with four tabs (Plans 33 and 36): General,
+ * Tickets (once the swap exists, as before), Status Page and Receipts. One
+ * Save sends what changed.
  */
 export default function SwapSettingsModal({
   orgId,
@@ -57,8 +62,16 @@ export default function SwapSettingsModal({
   const save = useMutation({
     mutationFn: () => {
       if (!swap) {
-        const { title, locationId, slug, skuLookupEnabled, sellerLookupEnabled, sellerLoginEnabled } = form;
-        return api.skiSwap.createSwap(orgId, { title, locationId, slug, skuLookupEnabled, sellerLookupEnabled, sellerLoginEnabled });
+        const {
+          title, locationId, slug, skuLookupEnabled, sellerLookupEnabled, sellerLoginEnabled,
+          receiptMode, receiptShowSku, receiptShowName, receiptShowPrice, receiptLink,
+          receiptPrintEnabled, receiptPaperSize, receiptFinePrintEnabled, receiptFinePrint,
+        } = form;
+        return api.skiSwap.createSwap(orgId, {
+          title, locationId, slug, skuLookupEnabled, sellerLookupEnabled, sellerLoginEnabled,
+          receiptMode, receiptShowSku, receiptShowName, receiptShowPrice, receiptLink,
+          receiptPrintEnabled, receiptPaperSize, receiptFinePrintEnabled, receiptFinePrint,
+        });
       }
       return api.skiSwap.patchSwap(orgId, swap.id, changes(form, swap));
     },
@@ -98,6 +111,7 @@ export default function SwapSettingsModal({
     // Once the swap exists, as before: a new swap starts on printed tags.
     ...(swap ? [{ key: 'tickets' as const, label: 'Tickets' }] : []),
     { key: 'status', label: 'Status Page' },
+    { key: 'receipts', label: 'Receipts' },
   ];
 
   return (
@@ -248,13 +262,15 @@ export default function SwapSettingsModal({
             </>
           )}
 
+          {tab === 'receipts' && <ReceiptSettings form={form} setForm={setForm} />}
+
           {error && error.tab === tab && <p className="text-sm text-red-400">{error.message}</p>}
         </div>
 
         <div className="flex gap-2 px-5 py-4 shrink-0 border-t border-gray-700">
           <button
             type="submit"
-            disabled={save.isPending || !form.locationId || !form.title.trim() || !form.slug || !!ticketSettingsProblem(form)}
+            disabled={save.isPending || !form.locationId || !form.title.trim() || !form.slug || !!ticketSettingsProblem(form) || !!receiptSettingsProblem(form)}
             className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
           >
             {save.isPending ? 'Saving…' : swap ? 'Save' : 'Create'}
@@ -384,5 +400,182 @@ function TicketSettings({ form, setForm }: { form: SwapForm; setForm: (f: SwapFo
         </span>
       </div>
     </>
+  );
+}
+
+const RECEIPT_LINK_NONE_LABEL = 'No link';
+
+/**
+ * What a seller's receipt is (Plan 36): itemized, a status page only, or none;
+ * whether it prints, and on what; and its fine print. The link follows the
+ * Status Page tab's toggles as they stand in this dialog.
+ */
+function ReceiptSettings({ form, setForm }: { form: SwapForm; setForm: (f: SwapForm) => void }) {
+  const problem = receiptSettingsProblem(form);
+  const options = receiptLinkOptions(form);
+  const noPages = options.length === 0;
+  const giving = form.receiptMode !== 'NONE';
+
+  const linkPicker = (
+    <label className="block pl-7">
+      <span className="block text-sm text-white">Link to status page</span>
+      <select
+        value={form.receiptLink}
+        disabled={noPages}
+        onChange={(e) => setForm({ ...form, receiptLink: e.target.value as SwapForm['receiptLink'] })}
+        className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white disabled:opacity-50"
+      >
+        {form.receiptMode !== 'STATUS_ONLY' && <option value="NONE">{RECEIPT_LINK_NONE_LABEL}</option>}
+        {/* A stored choice whose page is now off stays chosen, and says so. */}
+        {form.receiptLink !== 'NONE' && !options.some((o) => o.value === form.receiptLink) && (
+          <option value={form.receiptLink}>{LINK_NAMES[form.receiptLink]} (off)</option>
+        )}
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {noPages ? (
+        <span className="mt-1 block text-gray-500 text-xs">Turn on a status page to link to it.</span>
+      ) : form.receiptLink !== 'NONE' && !options.some((o) => o.value === form.receiptLink) ? (
+        <span className="mt-1 block text-amber-400 text-xs">That page is off, so receipts show no link.</span>
+      ) : null}
+    </label>
+  );
+
+  function setMode(receiptMode: SwapForm['receiptMode']) {
+    // Status page only needs a page: pick the first one on if none is chosen.
+    const receiptLink = receiptMode === 'STATUS_ONLY' && form.receiptLink === 'NONE' && options.length
+      ? options[0].value
+      : form.receiptLink;
+    setForm({ ...form, receiptMode, receiptLink });
+  }
+
+  return (
+    <>
+      <div className="space-y-3" role="radiogroup" aria-label="Receipt">
+        <Radio
+          checked={form.receiptMode === 'ITEMIZED'}
+          onChange={() => setMode('ITEMIZED')}
+          title="Itemized"
+          description="A line for each item checked in."
+        />
+        {form.receiptMode === 'ITEMIZED' && (
+          <>
+            <Toggle
+              indent={1}
+              checked={form.receiptShowSku}
+              onChange={(on) => setForm({ ...form, receiptShowSku: on })}
+              title="SKU"
+              description="Each item’s SKU."
+            />
+            <Toggle
+              indent={1}
+              checked={form.receiptShowName}
+              onChange={(on) => setForm({ ...form, receiptShowName: on })}
+              title="Description"
+              description="Each item’s name, as on its tag."
+            />
+            <Toggle
+              indent={1}
+              checked={form.receiptShowPrice}
+              onChange={(on) => setForm({ ...form, receiptShowPrice: on })}
+              title="Price"
+              description="Each item’s price, and the total."
+            />
+            {linkPicker}
+          </>
+        )}
+
+        <Radio
+          checked={form.receiptMode === 'STATUS_ONLY'}
+          onChange={() => setMode('STATUS_ONLY')}
+          disabled={noPages && form.receiptMode !== 'STATUS_ONLY'}
+          title="Status page only"
+          description={noPages
+            ? 'No items, just a link to a status page. Turn on a status page to choose this.'
+            : 'No items, just a link to a status page.'}
+        />
+        {form.receiptMode === 'STATUS_ONLY' && linkPicker}
+
+        <Radio
+          checked={form.receiptMode === 'NONE'}
+          onChange={() => setMode('NONE')}
+          title="None"
+          description="Sellers get no receipt: none is emailed, texted or printed."
+        />
+      </div>
+
+      {giving && (
+        <>
+          <Toggle
+            checked={form.receiptPrintEnabled}
+            onChange={(on) => setForm({ ...form, receiptPrintEnabled: on })}
+            title="Allow printing"
+            description="Receipts can be printed at check-in and from a seller’s page. Off, they’re emailed and texted only."
+          >
+            {form.receiptPrintEnabled && (
+              <select
+                aria-label="Paper size"
+                value={form.receiptPaperSize}
+                onChange={(e) => setForm({ ...form, receiptPaperSize: e.target.value as SwapForm['receiptPaperSize'] })}
+                className="mt-2 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+              >
+                <option value="62x100">62 × 100 mm (tall)</option>
+                <option value="50x30">50 × 30 mm (compact)</option>
+              </select>
+            )}
+            {form.receiptPrintEnabled && (
+              <span className="mt-1 block text-gray-500 text-xs">
+                A printer loaded with other paper won’t print receipts for this swap.
+              </span>
+            )}
+          </Toggle>
+
+          <div>
+            <Toggle
+              checked={form.receiptFinePrintEnabled}
+              onChange={(on) => setForm({ ...form, receiptFinePrintEnabled: on })}
+              title="Fine print"
+              description="A short note at the foot of the emailed receipt and the receipt page. It isn’t printed."
+            />
+            {form.receiptFinePrintEnabled && (
+              <div className="pl-7">
+                <Suspense fallback={<p className="mt-2 text-xs text-gray-500">Loading the editor…</p>}>
+                  <FinePrintEditor
+                    value={form.receiptFinePrint}
+                    onChange={(receiptFinePrint) => setForm({ ...form, receiptFinePrint })}
+                  />
+                </Suspense>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {problem && <p className="text-sm text-amber-400">{problem}</p>}
+    </>
+  );
+}
+
+const LINK_NAMES: Record<SwapForm['receiptLink'], string> = {
+  NONE: RECEIPT_LINK_NONE_LABEL,
+  SKU_LOOKUP: 'Unauthenticated SKU Lookup',
+  SELLER_STATUS: 'Unauthenticated Seller Status',
+  SELLER_LOGIN: 'Authenticated Seller Status',
+};
+
+function Radio({ checked, onChange, title, description, disabled = false }: {
+  checked: boolean;
+  onChange: () => void;
+  title: string;
+  description: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className={`flex items-start gap-3 ${disabled ? 'opacity-50' : ''}`}>
+      <input type="radio" name="receiptMode" checked={checked} disabled={disabled} onChange={onChange} className="mt-0.5" />
+      <span className="min-w-0">
+        <span className="block text-sm text-white">{title}</span>
+        <span className="block text-gray-500 text-xs mt-0.5">{description}</span>
+      </span>
+    </label>
   );
 }

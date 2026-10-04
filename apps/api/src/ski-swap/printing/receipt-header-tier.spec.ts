@@ -8,7 +8,7 @@ import { printTarget } from './geometry';
  * to print the masthead twice.
  */
 
-function build() {
+function build(paper = '62x100') {
   const prisma = {
     sellerProfile: {
       findFirst: async () => ({
@@ -17,6 +17,16 @@ function build() {
       }),
     },
     swapItem: { findMany: async () => [{ name: 'Snowboard', sku: 'SS26-A-0001', priceCents: 9000 }] },
+    // Itemized, printing on whichever stock the test loads (Plan 36).
+    skiSwap: {
+      findFirst: async () => ({
+        slug: 'ss26', org: { slug: 'bmbwavsp' }, skuLookupEnabled: false, sellerLookupEnabled: true, sellerLoginEnabled: false,
+        receiptMode: 'ITEMIZED', receiptShowSku: true, receiptShowName: true, receiptShowPrice: true,
+        receiptLink: 'SELLER_STATUS', receiptPrintEnabled: true, receiptPaperSize: paper,
+        receiptFinePrintEnabled: false, receiptFinePrint: null,
+      }),
+    },
+    receipt: { findFirst: async () => ({ token: 'tok' }) },
   };
   const config = { get: () => 'https://skiswap.patrolkit.io' };
   return new PrintRecipeService(prisma as never, new LabelRendererService(), config as never);
@@ -32,7 +42,7 @@ describe('a receipt header', () => {
   });
 
   it('is still its own label on 50 × 30', async () => {
-    const recipes = build();
+    const recipes = build('50x30');
     const pages = await recipes.resolve('org-1', { kind: 'receipt_header', sellerId: 'seller-1' }, printTarget('m110', '50x30'));
     expect(pages).toHaveLength(1);
   });

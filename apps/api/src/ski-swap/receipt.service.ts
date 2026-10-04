@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createId } from '@paralleldrive/cuid2';
 import { randomBytes } from 'crypto';
@@ -10,6 +10,7 @@ import { SmsService } from '../sms/sms.service';
 import { displayName } from '../common/util/person';
 import type { SendOutcome } from '../common/messaging/send-outcome';
 import { receiptEmail, receiptSms } from './receipt-templates';
+import { emailHint, RECEIPT_SIGN_IN_SELECT, receiptLayout, receiptSignInEmail, RECEIPTS_OFF, type ReceiptLayout } from './receipt-layout';
 import { LIMITS } from '../common/limits/limits';
 import { LimitUsageService } from '../common/limits/limit-usage.service';
 
@@ -52,6 +53,11 @@ export interface ReceiptView {
   trackUrl: string;
   /** The PatrolKit mark, for the foot of an email led by somebody else's name. */
   brandMarkUrl: string;
+  /**
+   * What this receipt shows, per the swap's settings now (Plan 36): columns,
+   * link, printing and fine print. Every renderer draws from it.
+   */
+  layout: ReceiptLayout;
   /** `priceCents` is null for a ticket not yet priced. */
   lines: { name: string; sku: string; priceCents: number | null }[];
 }
@@ -177,6 +183,7 @@ export class ReceiptService {
      */
     stationId?: string | null,
   ): Promise<Receipt> {
+    await this.assertReceiptsOn(orgId, swapId);
     const latest = await this.prisma.receipt.findFirst({
       where: { orgId, swapId, sellerId },
       orderBy: { createdAt: 'desc' },
@@ -368,6 +375,7 @@ export class ReceiptService {
     sellerId: string,
     stationId?: string | null,
   ): Promise<ReceiptView> {
+    await this.assertReceiptsOn(orgId, swapId);
     const existing = await this.prisma.receipt.findFirst({
       where: { orgId, swapId, sellerId },
       orderBy: { createdAt: 'desc' },
@@ -383,7 +391,21 @@ export class ReceiptService {
   async byToken(token: string): Promise<ReceiptView> {
     const receipt = await this.prisma.receipt.findUnique({ where: { token } });
     if (!receipt || receipt.revokedAt) throw new NotFoundException('That receipt is not available');
-    return this.view(receipt);
+    const view = await this.view(receipt);
+    // A swap that gives no receipts shows none, even one already handed out (D5).
+    if (view.layout.mode === 'NONE') throw new NotFoundException('That receipt is not available');
+    return view;
+  }
+
+  /**
+   * What a receipt's sign-in link shows before sending anything: the seller's
+   * email, masked (Plan 36 D3). A 404 whenever the receipt shouldn't offer
+   * sign-in, the same as for a token that doesn't exist.
+   */
+  async signInHint(token: string): Promise<{ emailHint: string }> {
+    const email = receiptSignInEmail(await this.prisma.receipt.findUnique({ where: { token }, select: RECEIPT_SIGN_IN_SELECT }));
+    if (!email) throw new NotFoundException('That receipt is not available');
+    return { emailHint: emailHint(email) };
   }
 
   async revoke(orgId: string, receiptId: string): Promise<void> {
@@ -419,12 +441,37 @@ export class ReceiptService {
     }));
   }
 
+  /**
+   * Refuses to make or send a receipt for a swap that gives none (D4). Checked
+   * before anything is written, so a refused call leaves no receipt behind.
+   */
+  async assertReceiptsOn(orgId: string, swapId: string): Promise<void> {
+    const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { receiptMode: true } });
+    if (swap?.receiptMode === 'NONE') throw new ConflictException(RECEIPTS_OFF);
+  }
+
+  /** This seller's receipt layout at this swap, per its settings now (Plan 36). */
+  async layoutFor(swapId: string, sellerId: string, receiptToken: string | null): Promise<ReceiptLayout> {
+    const swap = await this.prisma.skiSwap.findUniqueOrThrow({
+      where: { id: swapId },
+      include: { org: { select: { slug: true } } },
+    });
+    return receiptLayout(swap, {
+      sellerSiteUrl: this.config.get<string>('app.sellerSiteUrl', 'http://localhost:3000'),
+      appUrl: this.config.get<string>('app.appUrl', 'http://localhost:3000'),
+      orgSlug: swap.org.slug,
+      sellerId,
+      receiptToken,
+    });
+  }
+
   private async view(receipt: Receipt): Promise<ReceiptView> {
     const lines = await this.prisma.receiptLine.findMany({
       where: { receiptId: receipt.id },
       orderBy: { position: 'asc' },
       select: { name: true, sku: true, priceCents: true },
     });
+    const layout = await this.layoutFor(receipt.swapId, receipt.sellerId, receipt.token);
     return {
       id: receipt.id,
       token: receipt.token,
@@ -439,8 +486,10 @@ export class ReceiptService {
       unpricedCount: lines.filter((l) => l.priceCents === null).length,
       createdAt: receipt.createdAt,
       url: this.urlFor(receipt.token),
-      trackUrl: this.sellerSite(`/s/${receipt.sellerId}`),
+      // Kept for iPad builds that read it; `layout.link` is the answer now.
+      trackUrl: layout.link?.url ?? this.sellerSite(`/s/${receipt.sellerId}`),
       brandMarkUrl: this.sellerSite('/logo-mark.png'),
+      layout,
       lines,
     };
   }

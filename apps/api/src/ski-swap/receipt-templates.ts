@@ -1,4 +1,25 @@
 import type { ReceiptView } from './receipt.service';
+import { LINK_LABELS, type LinkKind } from './receipt-layout';
+import { sanitizeFinePrint } from './receipt-settings';
+
+/** What each link is for, under its button (Plan 36). */
+const LINK_CAPTIONS: Record<LinkKind, string> = {
+  SKU_LOOKUP: 'Enter a SKU to see whether it has sold.',
+  SELLER_STATUS: 'See what has sold and what is still on the floor.',
+  SELLER_LOGIN: 'Sign in to see everything you’re selling.',
+};
+
+/**
+ * Fine print for an email (Plan 36 D12): sanitized again here, then given
+ * inline styles, since several mail clients strip a `<style>` block.
+ */
+function emailFinePrint(html: string): string {
+  return sanitizeFinePrint(html)
+    .replace(/<p>/g, '<p style="margin: 0 0 8px;">')
+    .replace(/<(ul|ol)>/g, '<$1 style="margin: 0 0 8px; padding-left: 20px;">')
+    .replace(/<li>/g, '<li style="margin: 0 0 4px;">')
+    .replace(/<a href=/g, '<a style="color: #dc2626;" href=');
+}
 
 function money(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -7,6 +28,10 @@ function money(cents: number): string {
 /** A line's price, or that it has none yet: a ticket priced after check-in. */
 function linePrice(cents: number | null): string {
   return cents === null ? 'Price to come' : money(cents);
+}
+
+function itemCountText(view: ReceiptView): string {
+  return `${view.itemCount} item${view.itemCount === 1 ? '' : 's'}`;
 }
 
 /** "3 items", and how many of them have no price yet. */
@@ -50,17 +75,21 @@ function whenText(d: Date): string {
  * goes somewhere the email cannot: the seller's live page.
  */
 export function receiptEmail(view: ReceiptView): string {
+  const { layout } = view;
+  const { show } = layout;
+  // The name leads when it's shown; otherwise the SKU takes its place (D7).
   const rows = view.lines
     .map(
       (l) => `
       <tr>
         <td class="line" style="padding: 10px 0; border-bottom: 1px solid #e5e7eb;">
-          <span class="ink" style="color: #111827; font-size: 15px;">${esc(l.name)}</span><br>
-          <span class="muted" style="color: #6b7280; font-size: 12px;">${esc(l.sku)}</span>
+          ${show.name ? `<span class="ink" style="color: #111827; font-size: 15px;">${esc(l.name)}</span>` : ''}
+          ${show.name && show.sku ? '<br>' : ''}
+          ${show.sku ? `<span class="${show.name ? 'muted' : 'ink'}" style="color: ${show.name ? '#6b7280' : '#111827'}; font-size: ${show.name ? '12' : '15'}px;">${esc(l.sku)}</span>` : ''}
         </td>
-        <td class="line" style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; text-align: right; vertical-align: top; white-space: nowrap;">
+        ${show.price ? `<td class="line" style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; text-align: right; vertical-align: top; white-space: nowrap;">
           <span class="ink" style="color: #111827; font-size: 15px; font-weight: ${l.priceCents === null ? '400' : '600'};">${linePrice(l.priceCents)}</span>
-        </td>
+        </td>` : ''}
       </tr>`,
     )
     .join('');
@@ -85,6 +114,56 @@ export function receiptEmail(view: ReceiptView): string {
         </td>
       </tr>
     </table>`
+    : '';
+
+  // Itemized: the table, its columns per the settings. Price off takes the
+  // total with it (D7).
+  const itemized = `
+              <table role="presentation" width="100%" style="border-collapse: collapse; margin-top: 20px;">
+                ${view.lines.length ? rows : empty}
+                <tr>
+                  <td class="total" style="padding: 14px 0 0; border-top: 2px solid #d1d5db;">
+                    <span class="muted" style="color: #6b7280; font-size: 14px;">${esc(show.price ? countText(view) : itemCountText(view))}</span>
+                  </td>
+                  ${show.price ? `<td class="total" style="padding: 14px 0 0; border-top: 2px solid #d1d5db; text-align: right;">
+                    ${view.unpricedCount ? '<span class="muted" style="color: #6b7280; font-size: 12px;">Total of priced items</span><br>' : ''}
+                    <span class="ink" style="color: #111827; font-size: 20px; font-weight: 700;">${money(view.totalCents)}</span>
+                  </td>` : ''}
+                </tr>
+              </table>`;
+
+  // Status page only: no items, just where to follow them (D6). If the page
+  // has since been turned off, say so rather than leave the receipt blank (D2).
+  const statusOnly = `
+              <p class="ink" style="color: #111827; font-size: 16px; margin: 20px 0 0;">
+                Your ${itemCountText(view)} ${view.itemCount === 1 ? 'is' : 'are'} checked in.
+              </p>
+              ${layout.link ? '' : '<p class="muted" style="color: #6b7280; font-size: 14px; margin: 8px 0 0;">The swap’s status page isn’t available right now.</p>'}`;
+
+  const linkButton = layout.link
+    ? `
+              <table role="presentation" width="100%" style="border-collapse: collapse; margin: 28px 0 0;">
+                <tr>
+                  <td align="center" bgcolor="#dc2626" style="border-radius: 6px;">
+                    <a href="${esc(layout.link.url)}" style="display: inline-block; padding: 13px 30px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px;">${esc(LINK_LABELS[layout.link.kind].button)}</a>
+                  </td>
+                </tr>
+              </table>
+              <p class="muted" style="color: #6b7280; font-size: 13px; margin: 12px 0 0; text-align: center;">
+                ${esc(LINK_CAPTIONS[layout.link.kind])}
+              </p>`
+    : '';
+
+  // The fine print's callout sits above the separator before the foot (D12).
+  const finePrint = layout.finePrint
+    ? `
+              <table role="presentation" width="100%" style="border-collapse: collapse; margin: 28px 0 0;">
+                <tr>
+                  <td class="panel" style="background: #f3f4f6; border-radius: 4px; padding: 14px 16px 6px; color: #4b5563; font-size: 13px; line-height: 1.5;">
+                    <div class="muted ink" style="color: #4b5563;">${emailFinePrint(layout.finePrint)}</div>
+                  </td>
+                </tr>
+              </table>`
     : '';
 
   const logo = view.logoImageUrl
@@ -135,31 +214,13 @@ export function receiptEmail(view: ReceiptView): string {
                 Checked in ${esc(whenText(view.createdAt))} · ${esc(view.sellerName)}
               </p>
 
-              <table role="presentation" width="100%" style="border-collapse: collapse; margin-top: 20px;">
-                ${view.lines.length ? rows : empty}
-                <tr>
-                  <td class="total" style="padding: 14px 0 0; border-top: 2px solid #d1d5db;">
-                    <span class="muted" style="color: #6b7280; font-size: 14px;">${esc(countText(view))}</span>
-                  </td>
-                  <td class="total" style="padding: 14px 0 0; border-top: 2px solid #d1d5db; text-align: right;">
-                    ${view.unpricedCount ? '<span class="muted" style="color: #6b7280; font-size: 12px;">Total of priced items</span><br>' : ''}
-                    <span class="ink" style="color: #111827; font-size: 20px; font-weight: 700;">${money(view.totalCents)}</span>
-                  </td>
-                </tr>
-              </table>
+              ${layout.mode === 'STATUS_ONLY' ? statusOnly : itemized}
 
               ${payout}
 
-              <table role="presentation" width="100%" style="border-collapse: collapse; margin: 28px 0 0;">
-                <tr>
-                  <td align="center" bgcolor="#dc2626" style="border-radius: 6px;">
-                    <a href="${view.trackUrl}" style="display: inline-block; padding: 13px 30px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px;">Track your items</a>
-                  </td>
-                </tr>
-              </table>
-              <p class="muted" style="color: #6b7280; font-size: 13px; margin: 12px 0 0; text-align: center;">
-                See what has sold and what is still on the floor.
-              </p>
+              ${linkButton}
+
+              ${finePrint}
 
               <hr class="rule" style="border: none; border-top: 1px solid #e5e7eb; margin: 28px 0 16px;">
               <p class="muted" style="color: #9ca3af; font-size: 12px; margin: 0;">
@@ -199,9 +260,16 @@ export function receiptEmail(view: ReceiptView): string {
  * truncated link is useless, a truncated club name is still recognisable.
  */
 export function receiptSms(view: ReceiptView): string {
-  const tail = `: your ${view.swapTitle} receipt — ${view.itemCount} item${
-    view.itemCount === 1 ? '' : 's'
-  }, ${money(view.totalCents)}${view.unpricedCount ? `, ${view.unpricedCount} not yet priced` : ''}. ${view.url}`;
+  const { layout } = view;
+  // Status page only carries the status link itself; everything else links to
+  // the receipt page (Plan 36). Price off leaves the total out.
+  const tail = layout.mode === 'STATUS_ONLY' && layout.link
+    ? `: your ${view.swapTitle} items are checked in. ${LINK_LABELS[layout.link.kind].button}: ${layout.link.url}`
+    : `: your ${view.swapTitle} receipt — ${itemCountText(view)}${
+        layout.show.price
+          ? `, ${money(view.totalCents)}${view.unpricedCount ? `, ${view.unpricedCount} not yet priced` : ''}`
+          : ''
+      }. ${view.url}`;
   const room = 160 - tail.length;
   const org = view.orgName.length > room ? `${view.orgName.slice(0, Math.max(1, room - 1))}…` : view.orgName;
   return `${org}${tail}`;

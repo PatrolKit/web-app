@@ -259,6 +259,17 @@ export interface SwapResponse {
   sellerLookupEnabled: boolean;
   /** Authenticated Seller Status: an individual seller here may sign in. */
   sellerLoginEnabled: boolean;
+  /** Receipt settings (Plan 36). */
+  receiptMode: ReceiptMode;
+  receiptShowSku: boolean;
+  receiptShowName: boolean;
+  receiptShowPrice: boolean;
+  receiptLink: ReceiptLinkChoice;
+  receiptPrintEnabled: boolean;
+  receiptPaperSize: ReceiptPaperSize;
+  receiptFinePrintEnabled: boolean;
+  /** Sanitized HTML. */
+  receiptFinePrint: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -291,7 +302,12 @@ export interface SellerResponse {
   /** Where a receipt would go, or null when there is nowhere to send one. */
   receiptChannel: 'EMAIL' | 'SMS' | null;
   /** The active swaps this seller has items in: what a receipt can be printed for. */
-  receiptSwaps: { id: string; title: string }[];
+  receiptSwaps: {
+    id: string;
+    title: string;
+    /** The paper its receipts print on, or null when it doesn't print them (Plan 36). */
+    printPaperSize: ReceiptPaperSize | null;
+  }[];
   /** Set once removed. Only ever populated for a caller passing `updatedSince`. */
   deletedAt: string | null;
   createdAt: string;
@@ -486,6 +502,8 @@ export interface CheckinContext {
   swapTitle: string;
   stationId: string;
   stationName: string;
+  /** Whether finishing at this station prints a receipt (Plan 36). */
+  receiptPrints: boolean;
 }
 
 export interface CheckinSummary {
@@ -1046,7 +1064,23 @@ export interface PublicReceiptResponse {
   url: string;
   /** The seller's live page: everything they have, not only what is on here. */
   trackUrl: string;
+  /** What this receipt shows, per its swap's settings now (Plan 36). */
+  layout: ReceiptLayout;
   lines: PublicReceiptLine[];
+}
+
+export type ReceiptMode = 'ITEMIZED' | 'STATUS_ONLY' | 'NONE';
+export type ReceiptLinkChoice = 'NONE' | 'SKU_LOOKUP' | 'SELLER_STATUS' | 'SELLER_LOGIN';
+export type ReceiptPaperSize = '62x100' | '50x30';
+
+/** The server's decision about a receipt (Plan 36): every renderer draws from it. */
+export interface ReceiptLayout {
+  mode: ReceiptMode;
+  show: { sku: boolean; name: boolean; price: boolean };
+  link: { url: string; kind: Exclude<ReceiptLinkChoice, 'NONE'> } | null;
+  print: { paperSize: ReceiptPaperSize } | null;
+  /** Sanitized HTML; null when off. */
+  finePrint: string | null;
 }
 
 export interface SellerReceiptRow {

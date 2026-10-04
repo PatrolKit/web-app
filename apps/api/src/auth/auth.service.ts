@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService, type SessionScope } from './jwt.service';
 import { SignInPolicy } from '../common/identity/sign-in-policy.service';
+import { RECEIPT_SIGN_IN_SELECT, receiptSignInEmail } from '../ski-swap/receipt-layout';
 import { ContactChallengeService, type IssuedChallenge } from './contact-challenge.service';
 import { createId } from '@paralleldrive/cuid2';
 import { createHash, randomBytes } from 'crypto';
@@ -54,8 +55,18 @@ export class AuthService {
   async requestLogin(input: {
     email?: string;
     phone?: string;
+    receiptToken?: string;
     context?: SignInContext;
   }): Promise<IssuedChallenge | null> {
+    // From a receipt's sign-in link (Plan 36): to that seller's verified email,
+    // when the receipt's swap links there. Anything else is the usual decoy, so
+    // a token can't be used to learn whether it means anything.
+    if (input.receiptToken) {
+      const email = await this.receiptSignInEmail(input.receiptToken);
+      if (!email) return { challengeId: createId(), channel: 'email' };
+      return this.requestLogin({ email });
+    }
+
     const email = normalizeEmail(input.email);
     const phone = normalizePhone(input.phone);
     if (!email && !phone) return null;
@@ -93,6 +104,15 @@ export class AuthService {
       context: input.context,
       whenLimited: 'decoy',
     });
+  }
+
+  /**
+   * The verified email a receipt's sign-in link sends to, or null when the
+   * receipt shouldn't offer one: revoked, a swap that doesn't link to
+   * sign-in, sign-in closed there, or no verified email (Plan 36 D3).
+   */
+  async receiptSignInEmail(token: string): Promise<string | null> {
+    return receiptSignInEmail(await this.prisma.receipt.findUnique({ where: { token }, select: RECEIPT_SIGN_IN_SELECT }));
   }
 
   /**

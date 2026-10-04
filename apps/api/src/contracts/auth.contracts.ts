@@ -27,11 +27,17 @@ export const LoginRequestSchema = z
   .object({
     email: z.string().trim().toLowerCase().email().optional(),
     phone: z.string().trim().min(7).max(32).optional(),
+    /**
+     * A receipt's token, from its "Sign in to see your items" link (Plan 36).
+     * Sends a sign-in link to that seller's verified email; never signs anyone
+     * in itself, and never says where it went.
+     */
+    receiptToken: z.string().trim().min(1).max(64).optional(),
     context: SignInContextSchema.optional(),
   })
   .strict()
-  .refine((v) => Boolean(v.email) !== Boolean(v.phone), {
-    message: 'Provide exactly one of email or phone',
+  .refine((v) => [v.email, v.phone, v.receiptToken].filter(Boolean).length === 1, {
+    message: 'Provide exactly one of email, phone or receiptToken',
   });
 
 export const ChallengeConfirmSchema = z

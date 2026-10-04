@@ -184,3 +184,37 @@ describe('a check-in session', () => {
     expect(req.user).toEqual({ userId: 'user-1', scope: 'full' });
   });
 });
+
+// ─── From a receipt's sign-in link (Plan 36) ─────────────────────────────────
+
+describe('asking for a sign-in link from a receipt', () => {
+  function auth(receipt: object | null) {
+    const issued: { target: string }[] = [];
+    const prisma = {
+      receipt: { findUnique: async () => receipt },
+      user: { findFirst: async () => ({ id: 'user-1' }) },
+    };
+    const challenges = { issue: async (args: { target: string }) => { issued.push(args); return { challengeId: 'real', channel: 'email' }; } };
+    const svc = new AuthService(prisma as never, {} as never, challenges as never, {} as never, { enabled: async () => true } as never,
+      { mayUseApp: async () => true } as never);
+    return { svc, issued };
+  }
+  const receipt = {
+    revokedAt: null,
+    swap: { receiptMode: 'ITEMIZED', receiptLink: 'SELLER_LOGIN', sellerLoginEnabled: true },
+    seller: { membership: { user: { verifiedEmail: 'dana@example.com' } } },
+  };
+
+  it('sends one to the seller’s verified email', async () => {
+    const { svc, issued } = auth(receipt);
+    await expect(svc.requestLogin({ receiptToken: 'tok' })).resolves.toMatchObject({ challengeId: 'real' });
+    expect(issued.map((i) => i.target)).toEqual(['dana@example.com']);
+  });
+
+  it('answers with a decoy, sending nothing, for a receipt that doesn’t link to sign-in', async () => {
+    const { svc, issued } = auth({ ...receipt, swap: { ...receipt.swap, receiptLink: 'SELLER_STATUS' } });
+    const answer = await svc.requestLogin({ receiptToken: 'tok' });
+    expect(answer?.challengeId).not.toBe('real');
+    expect(issued).toEqual([]);
+  });
+});

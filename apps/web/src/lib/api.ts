@@ -95,6 +95,16 @@ export type SwapSettingsWrite = {
   skuLookupEnabled?: boolean;
   sellerLookupEnabled?: boolean;
   sellerLoginEnabled?: boolean;
+  /** The Receipts tab (Plan 36). */
+  receiptMode?: import('./api.types').ReceiptMode;
+  receiptShowSku?: boolean;
+  receiptShowName?: boolean;
+  receiptShowPrice?: boolean;
+  receiptLink?: import('./api.types').ReceiptLinkChoice;
+  receiptPrintEnabled?: boolean;
+  receiptPaperSize?: import('./api.types').ReceiptPaperSize;
+  receiptFinePrintEnabled?: boolean;
+  receiptFinePrint?: string | null;
 };
 
 /** Person fields are global (they live on User); businessName is org-scoped. */
@@ -123,7 +133,7 @@ export const api = {
      * `context` says what the sign-in was for. It comes back from confirm, so
      * the flow survives a magic link opening in a fresh tab.
      */
-    login: (input: ({ email: string } | { phone: string }) & { context?: import('./api.types').SignInContext }) =>
+    login: (input: ({ email: string } | { phone: string } | { receiptToken: string }) & { context?: import('./api.types').SignInContext }) =>
       request<{
         queued: true;
         challengeId: string | null;
@@ -219,6 +229,14 @@ export const api = {
         awaitingConsignment: number;
         /** Where the receipt was emailed, or null if it was not sent. */
         emailedTo: string | null;
+        /** `none` when the swap gives no receipts (Plan 36). */
+        receipt: 'given' | 'none';
+        /** Whether a receipt is printing at this station. */
+        receiptPrinted: boolean;
+        /** Why it isn't, when the swap's settings said no: printing off, or other paper. */
+        receiptPrintRefusal: 'RECEIPT_PRINT_OFF' | 'RECEIPT_PAPER' | null;
+        /** Where the seller follows their items, per the swap's receipt link; null for none. */
+        receiptLink: import('./api.types').ReceiptLayout['link'];
       }>(
         `/orgs/${orgId}/ski-swap/checkin/finish`,
         { method: 'POST', body: JSON.stringify({ swapId, stationId }) },
@@ -1309,6 +1327,9 @@ export const api = {
     /** What the signed-out pages may offer — just whether texting is on (Plan 29). */
     features: () => request<{ sms: boolean }>('/public/features'),
     /** A frozen receipt, by the token from an email or a text. */
+    /** The masked email a receipt's sign-in link sends to (Plan 36); 404 when it offers none. */
+    receiptSignIn: (token: string) =>
+      request<{ emailHint: string }>(`/public/receipts/${encodeURIComponent(token)}/sign-in`),
     getReceipt: (token: string) =>
       request<import('./api.types').PublicReceiptResponse>(
         `/public/receipts/${encodeURIComponent(token)}`,

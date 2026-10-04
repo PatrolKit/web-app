@@ -17,6 +17,7 @@ const view = (over: Partial<ReceiptView> = {}): ReceiptView => ({
   url: 'https://skiswap.patrolkit.io/r/Xk3abcdefghijklmnopqrstuvwxyz012',
   trackUrl: 'https://skiswap.patrolkit.io/s/seller123',
   brandMarkUrl: 'https://skiswap.patrolkit.io/logo-mark.png',
+  layout: { mode: 'ITEMIZED', show: { sku: true, name: true, price: true }, link: { url: 'https://skiswap.patrolkit.io/s/seller123', kind: 'SELLER_STATUS' }, print: { paperSize: '62x100' }, finePrint: null },
   lines: [
     { name: 'Rossignol 172cm Red Skis', sku: 'ETR-E-0001', priceCents: 4500 },
     { name: 'Snowboard', sku: 'ETR-E-0002', priceCents: 9000 },

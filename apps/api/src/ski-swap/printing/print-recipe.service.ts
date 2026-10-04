@@ -4,6 +4,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LabelRendererService } from './label-renderer.service';
 import { DEFAULT_TARGET, printTarget, type PrintTarget } from './geometry';
 import { displayName } from '../../common/util/person';
+import { receiptLayout, receiptPrintRefusal, type ReceiptLayout } from '../receipt-layout';
+import type { ReceiptHeaderData } from './label-templates';
+
+/** The two lines beside a receipt's QR, per what it opens (Plan 36). */
+const QR_CAPTIONS: Record<NonNullable<ReceiptLayout['link']>['kind'], [string, string]> = {
+  SKU_LOOKUP: ['Scan to check', 'an item:'],
+  SELLER_STATUS: ['Scan to track', 'your items:'],
+  SELLER_LOGIN: ['Scan to sign in', 'and see your items:'],
+};
 
 export type PrintRecipeKind =
   | 'item'
@@ -94,14 +103,23 @@ export class PrintRecipeService {
         // here and the whole receipt from the items.
         if (target.size.tier === 'tall') return [];
         const seller = await this.seller(orgId, recipe.sellerId);
-        return [await this.renderer.receiptHeader(this.masthead(seller), target)];
+        // An older client sends no swap; its header is drawn as it always was.
+        if (!recipe.swapId) return [await this.renderer.receiptHeader(this.masthead(seller), target)];
+        // Settings that refuse this print give nothing, so a job queued
+        // before they changed settles unprinted at claim (Plan 36).
+        const gate = await this.receiptGate(orgId, recipe.swapId, recipe.sellerId!, target);
+        if (!gate) return [];
+        return [await this.renderer.receiptHeader(this.masthead(seller, gate), target)];
       }
 
       case 'receipt_items': {
         if (!recipe.swapId || !recipe.sellerId) {
           throw new BadRequestException('A receipt needs a seller and a swap');
         }
-        const items = await this.prisma.swapItem.findMany({
+        const gate = await this.receiptGate(orgId, recipe.swapId, recipe.sellerId, target);
+        if (!gate) return [];
+        const statusOnly = gate.mode === 'STATUS_ONLY';
+        const items = statusOnly ? [] : await this.prisma.swapItem.findMany({
           where: { orgId, swapId: recipe.swapId, sellerId: recipe.sellerId, deletedAt: null },
           orderBy: { createdAt: 'asc' },
           select: { name: true, sku: true, priceCents: true },
@@ -111,9 +129,11 @@ export class PrintRecipeService {
         // no header job and there is nothing here to concatenate.
         if (target.size.tier === 'tall') {
           const seller = await this.seller(orgId, recipe.sellerId);
-          return this.renderer.tallReceipt(this.masthead(seller), items, target);
+          return this.renderer.tallReceipt(this.masthead(seller, gate), items, target, { show: gate.show, statusOnly });
         }
-        return this.renderer.receiptItems(items, target);
+        // A compact status-only receipt is its header label alone.
+        if (statusOnly) return [];
+        return this.renderer.receiptItems(items, target, gate.show);
       }
 
       default:
@@ -130,14 +150,48 @@ export class PrintRecipeService {
     return pages.length;
   }
 
+  /**
+   * This receipt's layout, when the swap's settings let it print on this
+   * target; null when they don't: no receipts, printing off, or other paper.
+   */
+  private async receiptGate(orgId: string, swapId: string, sellerId: string, target: PrintTarget): Promise<ReceiptLayout | null> {
+    const swap = await this.prisma.skiSwap.findFirst({
+      where: { id: swapId, orgId },
+      include: { org: { select: { slug: true } } },
+    });
+    if (!swap || receiptPrintRefusal(swap, target.size.id)) return null;
+    // The token behind a sign-in link: this seller's latest receipt here.
+    const receipt = await this.prisma.receipt.findFirst({
+      where: { orgId, swapId, sellerId, revokedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { token: true },
+    });
+    return receiptLayout(swap, {
+      sellerSiteUrl: this.config.get<string>('app.sellerSiteUrl', 'http://localhost:3000'),
+      appUrl: this.config.get<string>('app.appUrl', 'http://localhost:3000'),
+      orgSlug: swap.org.slug,
+      sellerId,
+      receiptToken: receipt?.token ?? null,
+    });
+  }
+
   /** Who the receipt is for, however the tier chooses to lay it out. */
-  private masthead(seller: {
-    orgLogoUrl: string | null;
-    name: string;
-    phone: string | null;
-    statusUrl: string;
-  }) {
+  private masthead(
+    seller: {
+      orgLogoUrl: string | null;
+      name: string;
+      phone: string | null;
+      statusUrl: string;
+    },
+    /** The swap's receipt layout (Plan 36); absent for an older client's header. */
+    layout?: ReceiptLayout,
+  ): ReceiptHeaderData {
+    const link = layout ? layout.link : { url: seller.statusUrl, kind: 'SELLER_STATUS' as const };
     return {
+      qrUrl: link?.url ?? null,
+      qrCaption: link ? QR_CAPTIONS[link.kind] : undefined,
+      // A status-only receipt whose page has been turned off says so (D2).
+      note: layout?.mode === 'STATUS_ONLY' && !link ? 'Status page not available' : undefined,
       orgLogoUrl: seller.orgLogoUrl,
       // Rendered at claim rather than at enqueue, so it is when the receipt
       // actually printed.
@@ -147,7 +201,6 @@ export class PrintRecipeService {
       }),
       sellerName: seller.name,
       phone: seller.phone ?? '',
-      qrUrl: seller.statusUrl,
     };
   }
 

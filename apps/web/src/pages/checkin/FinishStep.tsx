@@ -3,16 +3,33 @@ import { useQuery } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheck as faCheckDuo, faEnvelope as faEnvelopeDuo, faMessage as faMessageDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
-import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
 import { useFeatures } from '../../lib/features';
 import { CheckinShell, contextLine, ErrorNote, formatCents, secondaryButtonClass } from './shared';
-import type { CheckinContext, CheckinSummary } from '../../lib/api.types';
+import { RECEIPT_LINK_LABELS } from '../public/receiptLayout';
+import type { CheckinContext, CheckinSummary, ReceiptLayout } from '../../lib/api.types';
+
+/** What finishing reported, as this screen needs it. */
+export interface CheckinFinished {
+  /** How many of this seller's items still need a staff member to accept them. */
+  awaitingConsignment: number;
+  emailedTo: string | null;
+  /** `none` when the swap gives no receipts (Plan 36). */
+  receipt: 'given' | 'none';
+  /** Whether a receipt is printing at this station. */
+  receiptPrinted: boolean;
+  /** Why it isn't, when the swap's settings said no. */
+  receiptPrintRefusal: 'RECEIPT_PRINT_OFF' | 'RECEIPT_PAPER' | null;
+  /** Where the seller follows their items, or null for nowhere. */
+  receiptLink: ReceiptLayout['link'];
+}
 
 /**
  * The last screen: what to do with the items, and where to check on them later.
  *
  * The receipt is already queued at the station's printer by the time this
- * renders, so this is confirmation rather than an action.
+ * renders, if it prints here, so this is confirmation rather than an action.
+ * What it says about the receipt follows what finishing did (Plan 36): none at
+ * all, printed, or emailed only.
  *
  * What it says depends on `awaitingConsignment` rather than on the org setting.
  * "Checked in" is not true yet for an item nobody has looked at — it is tagged
@@ -23,6 +40,7 @@ export default function FinishStep({
   context,
   awaitingConsignment,
   emailedTo,
+  receipt,
   verifiedEmail,
   verifiedPhone,
 }: {
@@ -37,6 +55,7 @@ export default function FinishStep({
    * the only thing it must not do is claim an email that never went.
    */
   emailedTo: string | null;
+  receipt: Pick<CheckinFinished, 'receipt' | 'receiptPrinted' | 'receiptPrintRefusal' | 'receiptLink'>;
   /** The proven contacts. Either one is somewhere a copy can be sent. */
   verifiedEmail: string | null;
   verifiedPhone: string | null;
@@ -64,7 +83,17 @@ export default function FinishStep({
   const [sendError, setSendError] = useState('');
   // Texting off (Plan 29): a copy goes by email or not at all.
   const { sms } = useFeatures();
-  const destination = verifiedEmail ?? (sms ? verifiedPhone : null);
+  // No receipt, no copy to send (Plan 36).
+  const givesReceipt = receipt.receipt === 'given';
+  const destination = givesReceipt ? verifiedEmail ?? (sms ? verifiedPhone : null) : null;
+  const printed = receipt.receiptPrinted;
+  const link = receipt.receiptLink;
+  const lead = [
+    waiting && 'Stay with your items. A volunteer will come and look through them.',
+    printed && (waiting
+      ? 'Your receipt is printing at this station.'
+      : 'Your receipt is printing at this station. Take it with you — it lists everything you dropped off.'),
+  ].filter(Boolean).join(' ');
   const byEmail = !!verifiedEmail;
 
   async function sendCopy() {
@@ -92,11 +121,12 @@ export default function FinishStep({
       logoUrl={context.orgLogoUrl}
     >
       <div className="bg-surface-50 border border-gray-800 rounded-xl p-4 space-y-3">
-        <p className="text-sm text-gray-300">
-          {waiting
-            ? 'Stay with your items. A volunteer will come and look through them. Your receipt is printing at this station.'
-            : 'Your receipt is printing at this station. Take it with you — it lists everything you dropped off.'}
-        </p>
+        {lead && <p className="text-sm text-gray-300">{lead}</p>}
+        {/* Paper that kept it off this printer: say so, since the email still
+            goes. A swap that doesn't print receipts isn't news to anyone. */}
+        {receipt.receiptPrintRefusal === 'RECEIPT_PAPER' && (
+          <p className="text-xs text-amber-400">Your receipt couldn’t print here.</p>
+        )}
         <ol className="text-sm text-gray-400 space-y-2 list-decimal list-inside">
           <li>Put a tag on each item.</li>
           {waiting ? (
@@ -104,7 +134,7 @@ export default function FinishStep({
           ) : (
             <li>Hand your items to a volunteer at this station.</li>
           )}
-          <li>Keep the receipt to track sales and collect payment.</li>
+          {printed && <li>Keep the receipt to track sales and collect payment.</li>}
         </ol>
       </div>
 
@@ -153,12 +183,12 @@ export default function FinishStep({
             ))}
           </ul>
 
-          <a
-            href={`${SELLER_SITE_URL}/s/${summary.sellerId}`}
-            className="block text-center text-sm text-brand-600 hover:underline py-3"
-          >
-            Track your items
-          </a>
+          {/* Where the swap's receipts point, if anywhere that's on. */}
+          {link && (
+            <a href={link.url} className="block text-center text-sm text-brand-600 hover:underline py-3">
+              {RECEIPT_LINK_LABELS[link.kind].button}
+            </a>
+          )}
         </div>
       )}
     </CheckinShell>

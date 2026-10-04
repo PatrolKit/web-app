@@ -22,7 +22,28 @@ export interface ReceiptHeaderData {
   date: string;
   sellerName: string;
   phone: string;
-  qrUrl: string;
+  /** The status page the QR opens; null for no QR (Plan 36). */
+  qrUrl: string | null;
+  /** The two lines beside the QR; "Scan to track / your items:" when absent. */
+  qrCaption?: [string, string];
+  /** Said where the QR would be when there's none and nothing else to show. */
+  note?: string;
+}
+
+/** Which columns a receipt's lines show (Plan 36). The name, or else the SKU, leads. */
+export interface ReceiptColumns {
+  sku: boolean;
+  name: boolean;
+  price: boolean;
+}
+
+export const ALL_COLUMNS: ReceiptColumns = { sku: true, name: true, price: true };
+
+/** A line's leading text and its second line, per the columns shown. */
+function lineText(item: ReceiptItemLine, show: ReceiptColumns): { lead: string; second: string | null } {
+  return show.name
+    ? { lead: item.name, second: show.sku ? item.sku : null }
+    : { lead: item.sku, second: null };
 }
 
 // ─── Shared drawing helpers ───────────────────────────────────────────────────
@@ -576,6 +597,18 @@ export async function drawReceiptHeader(
   ctx.fillRect(0, halfH, W, 1);
 
   const bottomAvail = H - halfH - 1;
+
+  // No link, no code (Plan 36): the half below the rule says the note, if any.
+  if (!data.qrUrl) {
+    if (data.note) {
+      const NOTE = fitSize(ctx, data.note, Math.round(22 * k), 12, W - 8);
+      ctx.font = labelFont(NOTE, 'bold');
+      ctx.textAlign = 'center';
+      ctx.fillText(data.note, Math.floor(W / 2), halfH + 1 + Math.floor((bottomAvail - lineHeight(NOTE)) / 2));
+    }
+    return;
+  }
+
   // Bounded by the space below the rule, so a taller label gets a bigger code
   // rather than the same one adrift in white.
   const QR_SIZE = Math.min(Math.round(96 * k), bottomAvail - 8);
@@ -585,15 +618,16 @@ export async function drawReceiptHeader(
   // One sentence over two lines, so one size for both — the larger of the two
   // strings decides it. Centred in the column left of the QR rather than pushed
   // against the margin, which is where the type is now big enough to matter.
+  const [scanA, scanB] = data.qrCaption ?? ['Scan to track', 'your items:'];
   const SCAN_GAP = 4;
   const scanAreaW = QR_X - 8;
-  const SCAN_SIZE = commonFitSize(ctx, ['Scan to track', 'your items:'], 30, 12, scanAreaW);
+  const SCAN_SIZE = commonFitSize(ctx, [scanA, scanB], 30, 12, scanAreaW);
   const scanY = halfH + 1 + Math.floor((bottomAvail - (lineHeight(SCAN_SIZE) * 2 + SCAN_GAP)) / 2);
   ctx.fillStyle = '#000';
   ctx.font = labelFont(SCAN_SIZE, 'bold');
   ctx.textAlign = 'center';
-  ctx.fillText('Scan to track', Math.floor(scanAreaW / 2), scanY);
-  ctx.fillText('your items:', Math.floor(scanAreaW / 2), scanY + lineHeight(SCAN_SIZE) + SCAN_GAP);
+  ctx.fillText(scanA, Math.floor(scanAreaW / 2), scanY);
+  ctx.fillText(scanB, Math.floor(scanAreaW / 2), scanY + lineHeight(SCAN_SIZE) + SCAN_GAP);
 }
 
 /**
@@ -604,6 +638,7 @@ export function drawReceiptItems(
   ctx: SKRSContext2D, W: number, H: number,
   items: ReceiptItemLine[],
   showHeader: boolean,
+  show: ReceiptColumns = ALL_COLUMNS,
 ): { rowsDrawn: number } {
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
@@ -628,23 +663,28 @@ export function drawReceiptItems(
     if ((drawn > 0 ? y + ITEM_GAP : y) + itemH > H) break;
     if (drawn > 0) y += ITEM_GAP;
 
-    const priceStr = receiptLinePrice(item.priceCents);
+    const priceStr = show.price ? receiptLinePrice(item.priceCents) : '';
+    const { lead, second } = lineText(item, show);
     ctx.font = labelFont(NAME_H, 'bold');
-    const priceW = ctx.measureText(priceStr).width;
+    const priceW = priceStr ? ctx.measureText(priceStr).width + 8 : 0;
 
     // The name takes whatever the price leaves, and shrinks to stay inside it
     // rather than being cut — the amount owed is the one thing on this line
     // that must never be crowded.
     ctx.textAlign = 'left';
-    ctx.fillText(fitted(ctx, item.name, NAME_H, 12, W - priceW - 8), 0, y);
-    ctx.textAlign = 'right';
-    ctx.font = labelFont(NAME_H, 'bold');
-    ctx.fillText(priceStr, W, y);
+    ctx.fillText(fitted(ctx, lead, NAME_H, 12, W - priceW), 0, y);
+    if (priceStr) {
+      ctx.textAlign = 'right';
+      ctx.font = labelFont(NAME_H, 'bold');
+      ctx.fillText(priceStr, W, y);
+    }
     y += lineHeight(NAME_H) + LINE_GAP;
 
-    ctx.font = labelFont(SKU_H, 'bold');
-    ctx.textAlign = 'left';
-    ctx.fillText(item.sku, 4, y);
+    if (second) {
+      ctx.font = labelFont(SKU_H, 'bold');
+      ctx.textAlign = 'left';
+      ctx.fillText(second, 4, y);
+    }
     y += lineHeight(SKU_H);
     drawn++;
   }
@@ -691,6 +731,8 @@ export async function drawTallReceipt(
   remaining: ReceiptItemLine[],
   /** `totalCents` is of the priced items; `unpricedCount` says how many it leaves out. */
   page: { index: number; itemCount: number; totalCents: number; unpricedCount: number },
+  /** The columns shown, and whether the items are listed at all (Plan 36). */
+  layout: { show: ReceiptColumns; statusOnly: boolean } = { show: ALL_COLUMNS, statusOnly: false },
 ): Promise<{ rowsDrawn: number }> {
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
@@ -704,8 +746,20 @@ export async function drawTallReceipt(
 
   let y =
     page.index === 0
-      ? await drawReceiptMasthead(ctx, W, GAP, RULE, data)
+      ? await drawReceiptMasthead(ctx, W, GAP, RULE, data, !layout.statusOnly)
       : drawReceiptContinuation(ctx, W, GAP, RULE, data.sellerName);
+
+  // Status page only: the masthead is the receipt (Plan 36). The note says
+  // why there's no code, if there's none.
+  if (layout.statusOnly) {
+    if (!data.qrUrl && data.note) {
+      const NOTE = fitSize(ctx, data.note, Math.round(W * 0.05), 12, W);
+      ctx.font = labelFont(NOTE, 'bold');
+      ctx.textAlign = 'left';
+      ctx.fillText(data.note, 0, y);
+    }
+    return { rowsDrawn: remaining.length };
+  }
 
   // ── The foot is reserved before the list, not after ───────────────────────
   // Every page keeps the same strip free, so how many items fit does not depend
@@ -726,23 +780,28 @@ export async function drawTallReceipt(
     if ((drawn > 0 ? y + ROW_GAP : y) + rowH > listBottom) break;
     if (drawn > 0) y += ROW_GAP;
 
-    const priceStr = receiptLinePrice(item.priceCents);
+    const priceStr = layout.show.price ? receiptLinePrice(item.priceCents) : '';
+    const { lead, second } = lineText(item, layout.show);
     ctx.font = labelFont(NAME_H, 'bold');
-    const priceW = ctx.measureText(priceStr).width;
+    const priceW = priceStr ? ctx.measureText(priceStr).width + GAP : 0;
 
     // The name takes what the price leaves and shrinks to stay inside it rather
     // than being cut: the amount owed is the one thing on the line that must
     // never be crowded.
     ctx.textAlign = 'left';
-    ctx.fillText(fitted(ctx, item.name, NAME_H, 12, W - priceW - GAP), 0, y);
-    ctx.textAlign = 'right';
-    ctx.font = labelFont(NAME_H, 'bold');
-    ctx.fillText(priceStr, W, y);
+    ctx.fillText(fitted(ctx, lead, NAME_H, 12, W - priceW), 0, y);
+    if (priceStr) {
+      ctx.textAlign = 'right';
+      ctx.font = labelFont(NAME_H, 'bold');
+      ctx.fillText(priceStr, W, y);
+    }
     y += lineHeight(NAME_H) + 2;
 
-    ctx.font = labelFont(SKU_H, 'bold');
-    ctx.textAlign = 'left';
-    ctx.fillText(item.sku, 0, y);
+    if (second) {
+      ctx.font = labelFont(SKU_H, 'bold');
+      ctx.textAlign = 'left';
+      ctx.fillText(second, 0, y);
+    }
     y += lineHeight(SKU_H);
     drawn++;
   }
@@ -755,11 +814,14 @@ export async function drawTallReceipt(
     ctx.font = labelFont(TOTAL_H, 'bold');
     ctx.textAlign = 'left';
     ctx.fillText(
-      `${page.itemCount} item${page.itemCount === 1 ? '' : 's'}${page.unpricedCount ? `, ${page.unpricedCount} TBD` : ''}`,
+      `${page.itemCount} item${page.itemCount === 1 ? '' : 's'}${layout.show.price && page.unpricedCount ? `, ${page.unpricedCount} TBD` : ''}`,
       0, fy,
     );
-    ctx.textAlign = 'right';
-    ctx.fillText(`$${(page.totalCents / 100).toFixed(2)}`, W, fy);
+    // Price off takes the total with it (Plan 36 D7).
+    if (layout.show.price) {
+      ctx.textAlign = 'right';
+      ctx.fillText(`$${(page.totalCents / 100).toFixed(2)}`, W, fy);
+    }
   } else {
     // Said on the page rather than left to the seller to work out from a torn
     // edge: they are holding one sheet of two and nothing else says so.
@@ -774,6 +836,8 @@ export async function drawTallReceipt(
 /** Page one's head: who, when, and the code that tracks their items. */
 async function drawReceiptMasthead(
   ctx: SKRSContext2D, W: number, GAP: number, RULE: number, data: ReceiptHeaderData,
+  /** False for a status-only receipt, which lists no items (Plan 36). */
+  itemsHeading = true,
 ): Promise<number> {
   const LOGO = Math.round(W * 0.17);
   if (data.orgLogoUrl) {
@@ -814,21 +878,27 @@ async function drawReceiptMasthead(
   ctx.fillRect(0, y, W, RULE);
   y += RULE + GAP;
 
-  const QR = Math.round(W * 0.30);
-  drawQr(ctx, data.qrUrl, W - QR, y, QR);
+  // No link, no code and no rule under it (Plan 36).
+  if (data.qrUrl) {
+    const QR = Math.round(W * 0.30);
+    drawQr(ctx, data.qrUrl, W - QR, y, QR);
 
-  const scanW = W - QR - GAP;
-  const SCAN = commonFitSize(ctx, ['Scan to track', 'your items:'], Math.round(W * 0.062), 12, scanW);
-  const scanY = y + Math.floor((QR - (lineHeight(SCAN) * 2 + 4)) / 2);
-  ctx.fillStyle = '#000';
-  ctx.font = labelFont(SCAN, 'bold');
-  ctx.textAlign = 'left';
-  ctx.fillText('Scan to track', 0, scanY);
-  ctx.fillText('your items:', 0, scanY + lineHeight(SCAN) + 4);
+    const [scanA, scanB] = data.qrCaption ?? ['Scan to track', 'your items:'];
+    const scanW = W - QR - GAP;
+    const SCAN = commonFitSize(ctx, [scanA, scanB], Math.round(W * 0.062), 12, scanW);
+    const scanY = y + Math.floor((QR - (lineHeight(SCAN) * 2 + 4)) / 2);
+    ctx.fillStyle = '#000';
+    ctx.font = labelFont(SCAN, 'bold');
+    ctx.textAlign = 'left';
+    ctx.fillText(scanA, 0, scanY);
+    ctx.fillText(scanB, 0, scanY + lineHeight(SCAN) + 4);
 
-  y += QR + GAP;
-  ctx.fillRect(0, y, W, RULE);
-  y += RULE + GAP;
+    y += QR + GAP;
+    ctx.fillRect(0, y, W, RULE);
+    y += RULE + GAP;
+  }
+
+  if (!itemsHeading) return y;
 
   const HEAD = Math.round(W * 0.042);
   ctx.font = labelFont(HEAD, 'bold');

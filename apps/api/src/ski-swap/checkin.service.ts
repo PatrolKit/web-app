@@ -7,6 +7,7 @@ import { PrintQueueService } from './print-queue.service';
 import { PrintRecipeService, printTargetFor } from './printing/print-recipe.service';
 import { ItemService } from './item.service';
 import { ReceiptService } from './receipt.service';
+import { receiptPrintRefusal } from './receipt-layout';
 import { displayName } from '../common/util/person';
 import { isUniqueViolation } from '../common/util/prisma-errors';
 import type { SignInContext } from '../contracts/auth.contracts';
@@ -49,11 +50,14 @@ export class CheckinService {
 
     const station = await this.prisma.checkinStation.findFirst({
       where: { id: stationId, orgId: swap.orgId, deletedAt: null },
-      select: { id: true, name: true },
+      select: { id: true, name: true, bridge: { select: { bridgedPrinter: true } } },
     });
     if (!station) throw new NotFoundException('Station not found');
 
     return {
+      // Whether finishing here prints a receipt (Plan 36), so the page can
+      // say "print my receipt" only when one will.
+      receiptPrints: receiptPrintsAt(swap, station.bridge?.bridgedPrinter ?? null),
       orgId: swap.orgId,
       orgName: swap.org.name,
       orgLogoUrl: swap.org.logoUrl,
@@ -267,12 +271,23 @@ export class CheckinService {
       orderBy: { createdAt: 'asc' },
     });
 
+    // What this swap's receipts are (Plan 36): none at all, or whether and on
+    // what they print.
+    const swapSettings = await this.prisma.skiSwap.findFirstOrThrow({
+      where: { id: swapId, orgId },
+      select: { receiptMode: true, receiptPrintEnabled: true, receiptPaperSize: true, updatedAt: true },
+    });
+    const givesReceipts = swapSettings.receiptMode !== 'NONE';
+    const printer = station.bridge?.bridgedPrinter ?? null;
+    const printRefusal = givesReceipts ? receiptPrintRefusal(swapSettings, printer?.paperSize ?? null) : null;
+
     // Header plus one job per page of the item list. Page count comes from the
     // renderer rather than a guess about how many fit.
-    const target = printTargetFor(station.bridge?.bridgedPrinter ?? null);
+    const target = printTargetFor(printer);
     // A printer loaded with 25 × 67 helper labels prints nothing else (Plan 28),
     // so a finish there queues no receipt pages. The emailed one still goes.
-    const noPrintedReceipt = target.size.tier === 'strip';
+    // Nor does one the swap's settings refuse: printing off, or other paper.
+    const noPrintedReceipt = !receiptPrintsAt(swapSettings, printer);
     const pageCount = noPrintedReceipt ? 0 : await this.recipes.receiptPageCount(orgId, swapId, seller.id, target);
     if (!noPrintedReceipt) {
       await this.queue.enqueueReceipt({
@@ -296,9 +311,12 @@ export class CheckinService {
     // called twice, and minting unconditionally gave a seller who double-tapped
     // Done two receipts for one pile of items — two live tokens, and only one
     // of them revoked if anybody ever revoked it.
-    await this.receipts.currentFor(orgId, swapId, seller.id, station.id).catch((err) => {
-      this.logger.error({ err, swapId, sellerId: seller.id }, 'Could not snapshot the receipt');
-    });
+    const receipt = givesReceipts
+      ? await this.receipts.currentFor(orgId, swapId, seller.id, station.id).catch((err) => {
+          this.logger.error({ err, swapId, sellerId: seller.id }, 'Could not snapshot the receipt');
+          return null;
+        })
+      : null;
 
     /*
      * And emailed, wherever there is a proved address to email.
@@ -312,7 +330,7 @@ export class CheckinService {
      * money per message, so it stays behind the button on the finish screen
      * for sellers who have no email.
      */
-    const emailedTo = person.verifiedEmail
+    const emailedTo = givesReceipts && person.verifiedEmail
       ? await this.receipts
           .send({
             orgId,
@@ -330,7 +348,9 @@ export class CheckinService {
              * a repeat and different for a seller who came back with more, so
              * they dedupe the first and let the second through.
              */
-            idempotencyKey: `checkin-finish:${swapId}:${seller.id}:${items.length}:${items.reduce((sum, i) => sum + (i.priceCents ?? 0), 0)}`,
+            // And on the swap's settings as they stand: a receipt changed in
+            // between is a different email (Plan 36).
+            idempotencyKey: `checkin-finish:${swapId}:${seller.id}:${items.length}:${items.reduce((sum, i) => sum + (i.priceCents ?? 0), 0)}:${swapSettings.updatedAt.getTime()}`,
           })
           // Only a real send. `SUPPRESSED` is a deployment with outbound
           // messaging off, and reporting it as sent would leave the finish
@@ -358,8 +378,25 @@ export class CheckinService {
     // seller at the counter with no paperwork.
     const failed = await this.pushToSquare(orgId, swapId, consigned.map((i) => i.id));
 
+    // Where the finish screen sends the seller to follow their items: the
+    // receipt's link, per the swap's settings (Plan 36). Best-effort too.
+    const receiptLink = givesReceipts
+      ? await this.receipts.layoutFor(swapId, seller.id, receipt?.token ?? null)
+          .then((layout) => layout.link)
+          .catch((err: unknown) => {
+            this.logger.error({ err, swapId, sellerId: seller.id }, 'Could not resolve the receipt link');
+            return null;
+          })
+      : null;
+
     return {
       itemCount: items.length,
+      receiptLink,
+      /** `none` when the swap gives no receipts: no paper, no email, no step (Plan 36). */
+      receipt: givesReceipts ? ('given' as const) : ('none' as const),
+      /** Whether a receipt is printing at this station, and if not because of the settings, why. */
+      receiptPrinted: !noPrintedReceipt,
+      receiptPrintRefusal: (printRefusal?.code ?? null) as 'RECEIPT_PRINT_OFF' | 'RECEIPT_PAPER' | null,
       // Labels queued, which is the item pages plus a masthead only where the
       // tier prints one. The tall tier folds its masthead into page one, so
       // `+ 1` there reported a label nobody enqueued.
@@ -428,4 +465,18 @@ export class CheckinService {
       unpricedCount: items.filter((i) => i.priceCents === null).length,
     };
   }
+}
+
+/**
+ * Whether a finish at this printer prints a receipt (Plan 36): the swap gives
+ * them and prints them on this printer's paper, and the printer isn't loaded
+ * with helper-label strips, which print nothing else (Plan 28).
+ */
+function receiptPrintsAt(
+  swap: { receiptMode: string; receiptPrintEnabled: boolean; receiptPaperSize: string },
+  printer: Parameters<typeof printTargetFor>[0],
+): boolean {
+  if (swap.receiptMode === 'NONE') return false;
+  if (receiptPrintRefusal(swap, printer?.paperSize ?? null)) return false;
+  return printTargetFor(printer).size.tier !== 'strip';
 }
