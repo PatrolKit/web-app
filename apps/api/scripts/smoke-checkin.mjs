@@ -47,6 +47,9 @@ const swap = await prisma.skiSwap.create({
   data: {
     orgId: org.id, slug: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, title: 'Check-in smoke swap', squareCategoryId: 'smoke',
     skuPrefix: 'CIS', active: true, activeSkuPrefix: 'CIS',
+    // The station's printer has the default compact stock, and a receipt
+    // prints only on the paper its swap names (Plan 36).
+    receiptPaperSize: '50x30',
   },
 });
 const device = await prisma.device.create({
@@ -81,6 +84,7 @@ const category = await prisma.taxonomyNode.create({
 const ctx = await fetch(`${BASE}/public/checkin/${swap.id}?station=${station.id}`).then(unwrap);
 ok('station QR resolves to a swap and a station',
    ctx.swapId === swap.id && ctx.stationName === 'Smoke station', JSON.stringify(ctx).slice(0, 120));
+ok('...and says a receipt prints there', ctx.receiptPrints === true, String(ctx.receiptPrints));
 
 const wrongStation = await fetch(`${BASE}/public/checkin/${swap.id}?station=nope`);
 ok('an unknown station is refused', wrongStation.status === 404, String(wrongStation.status));
