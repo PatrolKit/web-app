@@ -89,7 +89,7 @@ export default function SkuStatusPage() {
             disabled={check.isPending || !sku.trim()}
             className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white py-3 rounded font-medium text-sm"
           >
-            {check.isPending ? 'Checking…' : 'Check'}
+            {check.isPending ? 'Checking…' : 'Check Status'}
           </button>
         </form>
 
