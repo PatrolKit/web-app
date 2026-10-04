@@ -75,6 +75,12 @@ export default function SwapSettingsModal({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // Nothing changed is nothing to save. The server refuses an empty update,
+    // so saving one just closes the dialog.
+    if (swap && Object.keys(changes(form, swap)).length === 0) {
+      onClose();
+      return;
+    }
     if (!slugValid) {
       setTab('general');
       setError({ tab: 'general', message: 'A slug is up to 40 lowercase letters, digits and hyphens.' });
