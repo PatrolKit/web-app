@@ -6,10 +6,10 @@ The Items page stays quick, and Square stays unbothered, at **10,000 items in a
 swap with 5 staff on the page at once**.
 
 **Stock stays in Square, and the server asks only about what's on screen.**
-Nothing stores or remembers it. To get there, every feature that needed stock
-for a whole swap at once goes: the For sale and Sold filters, the counts beside
-the filters, sorting by Status, and the dashboard's sales figures. Sales totals
-and lists of what sold live in Square's own reports. Payout runs still work out
+Nothing stores or remembers it. Every feature that needed stock for a whole
+swap at once goes: the For sale and Sold filters, the counts beside the
+filters, sorting by Status, and the dashboard's sales figures. Sales totals and
+lists of what sold live in Square's own reports, and payout runs still work out
 sales from Square's orders.
 
 ## Today, at 10,000 items
@@ -35,8 +35,8 @@ and total value are wrong for any seller with more than 50 items.
 
 - **Items page:** first rows on screen in under 1 s; a sort, filter or next
   page in under 300 ms of server time, plus one Square read for the page.
-- **Square:** one stock read per page someone views, for its 50 items. Nothing
-  reads stock for a whole swap. At 5 staff, a few dozen reads a minute.
+- **Square:** one stock read per page viewed, for its 50 items. Nothing reads
+  stock for a whole swap. At 5 staff, that's a few dozen reads a minute.
 - **Server memory:** no response over about 300 KB.
 
 ## Decisions
@@ -44,14 +44,14 @@ and total value are wrong for any seller with more than 50 items.
 | # | Decision |
 |---|---|
 | D1 | **Pages of 50.** The server filters, sorts and searches, and the browser shows one page: "1–50 of 9,812", Previous and Next. Changing a filter, sort or search starts again at page 1. |
-| D2 | **Filters are only what our own data answers:** Not yet received, Not in Square (accepted, never put in Square), Needs a price, tag printed or not, and seller. **For sale and Sold go**, along with the counts beside each filter: what a filter finds shows when it's run, as "1–50 of 312". |
-| D3 | **Sorting covers SKU, name, price, seller and tag.** Status sorting goes, because telling For sale from Sold needs stock for every item. |
+| D2 | **Filters are only what our own data answers:** Not yet received, Not in Square (accepted but never put in Square), Needs a price, tag printed or not, and seller. **For sale and Sold go**, along with the counts beside each filter. What a filter finds shows when it runs, as "1–50 of 312". |
+| D3 | **Sorting covers SKU, name, price, seller and tag.** Status sorting goes: telling For sale from Sold needs stock for every item. |
 | D4 | **Row badges read Square live, for the page.** The Status column still shows For sale, Sold or Stock unknown, from one Square read for the page's items. If Square doesn't answer, those rows say Stock unknown, as now. |
-| D5 | **A save updates its row in place.** Edit, print, price and accept replace that row with the server's answer. A delete removes the row. Nothing reloads the whole list. |
-| D6 | **The dashboard drops its sales figures.** Items Sold, Est. Revenue, the note about tickets sold before they were priced, and the "Square could not be read" note all go. Total Items, Sellers and Consigned Value stay; they come from our own data, so the dashboard makes no Square call at all. |
-| D7 | **The Receipt popup shows listed value:** the seller's priced items at their listed prices, as checked in, with the count of those still to be priced. Both come from the server, with no Square read. |
-| D8 | **The iPads get no stock.** They store `inStock` and `soldCount` but never read them: no screen, count, receipt or check uses them, and their own notes say a check-in iPad shouldn't show "sold". Every item response to a device leaves out `inStock`, `soldCount` and `inventoryKnown`, and skips the Square read. The app already treats both fields as optional, and it removes them on its side ([IPAD_HANDOFF.md](IPAD_HANDOFF.md)). |
-| D9 | **Decisions read Square live, as now.** Removing returned tickets (Plan 38 D10), the shop's describe-once rule (Plan 38 D6) and payouts (orders) each read what they need at that moment: one range, one item, or the orders. |
+| D5 | **A save updates its row in place.** Edit, print, price and accept replace that row with the server's answer, and a delete removes it. Nothing reloads the whole list. |
+| D6 | **The dashboard drops its sales figures:** Items Sold, Est. Revenue, the note about tickets sold before they were priced, and the "Square could not be read" note. Total Items, Sellers and Consigned Value stay. They come from our own data, so the dashboard makes no Square call. |
+| D7 | **The Receipt popup shows listed value:** the seller's priced items at their listed prices, as checked in, and how many are still to be priced. Both come from the server, with no Square read. |
+| D8 | **The iPads get no stock.** They store `inStock` and `soldCount` but never read them, and their own notes say a check-in iPad shouldn't show "sold". Item responses to a device leave out `inStock`, `soldCount` and `inventoryKnown`, and skip the Square read. The iPad removes them on its side ([IPAD_HANDOFF.md](IPAD_HANDOFF.md)). |
+| D9 | **Decisions read Square live, as now.** Removing returned tickets (Plan 38 D10), the shop's describe-once rule (Plan 38 D6) and payouts each read what they need at that moment: one range, one item, or the orders. |
 
 ## Server
 
@@ -61,13 +61,13 @@ and total value are wrong for any seller with more than 50 items.
   - `status=not_received|not_in_square|needs_price`;
   - `printed=true|false`;
   - `sort=sku|name|price|seller|tag` and `dir=asc|desc`.
-- **All of it is SQL:**
+- **All of it runs in SQL**, beside the existing `query` and `sellerId`:
   - SKU sorts as a number: by length, then value.
   - Seller sorts by the name shown: the business name, or first and last.
   - A missing price or seller sorts last either way, and ties sort by SKU, as the table does now.
-- **The page itself** is read with the usual includes for its 50 ids, plus one Square stock read for those that are in Square (D4).
-- **Other callers keep the defaults:** no `sort` means newest first, as now.
-- **A device caller** (`req.device` set) gets item responses without the three stock fields, and no Square call (D8). That covers the list (`walk` and `updatedSince`), create, patch and photo upload. The contract gains a device variant of `ItemResponse` without them, so the web's type keeps them required.
+- **The page** is read with the usual includes for its 50 ids, plus one Square stock read for those in Square (D4).
+- **Other callers keep the defaults:** no `sort` means newest first.
+- **A device caller** (`req.device` set) gets no stock fields and causes no Square call (D8). That covers the list (`walk` and `updatedSince`), create, patch and photo upload. The contract gains a device variant of `ItemResponse` without the three fields, so the web's type keeps them required.
 
 ### The dashboard's figures
 
@@ -77,9 +77,9 @@ and total value are wrong for any seller with more than 50 items.
 
 ### The Receipt popup
 
-- **The seller's figures come from the server (D7):** the count of their items
-  in the swap, their listed value, and how many are still to be priced. This
-  fixes the 50-item limit.
+- **The server supplies the seller's figures (D7):** their item count in the
+  swap, their listed value, and how many are still to be priced. This fixes the
+  50-item limit.
 
 ## Web
 
@@ -87,24 +87,24 @@ and total value are wrong for any seller with more than 50 items.
   - asks for one page with the filters, sort and search;
   - keeps them in the URL, so the dashboard's links and a reload land on the same view;
   - drops the paging loop, the browser-side filtering, sorting and counting, and the stock-unknown count above the table;
-  - keeps the sort headings already committed for SKU, name, price, seller and tag, which now send `sort` and `dir`. Status loses its heading's sort.
-- **Status filter menu:** All statuses, Not yet received, Not in Square, Needs a price. No counts.
+  - keeps the sort headings already committed for SKU, name, price, seller and tag, which now send `sort` and `dir`. The Status heading no longer sorts.
+- **Status filter menu:** All statuses, Not yet received, Not in Square, Needs a price, with no counts.
 - **Pager:** "1–50 of 9,812", Previous and Next, above and below the table.
-- **Saves** follow D5.
 - **The shop's My Items page** works the same way, through its own list endpoint (`seller/me/items`), which already takes `skip` and `take`.
-- **The dashboard:** the Items Sold and Est. Revenue tiles and the two notes go (D6). The dashboard's own links to filtered Items views (needs a price, not yet received) keep working through the URL.
-- **The Receipt popup** shows the seller's item count and listed value from the server (D7).
+- **The dashboard:**
+  - the Items Sold and Est. Revenue tiles and the two notes go (D6);
+  - its links to filtered Items views (needs a price, not yet received) keep working through the URL.
+- **The Receipt popup** shows the server's count and listed value (D7).
 
 ## Rollout
 
 - **Nothing deploys while a customer's swap is running** without the user's say-so.
 - **No migration.**
-- **The one-minute dashboard refresh** already committed is harmless once D6 is
-  in, since the figures cost no Square read. Before D6, it must not ship alone;
-  otherwise it comes out of that commit.
+- **The one-minute dashboard refresh** already committed ships with D6, when the
+  figures stop costing a Square read. If it has to go out sooner, take it out of
+  that commit.
 - **iPad:** [IPAD_HANDOFF.md](IPAD_HANDOFF.md) goes to the iOS repo. Either side
-  can go first: today's app decodes the fields as optional, and a newer one
-  ignores them if they're still sent.
+  can go first.
 
 ## Tests
 
@@ -115,7 +115,7 @@ and total value are wrong for any seller with more than 50 items.
   - every filter and sort, including numeric SKU, missing values last and ties by SKU;
   - `total` matching the filters;
   - one Square read per page, for the page's items only;
-  - item responses to a device carrying no stock fields and making no Square call, for the list, create, patch and photo upload;
+  - no stock fields and no Square call for a device, on the list, create, patch and photo upload;
   - responses to a person unchanged;
   - the stats making no Square call;
   - the Receipt figures for a seller with more than 50 items.
