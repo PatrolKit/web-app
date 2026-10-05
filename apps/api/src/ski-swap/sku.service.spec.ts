@@ -75,18 +75,30 @@ describe('SkuService', () => {
    * live ones. It asked about only the live ones, and the difference reached a
    * venue as a 500 on the ordinary act of adding a station.
    */
-  function stationsIn(rows: { code: string; deletedAt: Date | null }[]) {
+  function stationsIn(
+    rows: { code: string; deletedAt: Date | null }[],
+    /** Letters with SKUs in a running swap. */
+    inRunningSwaps: string[] = [],
+  ) {
     const prisma = makePrisma();
     prisma.checkinStation.findMany.mockImplementation(
       ({ where }: { where: { deletedAt?: null } }) =>
         Promise.resolve(
           rows
             .filter((r) => (where.deletedAt === null ? r.deletedAt === null : true))
-            .map((r) => ({ code: r.code })),
+            .map((r) => ({ code: r.code, deletedAt: r.deletedAt })),
         ),
     );
+    (prisma as unknown as { swapSkuCounter: unknown }).swapSkuCounter = {
+      findMany: jest.fn().mockImplementation(({ where }: { where: { swap: { active: boolean }; lastCounter: { gt: number } } }) => {
+        expect(where).toMatchObject({ swap: { orgId: 'org1', active: true }, lastCounter: { gt: 0 } });
+        return Promise.resolve(inRunningSwaps.map((code) => ({ code })));
+      }),
+    };
     return prisma;
   }
+
+  const retired = new Date('2026-01-01');
 
   // Stations are the only consumers now. Devices used to take one each, which
   // meant a bridge burned a character it never minted a SKU with.
@@ -98,33 +110,42 @@ describe('SkuService', () => {
     expect(await new SkuService(asPrisma(prisma)).allocateCode('org1')).toBe('C');
   });
 
-  it('does not hand out a retired station\'s code', async () => {
-    // The unique index counts tombstones, so reusing one is a constraint
-    // violation — and a retired code has to stay retired anyway, or a SKU
-    // printed at the old station A would name the new one.
+  it('gives out a never-used letter before a retired one', async () => {
+    // A SKU goes on naming the counter it was printed at for as long as the
+    // pool allows.
     const prisma = stationsIn([
-      { code: 'A', deletedAt: new Date('2026-01-01') },
+      { code: 'A', deletedAt: retired },
       { code: 'B', deletedAt: null },
     ]);
     expect(await new SkuService(asPrisma(prisma)).allocateCode('org1')).toBe('C');
   });
 
-  it('counts a retired code against the pool', async () => {
-    const prisma = stationsIn(
-      [...SKU_CODE_ALPHABET].map((c) => ({ code: c, deletedAt: new Date('2026-01-01') })),
-    );
-    await expect(new SkuService(asPrisma(prisma)).allocateCode('org1')).rejects.toThrow(
-      /used all/,
-    );
+  it('reuses a retired station’s letter once no running swap has tags under it', async () => {
+    const all = [...SKU_CODE_ALPHABET];
+    const prisma = stationsIn([
+      ...all.slice(0, 2).map((c) => ({ code: c, deletedAt: retired })),
+      ...all.slice(2).map((c) => ({ code: c, deletedAt: null })),
+    ], ['A']);
+    // A is retired but still in a running swap's tags; B is free.
+    expect(await new SkuService(asPrisma(prisma)).allocateCode('org1')).toBe('B');
   });
 
-  it('does not tell someone to retire a station to free a code', async () => {
-    // Retiring frees nothing, so that advice is a loop with no exit.
+  it('never gives out a live station’s letter, whatever the swaps say', async () => {
+    const all = [...SKU_CODE_ALPHABET];
+    const prisma = stationsIn([
+      { code: all[0], deletedAt: retired },
+      ...all.slice(1).map((c) => ({ code: c, deletedAt: null })),
+    ], ['A']);
+    await expect(new SkuService(asPrisma(prisma)).allocateCode('org1')).rejects.toThrow(/in use/);
+  });
+
+  it('says when a retired letter frees up, when there are none left', async () => {
     const prisma = stationsIn(
-      [...SKU_CODE_ALPHABET].map((c) => ({ code: c, deletedAt: null })),
+      [...SKU_CODE_ALPHABET].map((c) => ({ code: c, deletedAt: retired })),
+      [...SKU_CODE_ALPHABET],
     );
-    await expect(new SkuService(asPrisma(prisma)).allocateCode('org1')).rejects.not.toThrow(
-      /retire a station before/i,
+    await expect(new SkuService(asPrisma(prisma)).allocateCode('org1')).rejects.toThrow(
+      /frees up once the swaps it printed for have ended/,
     );
   });
 });

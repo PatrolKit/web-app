@@ -593,9 +593,10 @@ function RetireModal({
 
         <div className="space-y-2 text-sm text-gray-400">
           <p>
-            Its code <span className="font-mono text-gray-200">{station.code}</span> stays
-            claimed, so tags already printed here keep meaning what they say. No new station
-            can use that letter — an organization has 32 and they are never reused.
+            Tags already printed here keep their code,{' '}
+            <span className="font-mono text-gray-200">{station.code}</span>. A new station can be
+            given that letter once the swaps those tags belong to have ended.
+            An organization has 32 letters.
           </p>
           {station.attendantDeviceId && (
             <p>Its iPad is revoked at the same time and will stop being able to check anyone in.</p>

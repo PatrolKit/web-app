@@ -63,12 +63,20 @@ export class StationService {
   }
 
   async create(orgId: string, name: string): Promise<StationResponse> {
-    const code = await this.skuService.allocateCode(orgId);
-    const station = await this.prisma.checkinStation.create({
-      data: { id: createId(), orgId, name, code },
-      include: INCLUDE,
-    });
-    return toResponse(station);
+    // Two stations added at once can be handed the same letter; the unique
+    // index on live letters refuses the second, which then takes the next.
+    for (let attempt = 0; ; attempt++) {
+      const code = await this.skuService.allocateCode(orgId);
+      try {
+        const station = await this.prisma.checkinStation.create({
+          data: { id: createId(), orgId, name, code, liveCode: code },
+          include: INCLUDE,
+        });
+        return toResponse(station);
+      } catch (err) {
+        if ((err as { code?: string }).code !== 'P2002' || attempt >= 2) throw err;
+      }
+    }
   }
 
   /**
@@ -114,7 +122,8 @@ export class StationService {
   }
 
   /**
-   * Soft delete — the code stays claimed until then, so SKUs never collide.
+   * Soft delete. The code stays on the row; `allocateCode` decides when it can
+   * be given out again.
    *
    * The hardware is released. A retired station holding a bridge would keep that
    * bridge, and the printer behind it, out of circulation permanently.
@@ -125,6 +134,9 @@ export class StationService {
       where: { id: station.id },
       data: {
         deletedAt: new Date(),
+        // Its letter stays on the row as history, but is no longer held: it
+        // can go to a new station once no running swap has tags under it.
+        liveCode: null,
         attendantDeviceId: null,
         bridgeDeviceId: null,
       },

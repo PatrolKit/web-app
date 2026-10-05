@@ -704,10 +704,15 @@ model CheckinStation {
   orgId String
   /// Human label — "Station 3".
   name  String
-  /// One character, unique per org. The SKU namespace for everything checked in
-  /// here, staffed or self-service, and however the tag was printed. The only
-  /// consumer of the pool.
+  /// One character. The SKU namespace for everything checked in here, staffed
+  /// or self-service, and however the tag was printed. The only consumer of
+  /// the pool. A retired station keeps its letter as history; the letter is
+  /// free again once no running swap has SKUs under it.
   code  String @db.VarChar(1)
+  /// `code` while the station is live, null once retired: the same trick
+  /// `SkiSwap.activeSkuPrefix` uses, since MySQL has no partial unique index.
+  /// It's what stops two live stations sharing a letter.
+  liveCode String? @db.VarChar(1)
 
   /// The staff tablet stationed at this counter. Its presence is what makes the
   /// station staffed rather than self-service — a stored `kind` could contradict
@@ -730,7 +735,7 @@ model CheckinStation {
   bridge    Device?      @relation("StationBridge", fields: [bridgeDeviceId], references: [id], onDelete: SetNull)
   printJobs PrintJob[]
 
-  @@unique([orgId, code])
+  @@unique([orgId, liveCode])
   @@index([orgId, deletedAt])
   @@index([bridgeDeviceId])
 }

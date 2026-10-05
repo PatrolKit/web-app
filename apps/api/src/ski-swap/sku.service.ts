@@ -68,30 +68,36 @@ export class SkuService {
    * can carry, producing an unscannable tag nobody notices until the register.
    */
   async allocateCode(orgId: string): Promise<string> {
-    // Every row, including retired ones. A retired station keeps its code on
-    // purpose — a SKU printed at station A has to go on meaning station A
-    // forever, so the letter can never be handed to a different counter — and
-    // the unique index counts tombstones whether or not this query does.
-    // Filtering them out here handed back a letter the database already held,
-    // and the create failed with a raw constraint violation: a 500 for the
-    // ordinary act of adding a station to an org that had ever retired one.
     const stations = await this.prisma.checkinStation.findMany({
       where: { orgId },
-      select: { code: true },
+      select: { code: true, deletedAt: true },
     });
+    const live = new Set(stations.filter((s) => !s.deletedAt).map((s) => s.code));
+    const everUsed = new Set(stations.map((s) => s.code));
 
-    const taken = new Set<string>(stations.map((s) => s.code));
-
+    // A letter never given out comes first, so a SKU goes on naming the counter
+    // it was printed at for as long as the pool allows.
     for (const c of SKU_CODE_ALPHABET) {
-      if (!taken.has(c)) return c;
+      if (!everUsed.has(c)) return c;
     }
 
-    // Retiring frees nothing, so saying "retire one" would send someone round
-    // a loop that cannot end.
+    // Then a retired station's letter, once no running swap has SKUs under it.
+    // Nothing duplicates even then: a SKU carries its swap's prefix, and its
+    // counter is per swap and letter. What's kept off-limits is the letter a
+    // live swap's tags still say, so no two counters in it share one.
+    const counters = await this.prisma.swapSkuCounter.findMany({
+      where: { swap: { orgId, active: true }, lastCounter: { gt: 0 } },
+      select: { code: true },
+    });
+    const inRunningSwaps = new Set(counters.map((c) => c.code));
+    for (const c of SKU_CODE_ALPHABET) {
+      if (!live.has(c) && !inRunningSwaps.has(c)) return c;
+    }
+
     throw new ConflictException(
-      `This organisation has used all ${SKU_CODE_ALPHABET.length} station codes. ` +
-        'A code is never reused, even after a station is retired, so that a SKU always ' +
-        'names the counter it was printed at.',
+      `All ${SKU_CODE_ALPHABET.length} station codes are in use, by live stations or by retired ones whose ` +
+        'tags are in a running swap. A retired station’s code frees up once the swaps it printed for have ended.',
     );
   }
+
 }
