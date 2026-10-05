@@ -315,16 +315,12 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-white font-medium">Fast Edit Tickets</h3>
-            <p className="text-gray-400 text-sm mt-1 max-w-xl">
-              For pricing a stack of legacy ticket stubs. For each stub, enter its ticket number,
-              what the item is (optional), and its price, then press Enter to save it and start the
-              next. Only tickets that don’t have a price yet can be loaded. A ticket already on sale
-              rings up at its new price as soon as it’s saved.
-            </p>
-            <p className="text-gray-500 text-xs mt-1">
-              Keys: SKU, Tab, details, Tab, price, Enter. In details, Enter picks a suggestion.
-              Escape clears the ticket.
-            </p>
+            <ul className="text-gray-400 text-sm mt-1 space-y-0.5 list-disc pl-5">
+              <li>Price a stack of legacy ticket stubs, one stub at a time.</li>
+              <li>Only tickets without a price can be loaded.</li>
+              <li>A ticket on sale rings up at its new price as soon as it’s saved.</li>
+              <li>Escape clears the current ticket.</li>
+            </ul>
           </div>
           <button
             type="button"
@@ -336,7 +332,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
           </button>
         </div>
 
-        <div className="grid grid-cols-[9rem_1fr_7rem] gap-2 items-start">
+        <div className="grid grid-cols-[13rem_1fr_10rem] gap-2 items-start">
           <Field label="SKU">
             <input
               ref={skuRef}
@@ -350,6 +346,13 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               placeholder={ticketsLoading ? 'Loading…' : 'Ticket number'}
               className={`${inputClass} font-mono`}
             />
+            {field === 'sku' && (
+              <Hints lines={!skuText
+                ? ['Start typing the SKU']
+                : shown > 0
+                  ? ['Arrows + Enter to pick a match, or Tab when done typing']
+                  : ['Tab when done typing']} />
+            )}
             {field === 'sku' && shown > 0 && (
               <Suggestions
                 rows={skuSuggestions.map((t) => ({
@@ -382,6 +385,12 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               placeholder="e.g. Rossignol red skis 170"
               className={`${inputClass} disabled:opacity-50`}
             />
+            {field === 'details' && (
+              <Hints lines={[
+                ...(shown > 0 ? ['Arrows + Enter to accept a suggestion'] : details.trim() ? [] : ['Start typing details (optional)']),
+                'Tab when done typing',
+              ]} />
+            )}
             {field === 'details' && shown > 0 && (
               <Suggestions
                 rows={detailSuggestions.map((s) => ({ key: s.key, label: s.label, sublabel: s.sublabel }))}
@@ -409,6 +418,9 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               aria-label="Price in dollars"
               className={`${inputClass} pl-7 text-right disabled:opacity-50`}
             />
+            {field === 'price' && ticket && (
+              <Hints lines={priceText ? ['Enter to save this ticket'] : ['Start typing the price']} />
+            )}
           </Field>
         </div>
 
@@ -456,6 +468,15 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
         </div>
       </div>
     </div>
+  );
+}
+
+/** What to do next in the focused field, said as you go. */
+function Hints({ lines }: { lines: string[] }) {
+  return (
+    <ul className="mt-1 space-y-0.5 text-xs text-gray-500" aria-live="polite">
+      {lines.map((l) => <li key={l}>{l}</li>)}
+    </ul>
   );
 }
 
