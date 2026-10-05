@@ -5,9 +5,12 @@
 The Items page stays quick, and Square stays unbothered, at **10,000 items in a
 swap with 5 staff on the page at once**.
 
-**Stock stays in Square.** Nothing stores a copy of it. The server keeps
-Square's last answer in memory for 2 minutes, so the page, its filters and the
-dashboard share one read instead of each making their own.
+**Stock stays in Square, and the server asks only about what's on screen.**
+Nothing stores or remembers it. To get there, every feature that needed stock
+for a whole swap at once goes: the For sale and Sold filters, the counts beside
+the filters, sorting by Status, and the dashboard's sales figures. Sales totals
+and lists of what sold live in Square's own reports. Payout runs still work out
+sales from Square's orders.
 
 ## Today, at 10,000 items
 
@@ -30,82 +33,75 @@ and total value are wrong for any seller with more than 50 items.
 
 ## Targets
 
-- **Items page:**
-  - first rows on screen in under 1 s;
-  - a sort, filter or next page in under 300 ms of server time.
-  - The exception is the first stock read for a swap after a restart (D7).
-- **Square:** stock reads don't grow with staff, page views or iPads. At most
-  one full read per running swap every 2 minutes, and only while someone is
-  looking.
+- **Items page:** first rows on screen in under 1 s; a sort, filter or next
+  page in under 300 ms of server time, plus one Square read for the page.
+- **Square:** one stock read per page someone views, for its 50 items. Nothing
+  reads stock for a whole swap. At 5 staff, a few dozen reads a minute.
 - **Server memory:** no response over about 300 KB.
 
 ## Decisions
 
 | # | Decision |
 |---|---|
-| D1 | **Pages of 50.** The server filters, sorts and counts, and the browser shows one page: "1–50 of 9,812", Previous and Next. Changing a filter, sort or search starts again at page 1. |
-| D2 | **Every filter and sort runs on the server.** Our own columns run in SQL; For sale, Sold and Status use Square's remembered answer (D5). Search covers what it does today: SKU, name, seller name, email and phone. |
-| D3 | **Counts come from the server in the same answer.** That means each status's count for the filter menu ("Needs a price (7)", "Sold (3,100)"), the items waiting to be accepted for the chosen seller, and the items whose stock is unknown. Nothing on the page counts the rows it was sent. |
-| D4 | **A save updates its row in place.** Edit, print, price and accept replace that row with the server's answer, then refresh only the counts. A delete removes the row. Nothing reloads the whole list. |
-| D5 | **Square's answer is remembered, not stored.** The server keeps the last full stock read per swap in memory for **2 minutes**, a single setting to lengthen if Square's reads prove costly. It's never written to the database, it's gone on a restart, and it's read only when someone needs it. |
-| D6 | **One source per screen.** Everything on the Items page and the dashboard reads the remembered answer: row badges, filters, Status sorting and counts. A row's badge never disagrees with the filter it's listed under. |
-| D7 | **Shown stale while it refreshes.** Once the answer is 2 minutes old, the next request gets it at once and a refresh starts behind it. Only the first read for a swap, after a restart, makes anyone wait. One refresh runs at a time per swap. |
-| D8 | **Freshness is shown, and can be forced.** The page and the dashboard say "Stock as of 1 min ago". **Refresh stock** re-reads Square now, at most once every 15 s per swap. If a refresh fails, the last answer stays up with its age and a notice that Square didn't answer. |
-| D9 | **Decisions still read Square live.** Anything that acts on "unsold" reads Square at that moment: removing returned tickets (Plan 38 D10), the shop's describe-once rule (Plan 38 D6) and payouts (orders). The remembered answer is for showing and finding, not for deciding. |
-| D10 | **The iPads get no stock.** They store `inStock` and `soldCount` but never read them: no screen, count, receipt or check uses them, and their own notes say a check-in iPad shouldn't show "sold". Every item response to a device leaves out `inStock`, `soldCount` and `inventoryKnown`, and skips the Square read. The app already treats both fields as optional, and it removes them on its side ([IPAD_HANDOFF.md](IPAD_HANDOFF.md)). |
+| D1 | **Pages of 50.** The server filters, sorts and searches, and the browser shows one page: "1–50 of 9,812", Previous and Next. Changing a filter, sort or search starts again at page 1. |
+| D2 | **Filters are only what our own data answers:** Not yet received, Not in Square (accepted, never put in Square), Needs a price, tag printed or not, and seller. **For sale and Sold go**, along with the counts beside each filter: what a filter finds shows when it's run, as "1–50 of 312". |
+| D3 | **Sorting covers SKU, name, price, seller and tag.** Status sorting goes, because telling For sale from Sold needs stock for every item. |
+| D4 | **Row badges read Square live, for the page.** The Status column still shows For sale, Sold or Stock unknown, from one Square read for the page's items. If Square doesn't answer, those rows say Stock unknown, as now. |
+| D5 | **A save updates its row in place.** Edit, print, price and accept replace that row with the server's answer. A delete removes the row. Nothing reloads the whole list. |
+| D6 | **The dashboard drops its sales figures.** Items Sold, Est. Revenue, the note about tickets sold before they were priced, and the "Square could not be read" note all go. Total Items, Sellers and Consigned Value stay; they come from our own data, so the dashboard makes no Square call at all. |
+| D7 | **The Receipt popup shows listed value:** the seller's priced items at their listed prices, as checked in, with the count of those still to be priced. Both come from the server, with no Square read. |
+| D8 | **The iPads get no stock.** They store `inStock` and `soldCount` but never read them: no screen, count, receipt or check uses them, and their own notes say a check-in iPad shouldn't show "sold". Every item response to a device leaves out `inStock`, `soldCount` and `inventoryKnown`, and skips the Square read. The app already treats both fields as optional, and it removes them on its side ([IPAD_HANDOFF.md](IPAD_HANDOFF.md)). |
+| D9 | **Decisions read Square live, as now.** Removing returned tickets (Plan 38 D10), the shop's describe-once rule (Plan 38 D6) and payouts (orders) each read what they need at that moment: one range, one item, or the orders. |
 
 ## Server
 
 ### The list
 
 - **`GET …/swaps/:swapId/items`** gains:
-  - `status=not_received|not_in_square|for_sale|sold|stock_unknown|needs_price`;
+  - `status=not_received|not_in_square|needs_price`;
   - `printed=true|false`;
-  - `sort=sku|name|price|seller|status|tag` and `dir=asc|desc`, the table's columns;
-  - `counts=true`, which adds the counts in D3 and the remembered answer's age.
-- **SQL handles our own columns:**
+  - `sort=sku|name|price|seller|tag` and `dir=asc|desc`.
+- **All of it is SQL:**
   - SKU sorts as a number: by length, then value.
   - Seller sorts by the name shown: the business name, or first and last.
   - A missing price or seller sorts last either way, and ties sort by SKU, as the table does now.
-- **Stock-based filters and sorts** (For sale, Sold, Stock unknown, Status, and the counts): the other filters run in SQL first. Their result is then split by the remembered answer, sorted and paged. At 10,000 items that's a list of ids and numbers in memory, not rows.
-- **The page itself** is read with the usual includes, for its 50 ids only.
+- **The page itself** is read with the usual includes for its 50 ids, plus one Square stock read for those that are in Square (D4).
 - **Other callers keep the defaults:** no `sort` means newest first, as now.
-- **A device caller** (`req.device` set) gets item responses without the three stock fields, and no Square call: the list (`walk` and `updatedSince`), create, patch and photo upload (D10). The contract gains a device variant of `ItemResponse` without them, so the web's type keeps them required.
+- **A device caller** (`req.device` set) gets item responses without the three stock fields, and no Square call (D8). That covers the list (`walk` and `updatedSince`), create, patch and photo upload. The contract gains a device variant of `ItemResponse` without them, so the web's type keeps them required.
 
-### Square's remembered answer
+### The dashboard's figures
 
-- **What it holds:** per swap, stock by variation id, when it was read, and whether the last refresh failed.
-- **How it's filled:** the swap's synced items' counts, read by catalog id in batches as large as Square allows. The off-hours test finds that size.
-- **Who reads it:**
-  - the Items page: status filters, Status sort, counts and row badges;
-  - the shop's My Items page;
-  - the dashboard's sold count and revenue, in place of the one-minute refresh's direct reads;
-  - the Receipt popup's totals.
-- **Who doesn't:** the decisions in D9, and the public status pages, which look up one SKU or one seller's items with a small live read.
-- **One copy:** the server runs as one process, so there's one entry per swap. If it ever runs as several, each keeps its own, and the cost scales with that.
+- **`GET …/swaps/:swapId/stats`** drops `itemsSold`, `grossRevenueCents`,
+  `unpricedSold` and `inventoryKnown`, and with them its Square read. Only the
+  web dashboard reads it.
 
 ### The Receipt popup
 
-- It reads the seller's item count and total from the server, which fixes the 50-item limit.
+- **The seller's figures come from the server (D7):** the count of their items
+  in the swap, their listed value, and how many are still to be priced. This
+  fixes the 50-item limit.
 
 ## Web
 
 - **`SwapItemsPanel`:**
   - asks for one page with the filters, sort and search;
   - keeps them in the URL, so the dashboard's links and a reload land on the same view;
-  - drops the paging loop and the browser-side filtering, sorting and counting;
-  - keeps the sort headings already committed, which now send `sort` and `dir`.
+  - drops the paging loop, the browser-side filtering, sorting and counting, and the stock-unknown count above the table;
+  - keeps the sort headings already committed for SKU, name, price, seller and tag, which now send `sort` and `dir`. Status loses its heading's sort.
+- **Status filter menu:** All statuses, Not yet received, Not in Square, Needs a price. No counts.
 - **Pager:** "1–50 of 9,812", Previous and Next, above and below the table.
-- **Stock line:** "Stock as of 1 min ago · Refresh stock" above the table, and the same on the dashboard (D8).
-- **Saves** follow D4.
+- **Saves** follow D5.
 - **The shop's My Items page** works the same way, through its own list endpoint (`seller/me/items`), which already takes `skip` and `take`.
+- **The dashboard:** the Items Sold and Est. Revenue tiles and the two notes go (D6). The dashboard's own links to filtered Items views (needs a price, not yet received) keep working through the URL.
+- **The Receipt popup** shows the seller's item count and listed value from the server (D7).
 
 ## Rollout
 
 - **Nothing deploys while a customer's swap is running** without the user's say-so.
 - **No migration.**
-- **The one-minute dashboard refresh** already committed ships only with the
-  remembered answer. Otherwise it comes out of that commit.
+- **The one-minute dashboard refresh** already committed is harmless once D6 is
+  in, since the figures cost no Square read. Before D6, it must not ship alone;
+  otherwise it comes out of that commit.
 - **iPad:** [IPAD_HANDOFF.md](IPAD_HANDOFF.md) goes to the iOS repo. Either side
   can go first: today's app decodes the fields as optional, and a newer one
   ignores them if they're still sent.
@@ -114,24 +110,18 @@ and total value are wrong for any seller with more than 50 items.
 
 - **Scale,** against a scratch database with 10,000 items, sellers and photos:
   - each sort and filter, with and without search, for query time and response size;
-  - five clients loading pages, filtering by Sold and saving at once, against a fake Square that counts its calls: at most one full read per swap per 2 minutes, plus forced refreshes.
+  - five clients loading pages and saving at once, against a fake Square that counts its calls: one call per page shown, none for anything else.
 - **Server:**
   - every filter and sort, including numeric SKU, missing values last and ties by SKU;
-  - counts that match the filters;
-  - stock-based filters and sorts split by the remembered answer;
+  - `total` matching the filters;
+  - one Square read per page, for the page's items only;
   - item responses to a device carrying no stock fields and making no Square call, for the list, create, patch and photo upload;
-  - responses to a person unchanged.
-- **The remembered answer:**
-  - its expiry, and serving stale while refreshing;
-  - one refresh at a time;
-  - the 15 s floor on forced refreshes;
-  - a failed refresh keeping the last answer, with its age.
+  - responses to a person unchanged;
+  - the stats making no Square call;
+  - the Receipt figures for a seller with more than 50 items.
 - **Web:**
   - the URL keeping the view;
-  - a save updating one row and the counts;
-  - the pager and the stock line;
-  - the Receipt total for a seller with more than 50 items.
-- **Against Square, in off-hours:** there's no sandbox, so the full read is
-  checked against a real account outside swap hours. It's read-only and needs
-  the user's go-ahead. It finds Square's batch size and how long a large read
-  takes.
+  - a save updating one row;
+  - the pager;
+  - the dashboard without the sales tiles;
+  - the Receipt popup's count and listed value.
