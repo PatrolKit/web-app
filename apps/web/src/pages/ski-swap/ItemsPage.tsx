@@ -1,13 +1,20 @@
 import { useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { faFileImport as faFileImportDuo, faKeyboard as faKeyboardDuo } from '@fortawesome/pro-duotone-svg-icons';
+import {
+  faCloudArrowUp as faCloudArrowUpDuo,
+  faFileImport as faFileImportDuo,
+  faKeyboard as faKeyboardDuo,
+  faRotateLeft as faRotateLeftDuo,
+} from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SwapItemsPanel from './SwapItemsPanel';
 import ProxyItemImportModal from './ProxyItemImportModal';
 import TicketFastEdit from './TicketFastEdit';
+import ReturnTicketsModal from './ReturnTicketsModal';
+import TicketSquareModal, { useTicketPushStatus } from './TicketSquareModal';
 
 export default function ItemsPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
@@ -17,6 +24,9 @@ export default function ItemsPage() {
   const qc = useQueryClient();
   const [importing, setImporting] = useState(false);
   const [fastEditing, setFastEditing] = useState(false);
+  const [returning, setReturning] = useState(false);
+  const [pushingOpen, setPushingOpen] = useState(false);
+  const canAdmin = perms.has('ski_swap:admin');
   const [searchParams] = useSearchParams();
 
   /** The swap's web takes no print tickets, so no row may get a generated SKU (Plan 34). */
@@ -44,7 +54,7 @@ export default function ItemsPage() {
     ? 'Checking who can be uploaded for…'
     : ticketSellers.length === 0
       ? webTicketsOnly
-        ? 'Nobody has been issued tickets for this swap yet. Issue a block from a seller’s Ticket source.'
+        ? 'Nobody has been issued tickets for this swap yet. Issue a range from a shop’s row on the Sellers page.'
         : 'No business sellers yet. Add a shop on the Sellers page.'
       : '';
 
@@ -56,6 +66,11 @@ export default function ItemsPage() {
   });
   const unpricedCount = unpriced?.length ?? 0;
   const takesTickets = !!selectedSwap && (selectedSwap.allowLegacyCheckin || selectedSwap.allowLegacyWeb);
+
+  /** Shops holding issued tickets here: who unused ones can be taken back from (Plan 38). */
+  const ticketHolders = ticketSellers.filter((t) => t.ticketCount > 0);
+  const { data: pushStatus } = useTicketPushStatus(orgId, swapId, canAdmin);
+  const notInSquare = pushStatus?.notInSquare ?? 0;
 
   const { data: sellers = [] } = useQuery<SellerResponse[]>({
     queryKey: ['ski-swap/sellers', orgId],
@@ -96,6 +111,27 @@ export default function ItemsPage() {
               onSelect: () => setFastEditing(true),
             }]
           : []),
+        // Issued tickets (Plan 38): finishing a push that stopped, and taking
+        // back what a shop returned. Staff who can issue them.
+        ...(canAdmin && notInSquare > 0
+          ? [{
+              key: 'push',
+              label: `Put tickets in Square (${notInSquare.toLocaleString('en-US')})`,
+              icon: faCloudArrowUpDuo,
+              disabledReason: pushStatus?.pushing
+                ? 'Putting them in Square now.'
+                : !pushStatus?.squareReady ? 'Square isn’t set up for this swap.' : undefined,
+              onSelect: () => setPushingOpen(true),
+            }]
+          : []),
+        ...(canAdmin && ticketHolders.length > 0
+          ? [{
+              key: 'return',
+              label: 'Return unused tickets',
+              icon: faRotateLeftDuo,
+              onSelect: () => setReturning(true),
+            }]
+          : []),
         {
           key: 'import',
           label: 'Import for a seller',
@@ -129,6 +165,26 @@ export default function ItemsPage() {
           void qc.invalidateQueries({ queryKey: ['ski-swap/unpriced-tickets', orgId, swapId] });
         }}
       />
+    )}
+
+    {returning && swapId && (
+      <ReturnTicketsModal
+        orgId={orgId}
+        swapId={swapId}
+        holders={ticketHolders}
+        onClose={() => setReturning(false)}
+        onRemoved={() => {
+          void qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId] });
+          void qc.invalidateQueries({ queryKey: ['ski-swap/ticket-sellers', orgId, swapId] });
+          void qc.invalidateQueries({ queryKey: ['ski-swap/unpriced-tickets', orgId, swapId] });
+          void qc.invalidateQueries({ queryKey: ['ski-swap/ticket-push', orgId, swapId] });
+          void qc.invalidateQueries({ queryKey: ['ski-swap/issued-tickets', orgId] });
+        }}
+      />
+    )}
+
+    {pushingOpen && swapId && (
+      <TicketSquareModal orgId={orgId} swapId={swapId} onClose={() => setPushingOpen(false)} />
     )}
 
     {importing && swapId && (

@@ -170,6 +170,14 @@ export class IssuedTicketService {
       .sort((a, b) => ticketNumberOf(a.sku)! - ticketNumberOf(b.sku)!);
   }
 
+  /** The whole swap's tickets and Square: how many accepted ones aren't in it, and whether it's working on them. */
+  async swapPushStatus(orgId: string, swapId: string): Promise<{ notInSquare: number; pushing: boolean; squareReady: boolean }> {
+    const swap = await this.swapOrThrow(orgId, swapId);
+    const pending = await this.pendingTickets(swapId);
+    const pos = swap.locationId ? await this.posFactory.forOrg(orgId) : null;
+    return { notInSquare: pending.length, pushing: this.pushing.has(swapId), squareReady: !!pos };
+  }
+
   /** A shop's tickets in a swap: runs, counts and where Square stands. */
   async summary(orgId: string, swapId: string, sellerId: string): Promise<IssuedTicketSummary> {
     const swap = await this.swapOrThrow(orgId, swapId);

@@ -32,7 +32,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CurrentDevice } from '../common/decorators/current-device.decorator';
 import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
-import { TicketSpanDto, SwapIdBodyDto, CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto } from '../contracts/ski-swap.contracts';
+import { TicketSpanDto, CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto } from '../contracts/ski-swap.contracts';
 import { IssuedTicketService } from './issued-ticket.service';
 
 @Controller('orgs/:orgId/ski-swap/sellers')
@@ -85,14 +85,6 @@ export class SellerController {
     return this.issued.remove(orgId, body.swapId, sellerId, body);
   }
 
-  /** Resumes putting the swap's accepted tickets in Square, after a stop. */
-  @Post(':sellerId/tickets/push')
-  @HttpCode(202)
-  @RequirePermissions('ski_swap:admin')
-  pushTickets(@Param('orgId') orgId: string, @Body() body: SwapIdBodyDto) {
-    void this.issued.push(orgId, body.swapId);
-    return { started: true };
-  }
 
   @Get()
   @RequirePermissions('ski_swap:report')

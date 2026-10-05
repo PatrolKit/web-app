@@ -105,6 +105,15 @@ ok('the summary shows the run and counts', JSON.stringify(sum.runs) === JSON.str
 ok('...and that Square isn’t set up here, so none are in it yet', sum.squareReady === false && sum.notInSquare === 5,
    JSON.stringify({ squareReady: sum.squareReady, notInSquare: sum.notInSquare }));
 
+// The Items page's push status: the swap's tickets not in Square, and whether
+// a push runs. Without Square there's nothing to push, and starting one is harmless.
+const pushUrl = `${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}/items/ticket-push`;
+const push = await fetch(pushUrl, { headers: SH }).then(unwrap);
+ok('The swap’s push status counts the 5 not in Square, with no Square to push to',
+   push.notInSquare === 5 && push.squareReady === false && push.pushing === false, JSON.stringify(push));
+const started = await fetch(pushUrl, { method: 'POST', headers: SH });
+ok('Starting a push answers 202', started.status === 202, String(started.status));
+
 const backwards = await issue(shop, 100, 50);
 ok('a block that runs backwards is refused', backwards.status === 400, String(backwards.status));
 

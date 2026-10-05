@@ -15,6 +15,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ItemService, decodeCursor } from './item.service';
 import { LegacyTicketService } from './legacy-ticket.service';
+import { IssuedTicketService } from './issued-ticket.service';
 import { CreateItemDto, PatchItemDto } from '../contracts/ski-swap.contracts';
 import type { Request } from 'express';
 
@@ -26,6 +27,7 @@ export class ItemController {
   constructor(
     private readonly itemService: ItemService,
     private readonly tickets: LegacyTicketService,
+    private readonly issued: IssuedTicketService,
   ) {}
 
   @Get()
@@ -75,6 +77,22 @@ export class ItemController {
    * item; `?query=` is the fuzzy search that already exists and would match
    * more than the tag in someone's hand.
    */
+  /** Whether the swap's accepted tickets are all in Square, for the Items page's resume (Plan 38). */
+  @Get('ticket-push')
+  @RequirePermissions('ski_swap:report')
+  ticketPushStatus(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    return this.issued.swapPushStatus(orgId, swapId);
+  }
+
+  /** Puts the swap's accepted tickets that aren't in Square there, in the background. */
+  @Post('ticket-push')
+  @HttpCode(202)
+  @RequirePermissions('ski_swap:admin')
+  pushTickets(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    void this.issued.push(orgId, swapId);
+    return { started: true };
+  }
+
   /** Tickets with no price yet, for the fast edit (Plan 37). Light: no Square, no photos. */
   @Get('unpriced-tickets')
   @RequirePermissions('ski_swap:manage')

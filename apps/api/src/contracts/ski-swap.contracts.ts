@@ -716,8 +716,6 @@ export const TicketSpanSchema = z
   })
   .strict();
 
-export const SwapIdBodySchema = z.object({ swapId: z.string().min(1) }).strict();
-
 /**
  * What the shop's item form needs: the runs of numbers it holds, the lowest
  * ticket nobody has described yet, and whether every one is described.
@@ -748,7 +746,6 @@ export const TicketSellerSchema = z.object({
 });
 
 export class TicketSpanDto extends createZodDto(TicketSpanSchema) {}
-export class SwapIdBodyDto extends createZodDto(SwapIdBodySchema) {}
 export type TicketSeller = z.infer<typeof TicketSellerSchema>;
 export type TicketFormState = z.infer<typeof TicketFormStateSchema>;
 

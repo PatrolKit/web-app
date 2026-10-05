@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser, faBuilding, faReceipt, faCheckCircle, faCircle } from '@fortawesome/free-solid-svg-icons';
+import { faUser, faBuilding, faReceipt, faCheckCircle, faCircle, faTicket } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SellerImportModal from './SellerImportModal';
 import SellerTicketSource from './SellerTicketSource';
+import IssueTicketRangeModal from './IssueTicketRangeModal';
 import { useFeatures } from '../../lib/features';
 import PrintReceiptModal from './PrintReceiptModal';
 
@@ -112,7 +113,7 @@ function payoutTitle(s: SellerResponse): string {
 }
 
 export default function SellersPage() {
-  const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
+  const { orgId, perms, selectedSwap, swaps } = useOutletContext<SkiSwapContext>();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'individual' | 'business'>('all');
@@ -121,6 +122,7 @@ export default function SellersPage() {
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [receiptSeller, setReceiptSeller] = useState<SellerResponse | null>(null);
+  const [ticketSeller, setTicketSeller] = useState<SellerResponse | null>(null);
   const [form, setForm] = useState<SellerForm>(emptyForm);
   const [sortKey, setSortKey] = useState<SellerSortKey>('displayName');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -295,6 +297,9 @@ export default function SellersPage() {
   const formError = createMutation.error ?? patchMutation.error ?? inviteMutation.error;
 
   const canManage = perms.has('ski_swap:manage');
+  /** Active swaps that take legacy tickets, newest first: where a shop can be issued a block (Plan 38). */
+  const ticketSwaps = swaps.filter((w) => w.allowLegacyCheckin || w.allowLegacyWeb);
+  const canIssueTickets = perms.has('ski_swap:admin') && ticketSwaps.length > 0;
 
   const filtered = sellers.filter((s) => {
     const q = search.toLowerCase();
@@ -591,9 +596,8 @@ export default function SellersPage() {
                 </>
               )}
 
-              {/* Where this seller's tags come from — a printer of their own,
-                  or tickets we issued. The two are alternatives, so they are
-                  chosen in one place rather than on two screens. */}
+              {/* The shop's label printer. Tickets are issued from the row's
+                  Issue Ticket Range, and returned from the Items page. */}
               {editSeller && editSeller.businessName && (
                 <SellerTicketSource
                   orgId={orgId}
@@ -756,6 +760,15 @@ export default function SellersPage() {
                 <td className="py-2">
                   <div className="flex gap-3 items-center">
                     <button onClick={() => openEdit(s)} className="text-xs text-brand-500 hover:underline">Edit</button>
+                    {canIssueTickets && s.businessName && (
+                      <button
+                        onClick={() => setTicketSeller(s)}
+                        title="Issue a block of pre-printed tickets to this shop"
+                        className="text-xs text-gray-400 hover:text-white flex items-center gap-1 whitespace-nowrap"
+                      >
+                        <FontAwesomeIcon icon={faTicket} /> Issue Ticket Range
+                      </button>
+                    )}
                     {/* Only for a seller with items in an active swap: a receipt
                         lists items, and there is nothing to list otherwise. */}
                     {s.receiptSwaps.length > 0 && (
@@ -782,6 +795,10 @@ export default function SellersPage() {
           onClose={() => setShowImport(false)}
           onDone={() => { qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] }); }}
         />
+      )}
+
+      {ticketSeller && (
+        <IssueTicketRangeModal orgId={orgId} seller={ticketSeller} swaps={ticketSwaps} onClose={() => setTicketSeller(null)} />
       )}
 
       {receiptSeller && (

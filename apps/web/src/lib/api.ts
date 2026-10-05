@@ -743,12 +743,14 @@ export const api = {
         `/orgs/${orgId}/ski-swap/sellers/${sellerId}/tickets/remove`,
         { method: 'POST', body: JSON.stringify(data) },
       ),
-    /** Resumes putting the swap's accepted tickets in Square. */
-    pushTickets: (orgId: string, sellerId: string, swapId: string) =>
-      request<{ started: boolean }>(
-        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/tickets/push`,
-        { method: 'POST', body: JSON.stringify({ swapId }) },
+    /** How many of the swap's accepted tickets aren't in Square, and whether that's being worked on. */
+    ticketPushStatus: (orgId: string, swapId: string) =>
+      request<{ notInSquare: number; pushing: boolean; squareReady: boolean }>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/ticket-push`,
       ),
+    /** Puts the swap's accepted tickets that aren't in Square there, in the background. */
+    pushTickets: (orgId: string, swapId: string) =>
+      request<{ started: boolean }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/ticket-push`, { method: 'POST' }),
     /** A whole inventory at once. Nothing is written unless every row passes. */
     importTicketItems: (orgId: string, swapId: string, file: File, generateSkus = false) => {
       const form = new FormData();

@@ -144,6 +144,14 @@ describe('putting issued tickets in Square', () => {
     expect(pos.batches).toEqual([]);
   });
 
+  it('reports, for the whole swap, how many accepted tickets aren’t in Square', async () => {
+    const live = [ticket(67000), ticket(67001, { squareItemId: null }), ticket(67002, { squareItemId: null }), ticket(67003, { consignedAt: null, squareItemId: null })];
+    await expect(harness({ live, pos: fakePos() }).service.swapPushStatus('org-1', 'swap-1'))
+      .resolves.toEqual({ notInSquare: 2, pushing: false, squareReady: true });
+    await expect(harness({ live, pos: null }).service.swapPushStatus('org-1', 'swap-1'))
+      .resolves.toMatchObject({ squareReady: false });
+  });
+
   it('joins a push already running for the swap rather than starting another', async () => {
     const pos = fakePos();
     const { service } = harness({ live: [ticket(67000, { squareItemId: null })], pos });

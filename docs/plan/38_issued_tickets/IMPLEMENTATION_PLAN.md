@@ -11,8 +11,8 @@ An issued ticket is an ordinary ticket with no description and no price yet
 (Plan 32): "Item #67169", sold at whatever price the register types. Entering
 its stub later describes and prices it.
 
-Ranges stop being tracked. The Sellers page keeps its form for issuing a
-block, which now simply creates the tickets. A shop's tickets are the ticket
+Ranges stop being tracked. Issuing a block, from the Sellers list, simply
+creates the tickets. A shop's tickets are the ticket
 items it holds, and nothing else records them.
 
 ## Decisions
@@ -22,12 +22,12 @@ items it holds, and nothing else records them.
 | D1 | **Issuing a block creates its tickets.** Each number becomes an item: SKU the number, named `Item #<number>`, no price, the shop as seller, one of it, its tag already printed, and accepted (on sale) at once, by whoever issued it. Issuing is staff accepting the whole block in advance. |
 | D2 | **No range bookkeeping.** `LegacyTicketRange` is dropped. Who holds a ticket is its item's seller. What used to come from ranges now comes from items: which numbers are taken, who holds one, and which sellers have tickets. |
 | D3 | **A block that overlaps existing items is refused whole,** listing them: "67012 and 67013 are already items (Stowe Sports)." Nothing is created until the block is clear. |
-| D4 | **No size limit.** Creating the items is quick and done before the request answers. Putting them in Square runs in the background, in batches, with progress on the Sellers page (D9). |
+| D4 | **No size limit.** Creating the items is quick and done before the request answers. Putting them in Square runs in the background, in batches, with progress where they're issued (D9). |
 | D5 | **Issued tickets are like any other ticket with no description or price.** They show everywhere tickets show: Items, the shop's My Items, the iPad, the public status pages, receipts and counts ("Needs a price"). |
 | D6 | **A shop may describe and price its own ticket once.** While a ticket of theirs is untouched (no price, no description, no notes) and unsold, the shop may save its description, price and notes, one at a time or by file. After that one save it's locked to the shop, and only staff can change it. Refusals are `409` with `TICKET_DESCRIBED` or `TICKET_SOLD`. |
 | D7 | **Shops no longer create tickets.** Every number a shop holds already exists. A shop's ticket entry becomes choosing one of its untouched tickets (lowest first) and filling it in, and a shop file's ticket rows update its tickets. A number the shop doesn't hold is refused: "67169 isn't one of your tickets." Items without a ticket (Plan 31) are unchanged. |
 | D8 | **A ticket that's already an item is refused, saying whose:** `409` `TICKET_TAKEN`, "Ticket 67169 belongs to Stowe Sports." This covers the iPad's counter check-in and every other create, the shop's own number included: its ticket exists, to be described. The iPad's own check says the same (handoff). |
-| D9 | **Square in the background:** after issuing, the new tickets are pushed in batches (`BatchUpsertCatalogObjects`, then inventory in batches of 100). The shop's ticket panel shows "Putting tickets in Square: 120 of 500" until done. If the push stops (a restart, a Square error), the panel says how many aren't in Square and offers **Put them in Square**, which resumes. |
+| D9 | **Square in the background:** after issuing, the new tickets are pushed in batches (`BatchUpsertCatalogObjects`, then inventory in batches of 100). The issue popover shows "Putting tickets in Square: 120 of 500" until done. If the push stops (a restart, a Square error), the Items page's Actions offer **Put tickets in Square (N)**, which resumes. |
 | D10 | **Removing returned tickets:** |
 | | • **One at a time:** the Items row's Delete, as today. |
 | | • **By range:** "Remove 67400–67499" for a shop deletes that shop's tickets in the span that are untouched (D6) and unsold, and takes them out of Square in batches. It keeps the rest and lists why: described, priced, or sold. A ticket whose sale Square can't confirm either way is kept. |
@@ -67,6 +67,9 @@ items it holds, and nothing else records them.
   - `GET/POST/DELETE …/ticket-ranges`;
   - `addRange`, `removeRange`, `holderOf`, `assertUsable`, `assertNotExhausted`,
     `suggestNext`, and the ranges half of `formState`.
+- **`GET/POST …/swaps/:swapId/items/ticket-push`:** how many of the swap's
+  issued tickets aren't in Square and whether a push is running
+  (`ski_swap:report`); and starting one, answering `202` (`ski_swap:admin`).
 - **`ticket-sellers`** (who staff may upload for): sellers holding ticket items
   in the swap, instead of sellers holding ranges.
 
@@ -113,12 +116,18 @@ items it holds, and nothing else records them.
 
 ## Web
 
-- **`SellerTicketSource.tsx`:** for the chosen swap, the shop's ticket summary:
-  - the runs, with counts;
-  - the Square progress, or **Put them in Square** (D9);
-  - **Issue tickets** (start, end): it shows "This creates 500 tickets and puts
-    them on sale" before confirming;
-  - **Remove tickets** (start, end): it lists what was kept, and why.
+- **Sellers list:** a shop's row has **Issue Ticket Range** when an active
+  swap takes legacy tickets (D12), for `ski_swap:admin`. Its popover:
+  - the swap, the newest such swap first, with the others selectable;
+  - the first and last ticket, both included, and what the shop already holds;
+  - "Creates 500 tickets, 67000 through 67499, on sale at once" before
+    issuing, with a second ask from 1,000 tickets;
+  - then Square's progress (D9).
+- **Items page Actions,** for `ski_swap:admin`:
+  - **Return unused tickets** (shop, first, last), per D10, listing what was
+    kept and why;
+  - **Put tickets in Square (N)**, while any aren't, which resumes (D9).
+- **Edit Seller** keeps only the shop's printer.
 - **Shop's My Items (`BusinessSellerPage.tsx`):**
   - **Add for a ticket:** a ticket picker over its untouched tickets, lowest
     first, then the item form, then one save.
