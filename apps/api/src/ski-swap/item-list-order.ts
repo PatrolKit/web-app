@@ -58,6 +58,22 @@ export function sortRows<T extends SortRow>(rows: T[], sort: ItemSort, dir: Sort
   });
 }
 
+/**
+ * A search with no sort asked for is sorted by the field it was searching:
+ * by SKU when it matches SKUs, else by name when it matches names, else by
+ * seller (it matched only sellers' names, emails or phones). "6701" sorts by
+ * SKU; "rossignol" by name; "dana" by seller.
+ */
+export function searchedField(
+  rows: { sku: string; name: string }[],
+  query: string,
+): Extract<ItemSort, 'sku' | 'name' | 'seller'> {
+  const q = query.trim().toLowerCase();
+  if (rows.some((r) => r.sku.toLowerCase().includes(q))) return 'sku';
+  if (rows.some((r) => r.name.toLowerCase().includes(q))) return 'name';
+  return 'seller';
+}
+
 /** The Items page's filters and sort, as the list takes them. */
 export interface ItemListView {
   status?: ItemListStatus;

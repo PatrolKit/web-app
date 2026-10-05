@@ -1,4 +1,4 @@
-import { sortRows, type SortRow } from './item-list-order';
+import { searchedField, sortRows, type SortRow } from './item-list-order';
 
 const row = (sku: string, over: Partial<SortRow> = {}): SortRow => ({
   id: sku, sku, name: `Item #${sku}`, priceCents: 1000, sellerName: null, hasPrintedTag: true, ...over,
@@ -28,5 +28,18 @@ describe('sorting the Items page (Plan 39 D3)', () => {
   it('groups printed and unprinted tags', () => {
     const rows = [row('1'), row('2', { hasPrintedTag: false }), row('3')];
     expect(skus(sortRows(rows, 'tag', 'asc'))).toEqual(['2', '1', '3']);
+  });
+});
+
+describe('a search with no sort asked for', () => {
+  const r = (sku: string, name: string) => ({ sku, name });
+  it('sorts by SKU when it matches SKUs', () => {
+    expect(searchedField([r('67012', 'Skis'), r('9', 'Boots 670')], '670')).toBe('sku');
+  });
+  it('by name when it matches names and no SKU', () => {
+    expect(searchedField([r('67012', 'Rossignol Skis'), r('9', 'Boots')], 'ROSSIGNOL')).toBe('name');
+  });
+  it('by seller when it matched only sellers', () => {
+    expect(searchedField([r('67012', 'Skis')], 'dana')).toBe('seller');
   });
 });

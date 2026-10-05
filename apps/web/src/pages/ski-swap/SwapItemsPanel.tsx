@@ -23,7 +23,8 @@ export interface SwapItemsPanelApi {
   fetchItems: (
     swapId: string,
     opts?: { query?: string; sellerId?: string; skip?: number; take?: number } & ItemListView,
-  ) => Promise<{ items: ItemResponse[]; total: number }>;
+    // `sortedBy`: a search with no sort asked for, sorted by the field it matched.
+  ) => Promise<{ items: ItemResponse[]; total: number; sortedBy?: ItemListSort }>;
   /** Accepts every item this seller is still waiting on. Staff pages only. */
   consignAllForSeller?: (swapId: string, sellerId: string) => Promise<{ consigned: number }>;
   createItem: (swapId: string, data: CreateItemInput) => Promise<ItemResponse>;
@@ -287,7 +288,8 @@ export default function SwapItemsPanel({
     : null;
   /** A column clicked: ascending, then descending, then back to the server's order. */
   const toggleSort = (key: ItemListSort) => {
-    const next = sort?.key !== key ? { key, dir: 'asc' } : sort.dir === 'asc' ? { key, dir: 'desc' } : null;
+    const cur = shownSort;
+    const next = cur?.key !== key ? { key, dir: 'asc' } : cur.dir === 'asc' ? { key, dir: 'desc' } : null;
     setView({ sort: next?.key ?? null, dir: next?.dir ?? null });
   };
   const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1);
@@ -522,6 +524,11 @@ export default function SwapItemsPanel({
   const isFormOpen = showForm || editItem !== null;
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  /**
+   * The order on screen: the one asked for, or, for a search with none, the
+   * field the server sorted it by (a SKU search by SKU, a name search by name).
+   */
+  const shownSort = sort ?? (data?.sortedBy && SORTABLE.includes(data.sortedBy) ? { key: data.sortedBy, dir: 'asc' as const } : null);
 
   /*
    * Everything the toolbar can do, in one menu (the toolbar itself is for
@@ -661,17 +668,17 @@ export default function SwapItemsPanel({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-gray-400 text-left border-b border-gray-800">
-              <SortHeader label="SKU" field="sku" sort={sort} onSort={toggleSort} />
-              <SortHeader label="Name" field="name" sort={sort} onSort={toggleSort} />
-              <SortHeader label="Price" field="price" sort={sort} onSort={toggleSort} />
-              {sellers && <SortHeader label="Seller" field="seller" sort={sort} onSort={toggleSort} />}
+              <SortHeader label="SKU" field="sku" sort={shownSort} onSort={toggleSort} />
+              <SortHeader label="Name" field="name" sort={shownSort} onSort={toggleSort} />
+              <SortHeader label="Price" field="price" sort={shownSort} onSort={toggleSort} />
+              {sellers && <SortHeader label="Seller" field="seller" sort={shownSort} onSort={toggleSort} />}
               {/* Not sortable (Plan 39 D3): For sale and Sold need every item's stock. */}
               <th className="pb-2 pr-4">Status</th>
               <SortHeader
                 label={<FontAwesomeIcon icon={faTagDuo} />}
                 name="Tag printed"
                 field="tag"
-                sort={sort}
+                sort={shownSort}
                 onSort={toggleSort}
               />
               {canManage && <th className="pb-2">Actions</th>}

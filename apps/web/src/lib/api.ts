@@ -614,7 +614,7 @@ export const api = {
       if (opts?.consigned !== undefined) params.set('consigned', String(opts.consigned));
       setListView(params, opts);
       const qs = params.toString();
-      return request<{ items: import('./api.types').ItemResponse[]; total: number }>(
+      return request<{ items: import('./api.types').ItemResponse[]; total: number; sortedBy?: import('./api.types').ItemListSort }>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items${qs ? `?${qs}` : ''}`
       );
     },
@@ -951,7 +951,7 @@ export const api = {
       if (opts?.take !== undefined) params.set('take', String(opts.take));
       setListView(params, opts);
       const qs = params.toString();
-      return request<{ items: import('./api.types').ItemResponse[]; total: number }>(
+      return request<{ items: import('./api.types').ItemResponse[]; total: number; sortedBy?: import('./api.types').ItemListSort }>(
         `/orgs/${orgId}/ski-swap/seller/me/items${qs ? `?${qs}` : ''}`
       );
     },

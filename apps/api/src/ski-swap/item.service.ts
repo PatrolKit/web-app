@@ -20,7 +20,7 @@ import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
 import { stationCodeOf, uncategorisedName } from './sku.util';
 import type { ItemResponse, UnpricedTicket } from '../contracts/ski-swap.contracts';
-import { sortRows, type ItemListView } from './item-list-order';
+import { searchedField, sortRows, type ItemListView, type ItemSort } from './item-list-order';
 import { servingDevice } from './device-stock.interceptor';
 
 export interface ItemPhotoResponse { id: string; url: string; }
@@ -95,7 +95,7 @@ export class ItemService {
   async list(orgId: string, swapId: string, opts: {
     query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string; consigned?: boolean;
     walk?: boolean; after?: { updatedAt: Date; id: string };
-  } & ItemListView): Promise<{ items: ItemResponse[]; total: number; syncedAt: string; nextAfter?: string }> {
+  } & ItemListView): Promise<{ items: ItemResponse[]; total: number; syncedAt: string; nextAfter?: string; sortedBy?: ItemSort }> {
     /*
      * Read before the query, not after (iOS Plan 17 D).
      *
@@ -166,17 +166,22 @@ export class ItemService {
       ...(opts.status === 'needs_price' ? { priceCents: null } : {}),
     };
 
-    // Sorted (D3): every matching row, light, sorted here, then the page cut
-    // from it and read in full. See `item-list-order.ts` for why not SQL.
-    if (opts.sort && !opts.walk) {
+    // Sorted (D3), or searched with no sort asked for (best matches first):
+    // every matching row, light, ordered here, then the page cut from it and
+    // read in full. See `item-list-order.ts` for why not SQL.
+    const searchOrder = !opts.sort && !!opts.query?.trim() && !opts.updatedSince;
+    if ((opts.sort || searchOrder) && !opts.walk) {
       const light = await this.prisma.swapItem.findMany({
         // A screen's read, never the delta: no tombstones.
         where: { ...where, deletedAt: null },
         select: { id: true, sku: true, name: true, priceCents: true, hasPrintedTag: true, sellerId: true },
       });
+      // A search sorts by the field it searched, ascending, unless a sort was asked for.
+      const sortBy: ItemSort = opts.sort ?? searchedField(light, opts.query!);
+      const dir = opts.sort ? opts.dir ?? 'asc' : 'asc';
       // Sellers' names once each, for the sort that reads them, not a join per row.
       const sellerNames = new Map<string, string | null>();
-      if (opts.sort === 'seller') {
+      if (sortBy === 'seller') {
         const ids = [...new Set(light.map((r) => r.sellerId).filter((id): id is string => !!id))];
         const sellers = await this.prisma.sellerProfile.findMany({
           where: { id: { in: ids } },
@@ -186,8 +191,8 @@ export class ItemService {
       }
       const ordered = sortRows(
         light.map((r) => ({ ...r, sellerName: r.sellerId ? sellerNames.get(r.sellerId) ?? null : null })),
-        opts.sort,
-        opts.dir ?? 'asc',
+        sortBy,
+        dir,
       );
       const skip = opts.skip ?? 0;
       const pageIds = ordered.slice(skip, skip + (opts.take ?? 50)).map((r) => r.id);
@@ -204,6 +209,8 @@ export class ItemService {
       return {
         total: ordered.length,
         syncedAt: syncedAt.toISOString(),
+        // Which column the order is by, so the page can show it on the heading.
+        ...(opts.sort ? {} : { sortedBy: sortBy }),
         items: page.map((i) => this.toResponse(i, inventoryMap, descriptions)),
       };
     }
