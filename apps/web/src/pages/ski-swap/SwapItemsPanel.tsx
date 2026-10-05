@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheckDouble as faCheckDoubleDuo, faPlus as faPlusDuo, faTicket as faTicketDuo, faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
@@ -675,7 +676,16 @@ export default function SwapItemsPanel({
                     ? <span className="text-amber-400" title="Checked in without a price. Price it before sales start.">No price</span>
                     : `$${(item.priceCents / 100).toFixed(2)}`}
                 </td>
-                {sellers && <td className="py-2 pr-4 text-gray-400">{item.seller?.displayName ?? '—'}</td>}
+                {sellers && (
+                  <td className="py-2 pr-4 text-gray-400">
+                    {/* Staff only (`sellers` is): opens the seller on the Sellers page. */}
+                    {item.seller ? (
+                      <Link to={`/dashboard/ski-swap/sellers?edit=${item.seller.id}`} className="hover:text-white hover:underline">
+                        {item.seller.displayName}
+                      </Link>
+                    ) : '—'}
+                  </td>
+                )}
                 <td className="py-2 pr-4">
                   {(() => {
                     const st = itemState(item);

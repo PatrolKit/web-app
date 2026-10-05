@@ -32,23 +32,39 @@ const taxonomy: ResolvedTaxonomy = {
 };
 
 describe('reading a description (Plan 37 D2, D3)', () => {
-  it('keeps the line as typed, matched words spelled properly', () => {
-    expect(parseDetails('rossignol red skis 170 demo', taxonomy)).toEqual({
+  it('names it as the server does, whatever order it was typed in, unmatched words after', () => {
+    expect(parseDetails('red skis rossignol 170 demo', taxonomy)).toEqual({
       categoryId: 'skis',
-      attributes: [{ attributeId: 'skis-make', valueId: 'ross' }, { attributeId: 'skis-color', valueId: 'red' }],
+      attributes: [{ attributeId: 'skis-color', valueId: 'red' }, { attributeId: 'skis-make', valueId: 'ross' }],
       name: 'Rossignol Red Skis 170 demo',
+      extra: ['170', 'demo'],
+    });
+    // With nothing left over, exactly the derived name.
+    expect(parseDetails('skis red rossignol', taxonomy)).toMatchObject({ name: 'Rossignol Red Skis', extra: [] });
+  });
+
+  it('stores, but doesn’t name, an answer to a question with no name slot', () => {
+    const quiet: ResolvedTaxonomy = {
+      version: 1,
+      categories: [{
+        id: 'skis', label: 'Skis', scope: 'global', displayOrder: 0,
+        attributes: [{ ...select('cond', 'Condition', [value('used', 'Used')]), nameSlot: null }],
+      }],
+    };
+    expect(parseDetails('used skis', quiet)).toMatchObject({
+      attributes: [{ attributeId: 'cond', valueId: 'used' }], name: 'Skis', extra: [],
     });
   });
 
   it('finds the category first or last, and singular or plural', () => {
-    expect(parseDetails('jacket red', taxonomy)).toMatchObject({ categoryId: 'jackets', name: 'Jackets Red' });
+    expect(parseDetails('jacket red', taxonomy)).toMatchObject({ categoryId: 'jackets', name: 'Red Jackets' });
     expect(parseDetails('red jackets', taxonomy)?.attributes).toEqual([{ attributeId: 'jk-color', valueId: 'red-j' }]);
   });
 
   it('matches values only against the named category’s questions', () => {
     // "Black Diamond" is a ski maker; on boots it's just words.
     expect(parseDetails('black diamond ski boots', taxonomy)).toEqual({
-      categoryId: 'boots', attributes: [], name: 'black diamond Ski Boots',
+      categoryId: 'boots', attributes: [], name: 'Ski Boots black diamond', extra: ['black', 'diamond'],
     });
   });
 
@@ -59,7 +75,7 @@ describe('reading a description (Plan 37 D2, D3)', () => {
 
   it('answers each question once, leaving a second answer in the name', () => {
     expect(parseDetails('red black skis', taxonomy)).toEqual({
-      categoryId: 'skis', attributes: [{ attributeId: 'skis-color', valueId: 'red' }], name: 'Red black Skis',
+      categoryId: 'skis', attributes: [{ attributeId: 'skis-color', valueId: 'red' }], name: 'Red Skis black', extra: ['black'],
     });
   });
 
@@ -72,11 +88,11 @@ describe('reading a description (Plan 37 D2, D3)', () => {
   });
 
   it('leaves number questions to the name', () => {
-    expect(parseDetails('skis 170', taxonomy)).toMatchObject({ attributes: [], name: 'Skis 170' });
+    expect(parseDetails('skis 170', taxonomy)).toMatchObject({ attributes: [], name: 'Skis 170', extra: ['170'] });
   });
 
   it('with no category, is only a name', () => {
-    expect(parseDetails('rossignol red', taxonomy)).toEqual({ categoryId: null, attributes: [], name: 'rossignol red' });
+    expect(parseDetails('rossignol red', taxonomy)).toEqual({ categoryId: null, attributes: [], name: 'rossignol red', extra: [] });
   });
 
   it('takes a category from a value picked before any was named, adding it to the name', () => {
@@ -84,6 +100,7 @@ describe('reading a description (Plan 37 D2, D3)', () => {
       categoryId: 'skis',
       attributes: [{ attributeId: 'skis-make', valueId: 'ross' }, { attributeId: 'skis-color', valueId: 'red' }],
       name: 'Rossignol Red Skis',
+      extra: [],
     });
     // A category typed after wins over the picked one.
     expect(parseDetails('Rossignol ski boots', taxonomy, 'skis')?.categoryId).toBe('boots');

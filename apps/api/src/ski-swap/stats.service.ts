@@ -18,6 +18,16 @@ export interface SwapStats {
   unpricedItems: number;
   /** False when Square could not be read; `itemsSold` and revenue are then 0, not answers. */
   inventoryKnown: boolean;
+  /**
+   * What staff have accepted for sale, at listed prices: priced, consigned
+   * items, sold or not. Read from the database, so it moves during check-in,
+   * before anything has sold.
+   */
+  consignedValueCents: number;
+  /** Consigned items, priced or not. */
+  consignedItems: number;
+  /** Consigned items still without a price, so not in `consignedValueCents`. */
+  consignedUnpriced: number;
 }
 
 @Injectable()
@@ -34,18 +44,28 @@ export class StatsService {
     const [totalItems, totalSellers, items, unpricedItems] = await this.prisma.$transaction([
       this.prisma.swapItem.count({ where: { swapId, orgId, deletedAt: null } }),
       this.prisma.swapItem.findMany({ where: { swapId, orgId, sellerId: { not: null }, deletedAt: null }, distinct: ['sellerId'], select: { sellerId: true } }),
-      this.prisma.swapItem.findMany({ where: { swapId, orgId, deletedAt: null }, select: { squareVariationId: true, originalQuantity: true, priceCents: true } }),
+      this.prisma.swapItem.findMany({ where: { swapId, orgId, deletedAt: null }, select: { squareVariationId: true, originalQuantity: true, priceCents: true, consignedAt: true } }),
       this.prisma.swapItem.count({ where: { swapId, orgId, deletedAt: null, priceCents: null } }),
     ]);
 
+    const consigned = items.filter((i) => i.consignedAt !== null);
+    const base = {
+      totalItems,
+      totalSellers: totalSellers.length,
+      unpricedItems,
+      consignedItems: consigned.length,
+      consignedUnpriced: consigned.filter((i) => i.priceCents === null).length,
+      consignedValueCents: consigned.reduce((sum, i) => sum + (i.priceCents ?? 0) * i.originalQuantity, 0),
+    };
+
     const syncedItems = items.filter((i) => i.squareVariationId);
     if (!syncedItems.length || !swap.locationId) {
-      return { totalItems, totalSellers: totalSellers.length, itemsSold: 0, grossRevenueCents: 0, unpricedSold: 0, unpricedItems, inventoryKnown: true };
+      return { ...base, itemsSold: 0, grossRevenueCents: 0, unpricedSold: 0, inventoryKnown: true };
     }
 
     const pos = await this.posFactory.forOrg(orgId);
     if (!pos) {
-      return { totalItems, totalSellers: totalSellers.length, itemsSold: 0, grossRevenueCents: 0, unpricedSold: 0, unpricedItems, inventoryKnown: true };
+      return { ...base, itemsSold: 0, grossRevenueCents: 0, unpricedSold: 0, inventoryKnown: true };
     }
 
     const variationIds = syncedItems.map((i) => i.squareVariationId as string);
@@ -53,7 +73,7 @@ export class StatsService {
     // item counted as sold and the whole swap's list price became revenue.
     const inventoryMap = await pos.getInventoryCounts(variationIds, swap.locationId).catch(() => null);
     if (!inventoryMap) {
-      return { totalItems, totalSellers: totalSellers.length, itemsSold: 0, grossRevenueCents: 0, unpricedSold: 0, unpricedItems, inventoryKnown: false };
+      return { ...base, itemsSold: 0, grossRevenueCents: 0, unpricedSold: 0, inventoryKnown: false };
     }
 
     let itemsSold = 0;
@@ -67,6 +87,6 @@ export class StatsService {
       else grossRevenueCents += sold * item.priceCents;
     }
 
-    return { totalItems, totalSellers: totalSellers.length, itemsSold, grossRevenueCents, unpricedSold, unpricedItems, inventoryKnown: true };
+    return { ...base, itemsSold, grossRevenueCents, unpricedSold, inventoryKnown: true };
   }
 }

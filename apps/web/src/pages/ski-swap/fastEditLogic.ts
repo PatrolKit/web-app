@@ -14,6 +14,11 @@ export interface ParsedDetails {
   categoryId: string | null;
   attributes: ItemAttributeInput[];
   name: string;
+  /**
+   * Words that matched nothing, in the order typed. With none, the name is
+   * exactly the server's (`deriveName`), so the save leaves it to the server.
+   */
+  extra: string[];
 }
 
 interface Word {
@@ -66,9 +71,11 @@ function reachableAttributes(category: ResolvedCategory, chosen: Map<string, Res
  * - Values match only that category's questions, longest label first, whole
  *   words, one answer per question. A value's own follow-up questions (a
  *   manufacturer's models) become answerable once it's matched.
- * - The name is the line as typed, matched words in their proper spelling, and
- *   the category's label added at the end if it came from a picked value.
- * - Nothing is minted: leftover words stay in the name.
+ * - The name is composed as everywhere else (iOS, the single-item form, the
+ *   server's `deriveName`): the named answers in slot order, then the
+ *   category's label. An answer to a question with no name slot is stored,
+ *   not named.
+ * - Nothing is minted: words that matched nothing follow, as typed.
  *
  * Null for an empty line, which changes nothing (D4).
  */
@@ -79,7 +86,6 @@ export function parseDetails(
 ): ParsedDetails | null {
   const words = wordsOf(text);
   if (words.length === 0) return null;
-  const replaced: (string | null)[] = words.map(() => null);
   const used: boolean[] = words.map(() => false);
 
   // The category: the first one named, longest label first at each word.
@@ -91,7 +97,7 @@ export function parseDetails(
     const hit = categories.find(({ label }) => matchesAt(words, at, label));
     if (hit) {
       category = hit.c;
-      claim(at, hit.label.length, hit.c.label);
+      claim(at, hit.label.length);
     }
   }
   const implied = !category && impliedCategoryId
@@ -100,11 +106,12 @@ export function parseDetails(
   category ??= implied;
 
   // No category, no structure: the line is the name.
-  if (!category) return { categoryId: null, attributes: [], name: words.map((w) => w.raw).join(' ') };
+  if (!category) return { categoryId: null, attributes: [], name: words.map((w) => w.raw).join(' '), extra: [] };
 
   // Values, in passes, so a model named before its manufacturer still matches
   // once the manufacturer has opened its question.
   const chosen = new Map<string, ResolvedValue>();
+  const askedBy = new Map<string, ResolvedAttribute>();
   for (let changed = true; changed;) {
     changed = false;
     const open = reachableAttributes(category, chosen).filter((a) => a.input === 'select' && !chosen.has(a.id) && a.values?.length);
@@ -117,28 +124,31 @@ export function parseDetails(
       const hit = candidates.find((x) => !x.label.some((_, i) => used[at + i]) && matchesAt(words, at, x.label));
       if (hit) {
         chosen.set(hit.a.id, hit.v);
-        claim(at, hit.label.length, hit.v.label);
+        askedBy.set(hit.a.id, hit.a);
+        claim(at, hit.label.length);
         changed = true;
       }
     }
   }
 
-  const parts: string[] = [];
-  words.forEach((w, i) => {
-    if (replaced[i] !== null) parts.push(replaced[i]!);
-    else if (!used[i]) parts.push(w.raw);
-  });
-  if (implied) parts.push(implied.label);
+  // Ordered as `deriveName` orders them: slot, then display order, then label.
+  const named = [...chosen]
+    .map(([attributeId, v]) => ({ a: askedBy.get(attributeId)!, v }))
+    .filter(({ a }) => a.nameSlot !== null)
+    .sort((x, y) =>
+      (x.a.nameSlot ?? 0) - (y.a.nameSlot ?? 0) || x.a.displayOrder - y.a.displayOrder || x.a.label.localeCompare(y.a.label))
+    .map(({ v }) => v.label);
+  const extra = words.filter((_, i) => !used[i]).map((w) => w.raw);
 
   return {
     categoryId: category.id,
     attributes: [...chosen].map(([attributeId, v]) => ({ attributeId, valueId: v.id })),
-    name: parts.join(' '),
+    name: [...named, category.label, ...extra].join(' ').replace(/\s+/g, ' ').trim(),
+    extra,
   };
 
-  function claim(at: number, length: number, label: string) {
+  function claim(at: number, length: number) {
     for (let i = 0; i < length; i++) used[at + i] = true;
-    replaced[at] = label;
   }
 }
 

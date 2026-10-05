@@ -14,6 +14,7 @@ interface Saved {
   sku: string;
   name: string;
   priceCents: number;
+  sellerName: string | null;
 }
 
 interface Message {
@@ -22,6 +23,20 @@ interface Message {
 }
 
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+/** "Rossignol Skis · $120.00 · Alpine Sports": a ticket as it now stands. */
+const standing = (t: { name: string; priceCents: number | null; sellerName: string | null }) =>
+  [t.name, t.priceCents !== null ? money(t.priceCents) : null, t.sellerName].filter(Boolean).join(' · ');
+
+/** The length most of these SKUs have: a ticket number typed that long is finished. */
+function usualLength(skus: string[]): number {
+  const counts = new Map<number, number>();
+  for (const k of skus) counts.set(k.length, (counts.get(k.length) ?? 0) + 1);
+  let best = 0;
+  let most = 0;
+  for (const [len, n] of counts) if (n > most) { best = len; most = n; }
+  return best || 5;
+}
 
 function idempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -61,6 +76,8 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
 
   const [field, setField] = useState<Field>('sku');
   const [skuText, setSkuText] = useState('');
+  /** The SKU field holds the next ticket in sequence, filled in after a save: typing replaces it. */
+  const [autoSku, setAutoSku] = useState(false);
   const [ticket, setTicket] = useState<UnpricedTicket | null>(null);
   const [details, setDetails] = useState('');
   const [prefill, setPrefill] = useState('');
@@ -87,16 +104,21 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
    */
   const [pendingFocus, setPendingFocus] = useState<Field | null>('sku');
   const [pendingCursor, setPendingCursor] = useState<number | null>(null);
+  const [pendingSelectSku, setPendingSelectSku] = useState(false);
   useLayoutEffect(() => {
     if (pendingFocus) {
       ({ sku: skuRef, details: detailsRef, price: priceRef })[pendingFocus].current?.focus();
       setPendingFocus(null);
     }
+    if (pendingSelectSku) {
+      skuRef.current?.select();
+      setPendingSelectSku(false);
+    }
     if (pendingCursor !== null) {
       detailsRef.current?.setSelectionRange(pendingCursor, pendingCursor);
       setPendingCursor(null);
     }
-  }, [pendingFocus, pendingCursor]);
+  }, [pendingFocus, pendingCursor, pendingSelectSku]);
 
   function focus(f: Field) {
     setField(f);
@@ -110,9 +132,9 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
 
   const skuSuggestions = useMemo(() => {
     const typed = skuText.trim();
-    if (!typed || (ticket && ticket.sku === typed)) return [];
+    if (!typed || autoSku || (ticket && ticket.sku === typed)) return [];
     return tickets.filter((t) => t.sku.startsWith(typed)).slice(0, 8);
-  }, [skuText, ticket, tickets]);
+  }, [skuText, autoSku, ticket, tickets]);
 
   const detailSuggestions: DetailsSuggestion[] = useMemo(
     () => (taxonomy ? detailsSuggestions(details, cursor, taxonomy, impliedCategoryId) : []),
@@ -130,11 +152,35 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
   const priceCents = priceInputCents(priceText);
   const priceValid = priceCents !== null && priceCents > 0;
   const exact = tickets.find((t) => t.sku === skuText.trim()) ?? null;
-  const empty = !skuText && !details && !priceText && !ticket;
+  // The filled-in next ticket isn't something typed: Escape still exits.
+  const empty = (!skuText || autoSku) && !details && !priceText && !ticket;
+
+  /**
+   * A ticket number typed in full that isn't waiting for a price: entered
+   * already, here or elsewhere. Said as soon as it's typed, not on Enter. It
+   * never appears in the suggestions, which are only tickets still to price.
+   */
+  const typedSku = skuText.trim();
+  const fullLength = usualLength([...tickets.map((t) => t.sku), ...saved.map((x) => x.sku)]);
+  const savedHere = saved.find((x) => x.sku === typedSku) ?? null;
+  const lookUpEntered = !autoSku && !exact && !savedHere && /^\d+$/.test(typedSku) && typedSku.length >= fullLength;
+  const { data: lookedUp } = useQuery({
+    queryKey: ['ski-swap/item-by-sku', orgId, swapId, typedSku],
+    queryFn: () => api.skiSwap.findItemBySku(orgId, swapId, typedSku),
+    enabled: lookUpEntered,
+    retry: false,
+    staleTime: 10_000,
+  });
+  const alreadyEntered = savedHere
+    ? { sku: savedHere.sku, text: standing(savedHere) }
+    : lookUpEntered && lookedUp && lookedUp.sku === typedSku && lookedUp.legacyTicket && lookedUp.priceCents !== null
+      ? { sku: lookedUp.sku, text: standing({ name: lookedUp.name, priceCents: lookedUp.priceCents, sellerName: lookedUp.seller?.displayName ?? null }) }
+      : null;
 
   function load(t: UnpricedTicket) {
     setTicket(t);
     setSkuText(t.sku);
+    setAutoSku(false);
     const shownName = t.placeholderName ? '' : t.name;
     setDetails(shownName);
     setPrefill(shownName);
@@ -149,6 +195,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
   function clearTicket(msg: Message | null = null) {
     setTicket(null);
     setSkuText('');
+    setAutoSku(false);
     setDetails('');
     setPrefill('');
     setCursor(0);
@@ -168,11 +215,15 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
     try {
       const item = await api.skiSwap.findItemBySku(orgId, swapId, typed);
       if (!item.legacyTicket) setMessage({ tone: 'error', text: `${typed} isn’t a legacy ticket.` });
-      else if (item.priceCents !== null) setMessage({ tone: 'error', text: `${typed} already has a price (${money(item.priceCents)}).` });
-      else {
+      else if (item.priceCents !== null) {
+        setMessage({
+          tone: 'error',
+          text: `${typed} is already entered: ${standing({ name: item.name, priceCents: item.priceCents, sellerName: item.seller?.displayName ?? null })}.`,
+        });
+      } else {
         // Unpriced, but not in the list fetched on open: checked in since.
         load({ id: item.id, sku: item.sku, name: item.name, placeholderName: item.name === `Item #${item.sku}`,
-          categoryId: item.category?.id ?? null, sellerName: null });
+          categoryId: item.category?.id ?? null, sellerName: item.seller?.displayName ?? null });
       }
     } catch (err) {
       setMessage({
@@ -207,24 +258,38 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
       setMessage({ tone: 'warn', text: 'Still loading the item types. Try again in a moment.' });
       return;
     }
-    // Only the price, and the description if it changed (D7).
+    // Only the price, and the description if it changed (D7). The name goes
+    // only when there's more to it than the answers: otherwise the server
+    // composes it, as it does for iOS and the single-item form.
     const description = parsed
       ? parsed.categoryId
-        ? { categoryId: parsed.categoryId, attributes: parsed.attributes, name: parsed.name }
+        ? { categoryId: parsed.categoryId, attributes: parsed.attributes, ...(parsed.extra.length ? { name: parsed.name } : {}) }
         : { name: parsed.name }
       : {};
     const sent = ticket;
     const cents = priceCents!;
-    setTickets((ts) => ts.filter((t) => t.id !== sent.id));
+    const remaining = tickets.filter((t) => t.id !== sent.id);
+    setTickets(remaining);
     setInFlight((n) => n + 1);
     clearTicket();
+    // The next stub in the stack is most likely the next number: fill it in,
+    // selected, so Enter takes it and typing replaces it.
+    const next = remaining
+      .filter((t) => Number(t.sku) > Number(sent.sku))
+      .sort((a, b) => Number(a.sku) - Number(b.sku))[0];
+    if (next) {
+      setSkuText(next.sku);
+      setAutoSku(true);
+      setPendingSelectSku(true);
+    }
     api.skiSwap.patchItem(orgId, swapId, sent.id, { priceCents: cents, ifUnpriced: true, ...description }, idempotencyKey())
       .then((item) => {
-        setSaved((s) => [{ sku: item.sku, name: item.name, priceCents: item.priceCents ?? cents }, ...s]);
+        const sellerName = item.seller?.displayName ?? sent.sellerName;
+        setSaved((s) => [{ sku: item.sku, name: item.name, priceCents: item.priceCents ?? cents, sellerName }, ...s]);
         const offSquare = item.consignedAt !== null && !item.squareSynced;
         setLastSave({
           tone: offSquare ? 'warn' : 'ok',
-          text: `Saved ${item.sku} · ${item.name} · ${money(item.priceCents ?? cents)}`
+          text: `Saved ${item.sku} · ${standing({ name: item.name, priceCents: item.priceCents ?? cents, sellerName })}`
             + (offSquare ? '. Square didn’t take it; re-push it from Items.' : ''),
         });
       })
@@ -287,6 +352,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
   function onSkuChange(value: string) {
     const typed = value.replace(/\s/g, '');
     setSkuText(typed);
+    setAutoSku(false);
     setHighlighted(-1);
     setArrowed(false);
     setClosed(false);
@@ -302,7 +368,9 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
   }
 
   const hints = field === 'sku'
-    ? (!skuText ? ['Start typing the SKU'] : shown > 0 ? ['Arrows + Enter to pick a match, or Tab when done typing'] : ['Tab when done typing'])
+    ? (autoSku ? [`Enter or Tab for ${skuText}, the next ticket`, 'or type another number']
+      : alreadyEntered ? ['Already entered: type another number']
+      : !skuText ? ['Start typing the SKU'] : shown > 0 ? ['Arrows + Enter to pick a match, or Tab when done typing'] : ['Tab when done typing'])
     : field === 'details'
       ? [...(shown > 0 ? ['Arrows + Enter to accept a suggestion'] : details.trim() ? [] : ['Start typing details (optional)']), 'Tab when done typing']
       : (priceText ? ['Enter to save this ticket'] : ['Start typing the price']);
@@ -352,7 +420,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               autoComplete="off"
               aria-label="SKU"
               placeholder={ticketsLoading ? 'Loading…' : 'Ticket number'}
-              className={`${inputClass} font-mono`}
+              className={`${inputClass} font-mono ${autoSku ? 'text-gray-400' : ''}`}
             />
             {field === 'sku' && shown > 0 && (
               <Suggestions
@@ -430,7 +498,12 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               <span className="text-gray-500"> ({describeParsed(parsed, taxonomy)})</span>
             </p>
           )}
-          {message && (
+          {alreadyEntered && !ticket && (
+            <p className="text-amber-400">
+              <span className="font-mono">{alreadyEntered.sku}</span> is already entered: {alreadyEntered.text}.
+            </p>
+          )}
+          {message && !(alreadyEntered && message.text.startsWith(`${alreadyEntered.sku} is already entered`)) && (
             <p className={message.tone === 'ok' ? 'text-green-400' : message.tone === 'warn' ? 'text-amber-400' : 'text-red-400'}>
               {message.text}
             </p>
@@ -451,7 +524,10 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
             <ul className="mt-2 max-h-40 overflow-y-auto space-y-0.5">
               {saved.map((s, i) => (
                 <li key={`${s.sku}-${i}`} className="flex justify-between gap-3 text-xs text-gray-300">
-                  <span className="truncate"><span className="font-mono">{s.sku}</span> · {s.name}</span>
+                  <span className="truncate">
+                    <span className="font-mono">{s.sku}</span> · {s.name}
+                    {s.sellerName && <span className="text-gray-500"> · {s.sellerName}</span>}
+                  </span>
                   <span className="shrink-0">{money(s.priceCents)}</span>
                 </li>
               ))}

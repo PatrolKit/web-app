@@ -10,14 +10,17 @@ const NAMED_SELLERS = 5;
 
 const issueCard = 'block bg-amber-900/30 border border-amber-800 rounded-lg p-4';
 
-function StatTile({ label, value }: { label: string; value: string | number }) {
+function StatTile({ label, value, note }: { label: string; value: string | number; note?: string }) {
   return (
     <div className="bg-surface-50 border border-gray-800 rounded-lg p-4">
       <p className="text-gray-400 text-xs uppercase tracking-wide mb-1">{label}</p>
       <p className="text-2xl font-bold text-white">{value}</p>
+      {note && <p className="text-xs text-gray-500 mt-0.5">{note}</p>}
     </div>
   );
 }
+
+const dollars = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function SkiSwapDashboard() {
   const { orgId, selectedSwap, perms, requireConsignmentScan } = useOutletContext<SkiSwapContext>();
@@ -28,6 +31,9 @@ export default function SkiSwapDashboard() {
     queryKey: ['ski-swap/stats', orgId, selectedSwap?.id],
     queryFn: () => api.skiSwap.getStats(orgId, selectedSwap!.id),
     enabled: !!selectedSwap,
+    // Sales move at the register, not on this page: read again each minute,
+    // or the figures stand still until a reload.
+    refetchInterval: 60_000,
   });
 
   // Sellers missing an address or a way to be paid. Invisible until someone
@@ -74,15 +80,26 @@ export default function SkiSwapDashboard() {
   // Sold and revenue come from Square. When it could not be read they are
   // unknown, not zero, and a dash says so where a number would be believed.
   const stockKnown = stats?.inventoryKnown ?? false;
-  const revenue = stats && stockKnown ? `$${(stats.grossRevenueCents / 100).toFixed(2)}` : '—';
+  const revenue = stats && stockKnown ? dollars(stats.grossRevenueCents) : '—';
+  const consignedUnpriced = stats?.consignedUnpriced ?? 0;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatTile label="Total Items" value={stats?.totalItems ?? '—'} />
-        <StatTile label="Items Sold" value={stockKnown ? (stats?.itemsSold ?? '—') : '—'} />
         <StatTile label="Sellers" value={stats?.totalSellers ?? '—'} />
-        <StatTile label="Est. Revenue" value={revenue} />
+        {/* What's on the floor, from our own rows: it climbs through check-in,
+            while revenue waits for the first sale. */}
+        <StatTile
+          label="Consigned Value"
+          value={stats ? dollars(stats.consignedValueCents) : '—'}
+          note={stats
+            ? `${stats.consignedItems.toLocaleString('en-US')} accepted`
+              + (consignedUnpriced > 0 ? ` · ${consignedUnpriced.toLocaleString('en-US')} not priced yet` : '')
+            : undefined}
+        />
+        <StatTile label="Items Sold" value={stockKnown ? (stats?.itemsSold ?? '—') : '—'} />
+        <StatTile label="Est. Revenue" value={revenue} note="Items sold, at listed prices" />
       </div>
       {stats && !stockKnown && (
         <p className="text-xs text-amber-300">

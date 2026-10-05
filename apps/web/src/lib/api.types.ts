@@ -469,6 +469,12 @@ export interface SwapStats {
   unpricedItems: number;
   /** False when Square could not be read; sold and revenue are then 0, not answers. */
   inventoryKnown: boolean;
+  /** Priced, consigned items at listed prices, sold or not: moves during check-in. */
+  consignedValueCents: number;
+  /** Consigned items, priced or not. */
+  consignedItems: number;
+  /** Consigned items still without a price, so not in the value. */
+  consignedUnpriced: number;
 }
 
 export interface SquareConfigResponse {
