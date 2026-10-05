@@ -440,7 +440,8 @@ export default function SellersPage() {
               {/* Step 1 — type picker (new sellers only) */}
               {!editSeller && form.type === '' && (
                 <div className="flex gap-3 pt-1">
-                  <button type="button"
+                  {/* Focused on open, so the keyboard can choose at once. */}
+                  <button type="button" autoFocus
                     onClick={() => setForm({ ...form, type: 'individual' })}
                     className="flex-1 flex flex-col items-center gap-1.5 py-4 border border-gray-600 rounded-lg hover:border-brand-500 hover:bg-brand-900/10 text-gray-300 hover:text-white transition">
                     <FontAwesomeIcon icon={faUser} className="text-lg" />
@@ -484,6 +485,8 @@ export default function SellersPage() {
                         <label className="block">
                           <span className="text-xs text-gray-400 mb-1 block">First name {!editSeller?.businessName && <span className="text-red-400">*</span>}</span>
                           <input required={!editSeller?.businessName} value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                            // Adding: the first field takes the keyboard as soon as it shows.
+                            autoFocus={!editSeller}
                             className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
                         </label>
                         <label className="block">
@@ -680,6 +683,7 @@ export default function SellersPage() {
                     <span className="ml-1 underline">Change</span>
                   </button>
                   <input required value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })}
+                    autoFocus
                     placeholder="Business name *"
                     className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white" />
                   <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}

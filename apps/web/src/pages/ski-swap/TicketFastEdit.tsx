@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faKeyboard as faKeyboardDuo } from '@fortawesome/pro-duotone-svg-icons';
+import {
+  faCircleCheck as faCircleCheckDuo, faCircleXmark as faCircleXmarkDuo,
+  faKeyboard as faKeyboardDuo, faTriangleExclamation as faTriangleExclamationDuo,
+} from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import { priceInputCents } from '../../lib/money';
 import type { ResolvedTaxonomy, UnpricedTicket } from '../../lib/api.types';
@@ -15,6 +18,8 @@ interface Saved {
   name: string;
   priceCents: number;
   sellerName: string | null;
+  /** Saved, but Square didn't take it: re-pushed from Items. */
+  offSquare: boolean;
 }
 
 interface Message {
@@ -90,7 +95,8 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
   const [message, setMessage] = useState<Message | null>(null);
   /** Saves still on their way, and how the last one went (apart from `message`, which is the stub being typed). */
   const [inFlight, setInFlight] = useState(0);
-  const [lastSave, setLastSave] = useState<Message | null>(null);
+  /** The last save that failed, said prominently; it never enters the list. */
+  const [saveError, setSaveError] = useState<string | null>(null);
   /** Exit waits for saves still on their way, so the Items list refreshes with them. */
   const [exiting, setExiting] = useState(false);
   useEffect(() => { if (exiting && inFlight === 0) onClose(); }, [exiting, inFlight, onClose]);
@@ -285,24 +291,18 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
     api.skiSwap.patchItem(orgId, swapId, sent.id, { priceCents: cents, ifUnpriced: true, ...description }, idempotencyKey())
       .then((item) => {
         const sellerName = item.seller?.displayName ?? sent.sellerName;
-        setSaved((s) => [{ sku: item.sku, name: item.name, priceCents: item.priceCents ?? cents, sellerName }, ...s]);
         const offSquare = item.consignedAt !== null && !item.squareSynced;
-        setLastSave({
-          tone: offSquare ? 'warn' : 'ok',
-          text: `Saved ${item.sku} · ${standing({ name: item.name, priceCents: item.priceCents ?? cents, sellerName })}`
-            + (offSquare ? '. Square didn’t take it; re-push it from Items.' : ''),
-        });
+        // Said in the list below, newest first and in green, not as a line here.
+        setSaved((s) => [{ sku: item.sku, name: item.name, priceCents: item.priceCents ?? cents, sellerName, offSquare }, ...s]);
+        setSaveError(null);
       })
       .catch((err: unknown) => {
         // Priced elsewhere meanwhile: no longer one to fast edit. Anything
         // else goes back, to be entered again.
         const priced = err instanceof ApiError && err.code === 'TICKET_PRICED';
         if (!priced) setTickets((ts) => [...ts, sent].sort((a, b) => Number(a.sku) - Number(b.sku)));
-        setLastSave({
-          tone: 'error',
-          text: `${sent.sku} wasn’t saved: ${err instanceof ApiError ? err.message : 'the request failed'}`
-            + (priced ? '' : ' Enter it again.'),
-        });
+        setSaveError(`${sent.sku} wasn’t saved: ${err instanceof ApiError ? err.message : 'the request failed'}`
+          + (priced ? '' : ' Enter it again.'));
       })
       .finally(() => setInFlight((n) => n - 1));
   }
@@ -508,25 +508,40 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               {message.text}
             </p>
           )}
-          {lastSave && (
-            <p className={lastSave.tone === 'ok' ? 'text-green-400' : lastSave.tone === 'warn' ? 'text-amber-400' : 'text-red-400'}>
-              {lastSave.text}
-            </p>
-          )}
           {inFlight > 0 && <p className="text-gray-500">Saving {inFlight}…</p>}
         </div>
+
+        {/* A failed save, where it can't be missed. It stays out of the list,
+            and its ticket goes back to be entered again. */}
+        {saveError && (
+          <div role="alert" className="flex items-center gap-3 bg-red-950/60 border border-red-800 rounded-lg px-4 py-3">
+            <FontAwesomeIcon icon={faCircleXmarkDuo} className="text-2xl text-red-400 shrink-0" />
+            <p className="flex-1 text-sm text-red-200">{saveError}</p>
+            <button type="button" onClick={() => setSaveError(null)} aria-label="Dismiss" className="text-red-300 hover:text-white text-lg leading-none">×</button>
+          </div>
+        )}
 
         <div className="border-t border-gray-700 pt-3">
           <p className="text-gray-400 text-xs">
             {saved.length} priced · {ticketsLoading ? '…' : left} left
           </p>
           {saved.length > 0 && (
-            <ul className="mt-2 max-h-40 overflow-y-auto space-y-0.5">
+            <ul className="mt-2 max-h-40 overflow-y-auto space-y-0.5" aria-label="Saved tickets">
               {saved.map((s, i) => (
-                <li key={`${s.sku}-${i}`} className="flex justify-between gap-3 text-xs text-gray-300">
-                  <span className="truncate">
-                    <span className="font-mono">{s.sku}</span> · {s.name}
-                    {s.sellerName && <span className="text-gray-500"> · {s.sellerName}</span>}
+                <li
+                  key={`${s.sku}-${i}`}
+                  // The newest stands out: that's the save just made.
+                  className={`flex items-center justify-between gap-3 text-xs rounded px-2 py-1 ${i === 0 ? 'bg-green-900/30 text-green-200' : 'text-gray-300'}`}
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    {s.offSquare
+                      ? <FontAwesomeIcon icon={faTriangleExclamationDuo} className="text-amber-400 shrink-0" title="Saved, but Square didn’t take it. Re-push it from Items." />
+                      : <FontAwesomeIcon icon={faCircleCheckDuo} className="text-green-400 shrink-0" title="Saved" />}
+                    <span className="truncate">
+                      <span className="font-mono">{s.sku}</span> · {s.name}
+                      {s.sellerName && <span className={i === 0 ? 'text-green-300/70' : 'text-gray-500'}> · {s.sellerName}</span>}
+                      {s.offSquare && <span className="text-amber-400"> · not in Square</span>}
+                    </span>
                   </span>
                   <span className="shrink-0">{money(s.priceCents)}</span>
                 </li>

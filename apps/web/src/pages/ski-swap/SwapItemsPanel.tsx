@@ -806,7 +806,11 @@ export default function SwapItemsPanel({
               if (editItem) patchMutation.mutate(); else createMutation.mutate();
             }}
           >
-            <h2 className="text-white font-semibold px-6 pt-6 pb-4 shrink-0">{editItem ? 'Edit Item' : 'Add Item'}</h2>
+            <h2 className="text-white font-semibold px-6 pt-6 pb-4 shrink-0">
+              {editItem
+                ? <>Edit Item <span className="font-mono text-gray-300 ml-1.5">{editItem.sku}</span></>
+                : 'Add Item'}
+            </h2>
 
             <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-4 space-y-4">
 
