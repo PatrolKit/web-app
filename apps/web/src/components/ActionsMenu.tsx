@@ -13,7 +13,12 @@ export interface MenuAction {
  * itself is only for finding things. Opens below, closes on a pick, a click
  * outside or Escape; arrow keys move through the items.
  */
-export default function ActionsMenu({ actions, label = 'Actions' }: { actions: MenuAction[]; label?: string }) {
+export default function ActionsMenu({ actions, label = 'Actions', align = 'left' }: {
+  actions: MenuAction[];
+  label?: string;
+  /** Which edge the menu lines up with: the button's left, or its right at a toolbar's end. */
+  align?: 'left' | 'right';
+}) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const items = useRef<(HTMLButtonElement | null)[]>([]);
@@ -60,7 +65,7 @@ export default function ActionsMenu({ actions, label = 'Actions' }: { actions: M
       {open && (
         <div
           role="menu"
-          className="absolute left-0 z-20 mt-1 min-w-56 bg-surface-50 border border-gray-700 rounded-lg shadow-lg py-1"
+          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} z-20 mt-1 min-w-56 bg-surface-50 border border-gray-700 rounded-lg shadow-lg py-1`}
         >
           {actions.map((a, i) => (
             <button

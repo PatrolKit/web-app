@@ -613,9 +613,11 @@ export default function SwapItemsPanel({
             <option value="not_printed">Not printed</option>
             <option value="printed">Printed</option>
           </select>
-          <ActionsMenu actions={menu} />
         </div>
-        {toolbarNote}
+        <div className="flex gap-2 items-center">
+          {toolbarNote}
+          <ActionsMenu actions={menu} align="right" />
+        </div>
       </div>
 
       {consignAll.data && (
