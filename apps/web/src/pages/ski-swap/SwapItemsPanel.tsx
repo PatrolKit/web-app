@@ -108,8 +108,8 @@ export interface SwapItemsPanelProps {
    */
   selfService?: boolean;
   showSearch?: boolean;
-  /** Open with only unpriced tickets showing, as the dashboard's link asks (Plan 32). */
-  initialNeedsPrice?: boolean;
+  /** The status filter to open on, from a link (the dashboard's). */
+  initialStatus?: StatusFilter;
   sellers?: SellerResponse[];
   emptyMessage?: string;
   labelsPerItem?: number;
@@ -277,14 +277,14 @@ export function itemState(item: ItemResponse): {
 
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService,
-  showSearch = false, initialNeedsPrice = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
+  showSearch = false, initialStatus, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
   tickets, actions = [], toolbarNote, addBlockedBecause,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
   const [printFilter, setPrintFilter] = useState<'' | 'not_printed' | 'printed'>('');
   // The dashboard's "needs a price" link opens on that filter (Plan 32).
-  const [stateFilter, setStateFilter] = useState<'' | StatusFilter>(initialNeedsPrice ? 'needs_price' : '');
+  const [stateFilter, setStateFilter] = useState<'' | StatusFilter>(initialStatus ?? '');
   /** Only tickets still waiting for a price, to work through before sales start (Plan 32). */
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ItemResponse | null>(null);

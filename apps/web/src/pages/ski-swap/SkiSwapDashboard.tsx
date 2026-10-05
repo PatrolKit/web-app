@@ -2,7 +2,13 @@ import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { payoutGaps } from '@patrolkit/contracts/payout-gaps';
 import type { SkiSwapContext } from './SkiSwapLayout';
+
+/** How many unpayable sellers the card names before linking to the rest. */
+const NAMED_SELLERS = 5;
+
+const issueCard = 'block bg-amber-900/30 border border-amber-800 rounded-lg p-4';
 
 function StatTile({ label, value }: { label: string; value: string | number }) {
   return (
@@ -15,6 +21,8 @@ function StatTile({ label, value }: { label: string; value: string | number }) {
 
 export default function SkiSwapDashboard() {
   const { orgId, selectedSwap, perms, requireConsignmentScan } = useOutletContext<SkiSwapContext>();
+  // Fixing a seller or pricing a ticket is staff's; a viewer gets the list.
+  const canManage = perms.has('ski_swap:manage');
 
   const { data: stats } = useQuery({
     queryKey: ['ski-swap/stats', orgId, selectedSwap?.id],
@@ -48,6 +56,10 @@ export default function SkiSwapDashboard() {
     staleTime: 15_000,
     refetchInterval: 30_000,
   });
+
+  // Sellers with items in this swap first: theirs are the payments coming up.
+  const inSwap = (s: (typeof unpayable)[number]) => s.receiptSwaps.some((w) => w.id === selectedSwap?.id);
+  const named = [...unpayable].sort((a, b) => Number(inSwap(b)) - Number(inSwap(a))).slice(0, NAMED_SELLERS);
 
   if (!selectedSwap) {
     return (
@@ -84,47 +96,74 @@ export default function SkiSwapDashboard() {
         </p>
       )}
 
-      {/* Only while there is somebody waiting. Nothing here accepts an item —
-          that happens at the table, on the staff iPad — so this says where to
-          go rather than pretending to be an action. */}
+      {/* Each card says what's wrong and what to do, and goes where it's
+          done. Shown only when there is something to act on: a zero here is
+          the normal state, and a card reading zero every day stops being read. */}
+
+      {/* Nothing here accepts an item: that happens at the table, on the
+          staff iPad. The link shows which ones. */}
       {(waiting?.total ?? 0) > 0 && (
-        <div className="bg-amber-900/30 border border-amber-800 rounded-lg p-4">
+        <Link to="/dashboard/ski-swap/items?show=not-received" className={`${issueCard} hover:border-amber-600`}>
           <p className="text-amber-300 text-sm font-medium">
             {waiting!.total} {waiting!.total === 1 ? 'item is' : 'items are'} waiting to be accepted
           </p>
           <p className="text-xs text-amber-500/80 mt-0.5">
-            Their sellers are standing with them. Staff scan each tag at the check-in table.
+            Their sellers are standing with them. At the check-in table, scan each tag on the staff iPad
+            to accept it. Click to see which items.
           </p>
-        </div>
+        </Link>
       )}
 
-      {/* Shown only when there is something to act on: a zero here is the
-          normal state, and a tile reading zero every day stops being read. */}
       {(stats?.unpricedItems ?? 0) > 0 && (
         <Link
-          to="/dashboard/ski-swap/items?show=needs-price"
-          className="block bg-amber-900/30 border border-amber-800 rounded-lg p-4 hover:border-amber-600"
+          to={canManage ? '/dashboard/ski-swap/items?show=needs-price&fast-edit=1' : '/dashboard/ski-swap/items?show=needs-price'}
+          className={`${issueCard} hover:border-amber-600`}
         >
           <p className="text-amber-300 text-sm font-medium">
             {stats!.unpricedItems} {stats!.unpricedItems === 1 ? 'ticket has' : 'tickets have'} no price yet
           </p>
           <p className="text-xs text-amber-500/80 mt-0.5">
-            Price them before sales start. One that reaches the register unpriced needs the clerk to type a price.
+            {canManage
+              ? 'Click to open Fast Edit Tickets, and enter each ticket from its stub: SKU, details and price. '
+              : 'Click to see them. '}
+            Price them before sales start: one that reaches the register unpriced needs the clerk to type a price.
           </p>
         </Link>
       )}
+
       {unpayable.length > 0 && (
-        <Link
-          to="/dashboard/ski-swap/sellers"
-          className="block bg-amber-900/30 border border-amber-800 rounded-lg p-4 hover:border-amber-600"
-        >
-          <p className="text-amber-300 text-sm font-medium">
+        <div className={issueCard}>
+          <Link to="/dashboard/ski-swap/sellers?show=unpayable" className="text-amber-300 text-sm font-medium hover:underline">
             {unpayable.length} {unpayable.length === 1 ? 'seller' : 'sellers'} cannot be paid
-          </p>
+          </Link>
           <p className="text-xs text-amber-500/80 mt-0.5">
-            Missing an address or a way to send the money. Fix before the swap closes.
+            Fix before the swap closes.{canManage && ' Click a seller to open them, with what to fix at the top.'}
           </p>
-        </Link>
+          <ul className="mt-2 space-y-1.5">
+            {named.map((s) => (
+              <li key={s.id}>
+                {canManage ? (
+                  <Link to={`/dashboard/ski-swap/sellers?edit=${s.id}`} className="text-sm text-white hover:underline">
+                    {s.displayName}
+                  </Link>
+                ) : (
+                  <span className="text-sm text-white">{s.displayName}</span>
+                )}
+                {payoutGaps(s).map((g) => (
+                  <p key={g.key} className="text-xs">
+                    <span className="text-amber-300">{g.problem}.</span>{' '}
+                    <span className="text-amber-500/80">{g.fix}</span>
+                  </p>
+                ))}
+              </li>
+            ))}
+          </ul>
+          {unpayable.length > NAMED_SELLERS && (
+            <Link to="/dashboard/ski-swap/sellers?show=unpayable" className="inline-block mt-2 text-xs text-amber-300 hover:underline">
+              See all {unpayable.length} on the Sellers page
+            </Link>
+          )}
+        </div>
       )}
     </div>
   );

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faUser, faBuilding, faReceipt, faCheckCircle, faCircle, faTicket } from '@fortawesome/free-solid-svg-icons';
@@ -11,6 +11,7 @@ import SellerTicketSource from './SellerTicketSource';
 import IssueTicketRangeModal from './IssueTicketRangeModal';
 import { useFeatures } from '../../lib/features';
 import PrintReceiptModal from './PrintReceiptModal';
+import { payoutGaps } from '@patrolkit/contracts/payout-gaps';
 
 interface SellerForm {
   /** Drives the form only — a business seller is one whose businessName is set. */
@@ -156,7 +157,11 @@ export default function SellersPage() {
   // A toggle rather than a search term, so it costs a round trip rather than
   // one per keystroke — and the "incomplete" rule stays on the server, where the
   // dashboard reads the same one.
-  const [incompleteOnly, setIncompleteOnly] = useState(false);
+  //
+  // The dashboard links here with `?show=unpayable`, and with `?edit=<id>` to
+  // open the seller it named.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [incompleteOnly, setIncompleteOnly] = useState(searchParams.get('show') === 'unpayable');
 
   const { data: sellers = [] } = useQuery({
     queryKey: ['ski-swap/sellers', orgId, incompleteOnly],
@@ -165,6 +170,18 @@ export default function SellersPage() {
     enabled: !!orgId,
     staleTime: 30_000,
   });
+
+  /** Opens the seller a link named, once the list has them, then forgets the link. */
+  const editId = searchParams.get('edit');
+  useEffect(() => {
+    if (!editId) return;
+    const target = sellers.find((x) => x.id === editId);
+    if (!target) return;
+    openEdit(target);
+    setSearchParams((p) => { p.delete('edit'); return p; }, { replace: true });
+    // openEdit is a plain function, remade each render; the list is what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, sellers]);
 
 
   const inviteMutation = useMutation({
@@ -297,6 +314,22 @@ export default function SellersPage() {
   const formError = createMutation.error ?? patchMutation.error ?? inviteMutation.error;
 
   const canManage = perms.has('ski_swap:manage');
+
+  /**
+   * What still stops the seller being edited from being paid, read from the
+   * form so each line goes as it's fixed. Verification and a Venmo scan can't
+   * happen in the form, so those come from the saved seller.
+   */
+  const draftGaps = editSeller
+    ? payoutGaps({
+        email: form.email || null,
+        emailVerifiedAt: form.email === (editSeller.email ?? '') ? editSeller.emailVerifiedAt : null,
+        street: form.street, city: form.city, state: form.state, zip: form.zip,
+        payoutMethod: (form.payoutMethod || null) as SellerResponse['payoutMethod'],
+        payoutTarget: (form.payoutTarget || null) as SellerResponse['payoutTarget'],
+        payoutHandleScanned: form.payoutMethod === editSeller.payoutMethod && editSeller.payoutHandleScanned,
+      })
+    : [];
   /** Active swaps that take legacy tickets, newest first: where a shop can be issued a block (Plan 38). */
   const ticketSwaps = swaps.filter((w) => w.allowLegacyCheckin || w.allowLegacyWeb);
   const canIssueTickets = perms.has('ski_swap:admin') && ticketSwaps.length > 0;
@@ -391,6 +424,19 @@ export default function SellersPage() {
 
             {/* Scrollable body */}
             <div className="overflow-y-auto px-5 py-4 space-y-4 flex-1">
+              {editSeller && draftGaps.length > 0 && (
+                <div className="bg-amber-900/30 border border-amber-800 rounded-lg px-3 py-2.5">
+                  <p className="text-amber-300 text-sm font-medium">This seller can’t be paid yet</p>
+                  <ul className="mt-1 space-y-1">
+                    {draftGaps.map((g) => (
+                      <li key={g.key} className="text-xs">
+                        <span className="text-amber-300">{g.problem}.</span>{' '}
+                        <span className="text-amber-500/90">{g.fix}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {/* Step 1 — type picker (new sellers only) */}
               {!editSeller && form.type === '' && (
                 <div className="flex gap-3 pt-1">
@@ -570,7 +616,25 @@ export default function SellersPage() {
                           <option value="DONATE">Donate</option>
                         </select>
                       </label>
-                      {form.payoutMethod === 'PAYPAL' && (
+                      {form.payoutMethod === 'PAYPAL' && form.payoutTarget !== 'EMAIL' ? (
+                        // From before Plan 35: PayPal to a phone or a typed ID,
+                        // which the run won't pay. The server takes the email
+                        // only once it's verified, so the switch waits for that.
+                        <div className="col-span-2 text-xs text-amber-400 flex items-center gap-3">
+                          <span>
+                            Paid to a {form.payoutTarget === 'PHONE' ? 'phone' : 'PayPal ID'}, which can’t be paid.
+                            {!editSeller?.emailVerifiedAt && ' Verify their email first.'}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={!editSeller?.emailVerifiedAt || form.email !== (editSeller?.email ?? '')}
+                            onClick={() => setForm({ ...form, payoutTarget: 'EMAIL', payoutHandle: '' })}
+                            className="shrink-0 text-xs px-2 py-1 rounded bg-surface-100 hover:bg-surface-200 text-gray-200 disabled:opacity-40"
+                          >
+                            Pay to their email
+                          </button>
+                        </div>
+                      ) : form.payoutMethod === 'PAYPAL' && (
                         <p className="col-span-2 text-xs text-gray-500">
                           {/* Resolved from the contact when the money moves, so it
                               can't be paid until the seller has proved it. */}
@@ -723,7 +787,15 @@ export default function SellersPage() {
             })
             .map((s) => (
             <tr key={s.id} className="border-b border-gray-900 hover:bg-surface-50">
-              <td className="py-2 pr-4 text-white">{s.displayName}</td>
+              <td className="py-2 pr-4 text-white">
+                {s.displayName}
+                {/* What stops this seller being paid, where it can't be missed. */}
+                {payoutGaps(s).length > 0 && (
+                  <span className="block text-xs text-amber-400">
+                    {payoutGaps(s).map((g) => g.problem).join(' · ')}
+                  </span>
+                )}
+              </td>
               <td className="py-2 pr-4 text-gray-400">
                 <span className="flex items-center gap-1.5">
                   <span>{s.email ?? '—'}</span>

@@ -47,6 +47,12 @@ describe('a seller’s contact changed by staff', () => {
       .rejects.toThrow(/not been verified/);
   });
 
+  it('fixes an address under a PayPal email that was never verified', async () => {
+    const { write, writes } = build({ ...dana, emailVerifiedAt: null, verifiedEmail: null });
+    await write({ street: '1 Main St', city: 'Stowe', state: 'VT', zip: '05672' });
+    expect(writes[0]).toMatchObject({ state: 'VT', zip: '05672' });
+  });
+
   it('leaves a verification alone when the email doesn’t change', async () => {
     const { write, writes } = build(dana);
     await write({ firstName: 'Danielle', email: 'dana@example.com' });

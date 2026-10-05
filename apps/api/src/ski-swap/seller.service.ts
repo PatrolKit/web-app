@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { payoutGaps } from '../contracts/payout-gaps';
 import { PrismaService } from '../prisma/prisma.service';
 import { isUniqueViolation } from '../common/util/prisma-errors';
 import { IdempotencyService } from '../common/services/idempotency.service';
@@ -203,18 +204,16 @@ export class SellerService {
   }
 
   /**
-   * Whether a seller could actually be reached and paid.
+   * Whether a seller could actually be reached and paid: an address, and a
+   * payout the run can send (Plan 35). The rule is `payoutGaps`, shared with
+   * the web, which says per seller what to fix.
    *
    * A gap here is invisible until someone tries to act on it — a cheque with
    * nowhere to go, an unsold item nobody can return — so it is worth being able
    * to ask for the incomplete ones before a swap closes rather than after.
    */
   static isIncomplete(s: SellerResponse): boolean {
-    const noAddress = !s.street || !s.city || !s.state || !s.zip;
-    const noMethod = !s.payoutMethod;
-    const noDestination =
-      (s.payoutMethod === 'PAYPAL' || s.payoutMethod === 'VENMO') && !s.payoutTarget;
-    return noAddress || noMethod || noDestination;
+    return payoutGaps(s).length > 0;
   }
 
   async list(
@@ -761,7 +760,10 @@ export class SellerService {
           data.payoutHandleSource,
         )
       : undefined;
-    assertPayoutIsCoherent({
+    // Only when a payout is written, as the comment above says: a payout on file
+    // that's no longer provable (a PayPal email never verified) mustn't block
+    // fixing the address the dashboard is asking for.
+    if (payoutWritten) assertPayoutIsCoherent({
       method: 'payoutMethod' in update ? (update.payoutMethod as string | null) : current.payoutMethod,
       target: targetWritten ? (update.payoutTarget as string | null) : current.payoutTarget,
       handle: 'payoutHandle' in update ? (update.payoutHandle as string | null) : current.payoutHandle,

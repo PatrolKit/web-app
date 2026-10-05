@@ -10,11 +10,17 @@ import {
 import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import SwapItemsPanel from './SwapItemsPanel';
+import SwapItemsPanel, { type StatusFilter } from './SwapItemsPanel';
 import ProxyItemImportModal from './ProxyItemImportModal';
 import TicketFastEdit from './TicketFastEdit';
 import ReturnTicketsModal from './ReturnTicketsModal';
 import TicketSquareModal, { useTicketPushStatus } from './TicketSquareModal';
+
+/** `?show=` values the dashboard links with, and the status filter each opens. */
+const LINKED_STATUS: Record<string, StatusFilter | undefined> = {
+  'needs-price': 'needs_price',
+  'not-received': 'not_received',
+};
 
 export default function ItemsPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
@@ -22,12 +28,13 @@ export default function ItemsPage() {
   const canManage = perms.has('ski_swap:manage');
   const swapId = selectedSwap?.id ?? null;
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [importing, setImporting] = useState(false);
-  const [fastEditing, setFastEditing] = useState(false);
+  // The dashboard's unpriced-tickets card opens Fast Edit directly.
+  const [fastEditing, setFastEditing] = useState(canManage && searchParams.get('fast-edit') === '1');
   const [returning, setReturning] = useState(false);
   const [pushingOpen, setPushingOpen] = useState(false);
   const canAdmin = perms.has('ski_swap:admin');
-  const [searchParams] = useSearchParams();
 
   /** The swap's web takes no print tickets, so no row may get a generated SKU (Plan 34). */
   const webTicketsOnly = selectedSwap ? !selectedSwap.allowPrintWeb : false;
@@ -95,7 +102,7 @@ export default function ItemsPage() {
       swapId={swapId}
       canManage={canManage}
       showSearch
-      initialNeedsPrice={searchParams.get('show') === 'needs-price'}
+      initialStatus={LINKED_STATUS[searchParams.get('show') ?? '']}
       sellers={sellers}
       queryKeyPrefix="ski-swap/items"
       labelsPerItem={labelsPerItem}
@@ -161,6 +168,8 @@ export default function ItemsPage() {
         swapId={swapId}
         onClose={() => {
           setFastEditing(false);
+          // So a reload doesn't open it again.
+          setSearchParams((p) => { p.delete('fast-edit'); return p; }, { replace: true });
           void qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId] });
           void qc.invalidateQueries({ queryKey: ['ski-swap/unpriced-tickets', orgId, swapId] });
         }}
