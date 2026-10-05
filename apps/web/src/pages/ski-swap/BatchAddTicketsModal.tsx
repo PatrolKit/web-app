@@ -134,13 +134,20 @@ export default function BatchAddTicketsModal({ orgId, swapId, sellers, onClose, 
       setSaved(res.created);
       onSaved();
     } catch (err: unknown) {
-      const taken = err instanceof ApiError && err.code === 'TICKET_TAKEN'
+      if (!(err instanceof ApiError)) {
+        // No answer at all ("Failed to fetch"): the save may or may not have
+        // landed. The key stays, so pressing Save again answers as the first
+        // did if it landed, and adds them if it didn't. Never twice.
+        setSaveError('The connection dropped before PatrolKit answered, so these may already be saved. Press Save again: if they were saved, nothing is added twice.');
+        return;
+      }
+      const taken = err.code === 'TICKET_TAKEN'
         ? (err.details as { taken?: { sku: string; holder: string | null }[] } | undefined)?.taken
         : undefined;
       if (taken?.length) commit(markedTaken(stateRef.current, taken));
       // A refusal is the server's sentence; nothing was added, so a new key for the next try.
       keyRef.current = idempotencyKey();
-      setSaveError(err instanceof Error ? err.message : 'Could not save the tickets.');
+      setSaveError(err.message);
     } finally {
       setSaving(false);
     }

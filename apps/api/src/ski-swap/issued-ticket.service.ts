@@ -118,12 +118,21 @@ export class IssuedTicketService {
     if (repeats.length) throw new BadRequestException(`${listOf(repeats.slice(0, 5))} ${repeats.length === 1 ? 'is' : 'are'} in the batch twice.`);
 
     const taken = await this.holdersOf(swapId, numbers);
+    /*
+     * The same Save again, after a dropped connection, while or after the first
+     * landed: every ticket is already this seller's. With the key it carries,
+     * that's the retry the key exists for, not a clash, and it answers as the
+     * first did rather than marking all of them taken.
+     */
+    if (idempotencyKey && taken.length === numbers.length && taken.every((t) => t.sellerId === sellerId)) {
+      return { created: numbers.length };
+    }
     if (taken.length) {
       throw new ConflictException({
         code: 'TICKET_TAKEN',
         message: takenMessage(taken),
         // The popover marks these rows to remove (D11).
-        details: { taken },
+        details: { taken: taken.map(({ sku, holder }) => ({ sku, holder })) },
       });
     }
 
@@ -145,13 +154,13 @@ export class IssuedTicketService {
   }
 
   /** The live items with these SKUs, and whose each is. */
-  private async holdersOf(swapId: string, skus: string[]): Promise<{ sku: string; holder: string | null }[]> {
+  private async holdersOf(swapId: string, skus: string[]): Promise<{ sku: string; holder: string | null; sellerId: string | null }[]> {
     const rows = await this.prisma.swapItem.findMany({
       where: { swapId, deletedAt: null, sku: { in: skus } },
-      select: { sku: true, seller: { include: { membership: { include: { user: true } } } } },
+      select: { sku: true, sellerId: true, seller: { include: { membership: { include: { user: true } } } } },
     });
     return rows
-      .map((r) => ({ sku: r.sku, holder: r.seller ? displayName(r.seller.membership.user, r.seller.businessName) : null }))
+      .map((r) => ({ sku: r.sku, sellerId: r.sellerId, holder: r.seller ? displayName(r.seller.membership.user, r.seller.businessName) : null }))
       .sort((a, b) => Number(a.sku) - Number(b.sku));
   }
 

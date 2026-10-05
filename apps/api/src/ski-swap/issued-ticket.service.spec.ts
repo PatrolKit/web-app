@@ -264,6 +264,18 @@ describe('batch add (Plan 40)', () => {
     expect(created.length).toBe(2);
   });
 
+  it('answers the same Save again, after a dropped connection, as done rather than taken', async () => {
+    const { service, created } = harness({ live: [
+      { id: 'a', sku: '501', sellerId: 'seller-1', seller: shop('Dana') },
+      { id: 'b', sku: '502', sellerId: 'seller-1', seller: shop('Dana') },
+    ] });
+    await expect(service.batchAdd('org-1', 'swap-1', 'seller-1', ['501', '502'], 'u', 'key-2')).resolves.toEqual({ created: 2 });
+    expect(created).toEqual([]);
+    // Without its key, or for another seller, it's a clash as before.
+    await expect(service.batchAdd('org-1', 'swap-1', 'seller-1', ['501', '502'], 'u')).rejects.toMatchObject({ response: { code: 'TICKET_TAKEN' } });
+    await expect(service.batchAdd('org-1', 'swap-1', 'seller-2', ['501', '502'], 'u', 'key-3')).rejects.toMatchObject({ response: { code: 'TICKET_TAKEN' } });
+  });
+
   it('says several taken tickets by holder', () => {
     expect(takenMessage([
       { sku: '501', holder: 'Stowe Sports' }, { sku: '502', holder: 'Stowe Sports' }, { sku: '600', holder: 'Dana Reyes' },
