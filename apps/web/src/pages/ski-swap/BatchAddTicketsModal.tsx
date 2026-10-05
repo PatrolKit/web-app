@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faCircleCheck as faCircleCheckDuo, faCircleXmark as faCircleXmarkDuo,
-  faScannerGun as faScannerGunDuo, faTriangleExclamation as faTriangleExclamationDuo,
-} from '@fortawesome/pro-duotone-svg-icons';
+import { faCircleCheck as faCircleCheckDuo, faCircleXmark as faCircleXmarkDuo } from '@fortawesome/pro-duotone-svg-icons';
+import { Banner, ScannerBanner, TypedCode, errorTone } from './ScanSessionParts';
 import { api, ApiError } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import { useScanner } from '../../contexts/ScannerContext';
@@ -11,27 +8,6 @@ import { useTicketPushStatus } from './TicketSquareModal';
 import {
   checked, emptyBatch, markedTaken, removed, scanned, toSave, uncheckable, type BatchState,
 } from './batchAddLogic';
-
-/** A short, low double beep for a refused scan (D7). Made here; no sound file. */
-function errorTone() {
-  try {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    [0, 0.18].forEach((at) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'square';
-      osc.frequency.value = 220;
-      gain.gain.setValueAtTime(0.15, ctx.currentTime + at);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + at + 0.14);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(ctx.currentTime + at);
-      osc.stop(ctx.currentTime + at + 0.15);
-    });
-    setTimeout(() => void ctx.close(), 600);
-  } catch { /* no audio: the red message still says it */ }
-}
 
 function idempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -55,11 +31,9 @@ export default function BatchAddTicketsModal({ orgId, swapId, sellers, onClose, 
   const [search, setSearch] = useState('');
   const [state, setState] = useState<BatchState>(emptyBatch);
   const stateRef = useRef(state);
-  const [typed, setTyped] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
-  const [connectError, setConnectError] = useState<string | null>(null);
   // One key per batch, so a Save retried after a dropped answer adds nothing twice.
   const keyRef = useRef(idempotencyKey());
 
@@ -112,17 +86,6 @@ export default function BatchAddTicketsModal({ orgId, swapId, sellers, onClose, 
   function abort() {
     if (unsaved && !confirm(`Discard ${state.tickets.length} scanned ticket${state.tickets.length === 1 ? '' : 's'}?`)) return;
     onClose();
-  }
-
-  async function connect() {
-    setConnectError(null);
-    try {
-      await scanner.connect();
-    } catch (err: unknown) {
-      setConnectError((err as { name?: string })?.name === 'NotFoundError'
-        ? 'No scanner picked. If nothing was listed, it’s asleep, out of range, or held by a bridge. Press its trigger to wake it, and try again.'
-        : (err as Error)?.message ?? 'Could not connect to the scanner.');
-    }
   }
 
   async function save() {
@@ -202,26 +165,10 @@ export default function BatchAddTicketsModal({ orgId, swapId, sellers, onClose, 
         {seller && saved === null && (
           <>
             {/* The scanner, said so it can't be missed (D6). */}
-            {!scanner.isSupported ? (
-              <Banner tone="error" icon={faTriangleExclamationDuo} title="This browser can’t use a scanner"
-                text="Scanning needs Chrome or Edge, which can use Bluetooth. You can still type ticket numbers below." />
-            ) : scanner.scanners.length === 0 ? (
-              <Banner tone="error" icon={faTriangleExclamationDuo} title="No scanner set up"
-                text="Add one on the Hardware page. You can still type ticket numbers below." />
-            ) : !scanner.connected ? (
-              <Banner tone="error" icon={faTriangleExclamationDuo} title="Scanner not connected"
-                text={connectError ?? 'Connect it to start scanning. Nothing scanned so far is lost.'}
-                action={
-                  <button type="button" onClick={() => void connect()} disabled={scanner.connecting}
-                    className="bg-red-700 hover:bg-red-600 text-white px-3 py-1.5 rounded text-sm font-medium disabled:opacity-50">
-                    {scanner.connecting ? 'Connecting…' : 'Connect scanner'}
-                  </button>
-                } />
-            ) : (
-              <Banner tone="ready" icon={faScannerGunDuo}
-                title={count === 0 ? 'Start scanning' : 'Keep scanning'}
-                text={`Scan each ticket on ${seller.displayName}’s gear. Press Save when you’re done.`} />
-            )}
+            <ScannerBanner ready={{
+              title: count === 0 ? 'Start scanning' : 'Keep scanning',
+              text: `Scan each ticket on ${seller.displayName}’s gear. Press Save when you’re done.`,
+            }} />
 
             {state.rejection && (
               <Banner tone="error" icon={faCircleXmarkDuo} title={state.rejection.headline} text={state.rejection.advice} />
@@ -238,22 +185,7 @@ export default function BatchAddTicketsModal({ orgId, swapId, sellers, onClose, 
               </div>
             </div>
 
-            <form
-              className="flex gap-2 shrink-0"
-              onSubmit={(e) => { e.preventDefault(); take(typed); setTyped(''); }}
-            >
-              <input
-                value={typed}
-                onChange={(e) => setTyped(e.target.value)}
-                inputMode="numeric"
-                placeholder="Barcode won’t read? Type the ticket number"
-                aria-label="Type a ticket number"
-                className="flex-1 bg-surface-100 border border-gray-700 rounded px-3 py-1.5 text-sm text-white font-mono"
-              />
-              <button type="submit" disabled={!typed.trim()} className="bg-surface-100 hover:bg-surface-200 text-gray-200 px-3 py-1.5 rounded text-sm disabled:opacity-40">
-                Add
-              </button>
-            </form>
+            <TypedCode placeholder="Barcode won’t read? Type the ticket number" onEnter={take} />
 
             <ul className="flex-1 min-h-0 overflow-y-auto border border-gray-800 rounded divide-y divide-gray-800" aria-label="Scanned tickets">
               {count === 0 && <li className="px-3 py-3 text-sm text-gray-500">Scanned tickets appear here, newest first.</li>}
@@ -293,29 +225,6 @@ export default function BatchAddTicketsModal({ orgId, swapId, sellers, onClose, 
           <Saved orgId={orgId} swapId={swapId} created={saved} sellerName={seller.displayName} onClose={onClose} />
         )}
       </div>
-    </div>
-  );
-}
-
-function Banner({ tone, icon, title, text, action }: {
-  tone: 'error' | 'ready';
-  icon: Parameters<typeof FontAwesomeIcon>[0]['icon'];
-  title: string;
-  text: string;
-  action?: React.ReactNode;
-}) {
-  // Green, not the brand's red: "go" and "done" mustn't look like the errors.
-  const look = tone === 'error'
-    ? 'bg-red-950/60 border-red-800 text-red-200'
-    : 'bg-green-950/40 border-green-800 text-white';
-  return (
-    <div className={`shrink-0 border rounded-lg px-4 py-3 flex items-center gap-4 ${look}`} role={tone === 'error' ? 'alert' : 'status'}>
-      <FontAwesomeIcon icon={icon} className={`text-3xl shrink-0 ${tone === 'error' ? 'text-red-400' : 'text-green-400'}`} />
-      <div className="flex-1 min-w-0">
-        <p className="text-lg font-semibold">{title}</p>
-        <p className="text-sm opacity-80">{text}</p>
-      </div>
-      {action}
     </div>
   );
 }

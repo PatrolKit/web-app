@@ -3,6 +3,7 @@ import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   faBarcodeRead as faBarcodeReadDuo,
+  faBarcodeScan as faBarcodeScanDuo,
   faCloudArrowUp as faCloudArrowUpDuo,
   faFileImport as faFileImportDuo,
   faKeyboard as faKeyboardDuo,
@@ -16,6 +17,7 @@ import ProxyItemImportModal from './ProxyItemImportModal';
 import TicketFastEdit from './TicketFastEdit';
 import ReturnTicketsModal from './ReturnTicketsModal';
 import BatchAddTicketsModal from './BatchAddTicketsModal';
+import ScanTicketModal from './ScanTicketModal';
 import TicketSquareModal, { useTicketPushStatus } from './TicketSquareModal';
 
 export default function ItemsPage() {
@@ -30,6 +32,7 @@ export default function ItemsPage() {
   const [fastEditing, setFastEditing] = useState(canManage && searchParams.get('fast-edit') === '1');
   const [returning, setReturning] = useState(false);
   const [batchAdding, setBatchAdding] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [pushingOpen, setPushingOpen] = useState(false);
   const canAdmin = perms.has('ski_swap:admin');
 
@@ -114,6 +117,13 @@ export default function ItemsPage() {
               onSelect: () => setFastEditing(true),
             }]
           : []),
+        // Looking items up by their tags, any swap: tickets and our labels alike.
+        {
+          key: 'scan-ticket',
+          label: 'Scan ticket',
+          icon: faBarcodeScanDuo,
+          onSelect: () => setScanning(true),
+        },
         // Scanning a stack of legacy tickets to one seller (Plan 40): where the
         // swap takes legacy tickets, as the fast edit is.
         ...(takesTickets
@@ -180,6 +190,10 @@ export default function ItemsPage() {
           void qc.invalidateQueries({ queryKey: ['ski-swap/unpriced-tickets', orgId, swapId] });
         }}
       />
+    )}
+
+    {scanning && swapId && (
+      <ScanTicketModal orgId={orgId} swapId={swapId} onClose={() => setScanning(false)} />
     )}
 
     {batchAdding && swapId && (
