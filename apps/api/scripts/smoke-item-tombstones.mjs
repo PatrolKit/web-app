@@ -434,6 +434,19 @@ ok('...recorded as the device that did it',
   `consignedBy ${acceptedByIpad?.consignedBy}`);
 
 // A device of the wrong role is still refused, so the role is doing work.
+// Plan 39 D8: an iPad gets no stock, and a person still does.
+const STOCK = ['inStock', 'soldCount', 'inventoryKnown'];
+const ipadList = await fetch(`${BASE}${ITEMS}?walk=true&take=5`, {
+  headers: { authorization: `Bearer ${ipadToken.accessToken}` },
+}).then(unwrap);
+ok('an iPad’s item list carries no stock',
+   ipadList.items?.length > 0 && ipadList.items.every((i) => STOCK.every((f) => !(f in i))),
+   JSON.stringify(Object.keys(ipadList.items?.[0] ?? {})));
+const staffList = await fetch(`${BASE}${ITEMS}?take=5`, { headers: auth }).then(unwrap);
+ok('...while a person’s still does',
+   staffList.items?.length > 0 && staffList.items.every((i) => STOCK.every((f) => f in i)),
+   JSON.stringify(Object.keys(staffList.items?.[0] ?? {})));
+
 const bridgeSecret = createId();
 const bridgeClientId = createId();
 await prisma.device.create({
