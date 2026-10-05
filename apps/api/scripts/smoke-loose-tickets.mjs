@@ -10,7 +10,7 @@
 import { PrismaClient } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
 
-import { smokeOrg, smokeStaff, smokeSession } from './_fixture.mjs';
+import { smokeOrg, smokeStaff, smokeSession, issueTickets } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
@@ -23,7 +23,6 @@ const org = await smokeOrg(prisma);
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 await prisma.printJob.deleteMany({ where: { orgId: org.id } });
 await prisma.swapItem.deleteMany({ where: { orgId: org.id, swap: { title: 'Loose ticket smoke' } } });
-await prisma.legacyTicketRange.deleteMany({ where: { swap: { title: 'Loose ticket smoke' } } });
 await prisma.skiSwap.deleteMany({ where: { orgId: org.id, title: 'Loose ticket smoke' } });
 await prisma.checkinStation.deleteMany({ where: { orgId: org.id, name: 'Loose ticket station' } });
 for (const email of ['loose-shop@patrolkit.invalid', 'loose-walkin@patrolkit.invalid']) {
@@ -60,12 +59,8 @@ async function makeSeller(email, first, last, businessName) {
 const shop = await makeSeller('loose-shop@patrolkit.invalid', 'Sam', 'Ito', 'Alpine Sports');
 const walkin = await makeSeller('loose-walkin@patrolkit.invalid', 'Dana', 'Reyes', null);
 
-await prisma.legacyTicketRange.create({
-  data: {
-    id: createId(), orgId: org.id, swapId: swap.id, sellerId: shop.seller.id,
-    startNumber: 67000, endNumber: 67499, updatedAt: new Date(),
-  },
-});
+// Issued tickets are items from the start (Plan 38).
+await issueTickets(prisma, { orgId: org.id, swapId: swap.id, sellerId: shop.seller.id, startNumber: 67000, endNumber: 67499 });
 
 const { user: staff } = await smokeStaff(prisma, org, ['ski_swap:admin', 'ski_swap:manage', 'ski_swap:report']);
 const token = await smokeSession(prisma, BASE, staff, unwrap);
@@ -138,19 +133,20 @@ ok('and nothing was queued to print', loose.hasPrintedTag === true, String(loose
 const again = await scan('88001', walkin.seller.id);
 const againBody = await again.json();
 ok('re-scanning it is refused, not a 500', again.status === 409, String(again.status));
-ok('and says which ticket', againBody.error === 'Ticket 88001 is already on another item.',
-   String(againBody.error));
+ok('and says which ticket, and whose', againBody.error === 'Ticket 88001 belongs to Dana Reyes.' && againBody.code === 'TICKET_TAKEN',
+   `${againBody.code} ${againBody.error}`);
 
 // ─── A ticket from a shop's block ────────────────────────────────────────────
 
 const stolen = await scan('67169', walkin.seller.id);
 const stolenBody = await stolen.json();
-ok("a number inside a shop's block is refused", stolen.status === 409, String(stolen.status));
-ok('and names the shop', stolenBody.error === 'Ticket 67169 is part of a block issued to Alpine Sports.',
-   String(stolenBody.error));
+ok("a number issued to a shop is refused", stolen.status === 409, String(stolen.status));
+ok('and names the shop', stolenBody.error === 'Ticket 67169 belongs to Alpine Sports.' && stolenBody.code === 'TICKET_TAKEN',
+   `${stolenBody.code} ${stolenBody.error}`);
 
+// Issued tickets exist from the start: the shop's own is described, not added.
 const own = await scan('67169', shop.seller.id);
-ok('while the shop itself may use it', own.status === 201 || own.status === 200, String(own.status));
+ok('and so is the shop itself: its ticket is already an item', own.status === 409, String(own.status));
 
 // Just outside the block is nobody's, and must still work.
 const nextDoor = await scan('67500', walkin.seller.id);
@@ -163,13 +159,12 @@ await fetch(swapUrl, { method: 'PATCH', headers: H, body: JSON.stringify({ allow
 const off = await fetch(swapUrl, { headers: H }).then(unwrap);
 ok('it can be switched off again', off.allowLegacyCheckin === false, String(off.allowLegacyCheckin));
 
-const rangesAfterOff = await prisma.legacyTicketRange.count({ where: { swapId: swap.id } });
-ok('and blocks already issued are left where they are', rangesAfterOff === 1, String(rangesAfterOff));
+const issuedAfterOff = await prisma.swapItem.count({ where: { swapId: swap.id, sellerId: shop.seller.id, deletedAt: null } });
+ok('and tickets already issued are left where they are', issuedAfterOff === 500, String(issuedAfterOff));
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
 await prisma.printJob.deleteMany({ where: { stationId: station.id } });
 await prisma.swapItem.deleteMany({ where: { swapId: swap.id } });
-await prisma.legacyTicketRange.deleteMany({ where: { swapId: swap.id } });
 await prisma.swapSkuCounter.deleteMany({ where: { swapId: swap.id } });
 await prisma.skiSwap.delete({ where: { id: swap.id } });
 await prisma.checkinStation.delete({ where: { id: station.id } });

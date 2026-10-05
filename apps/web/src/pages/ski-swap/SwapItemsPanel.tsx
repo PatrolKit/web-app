@@ -639,9 +639,7 @@ export default function SwapItemsPanel({
             onClick={() => {
               setShowForm(true);
               setEditItem(null);
-              // Pre-filled with the suggestion when there is one. Past the top
-              // of the ranges it opens blank rather than refusing, because a
-              // skipped ticket may still be in the box.
+              // Pre-filled with the lowest ticket nobody has described yet.
               setForm({
                 ...emptyForm,
                 sku: tickets?.suggested != null ? String(tickets.suggested) : '',
@@ -649,7 +647,7 @@ export default function SwapItemsPanel({
             }}
             className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
           >
-            + Add Item
+            {tickets && !tickets.optional ? '+ Describe a Ticket' : '+ Add Item'}
           </button>
         )}
         </div>
@@ -805,9 +803,11 @@ export default function SwapItemsPanel({
                   className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono"
                 />
                 <span className="block text-xs text-gray-500 mt-1">
+                  {/* Issued tickets already exist (Plan 38): this describes one,
+                      once. Staff change it after that. */}
                   {tickets.suggested !== null
-                    ? `Next in ${describeRanges(tickets.ranges)}. Type another if this one was lost or you are using a different ticket.`
-                    : `No next ticket — you have worked to the end of ${describeRanges(tickets.ranges)}. If you have found a skipped one, enter its number.`}
+                    ? `Your next ticket to describe, from ${describeRanges(tickets.ranges)}. Type another number to describe that one instead. Each ticket can be described once; after that, ask the swap’s staff.`
+                    : `All of your tickets (${describeRanges(tickets.ranges)}) are described. Ask the swap’s staff to change one.`}
                   {tickets.optional && ' Leave blank to print a label instead.'}
                 </span>
               </label>

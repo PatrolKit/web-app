@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import type { TicketImportRow } from '../../lib/api.types';
-import { GenerateSkusSwitch, importedSummary } from './ImportSkuOptions';
+import { GenerateSkusSwitch, importedSummary, wroteAny } from './ImportSkuOptions';
 
 /**
  * A shop's whole inventory in one file.
@@ -35,7 +35,7 @@ export default function TicketItemImportModal({
   const [busy, setBusy] = useState(false);
 
   const failures = rows?.filter((r) => r.outcome === 'error') ?? [];
-  const created = rows?.filter((r) => r.outcome === 'created') ?? [];
+  const created = rows?.filter((r) => r.outcome === 'created' || r.outcome === 'updated') ?? [];
 
   async function submit() {
     if (!file) return;
@@ -48,7 +48,7 @@ export default function TicketItemImportModal({
         setError(res.error ?? 'Could not read that file');
       } else {
         setRows(res.data ?? []);
-        if ((res.data ?? []).some((r) => r.outcome === 'created')) onImported();
+        if (wroteAny(res.data)) onImported();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not read that file');
@@ -67,10 +67,9 @@ export default function TicketItemImportModal({
 
         <div className="text-sm text-gray-400 space-y-2">
           <p>
-            One row per item. The ticket number is required
-            {allowGenerate ? ', unless SKUs are generated below' : ''}, and a name is optional.
-            A ticket row may leave its price blank to price it later; a row without a ticket
-            needs one.
+            One row per ticket: it describes that ticket, which can be done once. The ticket
+            number is required{allowGenerate ? ', unless SKUs are generated below for items without a ticket, which need a price' : ''}.
+            A name and a price are optional; a ticket left unpriced is priced at the register.
           </p>
           <pre className="bg-surface-100 border border-gray-700 rounded p-3 text-xs text-gray-300 overflow-x-auto">
 {`sku,name,price

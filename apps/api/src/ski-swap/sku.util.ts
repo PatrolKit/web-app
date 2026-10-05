@@ -76,3 +76,8 @@ export function stationCodeOf(sku: string): string | null {
 
 /** The widest SKU the barcode can carry at 2 dots per module on a 400-dot head. */
 export const MAX_SKU_LENGTH = 13;
+
+/** What an item nobody has described is called: its number. */
+export function uncategorisedName(sku: string): string {
+  return `Item #${sku}`;
+}

@@ -18,7 +18,7 @@ import { LegacyTicketService, ticketNumberOf, type ImportRowResult } from './leg
 import { TaxonomyService, type ItemAttributeInput, type ItemDescription } from './taxonomy/taxonomy.service';
 import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
-import { stationCodeOf } from './sku.util';
+import { stationCodeOf, uncategorisedName } from './sku.util';
 import type { ItemResponse, UnpricedTicket } from '../contracts/ski-swap.contracts';
 
 export interface ItemPhotoResponse { id: string; url: string; }
@@ -257,27 +257,6 @@ export class ItemService {
     if (data.stationId && !station) throw new NotFoundException('Station not found');
 
     /**
-     * A loose ticket must not be one already issued to a shop.
-     *
-     * There is one stockpile, spent two ways: blocks handed to a business
-     * seller, and single tickets given out at the counter. Nothing physically
-     * stops the wrong ticket coming off the wrong pile, and taking it here
-     * would quietly hand a shop's number to somebody else — discovered when
-     * the shop enters theirs and is refused for a duplicate they never made.
-     *
-     * A business seller entering their own is the ordinary case and passes:
-     * the block is theirs.
-     */
-    if (data.sku) {
-      const holder = await this.tickets.holderOf(swapId, data.sku);
-      if (holder && holder.sellerId !== data.sellerId) {
-        throw new ConflictException(
-          `Ticket ${data.sku} is part of a block issued to ${holder.name}.`,
-        );
-      }
-    }
-
-    /**
      * Whether this item waits for a staff member before it can sell.
      *
      * Read once, here, and answered onto the row. Nothing consults it again,
@@ -450,6 +429,13 @@ export class ItemService {
     const name =
       data.printedName?.trim() || described?.name || data.fallbackName?.trim() || uncategorisedName(sku);
 
+    // A ticket that's already an item is refused saying whose (Plan 38 D8):
+    // issued tickets exist from the start, so this is the usual way to meet
+    // one. The unique index below stays the guard against a race.
+    if (ticketNumberOf(sku) !== null && (await this.tickets.takenBy(swapId, sku))) {
+      throw await this.ticketTaken(swapId, sku);
+    }
+
     const item = await this.prisma.swapItem.create({
       data: {
         // The client's, when it brought one (iOS Plan 17 A). Checked against
@@ -473,7 +459,7 @@ export class ItemService {
         consignedAt: data.awaitsConsignment ? null : new Date(),
       },
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true },
-    }).catch((err: unknown) => {
+    }).catch(async (err: unknown) => {
       /**
        * `@@unique([swapId, liveSku])` is the only thing standing between one
        * physical ticket and two live items, and it was reaching the client as a
@@ -486,11 +472,9 @@ export class ItemService {
        * two stations can both pass through, and the index does not.
        */
       if (isDuplicateSku(err)) {
-        throw new ConflictException(
-          ticketNumberOf(sku) !== null
-            ? `Ticket ${sku} is already on another item.`
-            : `${sku} is already in use in this swap.`,
-        );
+        throw ticketNumberOf(sku) !== null
+          ? await this.ticketTaken(swapId, sku)
+          : new ConflictException(`${sku} is already in use in this swap.`);
       }
       throw err;
     });
@@ -852,10 +836,39 @@ export class ItemService {
       // Ticket rows only where the web takes legacy tickets (Plan 34), for a
       // shop's own file as well as staff's.
       acceptsTickets: swap.allowLegacyWeb,
+      // A shop fills in each ticket once; staff aren't held to that (Plan 38).
+      shopOwn: opts.selfService,
     });
     if (results.some((r) => r.outcome === 'error')) return results;
 
+    // Nor may a shop's file describe a ticket that has already sold (D6).
+    if (opts.selfService) {
+      const sold = await this.soldAmong(orgId, swapId, results.map((r) => r.itemId).filter((id): id is string => !!id));
+      if (sold.size) {
+        return results.map((r) => (r.itemId && sold.has(r.itemId)
+          ? { ...r, outcome: 'error' as const, error: `${r.sku} has sold. Ask the swap’s staff to change it.` }
+          : r));
+      }
+    }
+
     for (let i = 0; i < rows.length; i++) {
+      // A ticket row fills in the issued ticket it names (Plan 38): the ticket
+      // exists from the moment it was issued, so there's nothing to create.
+      const itemId = results[i].itemId;
+      if (itemId) {
+        const name = rows[i].name?.trim();
+        const description = rows[i].description?.trim();
+        const changes = {
+          ...(name ? { name } : {}),
+          ...(description ? { description } : {}),
+          ...(rows[i].priceCents !== null ? { priceCents: rows[i].priceCents! } : {}),
+        };
+        // A row that only names its ticket changes nothing, so it writes nothing.
+        if (Object.keys(changes).length) await this.patch(orgId, swapId, itemId, changes);
+        results[i] = { ...results[i], outcome: 'updated' };
+        continue;
+      }
+
       const generated = !!results[i].generated;
       const sku = generated ? undefined : rows[i].sku.trim();
       const item = await this.create(orgId, swapId, {
@@ -1126,6 +1139,15 @@ export class ItemService {
     return run;
   }
 
+  /** "Ticket 67169 belongs to Stowe Sports." The refusal for a ticket that's already an item (D8). */
+  private async ticketTaken(swapId: string, sku: string): Promise<ConflictException> {
+    const taken = await this.tickets.takenBy(swapId, sku);
+    return new ConflictException({
+      code: 'TICKET_TAKEN',
+      message: taken?.sellerName ? `Ticket ${sku} belongs to ${taken.sellerName}.` : `Ticket ${sku} is already on another item.`,
+    });
+  }
+
   private async pushToPos(orgId: string, swap: Pick<SwapShape, 'id' | 'title' | 'squareCategoryId' | 'locationId'>, pos: IPosAdapter, item: { id: string; name: string; description: string | null; priceCents: number | null; sku: string; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null }): Promise<PosSyncResult> {
     try {
       const result = await pos.syncItem(
@@ -1200,6 +1222,22 @@ export class ItemService {
    * summed the lot as revenue. Not knowing is a different answer from zero,
    * and the response says which it is (`inventoryKnown`).
    */
+  /**
+   * Which of these items Square says have sold: in Square, and none left in
+   * stock. One read for all of them. Square not answering is not "sold".
+   */
+  async soldAmong(orgId: string, swapId: string, itemIds: string[]): Promise<Set<string>> {
+    if (itemIds.length === 0) return new Set();
+    const swap = await this.findSwapOrThrow(orgId, swapId);
+    const items = await this.prisma.swapItem.findMany({
+      where: { id: { in: itemIds }, deletedAt: null },
+      select: { id: true, squareVariationId: true },
+    });
+    const stock = await this.fetchInventoryMap(orgId, swap, items);
+    if (stock === null) return new Set();
+    return new Set(items.filter((i) => i.squareVariationId && (stock.get(i.squareVariationId) ?? 0) < 1).map((i) => i.id));
+  }
+
   private async fetchInventoryMap(orgId: string, swap: { locationId: string }, items: { squareVariationId: string | null }[]): Promise<Map<string, number> | null> {
     if (!swap.locationId) return new Map();
     const ids = items.map((i) => i.squareVariationId).filter((id): id is string => !!id);
@@ -1284,6 +1322,6 @@ function ticketPriced(sku: string, priceCents: number | null): ConflictException
   return new ConflictException({ code: 'TICKET_PRICED', message: `${sku} already has ${price}.` });
 }
 
-export function uncategorisedName(sku: string): string {
-  return `Item #${sku}`;
-}
+// Lives with the SKU helpers so the ticket service can use it too; re-exported
+// here for everything that has always imported it from this file.
+export { uncategorisedName };

@@ -20,12 +20,20 @@ export function GenerateSkusSwitch({ checked, onChange }: { checked: boolean; on
   );
 }
 
-/** "3 items imported: 2 on tickets, 1 with a new SKU to print a label for." */
-export function importedSummary(created: TicketImportRow[], forWhom?: string): string {
-  const generated = created.filter((r) => r.generated).length;
-  const tickets = created.length - generated;
-  const head = `${created.length} item${created.length === 1 ? '' : 's'} imported${forWhom ? ` for ${forWhom}` : ''}`;
-  if (generated === 0) return `${head}.`;
-  if (tickets === 0) return `${head}, each with a new SKU to print a label for.`;
-  return `${head}: ${tickets} on ticket${tickets === 1 ? '' : 's'}, ${generated} with a new SKU to print a label for.`;
+/** "2 tickets described; 1 new item, each with a SKU to print a label for." */
+export function importedSummary(written: TicketImportRow[], forWhom?: string): string {
+  // A ticket row fills in an issued ticket (Plan 38); a row without one is a new item.
+  const described = written.filter((r) => r.outcome === 'updated').length;
+  const generated = written.filter((r) => r.generated).length;
+  const whom = forWhom ? ` for ${forWhom}` : '';
+  const parts = [
+    described ? `${described} ticket${described === 1 ? '' : 's'} described` : null,
+    generated ? `${generated} new item${generated === 1 ? '' : 's'}, each with a SKU to print a label for` : null,
+  ].filter(Boolean);
+  return `${parts.join('; ') || 'Nothing imported'}${whom}.`;
+}
+
+/** Whether an import wrote anything: new items, or tickets filled in. */
+export function wroteAny(rows: TicketImportRow[] | undefined | null): boolean {
+  return (rows ?? []).some((r) => r.outcome === 'created' || r.outcome === 'updated');
 }

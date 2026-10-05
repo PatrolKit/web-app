@@ -11,7 +11,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
-import { smokeOrg, smokeStaff, smokeSession } from './_fixture.mjs';
+import { smokeOrg, smokeStaff, smokeSession, issueTickets } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
@@ -27,7 +27,6 @@ const TITLE = 'Mixed tickets smoke';
 const EMAILS = ['mixed-shop@patrolkit.invalid', 'mixed-plain@patrolkit.invalid'];
 const org = await smokeOrg(prisma);
 await prisma.swapItem.deleteMany({ where: { swap: { title: TITLE } } });
-await prisma.legacyTicketRange.deleteMany({ where: { swap: { title: TITLE } } });
 await prisma.skiSwap.deleteMany({ where: { orgId: org.id, title: TITLE } });
 await prisma.swapPrinter.deleteMany({ where: { orgId: org.id, name: 'Mixed shop printer' } });
 for (const email of EMAILS) {
@@ -52,9 +51,8 @@ async function shop(email, name) {
 }
 // A shop with tickets AND a printer: what the old rule refused.
 const mixed = await shop(EMAILS[0], 'Mixed Shop');
-await prisma.legacyTicketRange.create({
-  data: { id: createId(), orgId: org.id, swapId: swap.id, sellerId: mixed.seller.id, startNumber: 71000, endNumber: 71099, updatedAt: new Date() },
-});
+// Issued tickets are items from the start (Plan 38).
+await issueTickets(prisma, { orgId: org.id, swapId: swap.id, sellerId: mixed.seller.id, startNumber: 71000, endNumber: 71099 });
 await prisma.swapPrinter.create({
   data: { orgId: org.id, name: 'Mixed shop printer', bluetoothName: 'Q-MIXED', model: 'm221', paperSize: '62x100', assignedSellerId: mixed.seller.id },
 });
@@ -92,16 +90,18 @@ ok('the swap reports the two places apart', swapNow.allowPrintCheckin === false 
 const refused = await selfUpload(M, FILE, false);
 ok('without the switch, rows without a ticket fail and nothing is written',
   Array.isArray(refused) && refused.filter((r) => r.outcome === 'error').length === 2
-  && (await prisma.swapItem.count({ where: { swapId: swap.id } })) === 0,
+  && (await prisma.swapItem.count({ where: { swapId: swap.id, NOT: { name: { startsWith: 'Item #' } } } })) === 0,
   JSON.stringify(Array.isArray(refused) ? refused.map((r) => r.outcome) : refused));
 
 const imported = await selfUpload(M, FILE, true);
 const items = await prisma.swapItem.findMany({ where: { swapId: swap.id, sellerId: mixed.seller.id }, orderBy: { createdAt: 'asc' } });
-const ticketed = items.filter((i) => /^\d+$/.test(i.sku));
+// The ticket rows fill in issued tickets (Plan 38); the rest are new items.
+const ticketed = items.filter((i) => i.sku === '71001' || i.sku === '71002');
 const generated = items.filter((i) => !/^\d+$/.test(i.sku));
-ok('with it, all four import: two on tickets, two with generated SKUs',
-  Array.isArray(imported) && imported.every((r) => r.outcome === 'created') && ticketed.length === 2 && generated.length === 2,
-  `${ticketed.map((i) => i.sku)} / ${generated.map((i) => i.sku)}`);
+ok('with it, all four import: two tickets described, two new items with generated SKUs',
+  Array.isArray(imported) && imported.map((r) => r.outcome).join() === 'updated,updated,created,created'
+  && ticketed.map((i) => i.name).sort().join() === 'Ticketed boots,Ticketed skis' && generated.length === 2,
+  `${JSON.stringify(Array.isArray(imported) ? imported.map((r) => r.outcome) : imported)} / ${generated.map((i) => i.sku)}`);
 ok('...the tickets marked printed, the generated ones not',
   ticketed.every((i) => i.hasPrintedTag) && generated.every((i) => !i.hasPrintedTag));
 ok('...and the result names each generated SKU', imported.filter?.((r) => r.generated).every((r) => generated.some((i) => i.sku === r.sku)));
@@ -117,7 +117,7 @@ ok('...and printing one accepts it, by the shop, with no scan', !!afterPrint.con
 await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/${ticketed[0].id}`, {
   method: 'PATCH', headers: json(M), body: JSON.stringify({ hasPrintedTag: true }),
 });
-ok('...while a ticket item still waits for the counter', (await prisma.swapItem.findUnique({ where: { id: ticketed[0].id } })).consignedAt === null);
+ok('...while an issued ticket was on sale from the start', (await prisma.swapItem.findUnique({ where: { id: ticketed[0].id } })).consignedAt !== null);
 
 const pickable = await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}/items/ticket-sellers`, { headers: S }).then(unwrap);
 ok('staff can upload for a shop without tickets while the web is open', pickable.some((s) => s.sellerId === plain.seller.id),
@@ -133,7 +133,7 @@ const handTicket = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items`
 const handLabel = await fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items`, {
   method: 'POST', headers: json(M), body: JSON.stringify({ swapId: swap.id, categoryId: category?.id, priceCents: 9900, quantity: 1, generateSku: true }),
 }).then(unwrap);
-ok('by hand, a ticket seller still takes the next ticket by default', /^\d+$/.test(handTicket.sku ?? '') && handTicket.legacyTicket === true, handTicket.sku);
+ok('by hand, a ticket seller describes its lowest untouched ticket by default', handTicket.sku === '71000' && handTicket.legacyTicket === true, handTicket.sku);
 ok('...and gets a generated SKU, with a label to print, when asked', !/^\d+$/.test(handLabel.sku ?? '') && handLabel.legacyTicket === false && handLabel.hasPrintedTag === false,
   handLabel.sku);
 
@@ -158,7 +158,6 @@ ok('the counter’s setting, what the iPad reads, never moved', swapAfter.allowP
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
 await prisma.swapItem.deleteMany({ where: { swapId: swap.id } });
-await prisma.legacyTicketRange.deleteMany({ where: { swapId: swap.id } });
 await prisma.skiSwap.delete({ where: { id: swap.id } });
 await prisma.swapPrinter.deleteMany({ where: { orgId: org.id, name: 'Mixed shop printer' } });
 for (const email of EMAILS) await prisma.user.deleteMany({ where: { email } });

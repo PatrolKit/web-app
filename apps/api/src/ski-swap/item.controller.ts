@@ -174,7 +174,7 @@ export class ItemController {
   @Get('ticket-sellers')
   @RequirePermissions('ski_swap:report')
   ticketSellers(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
-    return this.tickets.sellersWithRanges(orgId, swapId);
+    return this.tickets.sellersWithTickets(orgId, swapId);
   }
 
   @Post()

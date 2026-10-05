@@ -4,10 +4,11 @@ import { ItemService } from './item.service';
 /**
  * A loose ticket scanned in at the counter.
  *
- * One stockpile, spent two ways: blocks handed to a business seller to fill in
- * beforehand, and single tickets given to an individual at check-in. Both end
- * up as `SwapItem.sku`, so the two ways can collide — and nothing physical
- * stops the wrong ticket coming off the wrong pile.
+ * One stockpile, spent two ways: blocks issued to a business seller, which are
+ * items from the moment they're issued (Plan 38), and single tickets given to
+ * an individual at check-in. Both are `SwapItem.sku`, so the two ways can
+ * collide, and nothing physical stops the wrong ticket coming off the wrong
+ * pile.
  *
  * These cover what the server does about that. The rules are the same whether
  * the scan came from the staff iPad or the web items page; both arrive at
@@ -27,12 +28,12 @@ function duplicateKeyError() {
 }
 
 /**
- * @param holder who holds the scanned number, if anyone
- * @param taken  whether the number is already on an item, i.e. the index refuses
+ * @param holder whose item the scanned number already is, if anyone's
+ * @param taken  whether the index refuses the insert: a race the check missed
  */
 function harness(
   opts: {
-    holder?: { sellerId: string; name: string } | null;
+    holder?: { sellerName: string | null } | null;
     taken?: boolean;
   } = {},
 ) {
@@ -72,7 +73,7 @@ function harness(
     { next: async () => 'SS26-A-0001' } as never,
     { enqueueItemTags: async () => {} } as never,
     { get: async () => ({ labelsPerItem: 1, requireConsignmentScan: false }) } as never,
-    { holderOf: async () => opts.holder ?? null } as never,
+    { takenBy: async () => opts.holder ?? null } as never,
     // These items are named rather than described (Plan 19), so the only
     // taxonomy call they reach is the one that fills in a response.
     { describeItems: async () => new Map() } as never,
@@ -107,34 +108,24 @@ describe('scanning a ticket nobody holds', () => {
   });
 });
 
-describe('scanning a ticket that belongs to a business seller', () => {
-  const held = { sellerId: 'shop-1', name: 'Alpine Sports' };
+describe('scanning a ticket issued to a business seller', () => {
+  const held = { sellerName: 'Alpine Sports' };
 
-  it('refuses it', async () => {
-    // Taking it would hand a shop's number to somebody else, and the shop would
-    // find out when they entered their own and were refused for a duplicate
-    // they never made.
+  it('refuses it, saying whose it is, so staff can go and ask (Plan 38 D8)', async () => {
+    // Taking it would hand a shop's number to somebody else. It's already an
+    // item: issuing created it.
     const { service } = harness({ holder: held });
 
-    await expect(service.createAtStation('org-1', 'swap-1', scan('67169')))
-      .rejects.toBeInstanceOf(ConflictException);
+    const err = await service.createAtStation('org-1', 'swap-1', scan('67169')).catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.getResponse()).toEqual({ code: 'TICKET_TAKEN', message: 'Ticket 67169 belongs to Alpine Sports.' });
   });
 
-  it('says whose block it is, so staff can go and ask', async () => {
-    const { service } = harness({ holder: held });
-
-    await expect(service.createAtStation('org-1', 'swap-1', scan('67169')))
-      .rejects.toThrow('Ticket 67169 is part of a block issued to Alpine Sports.');
-  });
-
-  it('lets that seller use their own', async () => {
-    // The ordinary business-seller path goes through here too, and their
-    // numbers are always inside a block — theirs.
+  it('refuses the shop itself too: its ticket exists, to be filled in rather than added', async () => {
     const { service, rows } = harness({ holder: held });
 
-    await service.createAtStation('org-1', 'swap-1', scan('67169', 'shop-1'));
-
-    expect(rows[0].sku).toBe('67169');
+    await expect(service.createAtStation('org-1', 'swap-1', scan('67169', 'shop-1'))).rejects.toThrow(/belongs to Alpine Sports/);
+    expect(rows).toHaveLength(0);
   });
 });
 

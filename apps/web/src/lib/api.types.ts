@@ -401,23 +401,30 @@ export interface ItemResponse {
   updatedAt: string;
 }
 
-/** A block of pre-printed tickets issued to a business seller for one swap. */
-export interface LegacyTicketRange {
-  id: string;
-  swapId: string;
-  sellerId: string;
-  startNumber: number;
-  endNumber: number;
-  ticketCount: number;
-  /** Derived from the items, so it counts numbers actually on goods. */
-  usedCount: number;
+/** A shop's issued tickets in one swap (Plan 38): each one an item from the start. */
+export interface IssuedTicketSummary {
+  /** The numbers held, as runs: 67000–67499. */
+  runs: { startNumber: number; endNumber: number }[];
+  issued: number;
+  /** Described or priced by anyone. */
+  described: number;
+  /** Accepted but not yet in Square: still being put there, or stopped. */
+  notInSquare: number;
+  /** A push to Square is running for this swap right now. */
+  pushing: boolean;
+  /** The swap can reach Square at all. */
+  squareReady: boolean;
+}
+
+/** What taking back returned tickets did (Plan 38). */
+export interface RemoveTicketsResult {
+  removed: number;
+  kept: { sku: string; why: string }[];
 }
 
 /**
- * What the item form opens with.
- *
- * `suggested: null` with `exhausted: false` is the ordinary state past the top
- * of a range: nothing to offer, but a skipped ticket may still be entered.
+ * What a shop's item form opens with (Plan 38): the runs of tickets it holds,
+ * the lowest nobody has described yet, and whether every one is described.
  */
 export interface TicketFormState {
   ranges: { startNumber: number; endNumber: number }[];
@@ -432,7 +439,8 @@ export interface TicketImportRow {
   line: number;
   /** The ticket, or once created, the SKU generated for a row without one. */
   sku: string;
-  outcome: 'ok' | 'created' | 'error';
+  /** `updated`: a ticket row filled in its issued ticket (Plan 38). */
+  outcome: 'ok' | 'created' | 'updated' | 'error';
   error?: string;
   /** A row without a ticket that got a generated SKU (Plan 31). */
   generated?: boolean;
@@ -442,8 +450,10 @@ export interface TicketImportRow {
 export interface TicketSeller {
   sellerId: string;
   displayName: string;
+  /** The runs of ticket numbers held. */
   ranges: { startNumber: number; endNumber: number }[];
   ticketCount: number;
+  /** Tickets somebody has described or priced. */
   usedCount: number;
 }
 

@@ -728,24 +728,26 @@ export const api = {
     deleteSeller: (orgId: string, sellerId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, { method: 'DELETE' }),
 
-    // Legacy ticket ranges — blocks the org issued to a business seller.
-    listTicketRanges: (orgId: string, sellerId: string, swapId: string) =>
-      request<import('./api.types').LegacyTicketRange[]>(
-        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/ticket-ranges?swapId=${swapId}`,
+    // Issued tickets (Plan 38): a block becomes its tickets, on sale at once.
+    ticketSummary: (orgId: string, sellerId: string, swapId: string) =>
+      request<import('./api.types').IssuedTicketSummary>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/tickets?swapId=${swapId}`,
       ),
-    addTicketRange: (
-      orgId: string,
-      sellerId: string,
-      data: { swapId: string; startNumber: number; endNumber: number },
-    ) =>
-      request<import('./api.types').LegacyTicketRange[]>(
-        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/ticket-ranges`,
+    issueTickets: (orgId: string, sellerId: string, data: { swapId: string; startNumber: number; endNumber: number }) =>
+      request<{ created: number; startNumber: number; endNumber: number }>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/tickets/issue`,
         { method: 'POST', body: JSON.stringify(data) },
       ),
-    removeTicketRange: (orgId: string, sellerId: string, rangeId: string) =>
-      request<import('./api.types').LegacyTicketRange[]>(
-        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/ticket-ranges/${rangeId}`,
-        { method: 'DELETE' },
+    removeTickets: (orgId: string, sellerId: string, data: { swapId: string; startNumber: number; endNumber: number }) =>
+      request<import('./api.types').RemoveTicketsResult>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/tickets/remove`,
+        { method: 'POST', body: JSON.stringify(data) },
+      ),
+    /** Resumes putting the swap's accepted tickets in Square. */
+    pushTickets: (orgId: string, sellerId: string, swapId: string) =>
+      request<{ started: boolean }>(
+        `/orgs/${orgId}/ski-swap/sellers/${sellerId}/tickets/push`,
+        { method: 'POST', body: JSON.stringify({ swapId }) },
       ),
     /** A whole inventory at once. Nothing is written unless every row passes. */
     importTicketItems: (orgId: string, swapId: string, file: File, generateSkus = false) => {

@@ -702,25 +702,13 @@ export class SellerItemCreateDto extends createZodDto(SellerItemCreateSchema) {}
 export class SellerItemUpdateDto extends createZodDto(SellerItemUpdateSchema) {}
 export type SellerSwapSummary = z.infer<typeof SellerSwapSummarySchema>;
 
-// ─── Legacy ticket ranges ─────────────────────────────────────────────────────
+// ─── Legacy tickets (Plan 38) ─────────────────────────────────────────────────
 
 /**
- * A block of pre-printed tickets issued to a business seller for one swap.
- *
- * `usedCount` is derived from the items rather than stored, so it counts the
- * numbers actually on goods — not how far down the pad the seller has worked.
+ * A span of ticket numbers for one shop in one swap: issued (each number
+ * becomes a ticket), or taken back (the unused ones in it are removed).
  */
-export const LegacyTicketRangeResponseSchema = z.object({
-  id: z.string(),
-  swapId: z.string(),
-  sellerId: z.string(),
-  startNumber: z.number().int(),
-  endNumber: z.number().int(),
-  ticketCount: z.number().int(),
-  usedCount: z.number().int(),
-});
-
-export const AddTicketRangeSchema = z
+export const TicketSpanSchema = z
   .object({
     swapId: z.string().min(1),
     startNumber: z.number().int().positive(),
@@ -728,11 +716,11 @@ export const AddTicketRangeSchema = z
   })
   .strict();
 
+export const SwapIdBodySchema = z.object({ swapId: z.string().min(1) }).strict();
+
 /**
- * What the item form needs to open: the number to offer, and whether the seller
- * has anything left at all. Separate answers — past the top of their ranges
- * there is nothing to suggest, but a skipped ticket they have found is still
- * enterable.
+ * What the shop's item form needs: the runs of numbers it holds, the lowest
+ * ticket nobody has described yet, and whether every one is described.
  */
 export const TicketFormStateSchema = z.object({
   ranges: z.array(z.object({ startNumber: z.number().int(), endNumber: z.number().int() })),
@@ -747,8 +735,9 @@ export const TicketFormStateSchema = z.object({
 
 /**
  * A seller staff can upload a file for: one holding tickets in this swap, and
- * when its web isn't tickets-only, any business seller, with no ranges (Plan
- * 31). A shop without ranges can only import rows that get generated SKUs.
+ * when its web isn't tickets-only, any business seller (Plan 31). `ranges` are
+ * the runs of numbers held; `usedCount` the ones described or priced. A shop
+ * with no tickets can only import rows that get generated SKUs.
  */
 export const TicketSellerSchema = z.object({
   sellerId: z.string(),
@@ -758,9 +747,9 @@ export const TicketSellerSchema = z.object({
   usedCount: z.number().int(),
 });
 
-export class AddTicketRangeDto extends createZodDto(AddTicketRangeSchema) {}
+export class TicketSpanDto extends createZodDto(TicketSpanSchema) {}
+export class SwapIdBodyDto extends createZodDto(SwapIdBodySchema) {}
 export type TicketSeller = z.infer<typeof TicketSellerSchema>;
-export type LegacyTicketRangeResponse = z.infer<typeof LegacyTicketRangeResponseSchema>;
 export type TicketFormState = z.infer<typeof TicketFormStateSchema>;
 
 // ─── Printers ─────────────────────────────────────────────────────────────────

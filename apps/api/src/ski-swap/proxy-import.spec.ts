@@ -9,19 +9,26 @@ import { LegacyTicketService } from './legacy-ticket.service';
  * word for the name, and checking a file no longer writes it.
  */
 
-/** Just enough Prisma for the checks: who holds what, and what is spent. */
+/**
+ * Just enough Prisma for the checks: the seller's issued tickets, as items
+ * (Plan 38), and which of them somebody has already described.
+ */
 function service(opts: {
   ranges?: { startNumber: number; endNumber: number }[];
-  usedSkus?: string[];
+  describedSkus?: string[];
 } = {}) {
-  const prisma = {
-    legacyTicketRange: {
-      findMany: async () => opts.ranges ?? [{ startNumber: 67000, endNumber: 67499 }],
-    },
-    swapItem: {
-      findMany: async () => (opts.usedSkus ?? []).map((sku) => ({ sku })),
-    },
-  };
+  const items: Record<string, unknown>[] = [];
+  for (const r of opts.ranges ?? [{ startNumber: 67000, endNumber: 67499 }]) {
+    for (let n = r.startNumber; n <= r.endNumber; n++) {
+      const sku = String(n);
+      const described = opts.describedSkus?.includes(sku);
+      items.push({
+        id: `t${n}`, sku, name: described ? 'Boots' : `Item #${n}`,
+        priceCents: described ? 18000 : null, categoryId: null, description: null,
+      });
+    }
+  }
+  const prisma = { swapItem: { findMany: async () => items } };
   return new LegacyTicketService(prisma as never);
 }
 
@@ -111,12 +118,12 @@ describe('reading a shop’s file', () => {
 describe('judging the rows before anything is written', () => {
   const row = (sku: string, priceCents = 18000) => ({ sku, priceCents });
 
-  it('passes a file whose numbers are all the seller’s', async () => {
+  it('passes a file whose numbers are all the seller’s, naming the ticket each fills in', async () => {
     const results = await service().checkImportRows('swap-1', 'seller-1', [
       row('67169'), row('67170'),
     ], TICKETS);
 
-    expect(results.every((r) => r.outcome === 'ok')).toBe(true);
+    expect(results.map((r) => [r.outcome, r.itemId])).toEqual([['ok', 't67169'], ['ok', 't67170']]);
   });
 
   it('refuses a number outside their blocks, and says whose they are', async () => {
@@ -125,15 +132,17 @@ describe('judging the rows before anything is written', () => {
     const results = await service().checkImportRows('swap-1', 'seller-1', [row('68001')], TICKETS);
 
     expect(results[0].outcome).toBe('error');
-    expect(results[0].error).toContain('not one of this seller');
+    expect(results[0].error).toContain('isn’t one of this seller’s tickets');
     expect(results[0].error).toContain('67000–67499');
   });
 
-  it('refuses a number already on an item', async () => {
-    const results = await service({ usedSkus: ['67169'] })
-      .checkImportRows('swap-1', 'seller-1', [row('67169')], TICKETS);
+  it('refuses, from the shop’s own file, a ticket already described; staff may redo it', async () => {
+    const shop = await service({ describedSkus: ['67169'] })
+      .checkImportRows('swap-1', 'seller-1', [row('67169')], { ...TICKETS, shopOwn: true });
+    expect(shop[0].error).toBe('67169 is already described. Ask the swap’s staff to change it.');
 
-    expect(results[0].error).toBe('Ticket 67169 is already on another item.');
+    const staff = await service({ describedSkus: ['67169'] }).checkImportRows('swap-1', 'seller-1', [row('67169')], TICKETS);
+    expect(staff[0]).toMatchObject({ outcome: 'ok', itemId: 't67169' });
   });
 
   it('refuses the same number twice in one file, naming the earlier line', async () => {
@@ -184,7 +193,7 @@ describe('judging the rows before anything is written', () => {
 
   it('refuses a seller who holds no tickets in this swap', async () => {
     await expect(service({ ranges: [] }).checkImportRows('swap-1', 'seller-1', [row('67169')], TICKETS))
-      .rejects.toThrow('no ticket ranges');
+      .rejects.toThrow('no tickets for this swap');
   });
 
   it('reports every bad row, not just the first', async () => {

@@ -1,9 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { createId } from '@paralleldrive/cuid2';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { parse as parseCsv } from 'csv-parse/sync';
 import { displayName } from '../common/util/person';
-import type { LegacyTicketRangeResponse, TicketSeller } from '../contracts/ski-swap.contracts';
+import type { TicketSeller } from '../contracts/ski-swap.contracts';
+import { uncategorisedName } from './sku.util';
 
 /** A bare ticket number: digits and nothing else. */
 const TICKET_NUMBER = /^\d+$/;
@@ -18,9 +18,11 @@ export type Range = { startNumber: number; endNumber: number };
 export type ImportRowResult = {
   line: number;
   sku: string;
-  outcome: 'ok' | 'created' | 'error';
+  outcome: 'ok' | 'created' | 'updated' | 'error';
   error?: string;
   generated?: boolean;
+  /** The issued ticket a ticket row fills in (Plan 38). */
+  itemId?: string;
 };
 
 /** How an upload treats rows without a ticket (Plan 31). */
@@ -31,6 +33,8 @@ export interface ImportRules {
   webTicketsOnly: boolean;
   /** The swap takes legacy tickets at all. Off, only generated rows can be imported. Default on. */
   acceptsTickets?: boolean;
+  /** The shop's own file, held to "once only" (Plan 38 D6); staff aren't. */
+  shopOwn?: boolean;
 }
 
 /** Parses a SKU as a ticket number, or null if it is one of ours. */
@@ -38,100 +42,76 @@ export function ticketNumberOf(sku: string): number | null {
   return TICKET_NUMBER.test(sku) ? Number(sku) : null;
 }
 
-export function inAnyRange(n: number, ranges: Range[]): boolean {
-  return ranges.some((r) => n >= r.startNumber && n <= r.endNumber);
-}
-
-/** Every number a set of ranges covers, ascending, deduplicated across overlaps. */
-export function countOf(ranges: Range[]): number {
-  return ranges.reduce((sum, r) => sum + (r.endNumber - r.startNumber + 1), 0);
-}
-
-/**
- * The number to offer next, or null when there is nothing above the mark.
- *
- * The suggestion carries on past gaps — the first number above the highest
- * used — because a skipped ticket is usually gone, and offering it back on
- * every item would make the default something to correct rather than accept.
- * It suggests only; what may be *entered* is decided by `assertUsable`, which
- * never consults the mark (D7).
- */
-export function suggestNext(ranges: Range[], used: Set<number>): number | null {
-  if (ranges.length === 0) return null;
-  const sorted = [...ranges].sort((a, b) => a.startNumber - b.startNumber);
-
-  const inRange = [...used].filter((n) => inAnyRange(n, sorted));
-  const high = inRange.length ? Math.max(...inRange) : null;
-
-  for (const r of sorted) {
-    // Rolling into the next range matters: a seller whose highest used is the
-    // top of one block should be offered the bottom of the next, not nothing.
-    const from = high === null ? r.startNumber : Math.max(r.startNumber, high + 1);
-    for (let n = from; n <= r.endNumber; n++) {
-      if (!used.has(n)) return n;
-    }
-  }
-  return null;
-}
-
-/** Whether any number at all remains unused — which is what "out" means (D6). */
-export function hasAnyUnused(ranges: Range[], used: Set<number>): boolean {
-  return ranges.some((r) => {
-    for (let n = r.startNumber; n <= r.endNumber; n++) if (!used.has(n)) return true;
-    return false;
-  });
-}
-
 function describe(ranges: Range[]): string {
-  return ranges.map((r) => `${r.startNumber}–${r.endNumber}`).join(', ');
+  return ranges.map((r) => (r.startNumber === r.endNumber ? `${r.startNumber}` : `${r.startNumber}–${r.endNumber}`)).join(', ');
 }
 
+/** Ticket numbers as runs of consecutive numbers: [1,2,3,7] is 1–3 and 7. */
+export function runsOf(numbers: number[]): Range[] {
+  const sorted = [...new Set(numbers)].sort((a, b) => a - b);
+  const runs: Range[] = [];
+  for (const n of sorted) {
+    const last = runs[runs.length - 1];
+    if (last && n === last.endNumber + 1) last.endNumber = n;
+    else runs.push({ startNumber: n, endNumber: n });
+  }
+  return runs;
+}
+
+/** What an item needs for "untouched": the fields a description or price sets. */
+export type TicketFields = {
+  sku: string;
+  name: string;
+  priceCents: number | null;
+  categoryId: string | null;
+  description: string | null;
+};
+
 /**
- * Ticket blocks the organisation issued to a business seller, and the rules for
- * spending them.
+ * A ticket nobody has described or priced (Plan 38 D6): still its stand-in
+ * name, with no price, no type and no notes. An issued ticket starts so, and a
+ * shop may fill it in once.
+ */
+export function isUntouched(item: TicketFields): boolean {
+  return item.priceCents === null && item.categoryId === null && !item.description && item.name === uncategorisedName(item.sku);
+}
+
+/** One of a seller's tickets, as the rules below read it. */
+export type HeldTicket = TicketFields & { id: string; number: number };
+
+/**
+ * Legacy tickets as items (Plan 38).
  *
- * A ticket is nothing to us until it lands on an item, so the items are the
- * record of what has been used (D5) — there is no consumption table to drift
- * from them. Everything here derives from `SwapItem.sku`.
+ * Issuing a block creates its tickets (`IssuedTicketService`), so the items
+ * are the whole record: who holds a ticket is its item's seller, and nothing
+ * else keeps ranges. Everything here derives from `SwapItem`.
  */
 @Injectable()
 export class LegacyTicketService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ─── Ranges ────────────────────────────────────────────────────────────────
-
-  async listForSeller(swapId: string, sellerId: string): Promise<Range[]> {
-    return this.prisma.legacyTicketRange.findMany({
-      where: { swapId, sellerId },
-      orderBy: { startNumber: 'asc' },
-      select: { startNumber: true, endNumber: true },
+  /** A seller's live tickets in a swap, in number order. */
+  async heldBy(swapId: string, sellerId: string): Promise<HeldTicket[]> {
+    const rows = await this.prisma.swapItem.findMany({
+      where: { swapId, sellerId, deletedAt: null },
+      select: { id: true, sku: true, name: true, priceCents: true, categoryId: true, description: true },
     });
+    return rows
+      .map((r) => ({ ...r, number: ticketNumberOf(r.sku) }))
+      .filter((r): r is HeldTicket => r.number !== null)
+      .sort((a, b) => a.number - b.number);
   }
 
-  /**
-   * Everyone in this swap who holds tickets, with how much of them is spent.
-   *
-   * What the staff import picker offers. Ordered by name because it is read as
-   * a list of shops rather than of ranges.
-   */
   /**
    * Who an upload can be for: everyone holding tickets in this swap when its
    * web takes legacy tickets, and every business seller when its web takes
    * print tickets (Plan 34). Rows without a ticket get generated SKUs.
    */
-  async sellersWithRanges(orgId: string, swapId: string): Promise<TicketSeller[]> {
-    const [rows, swap] = await Promise.all([
-      this.prisma.legacyTicketRange.findMany({
-        where: { orgId, swapId, seller: { deletedAt: null } },
-        orderBy: { startNumber: 'asc' },
-        include: { seller: { include: { membership: { include: { user: true } } } } },
-      }),
-      this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { allowLegacyWeb: true, allowPrintWeb: true } }),
-    ]);
-
-    // Ranges count only where the web takes legacy tickets.
-    const ranges = swap?.allowLegacyWeb ? rows : [];
-    const used = ranges.length ? await this.usedNumbers(swapId) : new Set<number>();
+  async sellersWithTickets(orgId: string, swapId: string): Promise<TicketSeller[]> {
+    const swap = await this.prisma.skiSwap.findFirst({
+      where: { id: swapId, orgId },
+      select: { allowLegacyWeb: true, allowPrintWeb: true },
+    });
     const bySeller = new Map<string, TicketSeller>();
 
     if (swap?.allowPrintWeb) {
@@ -150,249 +130,97 @@ export class LegacyTicketService {
       }
     }
 
-    for (const r of ranges) {
-      const entry = bySeller.get(r.sellerId) ?? {
-        sellerId: r.sellerId,
-        displayName: displayName(r.seller.membership.user, r.seller.businessName),
-        ranges: [],
-        ticketCount: 0,
-        usedCount: 0,
-      };
-      entry.ranges.push({ startNumber: r.startNumber, endNumber: r.endNumber });
-      entry.ticketCount += r.endNumber - r.startNumber + 1;
-      for (let n = r.startNumber; n <= r.endNumber; n++) if (used.has(n)) entry.usedCount++;
-      bySeller.set(r.sellerId, entry);
+    // Tickets count only where the web takes them.
+    if (swap?.allowLegacyWeb) {
+      const items = await this.prisma.swapItem.findMany({
+        where: { swapId, deletedAt: null, sellerId: { not: null }, seller: { deletedAt: null } },
+        select: {
+          sku: true, name: true, priceCents: true, categoryId: true, description: true, sellerId: true,
+          seller: { include: { membership: { include: { user: true } } } },
+        },
+      });
+      const numbers = new Map<string, number[]>();
+      for (const item of items) {
+        const n = ticketNumberOf(item.sku);
+        if (n === null || !item.sellerId || !item.seller) continue;
+        const entry = bySeller.get(item.sellerId) ?? {
+          sellerId: item.sellerId,
+          displayName: displayName(item.seller.membership.user, item.seller.businessName),
+          ranges: [],
+          ticketCount: 0,
+          usedCount: 0,
+        };
+        entry.ticketCount++;
+        if (!isUntouched(item)) entry.usedCount++;
+        bySeller.set(item.sellerId, entry);
+        numbers.set(item.sellerId, [...(numbers.get(item.sellerId) ?? []), n]);
+      }
+      for (const [sellerId, ns] of numbers) bySeller.get(sellerId)!.ranges = runsOf(ns);
     }
 
     return [...bySeller.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
   }
 
-  /** What the Sellers page shows: the blocks, and how much of each is spent. */
-  async listForSellerWithUse(
-    orgId: string,
-    swapId: string,
-    sellerId: string,
-  ): Promise<LegacyTicketRangeResponse[]> {
-    const rows = await this.prisma.legacyTicketRange.findMany({
-      where: { orgId, swapId, sellerId },
-      orderBy: { startNumber: 'asc' },
-    });
-    const used = await this.usedNumbers(swapId);
-
-    return rows.map((r) => {
-      let usedHere = 0;
-      for (let n = r.startNumber; n <= r.endNumber; n++) if (used.has(n)) usedHere++;
-      return {
-        id: r.id,
-        swapId: r.swapId,
-        sellerId: r.sellerId,
-        startNumber: r.startNumber,
-        endNumber: r.endNumber,
-        ticketCount: r.endNumber - r.startNumber + 1,
-        usedCount: usedHere,
-      };
-    });
-  }
-
   /**
-   * Issues a block to a seller.
-   *
-   * Overlap is checked across every seller in the swap, not just this one. The
-   * unique index on (swapId, liveSku) would catch two shops holding one number
-   * eventually — but only when the second saves an item, mid-swap, at a counter.
+   * Whose ticket this number already is, if any: the reason a create of it is
+   * refused (D8). Null when no live item has it.
    */
-  async addRange(
-    orgId: string,
-    swapId: string,
-    sellerId: string,
-    data: { startNumber: number; endNumber: number },
-    actorUserId?: string,
-  ): Promise<LegacyTicketRangeResponse[]> {
-    if (data.startNumber > data.endNumber) {
-      throw new BadRequestException('The first number has to be below the last.');
-    }
-    await this.assertSellerInSwap(orgId, swapId, sellerId);
-
-    const clash = await this.prisma.legacyTicketRange.findFirst({
-      where: {
-        swapId,
-        startNumber: { lte: data.endNumber },
-        endNumber: { gte: data.startNumber },
-      },
-      include: { seller: { include: { membership: { include: { user: true } } } } },
+  async takenBy(swapId: string, sku: string): Promise<{ sellerName: string | null } | null> {
+    const item = await this.prisma.swapItem.findFirst({
+      where: { swapId, sku, deletedAt: null },
+      select: { seller: { include: { membership: { include: { user: true } } } } },
     });
-    if (clash) {
-      const who = displayName(clash.seller.membership.user, clash.seller.businessName);
-      // No possessive: a shop called "Alpine Sports" would read as
-      // "Alpine Sports's", and the name is the seller's to spell, not ours.
-      throw new ConflictException(
-        `${data.startNumber}–${data.endNumber} overlaps ${clash.startNumber}–` +
-          `${clash.endNumber}, held by ${who}.`,
-      );
-    }
-
-    await this.prisma.legacyTicketRange.create({
-      data: {
-        id: createId(),
-        orgId,
-        swapId,
-        sellerId,
-        startNumber: data.startNumber,
-        endNumber: data.endNumber,
-        createdBy: actorUserId ?? null,
-        updatedAt: new Date(),
-      },
-    });
-    return this.listForSellerWithUse(orgId, swapId, sellerId);
+    if (!item) return null;
+    return { sellerName: item.seller ? displayName(item.seller.membership.user, item.seller.businessName) : null };
   }
 
-  /**
-   * Takes a block back.
-   *
-   * Refused while any of its numbers is on an item: those tickets are on the
-   * goods, and removing the range would leave items nobody can account for.
-   */
-  async removeRange(orgId: string, rangeId: string): Promise<LegacyTicketRangeResponse[]> {
-    const range = await this.prisma.legacyTicketRange.findFirst({ where: { id: rangeId, orgId } });
-    if (!range) throw new NotFoundException('Ticket range not found');
-
-    const used = await this.usedNumbers(range.swapId);
-    const inUse: number[] = [];
-    for (let n = range.startNumber; n <= range.endNumber; n++) {
-      if (used.has(n)) inUse.push(n);
-    }
-    if (inUse.length) {
-      const shown = inUse.slice(0, 5).join(', ');
-      throw new ConflictException(
-        `${inUse.length} ticket${inUse.length === 1 ? '' : 's'} in this range ` +
-          `${inUse.length === 1 ? 'is' : 'are'} already on items (${shown}` +
-          `${inUse.length > 5 ? ', …' : ''}). Remove those items first.`,
-      );
-    }
-
-    await this.prisma.legacyTicketRange.delete({ where: { id: rangeId } });
-    return this.listForSellerWithUse(orgId, range.swapId, range.sellerId);
-  }
-
-  // ─── Spending a number ─────────────────────────────────────────────────────
-
-  /** Every ticket number already on an item in this swap. */
-  /**
-   * Which business seller, if any, was issued this number for this swap.
-   *
-   * One stockpile is spent two ways — a block handed to a shop, or a loose
-   * ticket given to somebody at the counter — so a number an individual scans
-   * has to be checked against what is already spoken for. Null means nobody
-   * holds it, which is the ordinary answer for a loose one.
-   */
-  async holderOf(swapId: string, sku: string): Promise<{ sellerId: string; name: string } | null> {
-    const n = ticketNumberOf(sku);
-    if (n === null) return null;
-
-    const row = await this.prisma.legacyTicketRange.findFirst({
-      where: { swapId, startNumber: { lte: n }, endNumber: { gte: n } },
-      select: {
-        sellerId: true,
-        seller: { include: { membership: { include: { user: true } } } },
-      },
-    });
-    if (!row) return null;
-
-    return {
-      sellerId: row.sellerId,
-      name: displayName(row.seller.membership.user, row.seller.businessName),
-    };
-  }
-
-  async usedNumbers(swapId: string): Promise<Set<number>> {
-    const items = await this.prisma.swapItem.findMany({
-      // A withdrawn item's ticket goes back in the pile, which is what happens
-      // physically. Counting a tombstone here would tell the counter a number
-      // is spent on an item that was deleted an hour ago.
-      where: { swapId, deletedAt: null },
-      select: { sku: true },
-    });
-    const used = new Set<number>();
-    for (const i of items) {
-      const n = ticketNumberOf(i.sku);
-      if (n !== null) used.add(n);
-    }
-    return used;
-  }
-
-  /** Whether this seller is on tickets rather than a printer. */
+  /** Whether this seller holds tickets in this swap, rather than printing tags. */
   async isLegacySeller(swapId: string, sellerId: string): Promise<boolean> {
-    const count = await this.prisma.legacyTicketRange.count({ where: { swapId, sellerId } });
-    return count > 0;
+    return (await this.heldBy(swapId, sellerId)).length > 0;
   }
 
   /**
-   * What the item form needs: the number to offer, and whether anything is left.
-   *
-   * The two are separate answers. Past the top of their ranges a seller has no
-   * suggestion but may still enter a skipped ticket they have found (D7); only
-   * when nothing at all is unused are they actually out (D6).
+   * What the shop's item form needs (Plan 38): the runs it holds, the lowest
+   * ticket nobody has described yet, and whether every one is described.
    */
   async formState(
     swapId: string,
     sellerId: string,
   ): Promise<{ ranges: Range[]; suggested: number | null; exhausted: boolean; webTicketsOnly: boolean }> {
-    const [ranges, used, swap] = await Promise.all([
-      this.listForSeller(swapId, sellerId),
-      this.usedNumbers(swapId),
+    const [held, swap] = await Promise.all([
+      this.heldBy(swapId, sellerId),
       this.prisma.skiSwap.findUnique({ where: { id: swapId }, select: { allowLegacyWeb: true, allowPrintWeb: true } }),
     ]);
     // A swap whose web takes no legacy tickets offers none on the web, whatever
-    // blocks a seller holds (Plan 34): they're for staff check-in there.
-    const offered = swap?.allowLegacyWeb ? ranges : [];
+    // a seller holds (Plan 34): they're for staff there.
+    const offered = swap?.allowLegacyWeb ? held : [];
+    const untouched = offered.filter(isUntouched);
     return {
-      ranges: offered,
-      suggested: suggestNext(offered, used),
-      exhausted: offered.length > 0 && !hasAnyUnused(offered, used),
+      ranges: runsOf(offered.map((t) => t.number)),
+      suggested: untouched[0]?.number ?? null,
+      exhausted: offered.length > 0 && untouched.length === 0,
       // The web takes legacy tickets only: no print tickets there.
       webTicketsOnly: swap ? !swap.allowPrintWeb : false,
     };
   }
 
   /**
-   * Refuses a number the seller may not use.
-   *
-   * Two tests and no others: it is inside one of their ranges, and no item is
-   * using it. The high-water mark is deliberately not consulted — that is what
-   * lets a ticket found after the seller worked past it still be entered.
+   * One of this seller's tickets by its number, or a refusal saying why not
+   * (D7): it has to be a ticket number, and one they hold.
    */
-  async assertUsable(swapId: string, sellerId: string, sku: string): Promise<void> {
+  async ownTicket(swapId: string, sellerId: string, sku: string): Promise<HeldTicket> {
     const n = ticketNumberOf(sku);
-    if (n === null) {
-      throw new BadRequestException('A ticket number is just the digits on the ticket.');
-    }
-
-    const ranges = await this.listForSeller(swapId, sellerId);
-    if (ranges.length === 0) {
-      throw new BadRequestException('This seller has no ticket ranges for this swap.');
-    }
-    if (!inAnyRange(n, ranges)) {
+    if (n === null) throw new BadRequestException('A ticket number is just the digits on the ticket.');
+    const held = await this.heldBy(swapId, sellerId);
+    const ticket = held.find((t) => t.number === n);
+    if (!ticket) {
       throw new BadRequestException(
-        `${n} is not one of your tickets. Yours are ${describe(ranges)}.`,
+        held.length
+          ? `${n} isn’t one of your tickets. Yours are ${describe(runsOf(held.map((t) => t.number)))}.`
+          : 'You have no tickets for this swap. Ask the organizer for a block.',
       );
     }
-
-    const taken = await this.prisma.swapItem.findFirst({
-      where: { swapId, sku, deletedAt: null },
-      select: { id: true },
-    });
-    if (taken) throw new ConflictException(`Ticket ${n} is already on another item.`);
-  }
-
-  /** The message a seller sees when every number they hold is spent (D6). */
-  async assertNotExhausted(swapId: string, sellerId: string): Promise<void> {
-    const { ranges, exhausted } = await this.formState(swapId, sellerId);
-    if (exhausted) {
-      throw new ConflictException(
-        `All of your tickets (${describe(ranges)}) are on items. ` +
-          'Ask staff for another range.',
-      );
-    }
+    return ticket;
   }
 
   // ─── CSV import ────────────────────────────────────────────────────────────
@@ -459,28 +287,17 @@ export class LegacyTicketService {
   }
 
   /**
-   * Checks a whole file and says whether it may be written.
+   * Checks a whole file before anything is written (Plans 31, 38).
    *
    * Every row is judged before any of them lands: a half-imported inventory is
    * worse than a rejected one, because the seller cannot tell which half. A
    * result carrying any `error` means nothing should be written at all.
    *
-   * Rows may skip numbers and go backwards. The high-water mark decides what
-   * the *form* suggests and has no say here — a shop entering a pad they
-   * worked through out of order is exactly the file this exists to accept.
-   *
-   * Checking and writing are deliberately separate. The write has to go through
-   * `ItemService.create`, which is what knows about consignment and Square, and
-   * that service already depends on this one — so the rules stay here and the
-   * writing happens on the side that can reach both.
-   */
-  /**
-   * Checks an upload before anything is written (Plan 31).
-   *
-   * A row with a ticket must be one of this seller's, unused, once. A row
-   * without one gets a generated SKU when `generateSkus` is on, and is an
-   * error otherwise. Generating is refused outright for a swap whose web takes
-   * legacy tickets only.
+   * A ticket row describes one of this seller's issued tickets (`itemId` says
+   * which): the ticket already exists, so the row fills it in rather than
+   * creating anything. From the shop's own file, only a ticket nobody has
+   * described yet (D6). A row without a ticket gets a generated SKU when
+   * `generateSkus` is on, and is an error otherwise.
    */
   async checkImportRows(
     swapId: string,
@@ -493,15 +310,16 @@ export class LegacyTicketService {
         'This swap takes legacy tickets only on the web, so SKUs can’t be generated.',
       );
     }
-    const ranges = await this.listForSeller(swapId, sellerId);
-    if (ranges.length === 0 && !rules.generateSkus) {
+    const held = await this.heldBy(swapId, sellerId);
+    if (held.length === 0 && !rules.generateSkus) {
       throw new BadRequestException(
         rules.webTicketsOnly
-          ? 'This seller has no ticket ranges for this swap, and it takes legacy tickets only on the web.'
-          : 'This seller has no ticket ranges for this swap. Turn on “Generate SKUs as needed” to give each row a new SKU.',
+          ? 'This seller has no tickets for this swap, and it takes legacy tickets only on the web.'
+          : 'This seller has no tickets for this swap. Turn on “Generate SKUs as needed” to give each row a new SKU.',
       );
     }
-    const used = await this.usedNumbers(swapId);
+    const byNumber = new Map(held.map((t) => [t.number, t]));
+    const whose = rules.shopOwn ? 'your' : 'this seller’s';
 
     const results: ImportRowResult[] = [];
     const seen = new Map<string, number>();
@@ -530,31 +348,26 @@ export class LegacyTicketService {
       if (rules.acceptsTickets === false) return fail('This swap doesn’t take legacy tickets.');
       const n = ticketNumberOf(sku);
       if (n === null) return fail('A ticket number is just the digits on the ticket.');
-      if (ranges.length === 0) {
-        return fail('This seller has no tickets for this swap. Leave the ticket blank to generate a SKU.');
+      const ticket = byNumber.get(n);
+      if (!ticket) {
+        return fail(
+          held.length
+            ? `${n} isn’t one of ${whose} tickets. ${rules.shopOwn ? 'Yours' : 'Theirs'} are ${describe(runsOf(held.map((t) => t.number)))}.`
+            : `${rules.shopOwn ? 'You have' : 'This seller has'} no tickets for this swap. Leave the ticket blank to generate a SKU.`,
+        );
       }
-      if (!inAnyRange(n, ranges)) {
-        return fail(`${n} is not one of this seller's tickets. Theirs are ${describe(ranges)}.`);
+      if (rules.shopOwn && !isUntouched(ticket)) {
+        return fail(`${n} is already described. Ask the swap’s staff to change it.`);
       }
-      if (used.has(n)) return fail(`Ticket ${n} is already on another item.`);
 
       const earlier = seen.get(sku);
       if (earlier !== undefined) return fail(`Ticket ${n} is also on line ${earlier}.`);
       seen.set(sku, line);
 
-      results.push({ line, sku, outcome: 'ok' });
+      results.push({ line, sku, outcome: 'ok', itemId: ticket.id });
     });
 
     return results;
-  }
-
-  private async assertSellerInSwap(orgId: string, swapId: string, sellerId: string) {
-    const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId } });
-    if (!swap) throw new NotFoundException('Swap not found');
-    const seller = await this.prisma.sellerProfile.findFirst({
-      where: { id: sellerId, deletedAt: null, membership: { orgId } },
-    });
-    if (!seller) throw new NotFoundException('Seller not found');
   }
 }
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { TicketImportRow, TicketSeller } from '../../lib/api.types';
-import { GenerateSkusSwitch, importedSummary } from './ImportSkuOptions';
+import { GenerateSkusSwitch, importedSummary, wroteAny } from './ImportSkuOptions';
 
 /** "67000–67499", or two blocks for a shop given a second pad. */
 function describeRanges(s: TicketSeller): string {
@@ -48,7 +48,7 @@ export default function ProxyItemImportModal({
 
   const chosen = sellers.find((s) => s.sellerId === sellerId) ?? null;
   const failures = rows?.filter((r) => r.outcome === 'error') ?? [];
-  const created = rows?.filter((r) => r.outcome === 'created') ?? [];
+  const created = rows?.filter((r) => r.outcome === 'created' || r.outcome === 'updated') ?? [];
 
   async function submit() {
     if (!file || !sellerId) return;
@@ -61,7 +61,7 @@ export default function ProxyItemImportModal({
         setError(res.error ?? 'Could not read that file');
       } else {
         setRows(res.data ?? []);
-        if ((res.data ?? []).some((r) => r.outcome === 'created')) onImported();
+        if (wroteAny(res.data)) onImported();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not read that file');
@@ -98,7 +98,7 @@ export default function ProxyItemImportModal({
           {chosen && (
             <span className="block text-xs text-gray-500">
               {chosen.ranges.length
-                ? `Tickets ${describeRanges(chosen)} — ${chosen.usedCount} of ${chosen.ticketCount} used`
+                ? `Tickets ${describeRanges(chosen)}: ${chosen.usedCount} of ${chosen.ticketCount} described`
                 : 'No tickets in this swap: every row needs a generated SKU.'}
             </span>
           )}
@@ -106,10 +106,10 @@ export default function ProxyItemImportModal({
 
         <div className="text-sm text-gray-400 space-y-2">
           <p>
-            One row per item. The ticket number is required
-            {allowGenerate ? ', unless SKUs are generated below' : ''}; a name and a description
-            are not. Without a name the item is called by its number. A ticket row may leave its
-            price blank to price it later; a row without a ticket needs one.
+            One row per item. A ticket row fills in that issued ticket: its name, description
+            and price, any of which may be blank. The ticket number is required
+            {allowGenerate ? ', unless SKUs are generated below for items without a ticket, which need a price' : ''}.
+            Rows for numbers the seller doesn’t hold are refused.
           </p>
           <pre className="bg-surface-100 border border-gray-700 rounded p-3 text-xs text-gray-300 overflow-x-auto">
 {`sku,price,name,description

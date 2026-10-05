@@ -45,7 +45,7 @@ function harness(nextSku = 'SS26-A-0001') {
     { next: async () => nextSku } as never,
     { enqueueItemTags: async () => {} } as never,
     { get: async () => ({ labelsPerItem: 1, requireConsignmentScan: false }) } as never,
-    { holderOf: async () => null } as never,
+    { takenBy: async () => null } as never,
     { describeItems: async () => new Map() } as never,
   );
   (service as unknown as { syncItemToPos: () => Promise<string> }).syncItemToPos = async () => 'skipped';

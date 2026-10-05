@@ -5,7 +5,7 @@ import type { SellerResponse } from '../contracts/ski-swap.contracts';
 import { SellerService } from './seller.service';
 import { PrintQueueService } from './print-queue.service';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
-import { LegacyTicketService } from './legacy-ticket.service';
+import { isUntouched, LegacyTicketService, ticketNumberOf, type TicketFields } from './legacy-ticket.service';
 import type { ItemAttributeInput } from './taxonomy/taxonomy.service';
 
 @Injectable()
@@ -159,8 +159,11 @@ export class SellerSelfService {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: data.swapId, orgId, active: true } });
     if (!swap) throw new NotFoundException('Active swap not found');
 
-    // Blocks count on the web only where the web takes legacy tickets (Plan 34).
-    const holdsTickets = swap.allowLegacyWeb && (await this.tickets.isLegacySeller(data.swapId, seller.id));
+    // Blocks count on the web only where the web takes legacy tickets (Plan 34),
+    // and only for a shop: an individual's loose ticket, checked in at the
+    // counter, is theirs too, but they add items at a station, not on tickets.
+    const holdsTickets = !!seller.businessName && swap.allowLegacyWeb
+      && (await this.tickets.isLegacySeller(data.swapId, seller.id));
 
     // With no print tickets on the web, every item entered here is a legacy
     // ticket: a seller with no block has nothing to enter it on, and none may
@@ -190,31 +193,31 @@ export class SellerSelfService {
       );
     }
 
-    // Described through the tree is the ordinary path now (Plan 19). A ticket
-    // seller may still list something it says nothing about, and then it is
-    // called by its number, `Item #<sku>`, like any uncategorised item.
-    let sku: string | undefined;
-
+    /*
+     * On tickets, an "add" fills in one of the shop's issued tickets (Plan 38
+     * D7): every number it holds already exists, from the moment it was
+     * issued. The number given, or the lowest nobody has described yet. A
+     * shop fills each in once (D6); after that, it's staff's to change.
+     */
     if (onTickets) {
-      if (data.sku) {
-        sku = data.sku.trim();
-        await this.tickets.assertUsable(data.swapId, seller.id, sku);
-      } else {
-        // No number given: take the suggestion, and refuse only when there is
-        // genuinely nothing unused left rather than merely nothing to suggest.
-        await this.tickets.assertNotExhausted(data.swapId, seller.id);
-        const { suggested } = await this.tickets.formState(data.swapId, seller.id);
-        if (suggested === null) {
-          throw new BadRequestException(
-            'You have worked to the end of your tickets. Enter the number of a skipped one.',
-          );
-        }
-        sku = String(suggested);
-        await this.tickets.assertUsable(data.swapId, seller.id, sku);
-      }
-    } else if (!data.categoryId) {
-      throw new BadRequestException('Pick what the item is.');
+      const sku = data.sku?.trim() || (await this.lowestUntouched(data.swapId, seller.id));
+      const ticket = await this.tickets.ownTicket(data.swapId, seller.id, sku);
+      await this.assertShopMayDescribe(orgId, data.swapId, ticket);
+      return this.itemService.patch(
+        orgId,
+        data.swapId,
+        ticket.id,
+        {
+          ...(data.categoryId ? { categoryId: data.categoryId, attributes: data.attributes ?? [] } : {}),
+          ...(data.description ? { description: data.description } : {}),
+          ...(data.priceCents != null ? { priceCents: data.priceCents } : {}),
+          ...(data.donateProceeds !== undefined ? { donateProceeds: data.donateProceeds } : {}),
+          actorId: userId,
+        },
+        idempotencyKey,
+      );
     }
+    if (!data.categoryId) throw new BadRequestException('Pick what the item is.');
 
     return this.itemService.createAtStation(
       orgId,
@@ -229,10 +232,45 @@ export class SellerSelfService {
         // decide; it also needs a station, and that rule lives with it rather
         // than being spelled twice.
         selfService: true,
-        ...(sku ? { sku, alreadyPrinted: true } : {}),
       },
       idempotencyKey,
     );
+  }
+
+  /** The lowest of the shop's tickets nobody has described, for an add with no number. */
+  private async lowestUntouched(swapId: string, sellerId: string): Promise<string> {
+    const { suggested, exhausted } = await this.tickets.formState(swapId, sellerId);
+    if (suggested === null) {
+      throw new ConflictException(
+        exhausted
+          ? 'All of your tickets are described. Ask the swap’s staff to change one, or for more tickets.'
+          : 'You have no tickets for this swap. Ask the organizer for a block.',
+      );
+    }
+    return String(suggested);
+  }
+
+  /**
+   * A shop fills in its ticket once (Plan 38 D6): while nobody has described or
+   * priced it, and it hasn't sold. After that it's staff's to change.
+   */
+  private async assertShopMayDescribe(orgId: string, swapId: string, ticket: TicketFields & { id: string }) {
+    if (!isUntouched(ticket)) {
+      throw new ConflictException({
+        message: `${ticket.sku} is already described. Ask the swap’s staff to change it.`,
+        code: 'TICKET_DESCRIBED',
+      });
+    }
+    await this.assertUnsold(orgId, swapId, ticket);
+  }
+
+  private async assertUnsold(orgId: string, swapId: string, ticket: { id: string; sku: string }) {
+    if ((await this.itemService.soldAmong(orgId, swapId, [ticket.id])).size) {
+      throw new ConflictException({
+        message: `${ticket.sku} has sold. Ask the swap’s staff to change it.`,
+        code: 'TICKET_SOLD',
+      });
+    }
   }
 
   /**
@@ -279,7 +317,12 @@ export class SellerSelfService {
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
     const editsItem = Object.entries(data).some(([key, value]) => key !== 'hasPrintedTag' && value !== undefined);
-    if (editsItem) this.assertNotAccepted(item);
+    if (editsItem) {
+      // An issued ticket is accepted from the start, so it's held to "once,
+      // while untouched and unsold" instead (Plan 38 D6).
+      if (item.consignedAt !== null && ticketNumberOf(item.sku) !== null) await this.assertShopMayDescribe(orgId, item.swapId, item);
+      else this.assertNotAccepted(item);
+    }
     // The seller is the actor: printing a label for an item whose SKU the web
     // made accepts it (Plan 31), and that acceptance is theirs.
     return this.itemService.patch(orgId, item.swapId, itemId, { ...data, actorId: userId });
@@ -332,7 +375,7 @@ export class SellerSelfService {
     if (!stationId || !(await this.isStation(orgId, stationId))) this.assertMayChangeItems(seller);
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
-    this.assertNotAccepted(item);
+    await this.assertMayChangePhotos(orgId, item);
     return this.itemService.uploadPhoto(orgId, item.swapId, itemId, file);
   }
 
@@ -341,7 +384,7 @@ export class SellerSelfService {
     this.assertMayChangeItems(seller);
     await this.requireOwnership(orgId, seller.id, itemId);
     const item = await this.prisma.swapItem.findFirstOrThrow({ where: { id: itemId, orgId, deletedAt: null } });
-    this.assertNotAccepted(item);
+    await this.assertMayChangePhotos(orgId, item);
     return this.itemService.deletePhoto(orgId, item.swapId, itemId, photoId);
   }
 
@@ -361,6 +404,16 @@ export class SellerSelfService {
   private async isStation(orgId: string, stationId: string) {
     const station = await this.prisma.checkinStation.findFirst({ where: { id: stationId, orgId, deletedAt: null }, select: { id: true } });
     return !!station;
+  }
+
+  /**
+   * Photos: a shop's own ticket takes them until it sells (Plan 38), since the
+   * form adds them just after the ticket is described. Anything else accepted
+   * is staff's, as before.
+   */
+  private async assertMayChangePhotos(orgId: string, item: { id: string; sku: string; swapId: string; name: string; consignedAt: Date | null }) {
+    if (item.consignedAt !== null && ticketNumberOf(item.sku) !== null) return this.assertUnsold(orgId, item.swapId, item);
+    this.assertNotAccepted(item);
   }
 
   /** Edits to an accepted item are staff work, made at the counter (see `updateItem`). */

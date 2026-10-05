@@ -1,5 +1,6 @@
 import { SwapService } from './swap.service';
 import { LegacyTicketService } from './legacy-ticket.service';
+import { IssuedTicketService } from './issued-ticket.service';
 import { SellerSelfService } from './seller-self.service';
 import { PrinterService } from './printer.service';
 
@@ -62,20 +63,28 @@ describe('how items come in, at staff check-in and on the web', () => {
 
 // ─── Uploads ─────────────────────────────────────────────────────────────────
 
+const NOBODY = { firstName: null, lastName: null, email: null, phone: null };
+
+/** Seller-1's issued tickets as items (Plan 38): untouched, numbered from `start`. */
+function issuedItems(ranges: { startNumber: number; endNumber: number }[]) {
+  const out = [];
+  for (const r of ranges) {
+    for (let n = r.startNumber; n <= r.endNumber; n++) {
+      out.push({
+        id: `t${n}`, sku: String(n), name: `Item #${n}`, priceCents: null, categoryId: null, description: null,
+        sellerId: 'seller-1', seller: { businessName: 'Alpine Sports', membership: { user: NOBODY } },
+      });
+    }
+  }
+  return out;
+}
+
 function tickets(opts: { ranges?: { startNumber: number; endNumber: number }[]; webTicketsOnly?: boolean; shops?: { id: string; businessName: string }[] } = {}) {
   const prisma = {
-    legacyTicketRange: {
-      findMany: async () => (opts.ranges ?? [{ startNumber: 67000, endNumber: 67099 }]).map((r) => ({
-        ...r, sellerId: 'seller-1',
-        seller: { businessName: 'Alpine Sports', membership: { user: { firstName: null, lastName: null, email: null, phone: null } } },
-      })),
-    },
-    swapItem: { findMany: async () => [] },
+    swapItem: { findMany: async () => issuedItems(opts.ranges ?? [{ startNumber: 67000, endNumber: 67099 }]) },
     skiSwap: { findFirst: async () => ({ allowLegacyWeb: true, allowPrintWeb: !opts.webTicketsOnly }) },
     sellerProfile: {
-      findMany: async () => (opts.shops ?? []).map((s) => ({
-        ...s, membership: { user: { firstName: null, lastName: null, email: null, phone: null } },
-      })),
+      findMany: async () => (opts.shops ?? []).map((s) => ({ ...s, membership: { user: NOBODY } })),
     },
   };
   return new LegacyTicketService(prisma as never);
@@ -115,13 +124,13 @@ describe('an upload, row by row', () => {
 
 describe('who staff may upload for', () => {
   it('adds every business seller when the web isn’t tickets-only', async () => {
-    const sellers = await tickets({ shops: [{ id: 'seller-2', businessName: 'Beta Shop' }] }).sellersWithRanges('org-1', 'swap-1');
-    expect(sellers.map((s) => [s.displayName, s.ranges.length])).toEqual([['Alpine Sports', 1], ['Beta Shop', 0]]);
+    const sellers = await tickets({ shops: [{ id: 'seller-2', businessName: 'Beta Shop' }] }).sellersWithTickets('org-1', 'swap-1');
+    expect(sellers.map((s) => [s.displayName, s.ranges.length, s.ticketCount])).toEqual([['Alpine Sports', 1, 100], ['Beta Shop', 0, 0]]);
   });
 
   it('keeps to ticket holders when it is', async () => {
     const sellers = await tickets({ webTicketsOnly: true, shops: [{ id: 'seller-2', businessName: 'Beta Shop' }] })
-      .sellersWithRanges('org-1', 'swap-1');
+      .sellersWithTickets('org-1', 'swap-1');
     expect(sellers.map((s) => s.displayName)).toEqual(['Alpine Sports']);
   });
 });
@@ -130,32 +139,37 @@ describe('who staff may upload for', () => {
 
 function selfService(opts: { webTicketsOnly?: boolean; holdsTickets?: boolean }) {
   const created: Record<string, unknown>[] = [];
+  const described: { itemId: string; data: Record<string, unknown> }[] = [];
   const prisma = {
     sellerProfile: { findFirst: async () => ({ id: 'seller-1', businessName: 'Alpine Sports' }) },
     skiSwap: { findFirst: async () => ({ id: 'swap-1', allowLegacyWeb: true, allowPrintWeb: !opts.webTicketsOnly }) },
   };
   const ticketService = {
     isLegacySeller: async () => !!opts.holdsTickets,
-    assertNotExhausted: async () => undefined,
-    formState: async () => ({ suggested: 67001 }),
-    assertUsable: async () => undefined,
+    formState: async () => ({ suggested: 67001, exhausted: false }),
+    ownTicket: async (_s: string, _seller: string, sku: string) =>
+      ({ id: `t${sku}`, sku, number: Number(sku), name: `Item #${sku}`, priceCents: null, categoryId: null, description: null }),
   };
-  const items = { createAtStation: async (_o: string, _s: string, data: Record<string, unknown>) => { created.push(data); return data; } };
+  const items = {
+    createAtStation: async (_o: string, _s: string, data: Record<string, unknown>) => { created.push(data); return data; },
+    patch: async (_o: string, _s: string, itemId: string, data: Record<string, unknown>) => { described.push({ itemId, data }); return data; },
+    soldAmong: async () => new Set(),
+  };
   const unused = {} as never;
   const svc = new SellerSelfService(prisma as never, items as never, unused, unused, unused, ticketService as never);
-  return { svc, created };
+  return { svc, created, described };
 }
 
 const ITEM = { swapId: 'swap-1', categoryId: 'cat-skis', priceCents: 2500, quantity: 1 };
 
 describe('a seller entering an item by hand', () => {
-  it('with tickets, takes the next one unless asked for a generated SKU', async () => {
-    const { svc, created } = selfService({ holdsTickets: true });
+  it('with tickets, fills in the next untouched one unless asked for a generated SKU (Plan 38)', async () => {
+    const { svc, created, described } = selfService({ holdsTickets: true });
     await svc.createItem('org-1', 'user-1', ITEM);
     await svc.createItem('org-1', 'user-1', { ...ITEM, generateSku: true });
-    expect(created[0]).toMatchObject({ sku: '67001', alreadyPrinted: true });
-    expect(created[1]).not.toHaveProperty('alreadyPrinted');
-    expect(created[1].sku).toBeUndefined();
+    expect(described[0]).toMatchObject({ itemId: 't67001', data: { categoryId: 'cat-skis', priceCents: 2500 } });
+    expect(created).toHaveLength(1);
+    expect(created[0].sku).toBeUndefined();
   });
 
   it('is refused a generated SKU when the web takes tickets only', async () => {
@@ -179,25 +193,26 @@ describe('a seller entering an item by hand', () => {
 // ─── Both at once ────────────────────────────────────────────────────────────
 
 describe('a seller with tickets and a printer', () => {
-  it('can be issued a range while holding a printer', async () => {
+  it('can be issued tickets while holding a printer', async () => {
     const prisma = {
-      skiSwap: { findFirst: async () => ({ id: 'swap-1' }) },
+      skiSwap: { findFirst: async () => ({ id: 'swap-1', allowLegacyWeb: true, allowLegacyCheckin: false, locationId: '' }) },
       sellerProfile: { findFirst: async () => ({ id: 'seller-1' }) },
-      legacyTicketRange: { findFirst: async () => null, create: async () => ({}), findMany: async () => [] },
       swapItem: { findMany: async () => [] },
+      $transaction: async (fn: (tx: unknown) => unknown) => fn({ swapItem: { createMany: async () => ({}) } }),
       // No swapPrinter here: the old refusal looked one up, and would now throw.
     };
-    await expect(new LegacyTicketService(prisma as never).addRange('org-1', 'swap-1', 'seller-1', { startNumber: 1, endNumber: 10 }))
-      .resolves.toBeDefined();
+    await expect(new IssuedTicketService(prisma as never, { forOrg: async () => null } as never)
+      .issue('org-1', 'swap-1', 'seller-1', { startNumber: 1, endNumber: 10 }, 'user-1'))
+      .resolves.toMatchObject({ created: 10 });
   });
 
-  it('can be given a printer while holding ranges', async () => {
+  it('can be given a printer while holding tickets', async () => {
     const printer = { id: 'printer-1', orgId: 'org-1', name: 'Shop printer', bluetoothName: 'Q1', model: 'm110', paperSize: '50x30',
       marginTop: 4, marginBottom: 4, marginLeft: 0, marginRight: 28, assignedSellerId: null, bridgeDeviceId: null, bridge: null, seller: null };
     const prisma = {
       swapPrinter: { findFirst: async () => printer, update: async ({ data }: { data: object }) => ({ ...printer, ...data }) },
       sellerProfile: { findFirst: async () => ({ id: 'seller-1' }) },
-      // No legacyTicketRange here, for the same reason.
+      // Nothing about tickets here, for the same reason.
     };
     await expect(new PrinterService(prisma as never, {} as never).patch('org-1', 'printer-1', { assignedSellerId: 'seller-1' }))
       .resolves.toMatchObject({ assignedSellerId: 'seller-1' });
@@ -229,8 +244,7 @@ describe('a swap whose web takes no legacy tickets', () => {
 
   it('offers a shop no tickets on the web, whatever blocks it holds', async () => {
     const prisma = {
-      legacyTicketRange: { findMany: async () => ranges },
-      swapItem: { findMany: async () => [] },
+      swapItem: { findMany: async () => issuedItems(ranges) },
       skiSwap: { findUnique: async () => ({ allowLegacyWeb: false, allowPrintWeb: true }) },
     };
     await expect(new LegacyTicketService(prisma as never).formState('swap-1', 'seller-1'))
@@ -239,19 +253,13 @@ describe('a swap whose web takes no legacy tickets', () => {
 
   it('lists shops for staff upload without their blocks', async () => {
     const prisma = {
-      legacyTicketRange: {
-        findMany: async () => ranges.map((r) => ({
-          ...r, sellerId: 'seller-1',
-          seller: { businessName: 'Alpine Sports', membership: { user: { firstName: null, lastName: null, email: null, phone: null } } },
-        })),
-      },
-      swapItem: { findMany: async () => [] },
+      swapItem: { findMany: async () => issuedItems(ranges) },
       skiSwap: { findFirst: async () => ({ allowLegacyWeb: false, allowPrintWeb: true }) },
       sellerProfile: {
-        findMany: async () => [{ id: 'seller-1', businessName: 'Alpine Sports', membership: { user: { firstName: null, lastName: null, email: null, phone: null } } }],
+        findMany: async () => [{ id: 'seller-1', businessName: 'Alpine Sports', membership: { user: NOBODY } }],
       },
     };
-    const sellers = await new LegacyTicketService(prisma as never).sellersWithRanges('org-1', 'swap-1');
+    const sellers = await new LegacyTicketService(prisma as never).sellersWithTickets('org-1', 'swap-1');
     expect(sellers.map((s) => [s.displayName, s.ranges.length])).toEqual([['Alpine Sports', 0]]);
   });
 

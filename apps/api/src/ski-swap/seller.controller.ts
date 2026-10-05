@@ -32,8 +32,8 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CurrentDevice } from '../common/decorators/current-device.decorator';
 import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
-import { AddTicketRangeDto, CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto } from '../contracts/ski-swap.contracts';
-import { LegacyTicketService } from './legacy-ticket.service';
+import { TicketSpanDto, SwapIdBodyDto, CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto } from '../contracts/ski-swap.contracts';
+import { IssuedTicketService } from './issued-ticket.service';
 
 @Controller('orgs/:orgId/ski-swap/sellers')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
@@ -44,42 +44,54 @@ export class SellerController {
     private readonly sellerService: SellerService,
     private readonly challenges: ContactChallengeService,
     private readonly sms: SmsService,
-    private readonly tickets: LegacyTicketService,
+    private readonly issued: IssuedTicketService,
   ) {}
 
-  // ─── Legacy ticket ranges ─────────────────────────────────────────────────
+  // ─── Legacy tickets (Plan 38) ──────────────────────────────────────────────
 
-  /**
-   * The blocks issued to this seller for a swap, with how much of each is
-   * spent. Swap-scoped, so the caller says which one.
-   */
-  @Get(':sellerId/ticket-ranges')
+  /** This seller's tickets in a swap: runs, counts, and where Square stands. */
+  @Get(':sellerId/tickets')
   @RequirePermissions('ski_swap:report')
-  listTicketRanges(
+  ticketSummary(
     @Param('orgId') orgId: string,
     @Param('sellerId') sellerId: string,
     @Query('swapId') swapId: string,
   ) {
-    return this.tickets.listForSellerWithUse(orgId, swapId, sellerId);
+    return this.issued.summary(orgId, swapId, sellerId);
   }
 
-  @Post(':sellerId/ticket-ranges')
+  /** Issues a block: every number becomes a ticket, on sale at once. */
+  @Post(':sellerId/tickets/issue')
   @HttpCode(201)
   @RequirePermissions('ski_swap:admin')
-  addTicketRange(
+  issueTickets(
     @Param('orgId') orgId: string,
     @Param('sellerId') sellerId: string,
-    @Body() body: AddTicketRangeDto,
+    @Body() body: TicketSpanDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.tickets.addRange(orgId, body.swapId, sellerId, body, user.userId);
+    return this.issued.issue(orgId, body.swapId, sellerId, body, user.userId);
   }
 
-  @Delete(':sellerId/ticket-ranges/:rangeId')
+  /** Takes back returned tickets in a span: the unused, unsold ones. */
+  @Post(':sellerId/tickets/remove')
   @HttpCode(200)
   @RequirePermissions('ski_swap:admin')
-  removeTicketRange(@Param('orgId') orgId: string, @Param('rangeId') rangeId: string) {
-    return this.tickets.removeRange(orgId, rangeId);
+  removeTickets(
+    @Param('orgId') orgId: string,
+    @Param('sellerId') sellerId: string,
+    @Body() body: TicketSpanDto,
+  ) {
+    return this.issued.remove(orgId, body.swapId, sellerId, body);
+  }
+
+  /** Resumes putting the swap's accepted tickets in Square, after a stop. */
+  @Post(':sellerId/tickets/push')
+  @HttpCode(202)
+  @RequirePermissions('ski_swap:admin')
+  pushTickets(@Param('orgId') orgId: string, @Body() body: SwapIdBodyDto) {
+    void this.issued.push(orgId, body.swapId);
+    return { started: true };
   }
 
   @Get()

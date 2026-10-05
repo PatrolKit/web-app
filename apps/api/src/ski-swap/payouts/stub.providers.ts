@@ -139,6 +139,8 @@ class StubPosAdapter implements IPosAdapter {
   upsertCategory(): Promise<string> { this.refuse(); }
   syncItem(): never { this.refuse(); }
   deleteItem(): never { this.refuse(); }
+  syncNewItems(): never { this.refuse(); }
+  deleteItems(): never { this.refuse(); }
   uploadImage(): never { this.refuse(); }
   deleteImage(): never { this.refuse(); }
   getInventoryCounts(): never { this.refuse(); }

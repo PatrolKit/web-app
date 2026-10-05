@@ -52,7 +52,7 @@ function harness() {
     { enqueueItemTags: async () => {} } as never,
     { get: async () => ({ requireConsignmentScan: false }) } as never,
     {
-      holderOf: async () => null,
+      takenBy: async () => null,
       checkImportRows: async (_s: string, _p: string, rows: unknown[]) => rows.map(() => ({ outcome: 'ok' })),
     } as never,
     {

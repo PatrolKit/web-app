@@ -236,3 +236,22 @@ export async function textingOnForRun(prisma, base, unwrap) {
   });
   return restore;
 }
+
+/**
+ * Issues a block of tickets to a seller the way the service does (Plan 38):
+ * one accepted, unpriced item per number, its tag already on the goods. For
+ * a smoke that needs a shop holding tickets but isn't testing the issuing.
+ */
+export async function issueTickets(prisma, { orgId, swapId, sellerId, startNumber, endNumber }) {
+  const { randomUUID } = await import('crypto');
+  const now = new Date();
+  const data = [];
+  for (let n = startNumber; n <= endNumber; n++) {
+    const sku = String(n);
+    data.push({
+      id: randomUUID(), orgId, swapId, sellerId, sku, liveSku: sku, name: `Item #${sku}`,
+      priceCents: null, originalQuantity: 1, hasPrintedTag: true, consignedAt: now,
+    });
+  }
+  await prisma.swapItem.createMany({ data });
+}

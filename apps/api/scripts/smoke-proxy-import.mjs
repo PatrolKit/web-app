@@ -10,7 +10,7 @@
 import { PrismaClient } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
 
-import { smokeOrg, smokeStaff, smokeSession } from './_fixture.mjs';
+import { smokeOrg, smokeStaff, smokeSession, issueTickets } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
@@ -22,7 +22,6 @@ const org = await smokeOrg(prisma);
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 await prisma.swapItem.deleteMany({ where: { swap: { title: 'Proxy import smoke' } } });
-await prisma.legacyTicketRange.deleteMany({ where: { swap: { title: 'Proxy import smoke' } } });
 await prisma.skiSwap.deleteMany({ where: { orgId: org.id, title: 'Proxy import smoke' } });
 for (const email of ['proxy-a@patrolkit.invalid', 'proxy-b@patrolkit.invalid', 'proxy-silent@patrolkit.invalid']) {
   const prior = await prisma.user.findFirst({ where: { email } });
@@ -44,9 +43,8 @@ async function shop(email, name, start, end) {
   const user = await prisma.user.create({ data: { id: createId(), email, firstName: name, lastName: 'Shop' } });
   const m = await prisma.membership.create({ data: { id: createId(), userId: user.id, orgId: org.id, updatedAt: new Date() } });
   const seller = await prisma.sellerProfile.create({ data: { id: createId(), membershipId: m.id, businessName: name } });
-  await prisma.legacyTicketRange.create({
-    data: { id: createId(), orgId: org.id, swapId: swap.id, sellerId: seller.id, startNumber: start, endNumber: end, updatedAt: new Date() },
-  });
+  // Issued tickets are items from the start (Plan 38).
+  await issueTickets(prisma, { orgId: org.id, swapId: swap.id, sellerId: seller.id, startNumber: start, endNumber: end });
   return { user, seller };
 }
 
@@ -93,14 +91,14 @@ const good = await upload(alpine.seller.id, [
   '67170,180.00,Salomon QST boots,27.5 mondo',
   '67171,45.00,,Poles',
 ].join('\n')).then(unwrap);
-ok('a shop’s file imports', good.every?.((r) => r.outcome === 'created'),
+ok('a shop’s file fills in its issued tickets', good.every?.((r) => r.outcome === 'updated'),
    JSON.stringify(good.map?.((r) => r.outcome)));
 
 const rows = await prisma.swapItem.findMany({
-  where: { swapId: swap.id, sellerId: alpine.seller.id },
+  where: { swapId: swap.id, sellerId: alpine.seller.id, sku: { in: ['67169', '67170', '67171'] } },
   orderBy: { sku: 'asc' },
 });
-ok('every item belongs to the chosen seller', rows.length === 3, String(rows.length));
+ok('every row landed on the chosen seller’s ticket', rows.length === 3, String(rows.length));
 
 // The bug this plan started from: imported items used to carry no consignment
 // and never reach Square, so a shop's whole inventory sat unsellable.
@@ -126,16 +124,17 @@ ok('another shop’s numbers are refused', wrong[0]?.outcome === 'error', JSON.s
 ok('and the message names the blocks they do hold',
    (wrong[0]?.error ?? '').includes('68000'), String(wrong[0]?.error));
 ok('and nothing was written for them',
-   (await prisma.swapItem.count({ where: { swapId: swap.id, sellerId: summit.seller.id } })) === 0);
+   (await prisma.swapItem.count({ where: { swapId: swap.id, sellerId: summit.seller.id, NOT: { name: { startsWith: 'Item #' } } } })) === 0);
 
 // ─── Partly-bad files write nothing ──────────────────────────────────────────
 
-const mixed = await upload(alpine.seller.id, 'sku,price\n67180,20.00\n67169,30.00\n').then(unwrap);
-ok('a file with one used ticket imports none of it',
-   mixed.some((r) => r.outcome === 'error') && !mixed.some((r) => r.outcome === 'created'),
+const mixed = await upload(alpine.seller.id, 'sku,price\n67180,20.00\n69999,30.00\n').then(unwrap);
+ok('a file with one ticket they don’t hold imports none of it',
+   mixed.some((r) => r.outcome === 'error') && !mixed.some((r) => r.outcome === 'updated'),
    JSON.stringify(mixed.map((r) => r.outcome)));
-ok('so the item count has not moved',
-   (await prisma.swapItem.count({ where: { swapId: swap.id } })) === 3);
+const untouched = await prisma.swapItem.findFirst({ where: { swapId: swap.id, sku: '67180' } });
+ok('so its good row was left as issued', untouched?.priceCents === null && untouched?.name === 'Item #67180',
+   `${untouched?.name} ${untouched?.priceCents}`);
 
 const unquoted = await upload(alpine.seller.id, 'sku,price,description\n67181,20.00,170cm, edges good\n');
 const unquotedBody = await unquoted.json();
@@ -181,7 +180,6 @@ ok('asking to send with no address is refused', noAddress.status === 400, String
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
 await prisma.swapItem.deleteMany({ where: { swapId: swap.id } });
-await prisma.legacyTicketRange.deleteMany({ where: { swapId: swap.id } });
 await prisma.swapSkuCounter.deleteMany({ where: { swapId: swap.id } });
 await prisma.skiSwap.delete({ where: { id: swap.id } });
 await prisma.user.delete({ where: { id: alpine.user.id } });

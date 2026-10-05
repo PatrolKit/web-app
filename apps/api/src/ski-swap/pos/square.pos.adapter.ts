@@ -55,33 +55,76 @@ class SquarePosAdapter implements IPosAdapter {
   private async doItemUpsert(item: PosItemSync, categoryId: string, existingVersion?: bigint) {
     return this.client.catalog.object.upsert({
       idempotencyKey: uuidv4(),
-      object: {
-        type: 'ITEM',
-        id: item.posItemId ?? '#item',
-        ...(existingVersion !== undefined ? { version: existingVersion } : {}),
-        itemData: {
-          name: item.name,
-          description: item.description,
-          // categories replaces the deprecated categoryId (deprecated since 2023-12-13)
-          categories: [{ id: categoryId }],
-          variations: [
-            {
-              type: 'ITEM_VARIATION',
-              id: item.posVariationId ?? '#variation',
-              itemVariationData: {
-                name: 'Regular',
-                sku: item.sku,
-                ...variationPricing(item.priceCents),
-                stockable: true,
-                trackInventory: true,
-                inventoryAlertType: 'LOW_QUANTITY',
-                inventoryAlertThreshold: BigInt(1),
-              },
-            },
-          ],
-        },
-      },
+      object: itemObject(item, categoryId, item.posItemId ?? '#item', item.posVariationId ?? '#variation', existingVersion),
     });
+  }
+
+  /**
+   * Many new items in as few calls as Square allows (Plan 38): a block of
+   * issued tickets is hundreds at once, and one call each was minutes.
+   *
+   * 500 items to a batch, each carrying its variation, so a batch stays under
+   * Square's 1,000 objects. Stock goes on in calls of 100, Square's limit. A
+   * stock call that fails is retried once and then logged rather than thrown:
+   * the catalogue ids must still come back, or a retry would create every
+   * item twice. An item left with no count is repaired by its next single
+   * sync, which sets a count where Square has none.
+   */
+  async syncNewItems(items: PosItemSync[], locationId: string, initialQuantity: number) {
+    const ids: { posItemId: string; posVariationId: string }[] = [];
+    let categoryId = items[0]?.categoryId ?? '';
+    const categoryName = items[0]?.categoryName ?? '';
+
+    for (let start = 0; start < items.length; start += 500) {
+      const chunk = items.slice(start, start + 500);
+      const request = (category: string): Square.BatchUpsertCatalogObjectsRequest => ({
+        idempotencyKey: uuidv4(),
+        batches: [{ objects: chunk.map((item, i) => itemObject(item, category, `#item${i}`, `#variation${i}`)) }],
+      });
+      const res = await this.client.catalog.batchUpsert(request(categoryId)).catch(async (err) => {
+        if (!isSquareMissingReferenceError(err)) throw err;
+        console.warn('[Square] Category missing, recreating for swap category:', categoryId);
+        categoryId = await this.upsertCategory(categoryName);
+        return this.client.catalog.batchUpsert(request(categoryId));
+      });
+      const mapped = new Map((res.idMappings ?? []).map((m) => [m.clientObjectId, m.objectId]));
+      const chunkIds = chunk.map((_, i) => {
+        const posItemId = mapped.get(`#item${i}`);
+        const posVariationId = mapped.get(`#variation${i}`);
+        if (!posItemId || !posVariationId) throw new Error('Square did not return ids for every item in a batch');
+        return { posItemId, posVariationId };
+      });
+      ids.push(...chunkIds);
+
+      for (let at = 0; at < chunkIds.length; at += 100) {
+        const variations = chunkIds.slice(at, at + 100).map((x) => x.posVariationId);
+        const stock = () => this.client.inventory.batchCreateChanges({
+          idempotencyKey: uuidv4(),
+          changes: variations.map((catalogObjectId) => ({
+            type: 'ADJUSTMENT' as const,
+            adjustment: {
+              catalogObjectId,
+              fromState: 'NONE' as const,
+              fromLocationId: locationId,
+              toState: 'IN_STOCK' as const,
+              toLocationId: locationId,
+              quantity: String(initialQuantity),
+              occurredAt: new Date().toISOString(),
+            },
+          })),
+        });
+        await stock().catch(() => stock()).catch((err) => console.error('[Square] batch stock failed:', err));
+      }
+    }
+
+    return { ids, resolvedCategoryId: categoryId };
+  }
+
+  /** Many items out of the catalogue at once, 200 to a call (Square's limit). */
+  async deleteItems(posItemIds: string[]): Promise<void> {
+    for (let at = 0; at < posItemIds.length; at += 200) {
+      await this.client.catalog.batchDelete({ objectIds: posItemIds.slice(at, at + 200) });
+    }
   }
 
   async syncItem(input: PosItemSync, locationId: string, initialQuantity: number): Promise<{ posItemId: string; posVariationId: string; resolvedCategoryId: string }> {
@@ -364,4 +407,40 @@ export function variationPricing(priceCents: number | null) {
   return priceCents === null
     ? { pricingType: 'VARIABLE_PRICING' as const }
     : { pricingType: 'FIXED_PRICING' as const, priceMoney: { amount: BigInt(priceCents), currency: 'USD' as const } };
+}
+
+/** An item and its one variation, as the catalogue stores them. */
+function itemObject(
+  item: PosItemSync,
+  categoryId: string,
+  itemId: string,
+  variationId: string,
+  existingVersion?: bigint,
+): Square.CatalogObject {
+  return {
+    type: 'ITEM',
+    id: itemId,
+    ...(existingVersion !== undefined ? { version: existingVersion } : {}),
+    itemData: {
+      name: item.name,
+      description: item.description,
+      // categories replaces the deprecated categoryId (deprecated since 2023-12-13)
+      categories: [{ id: categoryId }],
+      variations: [
+        {
+          type: 'ITEM_VARIATION',
+          id: variationId,
+          itemVariationData: {
+            name: 'Regular',
+            sku: item.sku,
+            ...variationPricing(item.priceCents),
+            stockable: true,
+            trackInventory: true,
+            inventoryAlertType: 'LOW_QUANTITY',
+            inventoryAlertThreshold: BigInt(1),
+          },
+        },
+      ],
+    },
+  } as Square.CatalogObject;
 }

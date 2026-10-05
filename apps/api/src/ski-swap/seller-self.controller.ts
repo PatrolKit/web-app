@@ -60,10 +60,8 @@ export class SellerSelfController {
   }
 
   /**
-   * The number to offer, the blocks it came from, and whether anything is left.
-   *
-   * `suggested: null` with `exhausted: false` is the ordinary state past the top
-   * of a range: nothing to offer, but a skipped ticket may still be entered.
+   * The shop's tickets for its item form (Plan 38): the runs of numbers it
+   * holds, the lowest nobody has described, and whether every one is.
    */
   @Get('ticket-state')
   async ticketState(
@@ -72,7 +70,10 @@ export class SellerSelfController {
     @Query('swapId') swapId: string,
   ) {
     const seller = await this.sellerSelfService.getSellerRecord(orgId, user.userId);
-    return this.tickets.formState(swapId, seller.id);
+    const state = await this.tickets.formState(swapId, seller.id);
+    // Only a shop is on issued tickets: an individual's loose ticket from the
+    // counter doesn't put their own page on tickets (Plan 38).
+    return seller.businessName ? state : { ...state, ranges: [], suggested: null, exhausted: false };
   }
 
   // ─── Profile ──────────────────────────────────────────────────────────────

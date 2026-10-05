@@ -134,7 +134,7 @@ function harness(opts: { requireConsignmentScan?: boolean } = {}) {
     { enqueueItemTags: async () => {} } as never,
     { get: async () => ({ labelsPerItem: 1, ...toggle }) } as never,
     // No ticket blocks issued in these tests, so every number is unallocated.
-    { holderOf: async () => null } as never,
+    { takenBy: async () => null } as never,
     // These items are named rather than described (Plan 19), so the only
     // taxonomy call they reach is the one that fills in a response.
     { describeItems: async () => new Map() } as never,

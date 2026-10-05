@@ -107,7 +107,6 @@ model Organization {
   swapItems       SwapItem[]
   swapPrinters    SwapPrinter[]
   swapScanners    SwapScanner[]
-  ticketRanges    LegacyTicketRange[]
   skiSwapSettings SkiSwapSettings?
   taxonomyNodes   TaxonomyNode[]
   checkinStations CheckinStation[]
@@ -461,7 +460,6 @@ model SkiSwap {
   org          Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   items        SwapItem[]
   skuCounters  SwapSkuCounter[]
-  ticketRanges LegacyTicketRange[]
   receipts     Receipt[]
   payoutRuns   PayoutRun[]
 
@@ -501,37 +499,8 @@ model SellerProfile {
   membership       Membership          @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   swapItems        SwapItem[]
   assignedPrinters SwapPrinter[]
-  ticketRanges     LegacyTicketRange[]
   receipts         Receipt[]
   payoutLines      PayoutLine[]
-}
-
-/// A block of pre-printed tickets issued to a business seller for one swap.
-///
-/// Several rows per seller is normal — a shop opens a second pad when the
-/// first runs out.
-model LegacyTicketRange {
-  id       String @id @default(cuid())
-  orgId    String
-  swapId   String
-  sellerId String
-
-  /// Inclusive, and compared numerically: 999 is below 1000, which is not true
-  /// of the strings. A range may cross a digit-width boundary, which costs
-  /// nothing because nothing here pads — the SKU is the number as digits.
-  startNumber Int
-  endNumber   Int
-
-  createdBy String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  org    Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  swap   SkiSwap       @relation(fields: [swapId], references: [id], onDelete: Cascade)
-  seller SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-
-  @@index([swapId, sellerId])
-  @@index([orgId])
 }
 
 model SwapItem {

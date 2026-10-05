@@ -1,15 +1,12 @@
-import { countOf, hasAnyUnused, inAnyRange, suggestNext, ticketNumberOf } from './legacy-ticket.service';
+import { isUntouched, LegacyTicketService, runsOf, ticketNumberOf } from './legacy-ticket.service';
 
 /**
- * Spending a block of issued tickets.
+ * Legacy tickets as items (Plan 38).
  *
- * The whole feature turns on one distinction: the high-water mark decides what
- * is *suggested*, and never what is *allowed*. A pad is worked through in
- * order, tickets get lost and binned, and one that turns up later has to be
- * enterable — so the suggestion skips gaps while entry does not.
+ * Issuing a block creates its tickets, so the items are the whole record: a
+ * shop's tickets are the ticket items it holds, and "untouched" (nobody has
+ * described or priced it) is what lets the shop fill one in, once.
  */
-
-const set = (...ns: number[]) => new Set(ns);
 
 describe('reading a SKU as a ticket number', () => {
   it('takes a bare number', () => {
@@ -37,122 +34,127 @@ describe('reading a SKU as a ticket number', () => {
   });
 });
 
-describe('the suggested number', () => {
-  const one = [{ startNumber: 67000, endNumber: 67004 }];
-
-  it('opens at the bottom of the range when nothing is used', () => {
-    expect(suggestNext(one, set())).toBe(67000);
+describe('runs of numbers', () => {
+  it('groups consecutive numbers, in order, whatever order they came in', () => {
+    expect(runsOf([67003, 67001, 67002, 67010, 999, 1000])).toEqual([
+      { startNumber: 999, endNumber: 1000 },
+      { startNumber: 67001, endNumber: 67003 },
+      { startNumber: 67010, endNumber: 67010 },
+    ]);
   });
 
-  it('walks down the pad', () => {
-    expect(suggestNext(one, set(67000, 67001))).toBe(67002);
-  });
-
-  it('carries on past a binned ticket rather than offering it back', () => {
-    // 67002 was binned. Suggesting it again on every item would make the
-    // default something to correct rather than accept.
-    expect(suggestNext(one, set(67000, 67001, 67003))).toBe(67004);
-  });
-
-  it('goes quiet at the top rather than reaching back into a gap', () => {
-    expect(suggestNext(one, set(67000, 67001, 67003, 67004))).toBeNull();
-  });
-
-  it('rolls into the next range when one is exhausted', () => {
-    const two = [
-      { startNumber: 67000, endNumber: 67499 },
-      { startNumber: 68000, endNumber: 68499 },
-    ];
-    expect(suggestNext(two, set(67499))).toBe(68000);
-  });
-
-  it('rolls even when the ranges were stored out of order', () => {
-    const two = [
-      { startNumber: 68000, endNumber: 68499 },
-      { startNumber: 67000, endNumber: 67499 },
-    ];
-    expect(suggestNext(two, set(67000))).toBe(67001);
-  });
-
-  it('ignores numbers used outside this seller’s ranges', () => {
-    // Another shop's tickets are in the same swap. Letting them raise this
-    // seller's high-water mark would skip tickets they still hold.
-    expect(suggestNext(one, set(90000, 67000))).toBe(67001);
-  });
-
-  it('has nothing to offer a seller with no ranges', () => {
-    expect(suggestNext([], set())).toBeNull();
+  it('is nothing for nothing', () => {
+    expect(runsOf([])).toEqual([]);
   });
 });
 
-describe('when a seller is actually out', () => {
-  const one = [{ startNumber: 67000, endNumber: 67004 }];
+describe('an untouched ticket', () => {
+  const issued = { sku: '67169', name: 'Item #67169', priceCents: null, categoryId: null, description: null };
 
-  it('is not out merely because the suggestion has run dry', () => {
-    // The binned 67002 is still unused, so the seller is not out — they are
-    // one found ticket away from another item.
-    const used = set(67000, 67001, 67003, 67004);
-    expect(suggestNext(one, used)).toBeNull();
-    expect(hasAnyUnused(one, used)).toBe(true);
+  it('is one still as issued', () => {
+    expect(isUntouched(issued)).toBe(true);
   });
 
-  it('is out only when every number is on an item', () => {
-    expect(hasAnyUnused(one, set(67000, 67001, 67002, 67003, 67004))).toBe(false);
-  });
-
-  it('counts across every range they hold', () => {
-    const two = [
-      { startNumber: 67000, endNumber: 67001 },
-      { startNumber: 68000, endNumber: 68001 },
-    ];
-    expect(hasAnyUnused(two, set(67000, 67001, 68000))).toBe(true);
-    expect(hasAnyUnused(two, set(67000, 67001, 68000, 68001))).toBe(false);
+  it('is touched by a price, a type, notes or a name', () => {
+    expect(isUntouched({ ...issued, priceCents: 4500 })).toBe(false);
+    expect(isUntouched({ ...issued, categoryId: 'cat-skis' })).toBe(false);
+    expect(isUntouched({ ...issued, description: '170cm' })).toBe(false);
+    expect(isUntouched({ ...issued, name: 'Red skis' })).toBe(false);
   });
 });
 
-describe('membership of a range', () => {
-  const two = [
-    { startNumber: 67000, endNumber: 67499 },
-    { startNumber: 68000, endNumber: 68499 },
-  ];
+// ─── A shop's tickets, from its items ────────────────────────────────────────
 
-  it('includes both ends', () => {
-    expect(inAnyRange(67000, two)).toBe(true);
-    expect(inAnyRange(67499, two)).toBe(true);
+const ticket = (n: number, over: Record<string, unknown> = {}) => ({
+  id: `t${n}`, sku: String(n), name: `Item #${n}`, priceCents: null, categoryId: null, description: null, ...over,
+});
+
+function service(items: Record<string, unknown>[], swap = { allowLegacyWeb: true, allowPrintWeb: true }) {
+  const prisma = {
+    swapItem: {
+      findMany: async () => items,
+      findFirst: async ({ where }: { where: { sku: string } }) => {
+        const hit = items.find((i) => i.sku === where.sku);
+        return hit ? { seller: hit.seller ?? null } : null;
+      },
+    },
+    skiSwap: { findUnique: async () => swap, findFirst: async () => swap },
+  };
+  return new LegacyTicketService(prisma as never);
+}
+
+describe('what the shop’s form offers', () => {
+  it('is the runs it holds, and its lowest untouched ticket', async () => {
+    const held = [ticket(67000, { priceCents: 2000 }), ticket(67001), ticket(67002), ticket(67005)];
+    await expect(service(held).formState('swap-1', 'seller-1')).resolves.toEqual({
+      ranges: [{ startNumber: 67000, endNumber: 67002 }, { startNumber: 67005, endNumber: 67005 }],
+      suggested: 67001, exhausted: false, webTicketsOnly: false,
+    });
   });
 
-  it('excludes the gap between two blocks', () => {
-    expect(inAnyRange(67500, two)).toBe(false);
+  it('is exhausted only when every ticket is described', async () => {
+    const held = [ticket(67000, { priceCents: 2000 }), ticket(67001, { categoryId: 'cat' })];
+    await expect(service(held).formState('swap-1', 'seller-1')).resolves.toMatchObject({ suggested: null, exhausted: true });
   });
 
-  it('accepts a number below the high-water mark, which is the point', () => {
-    // Nothing about membership consults what has been used. That is what lets
-    // a found ticket be entered after the seller has worked past it.
-    expect(inAnyRange(67002, two)).toBe(true);
+  it('leaves out items that aren’t tickets', async () => {
+    const held = [ticket(67000), { ...ticket(0), sku: 'SS26-A-0001', name: 'Item #SS26-A-0001' }];
+    await expect(service(held).formState('swap-1', 'seller-1')).resolves.toMatchObject({
+      ranges: [{ startNumber: 67000, endNumber: 67000 }],
+    });
   });
 });
 
-describe('how many tickets a block holds', () => {
-  it('counts inclusively', () => {
-    expect(countOf([{ startNumber: 67000, endNumber: 67499 }])).toBe(500);
+describe('a shop naming one of its tickets', () => {
+  it('finds it by number', async () => {
+    await expect(service([ticket(67001)]).ownTicket('swap-1', 'seller-1', '67001')).resolves.toMatchObject({ id: 't67001' });
   });
 
-  it('counts a block of one', () => {
-    expect(countOf([{ startNumber: 67000, endNumber: 67000 }])).toBe(1);
+  it('is refused a number it doesn’t hold, told which it does', async () => {
+    await expect(service([ticket(67000), ticket(67001)]).ownTicket('swap-1', 'seller-1', '68000'))
+      .rejects.toThrow('68000 isn’t one of your tickets. Yours are 67000–67001.');
   });
 
-  it('sums across blocks', () => {
-    expect(
-      countOf([
-        { startNumber: 67000, endNumber: 67499 },
-        { startNumber: 68000, endNumber: 68499 },
-      ]),
-    ).toBe(1000);
+  it('is refused something that isn’t a ticket number', async () => {
+    await expect(service([ticket(67001)]).ownTicket('swap-1', 'seller-1', 'SS26-A-0001')).rejects.toThrow(/just the digits/);
+  });
+});
+
+describe('a file of ticket rows', () => {
+  const row = (sku: string, priceCents: number | null = 1000) => ({ sku, priceCents });
+  const rules = { generateSkus: false, webTicketsOnly: false };
+
+  it('fills in the tickets it names, saying which', async () => {
+    const results = await service([ticket(67001), ticket(67002)])
+      .checkImportRows('swap-1', 'seller-1', [row('67001'), row('67002', null)], rules);
+    expect(results).toEqual([
+      { line: 2, sku: '67001', outcome: 'ok', itemId: 't67001' },
+      { line: 3, sku: '67002', outcome: 'ok', itemId: 't67002' },
+    ]);
   });
 
-  it('counts a block that crosses a digit-width boundary', () => {
-    // 999 to 1005 is four three-digit numbers and three four-digit ones, and
-    // nothing pads, so it is just seven.
-    expect(countOf([{ startNumber: 999, endNumber: 1005 }])).toBe(7);
+  it('refuses a number the seller doesn’t hold, and a repeat', async () => {
+    const results = await service([ticket(67001)])
+      .checkImportRows('swap-1', 'seller-1', [row('67001'), row('67009'), row('67001')], rules);
+    expect(results.map((r) => r.error ?? r.outcome)).toEqual([
+      'ok', '67009 isn’t one of this seller’s tickets. Theirs are 67001.', 'Ticket 67001 is also on line 2.',
+    ]);
+  });
+
+  it('holds the shop’s own file to tickets nobody has described; staff aren’t', async () => {
+    const held = [ticket(67001, { priceCents: 2500 })];
+    const own = await service(held).checkImportRows('swap-1', 'seller-1', [row('67001')], { ...rules, shopOwn: true });
+    expect(own[0].error).toBe('67001 is already described. Ask the swap’s staff to change it.');
+    const staff = await service(held).checkImportRows('swap-1', 'seller-1', [row('67001')], rules);
+    expect(staff[0]).toMatchObject({ outcome: 'ok', itemId: 't67001' });
+  });
+});
+
+describe('whose ticket a number already is', () => {
+  it('names the seller holding it, or says nobody does', async () => {
+    const shop = { businessName: 'Stowe Sports', membership: { user: { firstName: null, lastName: null, email: null, phone: null } } };
+    const svc = service([{ ...ticket(67001), seller: shop }]);
+    await expect(svc.takenBy('swap-1', '67001')).resolves.toEqual({ sellerName: 'Stowe Sports' });
+    await expect(svc.takenBy('swap-1', '67002')).resolves.toBeNull();
   });
 });

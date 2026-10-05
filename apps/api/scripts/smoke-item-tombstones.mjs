@@ -33,7 +33,7 @@ import { PrismaClient } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
 import argon2 from 'argon2';
 
-import { smokeOrg, smokeStaff, smokeSession } from './_fixture.mjs';
+import { smokeOrg, smokeStaff, smokeSession, issueTickets } from './_fixture.mjs';
 
 const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
@@ -272,12 +272,8 @@ console.log('\n── A file staff uploaded for a shop ────────�
 // Staff uploading for a shop means the boxes are in the room and a volunteer is
 // loading the list that came with them. A shop uploading its own file means a
 // list of what it intends to bring, and nobody has seen any of it.
-await prisma.legacyTicketRange.create({
-  data: {
-    id: createId(), orgId: org.id, swapId: swap.id, sellerId: sellerProfile.id,
-    startNumber: 78000, endNumber: 78100,
-  },
-});
+// Issued tickets are items from the start, accepted (Plan 38).
+await issueTickets(prisma, { orgId: org.id, swapId: swap.id, sellerId: sellerProfile.id, startNumber: 78000, endNumber: 78100 });
 
 const csv = (rows) => 'sku,name,price\n' + rows.map((r) => `${r},Imported ${r},50.00`).join('\n') + '\n';
 const upload = async (url, tokenToUse, rows, extra = {}) => {
@@ -294,8 +290,8 @@ const upload = async (url, tokenToUse, rows, extra = {}) => {
 const staffUpload = await upload(`${ITEMS}/import`, token, ['78001', '78002'], {
   sellerId: sellerProfile.id,
 });
-ok('staff can upload a file for a shop',
-  Array.isArray(staffUpload) && staffUpload.every((r) => r.outcome === 'created'),
+ok('staff can upload a file for a shop, filling in its tickets',
+  Array.isArray(staffUpload) && staffUpload.every((r) => r.outcome === 'updated'),
   JSON.stringify(staffUpload).slice(0, 160));
 
 const staffRows = await prisma.swapItem.findMany({
@@ -308,16 +304,18 @@ ok('so the shop cannot delete a row from it',
   (await sellerApi(`/orgs/${org.id}/ski-swap/seller/me/items/${staffRows[0]?.id}`,
     { method: 'DELETE' })).status === 409);
 
+// Items without a ticket: a shop's issued tickets are accepted from the start
+// (Plan 38), so what still waits is what it adds with generated SKUs.
 const shopUpload = await upload(
-  `/orgs/${org.id}/ski-swap/seller/me/items/import`, sellerToken, ['78010', '78011', '78012'],
-  { swapId: swap.id },
+  `/orgs/${org.id}/ski-swap/seller/me/items/import`, sellerToken, ['', '', ''],
+  { swapId: swap.id, generateSkus: 'true' },
 );
 ok('a shop can upload its own file',
   Array.isArray(shopUpload) && shopUpload.every((r) => r.outcome === 'created'),
   JSON.stringify(shopUpload).slice(0, 160));
 
 const shopRows = await prisma.swapItem.findMany({
-  where: { swapId: swap.id, sku: { in: ['78010', '78011', '78012'] } },
+  where: { swapId: swap.id, sku: { in: Array.isArray(shopUpload) ? shopUpload.map((r) => r.sku) : [] } },
 });
 ok('...and none of it is received, because nobody has seen it',
   shopRows.length === 3 && shopRows.every((r) => r.consignedAt === null),

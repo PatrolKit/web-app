@@ -41,6 +41,17 @@ export interface IPosAdapter {
   upsertCategory(name: string): Promise<string>;
   syncItem(item: PosItemSync, locationId: string, initialQuantity: number): Promise<{ posItemId: string; posVariationId: string; resolvedCategoryId: string }>;
   deleteItem(posItemId: string): Promise<void>;
+  /**
+   * Creates many new items at once (Plan 38): a block of issued tickets. Each
+   * gets `initialQuantity` in stock. Answers each item's ids in input order,
+   * and the category used, which differs when it had to be recreated.
+   */
+  syncNewItems(items: PosItemSync[], locationId: string, initialQuantity: number): Promise<{
+    ids: { posItemId: string; posVariationId: string }[];
+    resolvedCategoryId: string;
+  }>;
+  /** Deletes many items at once (Plan 38): returned tickets. */
+  deleteItems(posItemIds: string[]): Promise<void>;
   uploadImage(posItemId: string, buffer: Buffer, mimeType: string): Promise<{ posImageId: string; imageUrl: string }>;
   deleteImage(posImageId: string): Promise<void>;
   getInventoryCounts(variationIds: string[], locationId: string): Promise<Map<string, number>>;
