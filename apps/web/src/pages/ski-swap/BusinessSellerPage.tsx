@@ -54,7 +54,7 @@ export default function BusinessSellerPage() {
       queryKeyPrefix="seller/items"
       labelsPerItem={labelsPerItem}
       emptyMessage="No items yet."
-      toolbarExtra={
+      toolbarNote={
         profile && !isShop ? (
           <p className="text-xs text-gray-500 max-w-xs text-right">
             Add items when you check in at the swap, by scanning its check-in QR code. Staff there can change them.
@@ -72,6 +72,11 @@ export default function BusinessSellerPage() {
             }
           : undefined
       }
+      // A shop can import when its rows can be made into items: on tickets, or
+      // with generated SKUs when the swap's web isn't tickets-only (Plan 31).
+      actions={isShop && (onTickets || (ticketState && !webTicketsOnly)) && sellerSelectedSwapId
+        ? [{ key: 'import', label: 'Import items from a file', onSelect: () => setImporting(true) }]
+        : []}
       addBlockedBecause={
         webTicketsOnly && ticketState && !onTickets
           ? 'This swap takes legacy tickets only. Ask the organizer for a block of tickets.'
@@ -96,19 +101,6 @@ export default function BusinessSellerPage() {
         deletePhoto: (iid, pid) => api.skiSwap.sellerDeletePhoto(orgId, iid, pid),
       }}
       />
-
-      {/* A shop can import when its rows can be made into items: on tickets, or
-          with generated SKUs when the swap's web isn't tickets-only (Plan 31). */}
-      {isShop && (onTickets || (ticketState && !webTicketsOnly)) && sellerSelectedSwapId && (
-        <div className="flex justify-end">
-          <button
-            onClick={() => setImporting(true)}
-            className="text-sm text-brand-500 hover:underline"
-          >
-            Import items from a file
-          </button>
-        </div>
-      )}
 
       {importing && sellerSelectedSwapId && (
         <TicketItemImportModal

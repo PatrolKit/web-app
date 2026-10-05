@@ -83,38 +83,26 @@ export default function ItemsPage() {
       sellers={sellers}
       queryKeyPrefix="ski-swap/items"
       labelsPerItem={labelsPerItem}
-      toolbarExtra={
-        canManage ? (
-          <>
-            {/* Where the swap takes legacy tickets, or has some waiting for a
-                price (Plan 37). */}
-            {(takesTickets || unpricedCount > 0) && (
-              <span title={unpricedCount === 0 ? 'No tickets need a price.' : undefined}>
-                <button
-                  onClick={() => setFastEditing(true)}
-                  disabled={unpricedCount === 0}
-                  className="bg-surface-100 hover:bg-surface-200 text-gray-200 px-4 py-2 rounded text-sm disabled:opacity-40 disabled:hover:bg-surface-100"
-                >
-                  Fast Edit Tickets ({unpricedCount})
-                </button>
-              </span>
-            )}
-            {/* The title sits on the wrapper, not the button: a disabled control
-                takes no pointer events in some browsers, and the tooltip
-                explaining why it is disabled is exactly the one nobody would
-                then see. */}
-            <span title={importBlockedBecause || undefined}>
-              <button
-                onClick={() => setImporting(true)}
-                disabled={!!importBlockedBecause}
-                className="bg-surface-100 hover:bg-surface-200 text-gray-200 px-4 py-2 rounded text-sm disabled:opacity-40 disabled:hover:bg-surface-100"
-              >
-                Import for a seller
-              </button>
-            </span>
-          </>
-        ) : undefined
-      }
+      actions={canManage ? [
+        // Where the swap takes legacy tickets, or has some waiting for a
+        // price (Plan 37).
+        ...(takesTickets || unpricedCount > 0
+          ? [{
+              key: 'fast-edit',
+              label: `Fast edit tickets (${unpricedCount})`,
+              disabledReason: unpricedCount === 0 ? 'No tickets need a price.' : undefined,
+              onSelect: () => setFastEditing(true),
+            }]
+          : []),
+        {
+          key: 'import',
+          label: 'Import for a seller',
+          // Said, not hidden: a control that comes and goes teaches staff it's
+          // unreliable and gives them nowhere to look for the reason.
+          disabledReason: importBlockedBecause || undefined,
+          onSelect: () => setImporting(true),
+        },
+      ] : []}
       panelApi={{
         fetchItems: (sid, opts) => api.skiSwap.listItems(orgId, sid, opts),
         createItem: (sid, data) => api.skiSwap.createItem(orgId, sid, data),

@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
 import type { ItemAttributeInput, ItemResponse, SellerResponse } from '../../lib/api.types';
 import SearchableSelect from '../../components/SearchableSelect';
+import ActionsMenu, { type MenuAction } from '../../components/ActionsMenu';
 import ItemDescriber, {
   emptyDescriber, toAttributeInputs, NamePreview, type DescriberState,
 } from '../../components/ItemDescriber';
@@ -112,8 +113,13 @@ export interface SwapItemsPanelProps {
   sellers?: SellerResponse[];
   emptyMessage?: string;
   labelsPerItem?: number;
-  /** Rendered beside Add item. The staff page uses it for the seller import. */
-  toolbarExtra?: ReactNode;
+  /**
+   * The page's own actions, in the toolbar's one Actions menu after Add item:
+   * the staff page's fast edit and seller import, a shop's file upload.
+   */
+  actions?: MenuAction[];
+  /** A line at the end of the toolbar, for a page that has nothing to add. */
+  toolbarNote?: ReactNode;
 }
 
 // ─── Form state ───────────────────────────────────────────────────────────────
@@ -207,65 +213,6 @@ export function matchesStatus(item: ItemResponse, filter: '' | StatusFilter): bo
   return itemState(item).key === filter;
 }
 
-/**
- * Accepts everything one seller is still waiting on.
- *
- * Says the number before it does anything, and says it again afterwards. A
- * button labelled "Consign all" on a screen showing a page of fifty invites
- * exactly one question — all of what? — so the count comes from the server's
- * total for this seller rather than from the rows on screen.
- */
-function ConsignAllButton({
-  sellerName, waiting, total, pending, result, error, onConsign,
-}: {
-  sellerName: string;
-  /** Waiting on this page. Only ever used to decide whether to offer at all. */
-  waiting: number;
-  total: number;
-  pending: boolean;
-  result?: { consigned: number };
-  error: unknown;
-  onConsign: () => void;
-}) {
-  if (result) {
-    return (
-      <span className="text-sm text-gray-400">
-        {result.consigned === 0
-          ? 'Nothing was waiting.'
-          : `Accepted ${result.consigned} item${result.consigned === 1 ? '' : 's'} — they appear in Square shortly.`}
-      </span>
-    );
-  }
-  if (!waiting) return null;
-
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        onClick={() => {
-          if (confirm(
-            `Accept everything ${sellerName} is still waiting on?\n\n` +
-            'This puts their items in Square and they go on sale. It applies to ' +
-            'all of their waiting items, not just the ones on this page.',
-          )) onConsign();
-        }}
-        disabled={pending}
-        className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm px-3 py-1.5 rounded"
-      >
-        {pending ? 'Accepting…' : `Accept ${sellerName}'s items`}
-      </button>
-      {total > 0 && <span className="text-xs text-gray-500">{total} in this swap</span>}
-      {!!error && (
-        <span className="text-xs text-red-400">
-          {/* `Error`, not `ApiError`: this panel takes its calls as a prop and
-              has no business knowing which client made them. ApiError extends
-              Error, so the server's sentence still comes through. */}
-          {error instanceof Error ? error.message : 'Could not accept them'}
-        </span>
-      )}
-    </div>
-  );
-}
-
 export function itemState(item: ItemResponse): {
   key: ItemStateKey;
   label: string;
@@ -331,7 +278,7 @@ export function itemState(item: ItemResponse): {
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService,
   showSearch = false, initialNeedsPrice = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
-  tickets, toolbarExtra, addBlockedBecause,
+  tickets, actions = [], toolbarNote, addBlockedBecause,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
@@ -569,6 +516,46 @@ export default function SwapItemsPanel({
   // for sale or sold until it does.
   const stockUnknown = (data?.items ?? []).filter((i) => itemState(i).key === 'stock_unknown').length;
 
+  /*
+   * Everything the toolbar can do, in one menu (the toolbar itself is for
+   * finding things). Add first; then the page's own; then accepting a seller's
+   * waiting items, offered only with that seller chosen and something waiting.
+   */
+  const sellerName = sellers?.find((sl) => sl.id === sellerFilter)?.displayName ?? 'this seller';
+  const waitingHere = (data?.items ?? []).filter((i) => !i.consignedAt).length;
+  const menu: MenuAction[] = [
+    ...(canManage
+      ? [{
+          key: 'add',
+          label: tickets && !tickets.optional ? 'Describe a ticket' : 'Add item',
+          disabledReason: addBlockedBecause,
+          onSelect: () => {
+            setShowForm(true);
+            setEditItem(null);
+            // Pre-filled with the lowest ticket nobody has described yet.
+            setForm({ ...emptyForm, sku: tickets?.suggested != null ? String(tickets.suggested) : '' });
+          },
+        }]
+      : []),
+    ...actions,
+    ...(sellerFilter && panelApi.consignAllForSeller && waitingHere > 0 && !consignAll.data
+      ? [{
+          key: 'accept',
+          label: consignAll.isPending ? 'Accepting…' : `Accept ${sellerName}’s items`,
+          disabledReason: consignAll.isPending ? 'Working on it.' : undefined,
+          onSelect: () => {
+            // Says the reach before it does anything: all of what? Every one
+            // this seller is waiting on, not just the rows on this page.
+            if (confirm(
+              `Accept everything ${sellerName} is still waiting on?\n\n` +
+              'This puts their items in Square and they go on sale. It applies to ' +
+              `all of their waiting items, not just the ones on this page.`,
+            )) consignAll.mutate();
+          },
+        }]
+      : []),
+  ];
+
   if (!swapId) return null;
   if (isLoading) return <p className="text-gray-400 text-sm">Loading…</p>;
 
@@ -581,7 +568,7 @@ export default function SwapItemsPanel({
       )}
       {/* Toolbar */}
       <div className="flex flex-wrap gap-2 items-center justify-between">
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center">
           {showSearch && (
             <input
               value={query}
@@ -626,41 +613,26 @@ export default function SwapItemsPanel({
             <option value="not_printed">Not printed</option>
             <option value="printed">Printed</option>
           </select>
+          <ActionsMenu actions={menu} />
         </div>
-        <div className="flex gap-2 items-center">
-        {sellerFilter && panelApi.consignAllForSeller && (
-          <ConsignAllButton
-            sellerName={sellers?.find((sl) => sl.id === sellerFilter)?.displayName ?? 'this seller'}
-            waiting={(data?.items ?? []).filter((i) => !i.consignedAt).length}
-            total={data?.total ?? 0}
-            pending={consignAll.isPending}
-            result={consignAll.data}
-            error={consignAll.error}
-            onConsign={() => consignAll.mutate()}
-          />
-        )}
-        {toolbarExtra}
-        {canManage && addBlockedBecause && (
-          <p className="text-xs text-gray-500 max-w-xs text-right">{addBlockedBecause}</p>
-        )}
-        {canManage && !addBlockedBecause && (
-          <button
-            onClick={() => {
-              setShowForm(true);
-              setEditItem(null);
-              // Pre-filled with the lowest ticket nobody has described yet.
-              setForm({
-                ...emptyForm,
-                sku: tickets?.suggested != null ? String(tickets.suggested) : '',
-              });
-            }}
-            className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
-          >
-            {tickets && !tickets.optional ? '+ Describe a Ticket' : '+ Add Item'}
-          </button>
-        )}
-        </div>
+        {toolbarNote}
       </div>
+
+      {consignAll.data && (
+        <p className="text-sm text-gray-400">
+          {consignAll.data.consigned === 0
+            ? 'Nothing was waiting.'
+            : `Accepted ${consignAll.data.consigned} item${consignAll.data.consigned === 1 ? '' : 's'}. They appear in Square shortly.`}
+        </p>
+      )}
+      {!!consignAll.error && (
+        <p className="text-sm text-red-400">
+          {/* `Error`, not `ApiError`: this panel takes its calls as a prop and
+              has no business knowing which client made them. ApiError extends
+              Error, so the server's sentence still comes through. */}
+          {consignAll.error instanceof Error ? consignAll.error.message : 'Could not accept them'}
+        </p>
+      )}
 
       {stockUnknown > 0 && (
         <p className="text-xs text-amber-400">
@@ -678,7 +650,7 @@ export default function SwapItemsPanel({
               <th className="pb-2 pr-4">Name</th>
               <th className="pb-2 pr-4">Price</th>
               {sellers && <th className="pb-2 pr-4">Seller</th>}
-              <th className="pb-2 pr-4">State</th>
+              <th className="pb-2 pr-4">Status</th>
               <th className="pb-2 pr-4" title="Tag printed"><FontAwesomeIcon icon={faTagDuo} /></th>
               {canManage && <th className="pb-2">Actions</th>}
             </tr>
