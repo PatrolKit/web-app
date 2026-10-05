@@ -214,6 +214,42 @@ export function matchesStatus(item: ItemResponse, filter: '' | StatusFilter): bo
   return itemState(item).key === filter;
 }
 
+// ─── Sorting ──────────────────────────────────────────────────────────────────
+
+export type ItemSortKey = 'sku' | 'name' | 'price' | 'seller' | 'status' | 'tag';
+export type SortDir = 'asc' | 'desc';
+
+/** Where an item is in its life, for sorting by Status: received, in Square, selling, sold. */
+const STATE_ORDER: ItemStateKey[] = ['not_received', 'not_in_square', 'stock_unknown', 'for_sale', 'sold'];
+
+const text = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+
+/**
+ * The rows sorted by one column. A missing value (no price, no seller) goes
+ * last either way, since it's what's being looked for or what's in the way, not
+ * a value. Ties keep SKU order, so a sort is the same from one load to the next.
+ */
+export function sortItems(items: ItemResponse[], key: ItemSortKey, dir: SortDir): ItemResponse[] {
+  const sign = dir === 'asc' ? 1 : -1;
+  const value = (i: ItemResponse): string | number | null => {
+    switch (key) {
+      case 'sku': return i.sku;
+      case 'name': return i.name;
+      case 'price': return i.priceCents;
+      case 'seller': return i.seller?.displayName ?? null;
+      case 'status': return STATE_ORDER.indexOf(itemState(i).key);
+      case 'tag': return i.hasPrintedTag ? 1 : 0;
+    }
+  };
+  return [...items].sort((a, b) => {
+    const va = value(a);
+    const vb = value(b);
+    if (va === null || vb === null) return va === vb ? text(a.sku, b.sku) : va === null ? 1 : -1;
+    const c = typeof va === 'number' && typeof vb === 'number' ? va - vb : text(String(va), String(vb));
+    return c !== 0 ? sign * c : text(a.sku, b.sku);
+  });
+}
+
 export function itemState(item: ItemResponse): {
   key: ItemStateKey;
   label: string;
@@ -286,6 +322,10 @@ export default function SwapItemsPanel({
   const [printFilter, setPrintFilter] = useState<'' | 'not_printed' | 'printed'>('');
   // The dashboard's "needs a price" link opens on that filter (Plan 32).
   const [stateFilter, setStateFilter] = useState<'' | StatusFilter>(initialStatus ?? '');
+  /** A column clicked: ascending, then descending, then back to the server's order. */
+  const [sort, setSort] = useState<{ key: ItemSortKey; dir: SortDir } | null>(null);
+  const toggleSort = (key: ItemSortKey) =>
+    setSort((cur) => (cur?.key !== key ? { key, dir: 'asc' } : cur.dir === 'asc' ? { key, dir: 'desc' } : null));
   /** Only tickets still waiting for a price, to work through before sales start (Plan 32). */
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ItemResponse | null>(null);
@@ -506,12 +546,14 @@ export default function SwapItemsPanel({
   }
 
   const isFormOpen = showForm || editItem !== null;
-  const items = (data?.items ?? [])
+  const filtered = (data?.items ?? [])
     .filter((i) => printFilter === 'printed' ? i.hasPrintedTag : printFilter === 'not_printed' ? !i.hasPrintedTag : true)
     // Through `itemState`, not through the underlying fields again: a filter
     // that decided for itself what "sold" meant could disagree with the column
     // beside it, and the column is the one that had to be corrected.
     .filter((i) => matchesStatus(i, stateFilter));
+  // Unsorted is the server's order, newest first.
+  const items = sort ? sortItems(filtered, sort.key, sort.dir) : filtered;
   const unpricedCount = (data?.items ?? []).filter((i) => i.priceCents === null).length;
   // Square didn't answer for some of what's in it: those rows can't be called
   // for sale or sold until it does.
@@ -651,12 +693,18 @@ export default function SwapItemsPanel({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-gray-400 text-left border-b border-gray-800">
-              <th className="pb-2 pr-4">SKU</th>
-              <th className="pb-2 pr-4">Name</th>
-              <th className="pb-2 pr-4">Price</th>
-              {sellers && <th className="pb-2 pr-4">Seller</th>}
-              <th className="pb-2 pr-4">Status</th>
-              <th className="pb-2 pr-4" title="Tag printed"><FontAwesomeIcon icon={faTagDuo} /></th>
+              <SortHeader label="SKU" field="sku" sort={sort} onSort={toggleSort} />
+              <SortHeader label="Name" field="name" sort={sort} onSort={toggleSort} />
+              <SortHeader label="Price" field="price" sort={sort} onSort={toggleSort} />
+              {sellers && <SortHeader label="Seller" field="seller" sort={sort} onSort={toggleSort} />}
+              <SortHeader label="Status" field="status" sort={sort} onSort={toggleSort} />
+              <SortHeader
+                label={<FontAwesomeIcon icon={faTagDuo} />}
+                name="Tag printed"
+                field="tag"
+                sort={sort}
+                onSort={toggleSort}
+              />
               {canManage && <th className="pb-2">Actions</th>}
             </tr>
           </thead>
@@ -1015,5 +1063,33 @@ export default function SwapItemsPanel({
         </div>
       )}
     </div>
+  );
+}
+
+/** A column heading that sorts by it: a button, so the keyboard can too. */
+function SortHeader({ label, name, field, sort, onSort }: {
+  label: ReactNode;
+  /** Said for a heading that's only an icon. */
+  name?: string;
+  field: ItemSortKey;
+  sort: { key: ItemSortKey; dir: SortDir } | null;
+  onSort: (key: ItemSortKey) => void;
+}) {
+  const active = sort?.key === field;
+  return (
+    <th className="pb-2 pr-4" aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        title={name ? `Sort by ${name.toLowerCase()}` : undefined}
+        aria-label={name}
+        className={`inline-flex items-center gap-1 whitespace-nowrap select-none hover:text-white ${active ? 'text-white' : ''}`}
+      >
+        {label}
+        <span className={active ? 'text-gray-300' : 'text-gray-600'} aria-hidden="true">
+          {active ? (sort!.dir === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    </th>
   );
 }
