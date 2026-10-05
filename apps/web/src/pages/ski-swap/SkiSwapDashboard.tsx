@@ -14,7 +14,7 @@ function StatTile({ label, value, note }: { label: string; value: string | numbe
   return (
     <div className="bg-surface-50 border border-gray-800 rounded-lg p-4">
       <p className="text-gray-400 text-xs uppercase tracking-wide mb-1">{label}</p>
-      <p className="text-2xl font-bold text-white">{value}</p>
+      <p className="text-2xl font-bold text-white">{typeof value === 'number' ? value.toLocaleString('en-US') : value}</p>
       {note && <p className="text-xs text-gray-500 mt-0.5">{note}</p>}
     </div>
   );
@@ -31,8 +31,8 @@ export default function SkiSwapDashboard() {
     queryKey: ['ski-swap/stats', orgId, selectedSwap?.id],
     queryFn: () => api.skiSwap.getStats(orgId, selectedSwap!.id),
     enabled: !!selectedSwap,
-    // Sales move at the register, not on this page: read again each minute,
-    // or the figures stand still until a reload.
+    // Check-in moves these: read again each minute, or the figures stand
+    // still until a reload. Our own rows, so it costs no Square read.
     refetchInterval: 60_000,
   });
 
@@ -77,19 +77,16 @@ export default function SkiSwapDashboard() {
     );
   }
 
-  // Sold and revenue come from Square. When it could not be read they are
-  // unknown, not zero, and a dash says so where a number would be believed.
-  const stockKnown = stats?.inventoryKnown ?? false;
-  const revenue = stats && stockKnown ? dollars(stats.grossRevenueCents) : '—';
   const consignedUnpriced = stats?.consignedUnpriced ?? 0;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      {/* Our own rows only (Plan 39 D6): no Square read. Sales are in Square's
+          own reports. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <StatTile label="Total Items" value={stats?.totalItems ?? '—'} />
         <StatTile label="Sellers" value={stats?.totalSellers ?? '—'} />
-        {/* What's on the floor, from our own rows: it climbs through check-in,
-            while revenue waits for the first sale. */}
+        {/* What's on the floor: it climbs through check-in. */}
         <StatTile
           label="Consigned Value"
           value={stats ? dollars(stats.consignedValueCents) : '—'}
@@ -98,20 +95,7 @@ export default function SkiSwapDashboard() {
               + (consignedUnpriced > 0 ? ` · ${consignedUnpriced.toLocaleString('en-US')} not priced yet` : '')
             : undefined}
         />
-        <StatTile label="Items Sold" value={stockKnown ? (stats?.itemsSold ?? '—') : '—'} />
-        <StatTile label="Est. Revenue" value={revenue} note="Items sold, at listed prices" />
       </div>
-      {stats && !stockKnown && (
-        <p className="text-xs text-amber-300">
-          Square could not be read just now, so sold counts and revenue are unavailable. Reload in a moment.
-        </p>
-      )}
-      {stats && stockKnown && stats.unpricedSold > 0 && (
-        <p className="text-xs text-gray-400">
-          Revenue leaves out {stats.unpricedSold} ticket{stats.unpricedSold === 1 ? '' : 's'} sold before
-          {stats.unpricedSold === 1 ? ' it was' : ' they were'} priced, at a price typed at the register. A payout run records those prices.
-        </p>
-      )}
 
       {/* Each card says what's wrong and what to do, and goes where it's
           done. Shown only when there is something to act on: a zero here is
@@ -120,7 +104,7 @@ export default function SkiSwapDashboard() {
       {/* Nothing here accepts an item: that happens at the table, on the
           staff iPad. The link shows which ones. */}
       {(waiting?.total ?? 0) > 0 && (
-        <Link to="/dashboard/ski-swap/items?show=not-received" className={`${issueCard} hover:border-amber-600`}>
+        <Link to="/dashboard/ski-swap/items?status=not_received" className={`${issueCard} hover:border-amber-600`}>
           <p className="text-amber-300 text-sm font-medium">
             {waiting!.total} {waiting!.total === 1 ? 'item is' : 'items are'} waiting to be accepted
           </p>
@@ -133,7 +117,7 @@ export default function SkiSwapDashboard() {
 
       {(stats?.unpricedItems ?? 0) > 0 && (
         <Link
-          to={canManage ? '/dashboard/ski-swap/items?show=needs-price&fast-edit=1' : '/dashboard/ski-swap/items?show=needs-price'}
+          to={canManage ? '/dashboard/ski-swap/items?status=needs_price&fast-edit=1' : '/dashboard/ski-swap/items?status=needs_price'}
           className={`${issueCard} hover:border-amber-600`}
         >
           <p className="text-amber-300 text-sm font-medium">

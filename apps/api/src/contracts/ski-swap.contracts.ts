@@ -550,6 +550,13 @@ export class CreateItemDto extends createZodDto(CreateItemSchema) {}
 export class PatchItemDto extends createZodDto(PatchItemSchema) {}
 export type ItemResponse = z.infer<typeof ItemResponseSchema>;
 
+/**
+ * An item as a device gets it (Plan 39 D8): no stock. The iPads never read
+ * it, so the server neither reads Square for them nor sends it.
+ */
+export const DeviceItemResponseSchema = ItemResponseSchema.omit({ inStock: true, soldCount: true, inventoryKnown: true });
+export type DeviceItemResponse = z.infer<typeof DeviceItemResponseSchema>;
+
 // ─── Public seller lookup ─────────────────────────────────────────────────────
 
 export const PublicSellerItemSchema = z.object({

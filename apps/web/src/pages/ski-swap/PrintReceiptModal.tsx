@@ -41,13 +41,16 @@ export default function PrintReceiptModal({ seller, initialSwapId, onClose }: Pr
     ? `This swap prints receipts on ${paperLabel(printPaper)} mm labels; this printer has ${paperLabel(preferredPrinter.paperSize)}.`
     : null;
 
-  const { data: itemsData, isLoading: itemsLoading, error: itemsError } = useQuery({
-    queryKey: ['ski-swap/items', orgId, swapId, seller?.id],
-    queryFn: () => api.skiSwap.listItems(orgId, swapId!, { sellerId: seller!.id }),
+  /**
+   * The seller's items at listed prices, counted on the server (Plan 39 D7):
+   * a page of the list held only the first 50, and a shop has more.
+   */
+  const { data: summary, isLoading: itemsLoading, error: itemsError } = useQuery({
+    queryKey: ['ski-swap/items', orgId, swapId, seller?.id, 'summary'],
+    queryFn: () => api.skiSwap.sellerItemsSummary(orgId, swapId!, seller!.id),
     enabled,
     staleTime: 30_000,
   });
-  const items = itemsData?.items ?? [];
 
   /**
    * What has already gone out, so a volunteer can see whether to send again.
@@ -66,9 +69,10 @@ export default function PrintReceiptModal({ seller, initialSwapId, onClose }: Pr
   if (!seller) return null;
 
   const isLoading = itemsLoading;
-  // Priced items only; a ticket checked in before its price is counted apart (Plan 32).
-  const totalCents = items.reduce((sum, it) => sum + (it.priceCents ?? 0) * it.inStock, 0);
-  const unpricedCount = items.filter((it) => it.priceCents === null).length;
+  // Listed value, as checked in; a ticket without a price is counted apart (Plan 32).
+  const itemCount = summary?.items ?? 0;
+  const totalCents = summary?.listedValueCents ?? 0;
+  const unpricedCount = summary?.unpriced ?? 0;
 
   async function handleSend() {
     setSending(true);
@@ -130,9 +134,9 @@ export default function PrintReceiptModal({ seller, initialSwapId, onClose }: Pr
             <p className="text-red-400 text-xs mt-1">Failed to load items</p>
           ) : (
             <div className="mt-1 space-y-0.5">
-              <p className="text-gray-400 text-xs">{items.length} item{items.length !== 1 ? 's' : ''}</p>
+              <p className="text-gray-400 text-xs">{itemCount.toLocaleString('en-US')} item{itemCount !== 1 ? 's' : ''}</p>
               <p className="text-gray-400 text-xs">
-                Total value: ${(totalCents / 100).toFixed(2)}
+                Listed value: ${(totalCents / 100).toFixed(2)}
                 {unpricedCount > 0 && ` (${unpricedCount} with price to come)`}
               </p>
             </div>

@@ -20,6 +20,8 @@ import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
 import { stationCodeOf, uncategorisedName } from './sku.util';
 import type { ItemResponse, UnpricedTicket } from '../contracts/ski-swap.contracts';
+import { sortRows, type ItemListView } from './item-list-order';
+import { servingDevice } from './device-stock.interceptor';
 
 export interface ItemPhotoResponse { id: string; url: string; }
 
@@ -90,7 +92,10 @@ export class ItemService {
     private readonly taxonomy: TaxonomyService,
   ) {}
 
-  async list(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string; consigned?: boolean; walk?: boolean; after?: { updatedAt: Date; id: string } }): Promise<{ items: ItemResponse[]; total: number; syncedAt: string; nextAfter?: string }> {
+  async list(orgId: string, swapId: string, opts: {
+    query?: string; sellerId?: string; skip?: number; take?: number; updatedSince?: string; consigned?: boolean;
+    walk?: boolean; after?: { updatedAt: Date; id: string };
+  } & ItemListView): Promise<{ items: ItemResponse[]; total: number; syncedAt: string; nextAfter?: string }> {
     /*
      * Read before the query, not after (iOS Plan 17 D).
      *
@@ -108,51 +113,100 @@ export class ItemService {
     //
     // The same rule `list` on sellers follows, and for the same reason. It is
     // the only read in the codebase allowed to see a tombstone.
+    /*
+     * Search: the item's own name and SKU, or a seller whose name, email or
+     * phone matches. The sellers are found first, in one small query, so the
+     * item filter is an id list rather than a join per row (Plan 39).
+     */
+    const searchSellerIds = opts.query ? await this.sellersMatching(orgId, opts.query) : [];
     const where = {
       swapId, orgId,
       ...(opts.updatedSince ? {} : { deletedAt: null }),
-      ...(opts.query ? { OR: [
-        { name: { contains: opts.query } },
-        { sku: { contains: opts.query } },
-        { seller: { businessName: { contains: opts.query } } },
-        { seller: { membership: { user: { firstName: { contains: opts.query } } } } },
-        { seller: { membership: { user: { lastName: { contains: opts.query } } } } },
-        { seller: { membership: { user: { email: { contains: opts.query } } } } },
-        // Only when the query has digits in it. Stripped of letters, "rossignol"
-        // is the empty string, and `contains: ''` is every phone there is.
-        ...(opts.query.replace(/\D/g, '')
-          ? [{ seller: { membership: { user: { phone: { contains: opts.query.replace(/\D/g, '') } } } } }]
-          : []),
-      ] } : {}),
       ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
       ...(opts.updatedSince ? { updatedAt: { gt: new Date(opts.updatedSince) } } : {}),
-      /*
-       * Keyset paging for the full pass (iOS Plan 17 E).
-       *
-       * `skip`/`take` walks a moving list: an item inserted by another station
-       * between two pages shifts a live one off the end of a page, and the
-       * client — which deletes whatever did not come back — deletes it. A
-       * cursor of `(updatedAt, id)` cannot skip a row that way, because it
-       * names where it got to rather than how far along it was.
-       *
-       * `id` breaks the tie: `updatedAt` is not unique, and a cursor on it
-       * alone would either repeat or skip the rows sharing a millisecond.
-       */
-      ...(opts.after
-        ? {
-            OR: [
-              { updatedAt: { gt: opts.after.updatedAt } },
-              { updatedAt: opts.after.updatedAt, id: { gt: opts.after.id } },
-            ],
-          }
-        : {}),
+      // Two `OR`s, the search's and the cursor's, each its own entry in `AND`,
+      // so neither replaces the other.
+      AND: [
+        ...(opts.query ? [{ OR: [
+          { name: { contains: opts.query } },
+          { sku: { contains: opts.query } },
+          ...(searchSellerIds.length ? [{ sellerId: { in: searchSellerIds } }] : []),
+        ] }] : []),
+        /*
+         * Keyset paging for the full pass (iOS Plan 17 E).
+         *
+         * `skip`/`take` walks a moving list: an item inserted by another station
+         * between two pages shifts a live one off the end of a page, and the
+         * client — which deletes whatever did not come back — deletes it. A
+         * cursor of `(updatedAt, id)` cannot skip a row that way, because it
+         * names where it got to rather than how far along it was.
+         *
+         * `id` breaks the tie: `updatedAt` is not unique, and a cursor on it
+         * alone would either repeat or skip the rows sharing a millisecond.
+         */
+        ...(opts.after
+          ? [{
+              OR: [
+                { updatedAt: { gt: opts.after.updatedAt } },
+                { updatedAt: opts.after.updatedAt, id: { gt: opts.after.id } },
+              ],
+            }]
+          : []),
+      ],
       // What a staff member still has to look through, or what has been taken.
       ...(opts.consigned === undefined
         ? {}
         : opts.consigned
           ? { consignedAt: { not: null } }
           : { consignedAt: null }),
+      ...(opts.printed === undefined ? {} : { hasPrintedTag: opts.printed }),
+      // Each is a fact about our own row (D2): never a Square read.
+      ...(opts.status === 'not_received' ? { consignedAt: null } : {}),
+      ...(opts.status === 'not_in_square' ? { consignedAt: { not: null }, squareVariationId: null } : {}),
+      ...(opts.status === 'needs_price' ? { priceCents: null } : {}),
     };
+
+    // Sorted (D3): every matching row, light, sorted here, then the page cut
+    // from it and read in full. See `item-list-order.ts` for why not SQL.
+    if (opts.sort && !opts.walk) {
+      const light = await this.prisma.swapItem.findMany({
+        // A screen's read, never the delta: no tombstones.
+        where: { ...where, deletedAt: null },
+        select: { id: true, sku: true, name: true, priceCents: true, hasPrintedTag: true, sellerId: true },
+      });
+      // Sellers' names once each, for the sort that reads them, not a join per row.
+      const sellerNames = new Map<string, string | null>();
+      if (opts.sort === 'seller') {
+        const ids = [...new Set(light.map((r) => r.sellerId).filter((id): id is string => !!id))];
+        const sellers = await this.prisma.sellerProfile.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, businessName: true, ...SELLER_NAME_INCLUDE },
+        });
+        for (const sl of sellers) sellerNames.set(sl.id, sellerDisplayName(sl));
+      }
+      const ordered = sortRows(
+        light.map((r) => ({ ...r, sellerName: r.sellerId ? sellerNames.get(r.sellerId) ?? null : null })),
+        opts.sort,
+        opts.dir ?? 'asc',
+      );
+      const skip = opts.skip ?? 0;
+      const pageIds = ordered.slice(skip, skip + (opts.take ?? 50)).map((r) => r.id);
+      const rows = await this.prisma.swapItem.findMany({
+        where: { id: { in: pageIds }, deletedAt: null },
+        include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
+      });
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const page = pageIds.map((id) => byId.get(id)).filter((r): r is (typeof rows)[number] => !!r);
+      const [inventoryMap, descriptions] = await Promise.all([
+        this.displayStock(orgId, swap, page),
+        this.fetchDescriptions(page),
+      ]);
+      return {
+        total: ordered.length,
+        syncedAt: syncedAt.toISOString(),
+        items: page.map((i) => this.toResponse(i, inventoryMap, descriptions)),
+      };
+    }
     /*
      * One transaction, so `total` describes the page beside it rather than a
      * list that moved between the two statements.
@@ -172,7 +226,7 @@ export class ItemService {
       this.prisma.swapItem.count({ where }),
     ]);
     const [inventoryMap, descriptions] = await Promise.all([
-      this.fetchInventoryMap(orgId, swap, items),
+      this.displayStock(orgId, swap, items),
       this.fetchDescriptions(items),
     ]);
     /*
@@ -195,12 +249,50 @@ export class ItemService {
     };
   }
 
+  /**
+   * The org's sellers whose business name, first or last name, email or phone
+   * contains the search: what the Items search matches a seller by.
+   */
+  private async sellersMatching(orgId: string, query: string): Promise<string[]> {
+    // Only when the query has digits in it. Stripped of letters, "rossignol"
+    // is the empty string, and `contains: ''` is every phone there is.
+    const digits = query.replace(/\D/g, '');
+    const rows = await this.prisma.sellerProfile.findMany({
+      where: {
+        membership: { orgId },
+        OR: [
+          { businessName: { contains: query } },
+          { membership: { user: { firstName: { contains: query } } } },
+          { membership: { user: { lastName: { contains: query } } } },
+          { membership: { user: { email: { contains: query } } } },
+          ...(digits ? [{ membership: { user: { phone: { contains: digits } } } }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }
+
+  /** A seller's items in the swap, at listed prices (Plan 39 D7). Our own rows only. */
+  async sellerSummary(orgId: string, swapId: string, sellerId: string): Promise<{ items: number; listedValueCents: number; unpriced: number }> {
+    await this.findSwapOrThrow(orgId, swapId);
+    const rows = await this.prisma.swapItem.findMany({
+      where: { orgId, swapId, sellerId, deletedAt: null },
+      select: { priceCents: true, originalQuantity: true },
+    });
+    return {
+      items: rows.length,
+      listedValueCents: rows.reduce((sum, r) => sum + (r.priceCents ?? 0) * r.originalQuantity, 0),
+      unpriced: rows.filter((r) => r.priceCents === null).length,
+    };
+  }
+
   async get(orgId: string, swapId: string, itemId: string): Promise<ItemResponse> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, swapId, orgId, deletedAt: null }, include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } } });
     if (!item) throw new NotFoundException('Item not found');
     const [inventoryMap, descriptions] = await Promise.all([
-      this.fetchInventoryMap(orgId, swap, [item]),
+      this.displayStock(orgId, swap, [item]),
       this.fetchDescriptions([item]),
     ]);
     return this.toResponse(item, inventoryMap, descriptions);
@@ -489,7 +581,7 @@ export class ItemService {
     // Inventory is a Square read, so it goes with the write it belongs to.
     const inventoryMap = data.deferPos
       ? new Map<string, number>()
-      : await this.fetchInventoryMap(orgId, swap, [refreshed]);
+      : await this.displayStock(orgId, swap, [refreshed]);
     const descriptions = await this.fetchDescriptions([refreshed]);
     const response = this.toResponse(refreshed, inventoryMap, descriptions);
 
@@ -609,7 +701,7 @@ export class ItemService {
         ? await this.consign(orgId, swapId, itemId, data.actorId ?? null)
         : await (async () => {
             const [inventoryMap, descriptions] = await Promise.all([
-              this.fetchInventoryMap(orgId, swap, [updated]),
+              this.displayStock(orgId, swap, [updated]),
               this.fetchDescriptions([updated]),
             ]);
             return this.toResponse(updated, inventoryMap, descriptions);
@@ -924,7 +1016,7 @@ export class ItemService {
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
     });
     if (!item) throw new NotFoundException(`No item in this swap has tag ${tag}.`);
-    const inventoryMap = await this.fetchInventoryMap(orgId, swap, [item]);
+    const inventoryMap = await this.displayStock(orgId, swap, [item]);
     return this.toResponse(item, inventoryMap);
   }
 
@@ -1074,7 +1166,7 @@ export class ItemService {
       where: { id: itemId, deletedAt: null },
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
     });
-    const inventoryMap = await this.fetchInventoryMap(orgId, swap, [item]);
+    const inventoryMap = await this.displayStock(orgId, swap, [item]);
     return this.toResponse(item, inventoryMap);
   }
 
@@ -1236,6 +1328,15 @@ export class ItemService {
     const stock = await this.fetchInventoryMap(orgId, swap, items);
     if (stock === null) return new Set();
     return new Set(items.filter((i) => i.squareVariationId && (stock.get(i.squareVariationId) ?? 0) < 1).map((i) => i.id));
+  }
+
+  /**
+   * Stock for showing, not for deciding (Plan 39): skipped for a device, which
+   * never reads it and gets no stock fields (D8). `soldAmong`, which decides,
+   * reads Square whoever is asking.
+   */
+  private async displayStock(orgId: string, swap: { locationId: string }, items: { squareVariationId: string | null }[]): Promise<Map<string, number> | null> {
+    return servingDevice() ? new Map() : this.fetchInventoryMap(orgId, swap, items);
   }
 
   private async fetchInventoryMap(orgId: string, swap: { locationId: string }, items: { squareVariationId: string | null }[]): Promise<Map<string, number> | null> {

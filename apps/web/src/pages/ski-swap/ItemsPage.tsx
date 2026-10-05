@@ -10,17 +10,11 @@ import {
 import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import SwapItemsPanel, { type StatusFilter } from './SwapItemsPanel';
+import SwapItemsPanel from './SwapItemsPanel';
 import ProxyItemImportModal from './ProxyItemImportModal';
 import TicketFastEdit from './TicketFastEdit';
 import ReturnTicketsModal from './ReturnTicketsModal';
 import TicketSquareModal, { useTicketPushStatus } from './TicketSquareModal';
-
-/** `?show=` values the dashboard links with, and the status filter each opens. */
-const LINKED_STATUS: Record<string, StatusFilter | undefined> = {
-  'needs-price': 'needs_price',
-  'not-received': 'not_received',
-};
 
 export default function ItemsPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
@@ -102,7 +96,6 @@ export default function ItemsPage() {
       swapId={swapId}
       canManage={canManage}
       showSearch
-      initialStatus={LINKED_STATUS[searchParams.get('show') ?? '']}
       sellers={sellers}
       queryKeyPrefix="ski-swap/items"
       labelsPerItem={labelsPerItem}

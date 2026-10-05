@@ -18,7 +18,7 @@ sales from Square's orders.
 |---|---|
 | Requests to open the Items page | 50, one after another (200 items each) |
 | Square stock reads to open it | at least 50, one per batch, more where Square splits its answers into pages |
-| Sent to the browser | roughly 15–20 MB: photos, answers and seller on every row |
+| Sent to the browser | 5.7 MB, measured: photos, answers and seller on every row |
 | After any save, delete, print, accept, or closing Fast Edit | all of the above again |
 | 5 staff during check-in | hundreds of Square reads a minute, and multi-megabyte responses built on a 1 GB server |
 | Dashboard, with the one-minute refresh already committed | every item's stock from Square, every minute, per open dashboard |
@@ -61,9 +61,14 @@ and total value are wrong for any seller with more than 50 items.
   - `status=not_received|not_in_square|needs_price`;
   - `printed=true|false`;
   - `sort=sku|name|price|seller|tag` and `dir=asc|desc`.
-- **All of it runs in SQL**, beside the existing `query` and `sellerId`:
-  - SKU sorts as a number: by length, then value.
-  - Seller sorts by the name shown: the business name, or first and last.
+- **Filters run in SQL**, beside the existing `query` and `sellerId`. The search
+  finds matching sellers first, in one small query, and filters items by their
+  ids rather than joining every row to its seller.
+- **Sorting reads every matching row's id and sort fields, sorts them, and cuts
+  the page** (`item-list-order.ts`). SQL can't sort SKUs as numbers or names the
+  way people read them without per-column tricks:
+  - SKU sorts as a number ("9" before "100").
+  - Seller sorts by the name shown: the business name, or first and last, read once per seller.
   - A missing price or seller sorts last either way, and ties sort by SKU, as the table does now.
 - **The page** is read with the usual includes for its 50 ids, plus one Square stock read for those in Square (D4).
 - **Other callers keep the defaults:** no `sort` means newest first.
@@ -107,6 +112,22 @@ and total value are wrong for any seller with more than 50 items.
   can go first.
 
 ## Tests
+
+**Measured** against a scratch database with 10,000 items, 300 sellers and
+3,334 photos, on a development server with no Square:
+
+| | Server time (median) | Response |
+|---|---|---|
+| A page, newest first | 33 ms | 30 KB |
+| Sorted by SKU, price or name | 43–45 ms | 30 KB |
+| Sorted by seller | 69 ms | 31 KB |
+| Needs a price, or Not in Square and not printed | 28–31 ms | 30–33 KB |
+| A search, sorted | 39 ms | 33 KB |
+| Dashboard figures | 61 ms | 0.2 KB |
+| Receipt figures | 4 ms | 0.1 KB |
+| Five clients, 100 requests | p95 102 ms, max 131 ms | |
+| Today's full load, for comparison | 50 requests, 2.1 s | 5.7 MB |
+
 
 - **Scale,** against a scratch database with 10,000 items, sellers and photos:
   - each sort and filter, with and without search, for query time and response size;

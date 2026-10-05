@@ -457,24 +457,35 @@ export interface TicketSeller {
   usedCount: number;
 }
 
+/** The dashboard's figures, from our own rows only (Plan 39 D6): sales live in Square. */
 export interface SwapStats {
   totalItems: number;
   totalSellers: number;
-  itemsSold: number;
-  /** At listed prices, so priced items only. */
-  grossRevenueCents: number;
-  /** Units of tickets sold before they were priced, not in the revenue above (Plan 32). */
-  unpricedSold: number;
-  /** Tickets still without a price, sold or not (Plan 32). */
+  /** Tickets still without a price (Plan 32). */
   unpricedItems: number;
-  /** False when Square could not be read; sold and revenue are then 0, not answers. */
-  inventoryKnown: boolean;
-  /** Priced, consigned items at listed prices, sold or not: moves during check-in. */
+  /** Priced, consigned items at listed prices: moves during check-in. */
   consignedValueCents: number;
   /** Consigned items, priced or not. */
   consignedItems: number;
   /** Consigned items still without a price, so not in the value. */
   consignedUnpriced: number;
+}
+
+/** The Items page's filters and sort (Plan 39): every one answered by the server. */
+export type ItemListStatus = 'not_received' | 'not_in_square' | 'needs_price';
+export type ItemListSort = 'sku' | 'name' | 'price' | 'seller' | 'tag';
+export interface ItemListView {
+  status?: ItemListStatus;
+  printed?: boolean;
+  sort?: ItemListSort;
+  dir?: 'asc' | 'desc';
+}
+
+/** A seller's items in a swap at listed prices, for the Receipt popup (Plan 39 D7). */
+export interface SellerItemsSummary {
+  items: number;
+  listedValueCents: number;
+  unpriced: number;
 }
 
 export interface SquareConfigResponse {

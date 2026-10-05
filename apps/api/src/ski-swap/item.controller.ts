@@ -3,6 +3,8 @@ import {
   Body, Controller, Delete, Get, Headers, HttpCode, Param,
   Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
+import { DeviceStockInterceptor } from './device-stock.interceptor';
+import { parseItemListView } from './item-list-order';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
@@ -23,6 +25,8 @@ import type { Request } from 'express';
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireDeviceRole('ski_swap.staff_check_in')
 @RequireModule('ski_swap')
+// Item responses to a device carry no stock, and read none (Plan 39 D8).
+@UseInterceptors(DeviceStockInterceptor)
 export class ItemController {
   constructor(
     private readonly itemService: ItemService,
@@ -52,9 +56,15 @@ export class ItemController {
      */
     @Query('walk') walk?: string,
     @Query('after') after?: string,
+    /** The Items page's filters and sort (Plan 39). */
+    @Query('status') status?: string,
+    @Query('printed') printed?: string,
+    @Query('sort') sort?: string,
+    @Query('dir') dir?: string,
   ) {
     const cursor = after ? decodeCursor(after) : null;
     if (after && !cursor) throw new BadRequestException('That page cursor is not one of ours.');
+    const view = parseItemListView({ status, printed, sort, dir });
 
     return this.itemService.list(orgId, swapId, {
       query,
@@ -67,7 +77,20 @@ export class ItemController {
       // cannot accidentally drop back to offset order on page two.
       walk: walk === 'true' || !!cursor,
       ...(cursor ? { after: cursor } : {}),
+      ...view,
     });
+  }
+
+  /**
+   * A seller's items in the swap, for the Receipt popup (Plan 39 D7): how many,
+   * their listed value as checked in, and how many still need a price. Our own
+   * rows only; no Square read.
+   */
+  @Get('summary')
+  @RequirePermissions('ski_swap:report')
+  summary(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @Query('sellerId') sellerId?: string) {
+    if (!sellerId) throw new BadRequestException('sellerId is required');
+    return this.itemService.sellerSummary(orgId, swapId, sellerId);
   }
 
   /**

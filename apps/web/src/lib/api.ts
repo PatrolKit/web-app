@@ -33,6 +33,16 @@ async function silentRefresh(): Promise<boolean> {
   }
 }
 
+
+/** The Items page's filters and sort, onto a query string (Plan 39). */
+function setListView(params: URLSearchParams, view?: import('./api.types').ItemListView) {
+  if (view?.status) params.set('status', view.status);
+  if (view?.printed !== undefined) params.set('printed', String(view.printed));
+  if (view?.sort) {
+    params.set('sort', view.sort);
+    params.set('dir', view.dir ?? 'asc');
+  }
+}
 let refreshPromise: Promise<boolean> | null = null;
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -593,7 +603,7 @@ export const api = {
         query?: string; sellerId?: string; skip?: number; take?: number;
         /** `false` for what is still waiting to be accepted, `true` for what is on the floor. */
         consigned?: boolean;
-      },
+      } & import('./api.types').ItemListView,
     ) => {
       const params = new URLSearchParams();
       if (opts?.query) params.set('query', opts.query);
@@ -601,6 +611,7 @@ export const api = {
       if (opts?.skip !== undefined) params.set('skip', String(opts.skip));
       if (opts?.take !== undefined) params.set('take', String(opts.take));
       if (opts?.consigned !== undefined) params.set('consigned', String(opts.consigned));
+      setListView(params, opts);
       const qs = params.toString();
       return request<{ items: import('./api.types').ItemResponse[]; total: number }>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items${qs ? `?${qs}` : ''}`
@@ -616,6 +627,12 @@ export const api = {
       request<{ consigned: number }>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/consign`,
         { method: 'POST', body: JSON.stringify({ sellerId }) },
+      ),
+
+    /** A seller's items in the swap at listed prices, for the Receipt popup (Plan 39 D7). */
+    sellerItemsSummary: (orgId: string, swapId: string, sellerId: string) =>
+      request<import('./api.types').SellerItemsSummary>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/summary?sellerId=${encodeURIComponent(sellerId)}`,
       ),
 
     /** Who staff may upload a file for: everyone holding tickets in this swap. */
@@ -914,11 +931,12 @@ export const api = {
       }),
     sellerListSwaps: (orgId: string) =>
       request<{ id: string; title: string; labelsPerItem: number }[]>(`/orgs/${orgId}/ski-swap/seller/me/swaps`),
-    sellerListItems: (orgId: string, swapId?: string, opts?: { skip?: number; take?: number }) => {
+    sellerListItems: (orgId: string, swapId?: string, opts?: { skip?: number; take?: number } & import('./api.types').ItemListView) => {
       const params = new URLSearchParams();
       if (swapId) params.set('swapId', swapId);
       if (opts?.skip !== undefined) params.set('skip', String(opts.skip));
       if (opts?.take !== undefined) params.set('take', String(opts.take));
+      setListView(params, opts);
       const qs = params.toString();
       return request<{ items: import('./api.types').ItemResponse[]; total: number }>(
         `/orgs/${orgId}/ski-swap/seller/me/items${qs ? `?${qs}` : ''}`

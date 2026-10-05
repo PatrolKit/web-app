@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ITEM_STATE_FILTERS, itemState, matchesStatus } from './SwapItemsPanel';
+import { ITEM_STATE_FILTERS, itemState } from './SwapItemsPanel';
 import type { ItemResponse } from '../../lib/api.types';
 
 /**
@@ -85,39 +85,12 @@ describe('itemState', () => {
   });
 
   /**
-   * The filter beside this column selects on `key`. If a state existed that no
-   * option could reach, it would be a row nobody could search for — and the
-   * failed-push state is the one somebody most needs to find. "Stock unknown"
-   * is the exception: it's Square not answering, not something about the
-   * item, and a notice above the table says so instead.
+   * Only what our own rows answer, so the server can filter a large swap
+   * without asking Square (Plan 39 D2). For sale and Sold aren't filters.
    */
-  it('offers a filter for every state an item can be in', () => {
-    const reachable = [
-      itemState(item()),
-      itemState(item({ inStock: 0 })),
-      itemState(item({ consignedAt: null, squareSynced: false, inStock: 0 })),
-      itemState(item({ squareSynced: false, inStock: 0 })),
-    ].map((s) => s.key);
-
-    expect(new Set(reachable).size).toBe(4);
-    for (const key of reachable) {
-      expect(ITEM_STATE_FILTERS.some((f) => f.value === key)).toBe(true);
-    }
-    expect(ITEM_STATE_FILTERS.map((f) => f.label)).toEqual([
-      'Not yet received', 'For sale', 'Sold', 'Not in Square', 'Needs a price',
-    ]);
-  });
-
-  it('filters on status, and on a missing price whatever the status', () => {
-    expect(matchesStatus(item({ inStock: 0 }), 'sold')).toBe(true);
-    expect(matchesStatus(item({ inStock: 0 }), 'for_sale')).toBe(false);
-    expect(matchesStatus(item({ priceCents: null }), 'needs_price')).toBe(true);
-    expect(matchesStatus(item({ priceCents: null, consignedAt: null }), 'needs_price')).toBe(true);
-    expect(matchesStatus(item(), 'needs_price')).toBe(false);
-    // Stock unknown is under none of the stock states.
-    expect(matchesStatus(item({ inventoryKnown: false }), 'for_sale')).toBe(false);
-    expect(matchesStatus(item({ inventoryKnown: false }), 'sold')).toBe(false);
-    expect(matchesStatus(item({ inventoryKnown: false }), '')).toBe(true);
+  it('offers the filters the server answers from our own rows', () => {
+    expect(ITEM_STATE_FILTERS.map((f) => f.value)).toEqual(['not_received', 'not_in_square', 'needs_price']);
+    expect(ITEM_STATE_FILTERS.map((f) => f.label)).toEqual(['Not yet received', 'Not in Square', 'Needs a price']);
   });
 
   it('gives every state a tone and an explanation', () => {

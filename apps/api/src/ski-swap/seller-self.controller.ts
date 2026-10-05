@@ -1,4 +1,5 @@
 import { CheckinSessionAllowed } from '../common/decorators/checkin-session-allowed.decorator';
+import { parseItemListView } from './item-list-order';
 import {
   Body,
   Controller,
@@ -113,10 +114,16 @@ export class SellerSelfController {
     @Query('swapId') swapId?: string,
     @Query('skip') skip?: string,
     @Query('take') take?: string,
+    /** The same filters and sort as the staff list (Plan 39). */
+    @Query('status') status?: string,
+    @Query('printed') printed?: string,
+    @Query('sort') sort?: string,
+    @Query('dir') dir?: string,
   ) {
     return this.sellerSelfService.listItems(orgId, user.userId, swapId, {
       skip: skip ? parseInt(skip, 10) : undefined,
       take: take ? parseInt(take, 10) : undefined,
+      ...parseItemListView({ status, printed, sort, dir }),
     });
   }
 

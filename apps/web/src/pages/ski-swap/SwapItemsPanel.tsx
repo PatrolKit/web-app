@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheckDouble as faCheckDoubleDuo, faPlus as faPlusDuo, faTicket as faTicketDuo, faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
-import type { ItemAttributeInput, ItemResponse, SellerResponse } from '../../lib/api.types';
+import type { ItemAttributeInput, ItemListSort, ItemListStatus, ItemListView, ItemResponse, SellerResponse } from '../../lib/api.types';
 import SearchableSelect from '../../components/SearchableSelect';
 import ActionsMenu, { type MenuAction } from '../../components/ActionsMenu';
 import ItemDescriber, {
@@ -17,16 +17,12 @@ import { priceInput, priceInputCents } from '../../lib/money';
 
 export interface SwapItemsPanelApi {
   /**
-   * `sellerId` is applied by the server, not by filtering what came back.
-   *
-   * The server answers a page at a time (`skip`/`take`), and the panel asks
-   * for every page: the state and tag filters are applied here, so a list
-   * that stopped at the server's default of fifty hid everything past it from
-   * "Not printed" and "Not yet received" with nothing on screen to say so.
+   * One page, filtered, sorted and searched by the server (Plan 39). The
+   * panel never holds more than the page it shows.
    */
   fetchItems: (
     swapId: string,
-    opts?: { query?: string; sellerId?: string; skip?: number; take?: number },
+    opts?: { query?: string; sellerId?: string; skip?: number; take?: number } & ItemListView,
   ) => Promise<{ items: ItemResponse[]; total: number }>;
   /** Accepts every item this seller is still waiting on. Staff pages only. */
   consignAllForSeller?: (swapId: string, sellerId: string) => Promise<{ consigned: number }>;
@@ -109,8 +105,6 @@ export interface SwapItemsPanelProps {
    */
   selfService?: boolean;
   showSearch?: boolean;
-  /** The status filter to open on, from a link (the dashboard's). */
-  initialStatus?: StatusFilter;
   sellers?: SellerResponse[];
   emptyMessage?: string;
   labelsPerItem?: number;
@@ -190,65 +184,18 @@ function describeRanges(ranges: { startNumber: number; endNumber: number }[]): s
 export type ItemStateKey = 'not_received' | 'not_in_square' | 'stock_unknown' | 'for_sale' | 'sold';
 
 /**
- * What the status filter offers. Where an item is in its life, then the two
- * things staff go looking for: an item that never reached Square, and a
- * ticket still waiting for its price (Plan 32).
- *
- * "Stock unknown" isn't one: it's Square not answering when the page loaded,
- * not something true of the item, and a notice above the table says so.
+ * What the status filter offers (Plan 39 D2): only what our own rows answer,
+ * so the server can filter 10,000 items without asking Square. For sale and
+ * Sold need stock for every item, and Square's reports cover them.
  */
-export type StatusFilter = Exclude<ItemStateKey, 'stock_unknown'> | 'needs_price';
-
-export const ITEM_STATE_FILTERS: { value: StatusFilter; label: string }[] = [
+export const ITEM_STATE_FILTERS: { value: ItemListStatus; label: string }[] = [
   { value: 'not_received', label: 'Not yet received' },
-  { value: 'for_sale', label: 'For sale' },
-  { value: 'sold', label: 'Sold' },
   { value: 'not_in_square', label: 'Not in Square' },
   { value: 'needs_price', label: 'Needs a price' },
 ];
 
-/** Whether an item passes the status filter. */
-export function matchesStatus(item: ItemResponse, filter: '' | StatusFilter): boolean {
-  if (!filter) return true;
-  if (filter === 'needs_price') return item.priceCents === null;
-  return itemState(item).key === filter;
-}
-
-// ─── Sorting ──────────────────────────────────────────────────────────────────
-
-export type ItemSortKey = 'sku' | 'name' | 'price' | 'seller' | 'status' | 'tag';
-export type SortDir = 'asc' | 'desc';
-
-/** Where an item is in its life, for sorting by Status: received, in Square, selling, sold. */
-const STATE_ORDER: ItemStateKey[] = ['not_received', 'not_in_square', 'stock_unknown', 'for_sale', 'sold'];
-
-const text = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-
-/**
- * The rows sorted by one column. A missing value (no price, no seller) goes
- * last either way, since it's what's being looked for or what's in the way, not
- * a value. Ties keep SKU order, so a sort is the same from one load to the next.
- */
-export function sortItems(items: ItemResponse[], key: ItemSortKey, dir: SortDir): ItemResponse[] {
-  const sign = dir === 'asc' ? 1 : -1;
-  const value = (i: ItemResponse): string | number | null => {
-    switch (key) {
-      case 'sku': return i.sku;
-      case 'name': return i.name;
-      case 'price': return i.priceCents;
-      case 'seller': return i.seller?.displayName ?? null;
-      case 'status': return STATE_ORDER.indexOf(itemState(i).key);
-      case 'tag': return i.hasPrintedTag ? 1 : 0;
-    }
-  };
-  return [...items].sort((a, b) => {
-    const va = value(a);
-    const vb = value(b);
-    if (va === null || vb === null) return va === vb ? text(a.sku, b.sku) : va === null ? 1 : -1;
-    const c = typeof va === 'number' && typeof vb === 'number' ? va - vb : text(String(va), String(vb));
-    return c !== 0 ? sign * c : text(a.sku, b.sku);
-  });
-}
+/** Rows per page (Plan 39 D1). */
+export const ITEMS_PAGE = 50;
 
 export function itemState(item: ItemResponse): {
   key: ItemStateKey;
@@ -314,18 +261,38 @@ export function itemState(item: ItemResponse): {
 
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService,
-  showSearch = false, initialStatus, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
+  showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
   tickets, actions = [], toolbarNote, addBlockedBecause,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
-  const [query, setQuery] = useState('');
-  const [printFilter, setPrintFilter] = useState<'' | 'not_printed' | 'printed'>('');
-  // The dashboard's "needs a price" link opens on that filter (Plan 32).
-  const [stateFilter, setStateFilter] = useState<'' | StatusFilter>(initialStatus ?? '');
+  /**
+   * What's shown lives in the URL (Plan 39): the dashboard's links land on a
+   * filter, and a reload or a shared link shows the same page. Any change but
+   * the page itself starts again at page 1.
+   */
+  const [params, setParams] = useSearchParams();
+  const setView = (changes: Record<string, string | null>, keepPage = false) =>
+    setParams((p) => {
+      for (const [k, v] of Object.entries(changes)) {
+        if (v) p.set(k, v); else p.delete(k);
+      }
+      if (!keepPage) p.delete('page');
+      return p;
+    }, { replace: true });
+  const stateFilter = (ITEM_STATE_FILTERS.find((f) => f.value === params.get('status'))?.value ?? '') as '' | ItemListStatus;
+  const printFilter = params.get('printed') === 'true' ? 'printed' : params.get('printed') === 'false' ? 'not_printed' : '';
+  const sortKey = params.get('sort') as ItemListSort | null;
+  const sort = sortKey && (SORTABLE as readonly string[]).includes(sortKey)
+    ? { key: sortKey, dir: (params.get('dir') === 'desc' ? 'desc' : 'asc') as 'asc' | 'desc' }
+    : null;
   /** A column clicked: ascending, then descending, then back to the server's order. */
-  const [sort, setSort] = useState<{ key: ItemSortKey; dir: SortDir } | null>(null);
-  const toggleSort = (key: ItemSortKey) =>
-    setSort((cur) => (cur?.key !== key ? { key, dir: 'asc' } : cur.dir === 'asc' ? { key, dir: 'desc' } : null));
+  const toggleSort = (key: ItemListSort) => {
+    const next = sort?.key !== key ? { key, dir: 'asc' } : sort.dir === 'asc' ? { key, dir: 'desc' } : null;
+    setView({ sort: next?.key ?? null, dir: next?.dir ?? null });
+  };
+  const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1);
+  const sellerFilter = params.get('seller') ?? '';
+  const [query, setQuery] = useState(params.get('q') ?? '');
   /** Only tickets still waiting for a price, to work through before sales start (Plan 32). */
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ItemResponse | null>(null);
@@ -337,45 +304,51 @@ export default function SwapItemsPanel({
   const { printItem } = usePrinter();
   const [form, setForm] = useState<ItemFormData>(emptyForm);
 
-  const [sellerFilter, setSellerFilter] = useState('');
-
   // The box updates as it's typed in; the search waits for a pause, so a word
   // is one request rather than one per letter.
-  const [searchTerm, setSearchTerm] = useState('');
+  const searchTerm = params.get('q') ?? '';
   useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(query.trim()), 250);
+    const timer = setTimeout(() => {
+      if (query.trim() !== searchTerm) setView({ q: query.trim() || null });
+    }, 250);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  const queryKey = [queryKeyPrefix, orgId, swapId, searchTerm, sellerFilter];
+  const view: ItemListView = {
+    ...(stateFilter ? { status: stateFilter } : {}),
+    ...(printFilter ? { printed: printFilter === 'printed' } : {}),
+    ...(sort ? { sort: sort.key, dir: sort.dir } : {}),
+  };
+  const queryKey = [queryKeyPrefix, orgId, swapId, searchTerm, sellerFilter, view, page];
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isPlaceholderData } = useQuery({
     queryKey,
-    // The last results stay up while the next load, so the table and its
-    // search box stay on screen rather than giving way to "Loading…" each time.
-    // Not across swaps: another swap's items aren't a stand-in for these.
+    // The last page stays up while the next loads, so the table and its search
+    // box stay on screen rather than giving way to "Loading…" each time. Not
+    // across swaps: another swap's items aren't a stand-in for these.
     placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[2] === swapId ? keepPreviousData(previous) : undefined,
-    // Every page, not the first. The filters above the table are applied to
-    // what came back, so a list cut off at the server's default of fifty was a
-    // list that silently did not have the items a filter was looking for.
-    queryFn: async () => {
-      const PAGE = 200;
-      const scope = {
-        ...(searchTerm ? { query: searchTerm } : {}),
-        ...(sellerFilter ? { sellerId: sellerFilter } : {}),
-      };
-      const first = await panelApi.fetchItems(swapId!, { ...scope, skip: 0, take: PAGE });
-      const items = [...first.items];
-      while (items.length < first.total) {
-        const next = await panelApi.fetchItems(swapId!, { ...scope, skip: items.length, take: PAGE });
-        if (!next.items.length) break;
-        items.push(...next.items);
-      }
-      return { items, total: first.total };
-    },
+    // One page (Plan 39 D1): the server filters, sorts and counts.
+    queryFn: () => panelApi.fetchItems(swapId!, {
+      ...(searchTerm ? { query: searchTerm } : {}),
+      ...(sellerFilter ? { sellerId: sellerFilter } : {}),
+      ...view,
+      skip: (page - 1) * ITEMS_PAGE,
+      take: ITEMS_PAGE,
+    }),
     enabled: !!swapId,
   });
+
+  /** One row replaced with the server's answer, or removed (Plan 39 D5): no reload. */
+  const replaceRow = (item: ItemResponse) =>
+    qc.setQueryData<{ items: ItemResponse[]; total: number }>(queryKey, (old) =>
+      old ? { ...old, items: old.items.map((i) => (i.id === item.id ? item : i)) } : old);
+  const removeRow = (itemId: string) =>
+    qc.setQueryData<{ items: ItemResponse[]; total: number }>(queryKey, (old) =>
+      old ? { items: old.items.filter((i) => i.id !== itemId), total: Math.max(0, old.total - 1) } : old);
+  /** The page shown, read again: one request, for a change that moves rows. */
+  const reloadPage = () => qc.invalidateQueries({ queryKey });
 
   /** A delete or a print that was refused. Both used to fail without a word. */
   const [actionError, setActionError] = useState<string | null>(null);
@@ -407,15 +380,16 @@ export default function SwapItemsPanel({
         uploadPhotoMutation.mutate(
           { itemId: item.id, file: pendingPhoto.file },
           {
-            onSuccess: () => { qc.invalidateQueries({ queryKey }); closeForm(); },
+            onSuccess: () => { void reloadPage(); closeForm(); },
             onError: (err: unknown) => {
-              qc.invalidateQueries({ queryKey });
+              void reloadPage();
               setPhotoError((err as Error)?.message ?? 'Photo upload failed. Item was saved.');
             },
           },
         );
       } else {
-        qc.invalidateQueries({ queryKey });
+        // A new item takes a place in the order: the page is read again.
+        void reloadPage();
         closeForm();
       }
     },
@@ -436,14 +410,14 @@ export default function SwapItemsPanel({
       sellerId: sellers ? (form.sellerId || null) : undefined,
       donateProceeds: form.donateProceeds,
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey }); closeForm(); },
+    onSuccess: (item) => { replaceRow(item); closeForm(); },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (itemId: string) => panelApi.deleteItem(itemId),
     onMutate: () => setActionError(null),
+    onSuccess: (_void, itemId) => removeRow(itemId),
     onError: (err) => setActionError(describe(err, 'Could not delete that item')),
-    onSettled: () => qc.invalidateQueries({ queryKey }),
   });
 
   const consignAll = useMutation({
@@ -453,20 +427,21 @@ export default function SwapItemsPanel({
     // as `Not in Square` until they land. Refetched again shortly after, which
     // is cheaper than making the operator wonder whether to press it twice.
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey });
-      setTimeout(() => void qc.invalidateQueries({ queryKey }), 4000);
+      void reloadPage();
+      void waitingQuery.refetch();
+      setTimeout(() => void reloadPage(), 4000);
     },
   });
 
   const uploadPhotoMutation = useMutation({
     mutationFn: ({ itemId, file }: { itemId: string; file: File }) => panelApi.uploadPhoto!(itemId, file),
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onSuccess: () => reloadPage(),
     onError: (err: unknown) => setPhotoError((err as Error)?.message ?? 'Photo upload failed'),
   });
 
   const deletePhotoMutation = useMutation({
     mutationFn: ({ itemId, photoId }: { itemId: string; photoId: string }) => panelApi.deletePhoto!(itemId, photoId),
-    onSettled: () => qc.invalidateQueries({ queryKey }),
+    onSettled: () => reloadPage(),
   });
 
   function openEdit(item: ItemResponse) {
@@ -532,8 +507,7 @@ export default function SwapItemsPanel({
       for (let i = 0; i < labelsPerItem; i++) {
         await printItem(item);
       }
-      await panelApi.patchItem(item.id, { hasPrintedTag: true });
-      qc.invalidateQueries({ queryKey });
+      replaceRow(await panelApi.patchItem(item.id, { hasPrintedTag: true }));
     } catch (err: unknown) {
       // `NotFoundError` is the browser's picker being dismissed: nothing to say.
       if ((err as { name?: string })?.name !== 'NotFoundError') {
@@ -546,18 +520,8 @@ export default function SwapItemsPanel({
   }
 
   const isFormOpen = showForm || editItem !== null;
-  const filtered = (data?.items ?? [])
-    .filter((i) => printFilter === 'printed' ? i.hasPrintedTag : printFilter === 'not_printed' ? !i.hasPrintedTag : true)
-    // Through `itemState`, not through the underlying fields again: a filter
-    // that decided for itself what "sold" meant could disagree with the column
-    // beside it, and the column is the one that had to be corrected.
-    .filter((i) => matchesStatus(i, stateFilter));
-  // Unsorted is the server's order, newest first.
-  const items = sort ? sortItems(filtered, sort.key, sort.dir) : filtered;
-  const unpricedCount = (data?.items ?? []).filter((i) => i.priceCents === null).length;
-  // Square didn't answer for some of what's in it: those rows can't be called
-  // for sale or sold until it does.
-  const stockUnknown = (data?.items ?? []).filter((i) => itemState(i).key === 'stock_unknown').length;
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
 
   /*
    * Everything the toolbar can do, in one menu (the toolbar itself is for
@@ -565,7 +529,16 @@ export default function SwapItemsPanel({
    * waiting items, offered only with that seller chosen and something waiting.
    */
   const sellerName = sellers?.find((sl) => sl.id === sellerFilter)?.displayName ?? 'this seller';
-  const waitingHere = (data?.items ?? []).filter((i) => !i.consignedAt).length;
+  /**
+   * How many of the chosen seller's items are still waiting, counted by the
+   * server: the page shows 50, and the button acts on all of them.
+   */
+  const waitingQuery = useQuery({
+    queryKey: [queryKeyPrefix, orgId, swapId, 'waiting', sellerFilter],
+    queryFn: () => panelApi.fetchItems(swapId!, { sellerId: sellerFilter, status: 'not_received', take: 1 }),
+    enabled: !!swapId && !!sellerFilter && !!panelApi.consignAllForSeller,
+  });
+  const waitingHere = waitingQuery.data?.total ?? 0;
   const menu: MenuAction[] = [
     ...(canManage
       ? [{
@@ -625,21 +598,19 @@ export default function SwapItemsPanel({
           )}
           <select
             value={stateFilter}
-            onChange={(e) => setStateFilter(e.target.value as '' | StatusFilter)}
+            onChange={(e) => setView({ status: e.target.value || null })}
             aria-label="Filter by status"
             className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
           >
             <option value="">All statuses</option>
             {ITEM_STATE_FILTERS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}{o.value === 'needs_price' && unpricedCount > 0 ? ` (${unpricedCount})` : ''}
-              </option>
+              <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
           {sellers && (
             <select
               value={sellerFilter}
-              onChange={(e) => setSellerFilter(e.target.value)}
+              onChange={(e) => setView({ seller: e.target.value || null })}
               aria-label="Filter by seller"
               className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white max-w-52"
             >
@@ -651,7 +622,8 @@ export default function SwapItemsPanel({
           )}
           <select
             value={printFilter}
-            onChange={(e) => setPrintFilter(e.target.value as '' | 'not_printed' | 'printed')}
+            onChange={(e) => setView({ printed: e.target.value === 'printed' ? 'true' : e.target.value === 'not_printed' ? 'false' : null })}
+            aria-label="Filter by tag" 
             className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
           >
             <option value="">All tags</option>
@@ -681,15 +653,11 @@ export default function SwapItemsPanel({
         </p>
       )}
 
-      {stockUnknown > 0 && (
-        <p className="text-xs text-amber-400">
-          Square didn’t answer just now, so {stockUnknown} item{stockUnknown === 1 ? '' : 's'} show
-          {stockUnknown === 1 ? 's' : ''} “Stock unknown” and won’t appear under For sale or Sold until it does.
-        </p>
-      )}
+      <Pager page={page} total={total} busy={isFetching} onPage={(n) => setView({ page: n > 1 ? String(n) : null }, true)} />
 
-      {/* Items table */}
-      <div className="overflow-x-auto">
+      {/* Items table. Dimmed while another page or filter loads, so the rows
+          still showing aren't taken for the new ones. */}
+      <div className={`overflow-x-auto transition-opacity ${isPlaceholderData ? 'opacity-50' : ''}`} aria-busy={isPlaceholderData}>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-gray-400 text-left border-b border-gray-800">
@@ -697,7 +665,8 @@ export default function SwapItemsPanel({
               <SortHeader label="Name" field="name" sort={sort} onSort={toggleSort} />
               <SortHeader label="Price" field="price" sort={sort} onSort={toggleSort} />
               {sellers && <SortHeader label="Seller" field="seller" sort={sort} onSort={toggleSort} />}
-              <SortHeader label="Status" field="status" sort={sort} onSort={toggleSort} />
+              {/* Not sortable (Plan 39 D3): For sale and Sold need every item's stock. */}
+              <th className="pb-2 pr-4">Status</th>
               <SortHeader
                 label={<FontAwesomeIcon icon={faTagDuo} />}
                 name="Tag printed"
@@ -808,6 +777,9 @@ export default function SwapItemsPanel({
           </tbody>
         </table>
       </div>
+      {total > ITEMS_PAGE && (
+        <Pager page={page} total={total} busy={isFetching} onPage={(n) => setView({ page: n > 1 ? String(n) : null }, true)} />
+      )}
 
       {/* Add / Edit modal */}
       {isFormOpen && canManage && (
@@ -1071,9 +1043,9 @@ function SortHeader({ label, name, field, sort, onSort }: {
   label: ReactNode;
   /** Said for a heading that's only an icon. */
   name?: string;
-  field: ItemSortKey;
-  sort: { key: ItemSortKey; dir: SortDir } | null;
-  onSort: (key: ItemSortKey) => void;
+  field: ItemListSort;
+  sort: { key: ItemListSort; dir: 'asc' | 'desc' } | null;
+  onSort: (key: ItemListSort) => void;
 }) {
   const active = sort?.key === field;
   return (
@@ -1091,5 +1063,37 @@ function SortHeader({ label, name, field, sort, onSort }: {
         </span>
       </button>
     </th>
+  );
+}
+
+/** The columns the server sorts by (Plan 39 D3). */
+const SORTABLE: readonly ItemListSort[] = ['sku', 'name', 'price', 'seller', 'tag'];
+
+/** "1–50 of 9,812", Previous and Next (Plan 39 D1). */
+function Pager({ page, total, busy, onPage }: {
+  page: number;
+  total: number;
+  busy: boolean;
+  onPage: (page: number) => void;
+}) {
+  const pages = Math.max(1, Math.ceil(total / ITEMS_PAGE));
+  const first = total === 0 ? 0 : (page - 1) * ITEMS_PAGE + 1;
+  const last = Math.min(total, page * ITEMS_PAGE);
+  const button = 'px-2.5 py-1 rounded bg-surface-100 hover:bg-surface-200 text-gray-200 disabled:opacity-40 disabled:hover:bg-surface-100';
+  return (
+    <div className={`flex items-center justify-between text-sm text-gray-400 ${busy ? 'opacity-70' : ''}`} aria-busy={busy}>
+      <span>
+        {total === 0
+          ? 'No items'
+          : `${first.toLocaleString('en-US')}–${last.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`}
+      </span>
+      {pages > 1 && (
+        <span className="flex items-center gap-2">
+          <button type="button" className={button} disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</button>
+          <span className="text-xs text-gray-500">Page {page.toLocaleString('en-US')} of {pages.toLocaleString('en-US')}</span>
+          <button type="button" className={button} disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</button>
+        </span>
+      )}
+    </div>
   );
 }

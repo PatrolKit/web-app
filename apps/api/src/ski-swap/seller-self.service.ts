@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import type { ItemListView } from './item-list-order';
 import { PrismaService } from '../prisma/prisma.service';
 import { ItemService } from './item.service';
 import type { SellerResponse } from '../contracts/ski-swap.contracts';
@@ -71,7 +72,7 @@ export class SellerSelfService {
 
   // ─── Items ────────────────────────────────────────────────────────────────
 
-  async listItems(orgId: string, userId: string, swapId?: string, page: { skip?: number; take?: number } = {}) {
+  async listItems(orgId: string, userId: string, swapId?: string, page: { skip?: number; take?: number } & ItemListView = {}) {
     const seller = await this.getSellerRecord(orgId, userId);
 
     // When no swapId given, collect items from all active swaps
