@@ -315,8 +315,15 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-white font-medium">Fast Edit Tickets</h3>
-            <p className="text-gray-500 text-xs mt-0.5">
-              SKU, Tab, details, Tab, price, Enter. Escape clears the ticket.
+            <p className="text-gray-400 text-sm mt-1 max-w-xl">
+              For pricing a stack of legacy ticket stubs. For each stub, enter its ticket number,
+              what the item is (optional), and its price, then press Enter to save it and start the
+              next. Only tickets that don’t have a price yet can be loaded. A ticket already on sale
+              rings up at its new price as soon as it’s saved.
+            </p>
+            <p className="text-gray-500 text-xs mt-1">
+              Keys: SKU, Tab, details, Tab, price, Enter. In details, Enter picks a suggestion.
+              Escape clears the ticket.
             </p>
           </div>
           <button
