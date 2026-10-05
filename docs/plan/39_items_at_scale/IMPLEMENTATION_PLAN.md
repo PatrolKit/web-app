@@ -42,7 +42,7 @@ count and total value are wrong for any seller with more than 50 items.
 
 | # | Decision |
 |---|---|
-| D1 | **Pages of 50 or 100**, chosen beside the pager and remembered in that browser; 100 to start. The server filters, sorts and counts, and the browser shows one page with "1–100 of 9,812", Previous and Next. Changing a filter, sort or search starts again at page 1. |
+| D1 | **Pages of 50.** The server filters, sorts and counts, and the browser shows one page with "1–50 of 9,812", Previous and Next. Changing a filter, sort or search starts again at page 1. |
 | D2 | **Every filter and sort runs on the server.** Our own columns run in SQL; For sale, Sold and Status use Square's remembered answer (D5). Search covers what it does today: SKU, name, seller name, email and phone. |
 | D3 | **Counts come from the server in the same answer**: each status's count for the filter menu ("Needs a price (7)", "Sold (3,100)"), items waiting to be accepted for the chosen seller, and items whose stock is unknown. Nothing on the page counts the rows it was sent. |
 | D4 | **A save updates its row in place.** Edit, print, price and accept replace that row in the page with the server's answer, then refresh only the counts. A delete removes the row. Nothing reloads the whole list. |
@@ -68,7 +68,7 @@ count and total value are wrong for any seller with more than 50 items.
     - Seller sorts by the name shown: business name, or first and last.
     - A missing price or seller sorts last either way, and ties sort by SKU, as the table does today.
   - **With stock** (For sale, Sold, Stock unknown, Status sort and the counts): the server applies the other filters in SQL, then splits by the remembered answer (D5), sorts and pages. Even at 10,000 items that's a list of ids and numbers in memory, not rows.
-- **The page itself** is read with the usual includes for its 100 ids only.
+- **The page itself** is read with the usual includes for its 50 ids only.
 - **Defaults stay for other callers:** no `sort` is newest first, as now.
 - **The iPad's `walk` and `updatedSince`** skip Square entirely (D10).
 
@@ -95,7 +95,7 @@ count and total value are wrong for any seller with more than 50 items.
   - keeps them in the URL, so the dashboard's links and a reload land on the same view;
   - the paging loop and the browser-side filtering, sorting and counting go;
   - the sort headings from the queued commit stay as they are, and send `sort` and `dir`.
-- **Pager:** "1–100 of 9,812", Previous and Next, and 50 or 100 per page, under the table and above it when the page is long.
+- **Pager:** "1–50 of 9,812", Previous and Next, under the table and above it.
 - **Stock line:** "Stock as of 1 min ago · Refresh stock" above the table (D8), and the same on the dashboard.
 - **Saves** follow D4.
 - **The shop's "My Items" page** gets the same, through its own list endpoint (`seller/me/items`), which already takes `skip` and `take`.
@@ -136,6 +136,6 @@ count and total value are wrong for any seller with more than 50 items.
 
 1. **Square testing:** no sandbox. The full read is tested against a real
    account in off-hours (Tests).
-2. **Page size:** 50 or 100 per page, the viewer's choice (D1).
+2. **Page size:** 50 per page (D1).
 3. **The remembered answer's age:** 2 minutes, lengthened only if Square's reads
    prove costly (D5).
