@@ -52,7 +52,7 @@ and total value are wrong for any seller with more than 50 items.
 | D7 | **Shown stale while it refreshes.** Once the answer is 2 minutes old, the next request gets it at once and a refresh starts behind it. Only the first read for a swap, after a restart, makes anyone wait. One refresh runs at a time per swap. |
 | D8 | **Freshness is shown, and can be forced.** The page and the dashboard say "Stock as of 1 min ago". **Refresh stock** re-reads Square now, at most once every 15 s per swap. If a refresh fails, the last answer stays up with its age and a notice that Square didn't answer. |
 | D9 | **Decisions still read Square live.** Anything that acts on "unsold" reads Square at that moment: removing returned tickets (Plan 38 D10), the shop's describe-once rule (Plan 38 D6) and payouts (orders). The remembered answer is for showing and finding, not for deciding. |
-| D10 | **The iPads' sync doesn't read Square.** The iPads store `inStock` and `soldCount` but never read them: no screen, count, receipt or check uses them, and their own notes say a check-in iPad shouldn't show "sold". The `walk` and `updatedSince` modes answer with stock unknown (`inventoryKnown: false`), which the app already decodes. |
+| D10 | **The iPads get no stock.** They store `inStock` and `soldCount` but never read them: no screen, count, receipt or check uses them, and their own notes say a check-in iPad shouldn't show "sold". Every item response to a device leaves out `inStock`, `soldCount` and `inventoryKnown`, and skips the Square read. The app already treats both fields as optional, and it removes them on its side ([IPAD_HANDOFF.md](IPAD_HANDOFF.md)). |
 
 ## Server
 
@@ -70,7 +70,7 @@ and total value are wrong for any seller with more than 50 items.
 - **Stock-based filters and sorts** (For sale, Sold, Stock unknown, Status, and the counts): the other filters run in SQL first. Their result is then split by the remembered answer, sorted and paged. At 10,000 items that's a list of ids and numbers in memory, not rows.
 - **The page itself** is read with the usual includes, for its 50 ids only.
 - **Other callers keep the defaults:** no `sort` means newest first, as now.
-- **`walk` and `updatedSince`** make no Square call (D10).
+- **A device caller** (`req.device` set) gets item responses without the three stock fields, and no Square call: the list (`walk` and `updatedSince`), create, patch and photo upload (D10). The contract gains a device variant of `ItemResponse` without them, so the web's type keeps them required.
 
 ### Square's remembered answer
 
@@ -106,8 +106,9 @@ and total value are wrong for any seller with more than 50 items.
 - **No migration.**
 - **The one-minute dashboard refresh** already committed ships only with the
   remembered answer. Otherwise it comes out of that commit.
-- **iPad:** no change. A one-line note to the iOS repo says the sync now answers
-  with stock unknown, as its notes already expect.
+- **iPad:** [IPAD_HANDOFF.md](IPAD_HANDOFF.md) goes to the iOS repo. Either side
+  can go first: today's app decodes the fields as optional, and a newer one
+  ignores them if they're still sent.
 
 ## Tests
 
@@ -118,7 +119,8 @@ and total value are wrong for any seller with more than 50 items.
   - every filter and sort, including numeric SKU, missing values last and ties by SKU;
   - counts that match the filters;
   - stock-based filters and sorts split by the remembered answer;
-  - `walk` and `updatedSince` making no Square call.
+  - item responses to a device carrying no stock fields and making no Square call, for the list, create, patch and photo upload;
+  - responses to a person unchanged.
 - **The remembered answer:**
   - its expiry, and serving stale while refreshing;
   - one refresh at a time;
