@@ -7,6 +7,7 @@ import { listenForScans, pickScannerNamed, type Scan, type ScanSymbology } from 
 import { code128BModules } from '../../../../api/src/ski-swap/printing/code128.util';
 import { code39Modules } from '../../lib/printing/code39';
 import type { SwapScanner } from '../../lib/api.types';
+import { useScanner } from '../../contexts/ScannerContext';
 
 type Step = 'intro' | 'connecting' | 'scan' | 'done';
 
@@ -56,6 +57,7 @@ function randomTicketNumber(): string {
  * starts by asking for the bridge to be switched off.
  */
 export default function ScannerTestModal({ scanner, onClose }: { scanner: SwapScanner; onClose: () => void }) {
+  const shared = useScanner();
   const [step, setStep] = useState<Step>('intro');
   const [at, setAt] = useState(0);
   const [error, setError] = useState('');
@@ -117,13 +119,19 @@ export default function ScannerTestModal({ scanner, onClose }: { scanner: SwapSc
     }
     go('connecting');
     try {
-      const device = await pickScannerNamed(scanner.bluetoothName);
-      stopRef.current = await listenForScans(device, onScan, () => {
-        if (stepRef.current === 'scan') {
-          setError('The scanner disconnected. Wake it and connect again.');
-          go('intro');
-        }
-      });
+      // Already connected from the nav bar (Plan 40): listen on that link
+      // rather than open a second one, which would drop the first when done.
+      if (shared.connected && shared.preferred?.id === scanner.id) {
+        stopRef.current = shared.subscribe(onScan);
+      } else {
+        const device = await pickScannerNamed(scanner.bluetoothName);
+        stopRef.current = await listenForScans(device, onScan, () => {
+          if (stepRef.current === 'scan') {
+            setError('The scanner disconnected. Wake it and connect again.');
+            go('intro');
+          }
+        });
+      }
       setOutcomes([]);
       missRef.current = null;
       setLastMiss(null);

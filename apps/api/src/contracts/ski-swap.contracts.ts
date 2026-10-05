@@ -753,6 +753,15 @@ export const TicketSellerSchema = z.object({
 });
 
 export class TicketSpanDto extends createZodDto(TicketSpanSchema) {}
+
+/** Batch add (Plan 40): the scanned tickets, for one seller. */
+export const BatchTicketsSchema = z
+  .object({
+    sellerId: z.string().min(1),
+    tickets: z.array(z.string().min(1).max(40)).min(1).max(2000),
+  })
+  .strict();
+export class BatchTicketsDto extends createZodDto(BatchTicketsSchema) {}
 export type TicketSeller = z.infer<typeof TicketSellerSchema>;
 export type TicketFormState = z.infer<typeof TicketFormStateSchema>;
 

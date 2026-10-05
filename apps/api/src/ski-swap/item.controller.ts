@@ -18,7 +18,7 @@ import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ItemService, decodeCursor } from './item.service';
 import { LegacyTicketService } from './legacy-ticket.service';
 import { IssuedTicketService } from './issued-ticket.service';
-import { CreateItemDto, PatchItemDto } from '../contracts/ski-swap.contracts';
+import { BatchTicketsDto, CreateItemDto, PatchItemDto } from '../contracts/ski-swap.contracts';
 import type { Request } from 'express';
 
 @Controller('orgs/:orgId/ski-swap/swaps/:swapId/items')
@@ -79,6 +79,34 @@ export class ItemController {
       ...(cursor ? { after: cursor } : {}),
       ...view,
     });
+  }
+
+  /**
+   * Whether one scanned ticket is free (Plan 40 D9): our rows only, no Square.
+   * Asked once per scan by the Batch add popover.
+   */
+  @Get('ticket-check')
+  @RequirePermissions('ski_swap:manage')
+  ticketCheck(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @Query('sku') sku?: string) {
+    if (!sku) throw new BadRequestException('sku is required');
+    return this.issued.ticketCheck(orgId, swapId, sku.trim());
+  }
+
+  /**
+   * Batch add (Plan 40): the scanned tickets become the seller's items, on
+   * sale with no price, Square following in the background.
+   */
+  @Post('batch-tickets')
+  @RequirePermissions('ski_swap:manage')
+  @NoDeviceAccess()
+  batchTickets(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Body() body: BatchTicketsDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.issued.batchAdd(orgId, swapId, body.sellerId, body.tickets, user.userId, idempotencyKey);
   }
 
   /**

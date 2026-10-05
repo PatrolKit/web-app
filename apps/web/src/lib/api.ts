@@ -84,14 +84,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const body = await res.json().catch(() => ({ success: false, error: 'Invalid response' }));
 
   if (!res.ok || !body.success) {
-    throw new ApiError(res.status, body.error ?? 'Request failed', body.code);
+    throw new ApiError(res.status, body.error ?? 'Request failed', body.code, body.details);
   }
 
   return body.data as T;
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string, public code?: string) {
+  /** `details` is what some refusals hand back beside the sentence (e.g. Plan 40's taken tickets). */
+  constructor(public status: number, message: string, public code?: string, public details?: unknown) {
     super(message);
     this.name = 'ApiError';
   }
@@ -761,6 +762,18 @@ export const api = {
         { method: 'POST', body: JSON.stringify(data) },
       ),
     /** How many of the swap's accepted tickets aren't in Square, and whether that's being worked on. */
+    /** Whether one scanned ticket is free in the swap (Plan 40): our rows only. */
+    ticketCheck: (orgId: string, swapId: string, sku: string) =>
+      request<{ free: true } | { free: false; holder: string | null }>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/ticket-check?sku=${encodeURIComponent(sku)}`,
+      ),
+    /** Batch add (Plan 40): the scanned tickets become the seller's items. Safe to retry with the same key. */
+    batchAddTickets: (orgId: string, swapId: string, sellerId: string, tickets: string[], idempotencyKey: string) =>
+      request<{ created: number }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/batch-tickets`, {
+        method: 'POST',
+        body: JSON.stringify({ sellerId, tickets }),
+        headers: { 'idempotency-key': idempotencyKey },
+      }),
     ticketPushStatus: (orgId: string, swapId: string) =>
       request<{ notInSquare: number; pushing: boolean; squareReady: boolean }>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/ticket-push`,

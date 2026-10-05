@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -6,6 +6,7 @@ import { displayName } from '../common/util/person';
 import { PosAdapterFactory } from './pos/pos.adapter';
 import { isUntouched, runsOf, ticketNumberOf, type Range } from './legacy-ticket.service';
 import { uncategorisedName } from './sku.util';
+import { IdempotencyService } from '../common/services/idempotency.service';
 
 /** A shop's tickets in a swap, as the Sellers page shows them (Plan 38). */
 export interface IssuedTicketSummary {
@@ -43,6 +44,7 @@ export class IssuedTicketService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly posFactory: PosAdapterFactory,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   /**
@@ -76,36 +78,113 @@ export class IssuedTicketService {
       .sort((a, b) => a.n - b.n);
     if (clashes.length) throw new BadRequestException(clashMessage(clashes));
 
-    const now = new Date();
-    const rows: Prisma.SwapItemCreateManyInput[] = [];
-    for (let n = startNumber; n <= endNumber; n++) {
-      const sku = String(n);
-      rows.push({
-        id: randomUUID(),
-        swapId,
-        orgId,
-        sellerId,
-        name: uncategorisedName(sku),
-        sku,
-        liveSku: sku,
-        priceCents: null,
-        originalQuantity: 1,
-        // The ticket came out of a box: there's nothing to print.
-        hasPrintedTag: true,
-        // Issuing is staff accepting the whole block in advance (D1).
-        consignedAt: now,
-        consignedBy: actorUserId,
-        createdBy: actorUserId,
+    const numbers: string[] = [];
+    for (let n = startNumber; n <= endNumber; n++) numbers.push(String(n));
+    await this.addTickets(orgId, swapId, sellerId, numbers, actorUserId);
+    return { created: endNumber - startNumber + 1, startNumber, endNumber };
+  }
+
+  /**
+   * Batch add (Plan 40): the scanned tickets become the seller's items, any
+   * seller, as issuing does. Refused whole if any is already an item, naming
+   * each and whose (D11), so nothing half-lands; a retry with the same key
+   * answers what the first did.
+   */
+  async batchAdd(
+    orgId: string,
+    swapId: string,
+    sellerId: string,
+    tickets: string[],
+    actorUserId: string,
+    idempotencyKey?: string,
+  ): Promise<{ created: number }> {
+    const scope = `batch-tickets:${orgId}:${swapId}`;
+    if (idempotencyKey) {
+      const cached = await this.idempotency.getCached(scope, idempotencyKey);
+      if (cached) return cached as unknown as { created: number };
+    }
+    const swap = await this.swapOrThrow(orgId, swapId);
+    if (!swap.allowLegacyCheckin && !swap.allowLegacyWeb) {
+      throw new BadRequestException('This swap doesn’t take legacy tickets. Turn them on in its Tickets settings.');
+    }
+    await this.sellerOrThrow(orgId, sellerId);
+    const numbers = tickets.map((t) => t.trim());
+    if (numbers.length === 0) throw new BadRequestException('Scan at least one ticket.');
+    const notTickets = numbers.filter((t) => ticketNumberOf(t) === null);
+    if (notTickets.length) {
+      throw new BadRequestException(`${listOf(notTickets.slice(0, 5))} ${notTickets.length === 1 ? 'isn’t a ticket number' : 'aren’t ticket numbers'}. A ticket number is digits only.`);
+    }
+    const repeats = [...new Set(numbers.filter((t, i) => numbers.indexOf(t) !== i))];
+    if (repeats.length) throw new BadRequestException(`${listOf(repeats.slice(0, 5))} ${repeats.length === 1 ? 'is' : 'are'} in the batch twice.`);
+
+    const taken = await this.holdersOf(swapId, numbers);
+    if (taken.length) {
+      throw new ConflictException({
+        code: 'TICKET_TAKEN',
+        message: takenMessage(taken),
+        // The popover marks these rows to remove (D11).
+        details: { taken },
       });
     }
+
+    await this.addTickets(orgId, swapId, sellerId, numbers, actorUserId);
+    const response = { created: numbers.length };
+    if (idempotencyKey) await this.idempotency.save(scope, idempotencyKey, response);
+    return response;
+  }
+
+  /**
+   * Whether one scanned ticket is free in this swap (Plan 40 D9): our rows
+   * only, no Square, no item payload. Run per scan, so it stays light.
+   */
+  async ticketCheck(orgId: string, swapId: string, sku: string): Promise<{ free: true } | { free: false; holder: string | null }> {
+    if (ticketNumberOf(sku) === null) throw new BadRequestException('A ticket number is digits only.');
+    await this.swapOrThrow(orgId, swapId);
+    const [taken] = await this.holdersOf(swapId, [sku]);
+    return taken ? { free: false, holder: taken.holder } : { free: true };
+  }
+
+  /** The live items with these SKUs, and whose each is. */
+  private async holdersOf(swapId: string, skus: string[]): Promise<{ sku: string; holder: string | null }[]> {
+    const rows = await this.prisma.swapItem.findMany({
+      where: { swapId, deletedAt: null, sku: { in: skus } },
+      select: { sku: true, seller: { include: { membership: { include: { user: true } } } } },
+    });
+    return rows
+      .map((r) => ({ sku: r.sku, holder: r.seller ? displayName(r.seller.membership.user, r.seller.businessName) : null }))
+      .sort((a, b) => Number(a.sku) - Number(b.sku));
+  }
+
+  /**
+   * The tickets, created as the seller's items in one transaction (Plan 38 D1,
+   * Plan 40 D10): unpriced, named by number, their tags already on the goods,
+   * and accepted by whoever added them. Square follows in the background.
+   */
+  private async addTickets(orgId: string, swapId: string, sellerId: string, numbers: string[], actorUserId: string): Promise<void> {
+    const now = new Date();
+    const rows: Prisma.SwapItemCreateManyInput[] = numbers.map((sku) => ({
+      id: randomUUID(),
+      swapId,
+      orgId,
+      sellerId,
+      name: uncategorisedName(sku),
+      sku,
+      liveSku: sku,
+      priceCents: null,
+      originalQuantity: 1,
+      // The ticket came out of a box: there's nothing to print.
+      hasPrintedTag: true,
+      // Staff adding them is staff accepting them (Plan 38 D1).
+      consignedAt: now,
+      consignedBy: actorUserId,
+      createdBy: actorUserId,
+    }));
     await this.prisma.$transaction(async (tx) => {
       for (let at = 0; at < rows.length; at += 1000) {
         await tx.swapItem.createMany({ data: rows.slice(at, at + 1000) });
       }
     }, { timeout: 60_000 });
-
     void this.push(orgId, swapId);
-    return { created: rows.length, startNumber, endNumber };
   }
 
   /**
@@ -301,6 +380,27 @@ export function clashMessage(clashes: { n: number; who: string }[]): string {
   const more = clashes.length - shown.length;
   const verb = clashes.length === 1 ? 'is already an item' : 'are already items';
   return `${parts.join('; ')}${more > 0 ? ` and ${more} more` : ''} ${verb}. Nothing was issued.`;
+}
+
+/**
+ * "Ticket 67169 belongs to Stowe Sports." for one; for several, grouped by
+ * holder as `clashMessage` does: "67169 and 67170 (Stowe Sports) and 67200
+ * (Dana Reyes) are already taken. Nothing was added."
+ */
+export function takenMessage(taken: { sku: string; holder: string | null }[]): string {
+  if (taken.length === 1) {
+    const [t] = taken;
+    return t.holder ? `Ticket ${t.sku} belongs to ${t.holder}.` : `Ticket ${t.sku} is already on another item.`;
+  }
+  const shown = taken.slice(0, 12);
+  const byWho = new Map<string, string[]>();
+  for (const t of shown) {
+    const who = t.holder ?? 'no seller';
+    byWho.set(who, [...(byWho.get(who) ?? []), t.sku]);
+  }
+  const parts = [...byWho].map(([who, skus]) => `${listOf(skus)} (${who})`);
+  const more = taken.length - shown.length;
+  return `${listOf(parts)}${more > 0 ? ` and ${more} more` : ''} are already taken. Nothing was added.`;
 }
 
 function listOf(xs: string[]): string {

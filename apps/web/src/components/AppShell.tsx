@@ -2,7 +2,9 @@ import { Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPrint as faPrintDuo, faPrintSlash as faPrintSlashDuo } from '@fortawesome/pro-duotone-svg-icons';
+import { faPrint as faPrintDuo, faPrintSlash as faPrintSlashDuo, faScannerGun as faScannerGunDuo } from '@fortawesome/pro-duotone-svg-icons';
+import { ScannerProvider, useScanner } from '../contexts/ScannerContext';
+import type { SwapScanner } from '../lib/api.types';
 import { useAuth } from '../contexts/AuthContext';
 import { PrinterProvider, usePrinter } from '../contexts/PrinterContext';
 import { api } from '../lib/api';
@@ -115,6 +117,11 @@ export default function AppShell() {
       isSeller={roles.includes('seller') && !perms.has('ski_swap:report')}
       canPrint={perms.has('ski_swap:manage') || roles.includes('seller')}
     >
+    <ScannerProvider
+      orgId={activeOrgId ?? ''}
+      userId={user?.id ?? ''}
+      enabled={perms.has('ski_swap:manage') && isModuleEnabled('ski_swap')}
+    >
     <div className="min-h-screen bg-surface flex">
       {serverDown && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-red-950 border-b border-red-800 text-red-300 text-xs text-center py-1.5">
@@ -178,6 +185,7 @@ export default function AppShell() {
         {/* User */}
         <div className="p-4 border-t border-gray-800 text-xs text-gray-500">
           <PrinterStatusBar />
+          <ScannerStatusBar />
           <div className="mb-1 truncate">{user.email}</div>
           <button onClick={handleLogout} className="text-brand-600 hover:underline">Sign out</button>
         </div>
@@ -192,6 +200,7 @@ export default function AppShell() {
       </main>
       <PrintPreviewModal />
     </div>
+    </ScannerProvider>
     </PrinterProvider>
   );
 }
@@ -434,6 +443,99 @@ function PrinterStatusBar() {
                 )}
               </>
             )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The scanner, under the printer (Plan 40 D1): whether it's connected, and a
+ * menu to connect, switch, disconnect, and see the last code it read.
+ */
+function ScannerStatusBar() {
+  const { isSupported, scanners, preferred, connected, connecting, lastScan, connect, disconnect } = useScanner();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!isSupported || scanners.length === 0) return null;
+
+  async function handleConnect(scanner?: SwapScanner) {
+    setError(null);
+    try {
+      await connect(scanner);
+      setOpen(false);
+    } catch (err: unknown) {
+      setError((err as { name?: string })?.name === 'NotFoundError'
+        // Cancelled and an empty list raise the same error, so say both.
+        ? 'No scanner picked. If nothing was listed, the scanner is asleep, out of range, or held by a bridge. Press its trigger to wake it, and try again.'
+        : (err as Error)?.message ?? 'Could not connect to the scanner.');
+    }
+  }
+  const others = scanners.filter((s) => s.id !== preferred?.id);
+
+  return (
+    <div className="relative mb-2 pb-2 border-b border-gray-800">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 min-w-0 w-full text-xs hover:opacity-80"
+        title="Scanner options"
+      >
+        {connecting
+          ? <span className="w-3 h-3 border border-gray-500 border-t-transparent rounded-full animate-spin shrink-0" />
+          : <FontAwesomeIcon icon={faScannerGunDuo} className={`shrink-0 ${connected ? 'text-green-500' : 'text-red-600'}`} />}
+        <span className={`truncate text-left min-w-0 ${connected ? 'text-gray-400' : 'text-gray-500'}`}>
+          {connecting ? 'Connecting…' : preferred?.name ?? 'Scanner'}{!connecting && !connected && ' · not connected'}
+        </span>
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full left-0 right-0 mb-1 bg-surface-100 border border-gray-700 rounded shadow-lg z-50 overflow-hidden text-xs">
+            {connected ? (
+              <>
+                <p className="px-3 pt-2 text-gray-500">Last read</p>
+                <p className="px-3 pb-2 font-mono text-gray-200 truncate">
+                  {lastScan ? lastScan.text : 'Nothing yet. Scan something to test it.'}
+                </p>
+                <div className="border-t border-gray-800" />
+                <button
+                  onClick={() => { disconnect(); setOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-red-400 hover:bg-surface-200"
+                >
+                  Disconnect
+                </button>
+              </>
+            ) : preferred ? (
+              <button
+                onClick={() => { void handleConnect(); }}
+                disabled={connecting}
+                className="w-full text-left px-3 py-2 text-gray-200 hover:bg-surface-200 disabled:opacity-40"
+              >
+                Connect {preferred.name}
+              </button>
+            ) : (
+              <p className="px-3 py-2 text-gray-500">Choose a scanner:</p>
+            )}
+            {others.length > 0 && (
+              <>
+                <div className="border-t border-gray-800" />
+                {preferred && <p className="px-3 pt-2 pb-1 text-gray-500">Switch to</p>}
+                {others.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => { void handleConnect(s); }}
+                    disabled={connecting}
+                    className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-surface-200 disabled:opacity-40"
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </>
+            )}
+            {error && <p className="px-3 py-2 text-amber-400">{error}</p>}
           </div>
         </>
       )}

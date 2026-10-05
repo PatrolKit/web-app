@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  faBarcodeRead as faBarcodeReadDuo,
   faCloudArrowUp as faCloudArrowUpDuo,
   faFileImport as faFileImportDuo,
   faKeyboard as faKeyboardDuo,
@@ -14,6 +15,7 @@ import SwapItemsPanel from './SwapItemsPanel';
 import ProxyItemImportModal from './ProxyItemImportModal';
 import TicketFastEdit from './TicketFastEdit';
 import ReturnTicketsModal from './ReturnTicketsModal';
+import BatchAddTicketsModal from './BatchAddTicketsModal';
 import TicketSquareModal, { useTicketPushStatus } from './TicketSquareModal';
 
 export default function ItemsPage() {
@@ -27,6 +29,7 @@ export default function ItemsPage() {
   // The dashboard's unpriced-tickets card opens Fast Edit directly.
   const [fastEditing, setFastEditing] = useState(canManage && searchParams.get('fast-edit') === '1');
   const [returning, setReturning] = useState(false);
+  const [batchAdding, setBatchAdding] = useState(false);
   const [pushingOpen, setPushingOpen] = useState(false);
   const canAdmin = perms.has('ski_swap:admin');
 
@@ -111,6 +114,16 @@ export default function ItemsPage() {
               onSelect: () => setFastEditing(true),
             }]
           : []),
+        // Scanning a stack of legacy tickets to one seller (Plan 40): where the
+        // swap takes legacy tickets, as the fast edit is.
+        ...(takesTickets
+          ? [{
+              key: 'batch-add',
+              label: 'Batch add to seller',
+              icon: faBarcodeReadDuo,
+              onSelect: () => setBatchAdding(true),
+            }]
+          : []),
         // Issued tickets (Plan 38): finishing a push that stopped, and taking
         // back what a shop returned. Staff who can issue them.
         ...(canAdmin && notInSquare > 0
@@ -165,6 +178,21 @@ export default function ItemsPage() {
           setSearchParams((p) => { p.delete('fast-edit'); return p; }, { replace: true });
           void qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId] });
           void qc.invalidateQueries({ queryKey: ['ski-swap/unpriced-tickets', orgId, swapId] });
+        }}
+      />
+    )}
+
+    {batchAdding && swapId && (
+      <BatchAddTicketsModal
+        orgId={orgId}
+        swapId={swapId}
+        sellers={sellers}
+        onClose={() => setBatchAdding(false)}
+        onSaved={() => {
+          void qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId] });
+          void qc.invalidateQueries({ queryKey: ['ski-swap/unpriced-tickets', orgId, swapId] });
+          void qc.invalidateQueries({ queryKey: ['ski-swap/ticket-push', orgId, swapId] });
+          void qc.invalidateQueries({ queryKey: ['ski-swap/stats', orgId] });
         }}
       />
     )}

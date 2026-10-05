@@ -201,7 +201,7 @@ describe('a seller with tickets and a printer', () => {
       $transaction: async (fn: (tx: unknown) => unknown) => fn({ swapItem: { createMany: async () => ({}) } }),
       // No swapPrinter here: the old refusal looked one up, and would now throw.
     };
-    await expect(new IssuedTicketService(prisma as never, { forOrg: async () => null } as never)
+    await expect(new IssuedTicketService(prisma as never, { forOrg: async () => null } as never, {} as never)
       .issue('org-1', 'swap-1', 'seller-1', { startNumber: 1, endNumber: 10 }, 'user-1'))
       .resolves.toMatchObject({ created: 10 });
   });

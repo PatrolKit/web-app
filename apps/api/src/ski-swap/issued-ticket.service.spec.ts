@@ -1,4 +1,4 @@
-import { IssuedTicketService, clashMessage } from './issued-ticket.service';
+import { IssuedTicketService, clashMessage, takenMessage } from './issued-ticket.service';
 
 /**
  * Issuing tickets puts them on sale (Plan 38): a block becomes one unpriced,
@@ -34,6 +34,9 @@ function harness(opts: {
       findMany: async ({ where }: { where: Record<string, unknown> }) => {
         // The push asks for accepted items with no Square id.
         if ('squareItemId' in where) return live.filter((r) => r.consignedAt && !r.squareItemId);
+        // Batch add and the per-scan check ask by SKU (Plan 40).
+        const skuIn = (where.sku as { in?: string[] } | undefined)?.in;
+        if (skuIn) return live.filter((r) => skuIn.includes(r.sku));
         return live;
       },
       update: ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
@@ -61,7 +64,12 @@ function harness(opts: {
     },
   };
   const pos = opts.pos === undefined ? null : opts.pos;
-  const service = new IssuedTicketService(prisma as never, { forOrg: async () => pos } as never);
+  const idempotent = new Map<string, Record<string, unknown>>();
+  const idempotency = {
+    getCached: async (scope: string, key: string) => idempotent.get(`${scope}|${key}`) ?? null,
+    save: async (scope: string, key: string, r: Record<string, unknown>) => { idempotent.set(`${scope}|${key}`, r); },
+  };
+  const service = new IssuedTicketService(prisma as never, { forOrg: async () => pos } as never, idempotency as never);
   return { service, created, updates, tombstoned, live, swap };
 }
 
@@ -217,5 +225,59 @@ describe('the overlap message', () => {
     expect(clashMessage(many)).toBe(
       '1 and 2 (Dana); 3, 4, 5, 6, 7, 8, 9, 10, 11 and 12 (Stowe Sports) and 3 more are already items. Nothing was issued.',
     );
+  });
+});
+
+describe('batch add (Plan 40)', () => {
+  it('makes each scanned ticket the seller’s item, as issuing does', async () => {
+    const { service, created } = harness();
+    const res = await service.batchAdd('org-1', 'swap-1', 'seller-1', ['67169', ' 501 ', '9'], 'user-1');
+    expect(res).toEqual({ created: 3 });
+    expect(created.map((r) => r.sku)).toEqual(['67169', '501', '9']);
+    expect(created[0]).toMatchObject({
+      sellerId: 'seller-1', name: 'Item #67169', priceCents: null, hasPrintedTag: true,
+      consignedBy: 'user-1', liveSku: '67169',
+    });
+    expect(created[0].consignedAt).toBeInstanceOf(Date);
+  });
+
+  it('refuses the whole batch when any ticket is taken, naming whose', async () => {
+    const { service, created } = harness({ live: [{ id: 'x', sku: '501', seller: shop('Stowe Sports') }] });
+    await expect(service.batchAdd('org-1', 'swap-1', 'seller-1', ['67169', '501'], 'user-1'))
+      .rejects.toMatchObject({ response: { code: 'TICKET_TAKEN', message: 'Ticket 501 belongs to Stowe Sports.', details: { taken: [{ sku: '501', holder: 'Stowe Sports' }] } } });
+    expect(created).toEqual([]);
+  });
+
+  it('refuses a repeat, a non-ticket, an empty batch, and a swap without legacy tickets', async () => {
+    const { service } = harness();
+    await expect(service.batchAdd('org-1', 'swap-1', 'seller-1', ['501', '501'], 'u')).rejects.toThrow(/501 is in the batch twice/);
+    await expect(service.batchAdd('org-1', 'swap-1', 'seller-1', ['SS26-A-0001'], 'u')).rejects.toThrow(/isn’t a ticket number/);
+    await expect(service.batchAdd('org-1', 'swap-1', 'seller-1', [], 'u')).rejects.toThrow(/at least one/);
+    const off = harness({ swap: { allowLegacyCheckin: false, allowLegacyWeb: false } });
+    await expect(off.service.batchAdd('org-1', 'swap-1', 'seller-1', ['501'], 'u')).rejects.toThrow(/doesn’t take legacy tickets/);
+  });
+
+  it('answers a retry with the same key as the first, creating nothing twice', async () => {
+    const { service, created } = harness();
+    await service.batchAdd('org-1', 'swap-1', 'seller-1', ['501', '502'], 'u', 'key-1');
+    await expect(service.batchAdd('org-1', 'swap-1', 'seller-1', ['501', '502'], 'u', 'key-1')).resolves.toEqual({ created: 2 });
+    expect(created.length).toBe(2);
+  });
+
+  it('says several taken tickets by holder', () => {
+    expect(takenMessage([
+      { sku: '501', holder: 'Stowe Sports' }, { sku: '502', holder: 'Stowe Sports' }, { sku: '600', holder: 'Dana Reyes' },
+    ])).toBe('501 and 502 (Stowe Sports) and 600 (Dana Reyes) are already taken. Nothing was added.');
+  });
+});
+
+describe('the per-scan check (Plan 40 D9)', () => {
+  it('says free, or whose, from our rows only', async () => {
+    const reads: unknown[] = [];
+    const { service } = harness({ live: [{ id: 'x', sku: '501', seller: shop('Stowe Sports') }], pos: { getInventoryCounts: async () => { reads.push(1); return new Map(); } } });
+    await expect(service.ticketCheck('org-1', 'swap-1', '777')).resolves.toEqual({ free: true });
+    await expect(service.ticketCheck('org-1', 'swap-1', '501')).resolves.toEqual({ free: false, holder: 'Stowe Sports' });
+    await expect(service.ticketCheck('org-1', 'swap-1', 'abc')).rejects.toThrow(/digits only/);
+    expect(reads).toEqual([]);
   });
 });
