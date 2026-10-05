@@ -42,11 +42,11 @@ count and total value are wrong for any seller with more than 50 items.
 
 | # | Decision |
 |---|---|
-| D1 | **Pages of 100.** The server filters, sorts and counts, and the browser shows one page with "1–100 of 9,812", Previous and Next. Changing a filter, sort or search starts again at page 1. |
+| D1 | **Pages of 50 or 100**, chosen beside the pager and remembered in that browser; 100 to start. The server filters, sorts and counts, and the browser shows one page with "1–100 of 9,812", Previous and Next. Changing a filter, sort or search starts again at page 1. |
 | D2 | **Every filter and sort runs on the server.** Our own columns run in SQL; For sale, Sold and Status use Square's remembered answer (D5). Search covers what it does today: SKU, name, seller name, email and phone. |
 | D3 | **Counts come from the server in the same answer**: each status's count for the filter menu ("Needs a price (7)", "Sold (3,100)"), items waiting to be accepted for the chosen seller, and items whose stock is unknown. Nothing on the page counts the rows it was sent. |
 | D4 | **A save updates its row in place.** Edit, print, price and accept replace that row in the page with the server's answer, then refresh only the counts. A delete removes the row. Nothing reloads the whole list. |
-| D5 | **Square's answer is remembered, not stored.** The server keeps the last full stock read per swap in memory for **2 minutes**, which is within the 1–5 minutes agreed in review. It's never written to the database, it's gone on a restart, and it's read only when someone needs it. |
+| D5 | **Square's answer is remembered, not stored.** The server keeps the last full stock read per swap in memory for **2 minutes**, which is within the 1–5 minutes agreed in review. It's one setting, to lengthen if Square's reads prove costly. It's never written to the database, it's gone on a restart, and it's read only when someone needs it. |
 | D6 | **One source per screen.** Everything on the Items page and the dashboard reads the remembered answer: row badges, filters, Status sorting and counts. A row's badge then never disagrees with the filter it's listed under. |
 | D7 | **Shown stale while it refreshes.** Once the answer is 2 minutes old, the next request gets it at once and a refresh starts behind it; only the first read for a swap (after a restart) makes someone wait. One refresh runs at a time per swap. |
 | D8 | **Freshness is shown, and can be forced.** The page and the dashboard say "Stock as of 1 min ago". **Refresh stock** re-reads Square now, at most once every 15 s per swap. If a refresh fails, the last answer stays up with its age and a notice that Square didn't answer. |
@@ -75,7 +75,7 @@ count and total value are wrong for any seller with more than 50 items.
 ### Square's remembered answer
 
 - **What it is:** a per-swap entry in memory: stock by variation id, when it was read, and whether the last refresh failed.
-- **How it's filled:** the swap's synced items' counts, read by catalog id in batches as large as Square allows (Q1).
+- **How it's filled:** the swap's synced items' counts, read by catalog id in batches as large as Square allows, learned in the off-hours test.
 - **Who uses it:**
   - the Items page, through the list's status filters, Status sort, counts and row badges;
   - the shop's My Items page;
@@ -95,7 +95,7 @@ count and total value are wrong for any seller with more than 50 items.
   - keeps them in the URL, so the dashboard's links and a reload land on the same view;
   - the paging loop and the browser-side filtering, sorting and counting go;
   - the sort headings from the queued commit stay as they are, and send `sort` and `dir`.
-- **Pager:** "1–100 of 9,812", Previous and Next, under the table and above it when the page is long.
+- **Pager:** "1–100 of 9,812", Previous and Next, and 50 or 100 per page, under the table and above it when the page is long.
 - **Stock line:** "Stock as of 1 min ago · Refresh stock" above the table (D8), and the same on the dashboard.
 - **Saves** follow D4.
 - **The shop's "My Items" page** gets the same, through its own list endpoint (`seller/me/items`), which already takes `skip` and `take`.
@@ -130,13 +130,12 @@ count and total value are wrong for any seller with more than 50 items.
   - a save updating one row and the counts;
   - the pager and the stock line;
   - the Receipt total for a seller with more than 50 items.
-- **Square sandbox:** a full read of a large location, to learn Square's batch limits and how long 10,000 takes (Q1).
+- **Against Square, in off-hours:** there's no sandbox, so the full read is checked against a real account outside swap hours, read-only and with the user's go-ahead. It learns Square's batch limits and how long a large read takes.
 
-## Questions for review
+## Settled in review
 
-1. **Square sandbox:** Square's largest batch and how long a 10,000-item read
-   takes need checking against a real Square account, since the smoke org has
-   no Square. Is there a sandbox account or test location we can use?
-2. **Page size:** 100 rows, or would staff rather scroll a longer page (say 250)?
-3. **The remembered answer's age:** 2 minutes is the default, within the 1–5
-   agreed. Shorter keeps Sold fresher during the sale; longer reads Square less.
+1. **Square testing:** no sandbox. The full read is tested against a real
+   account in off-hours (Tests).
+2. **Page size:** 50 or 100 per page, the viewer's choice (D1).
+3. **The remembered answer's age:** 2 minutes, lengthened only if Square's reads
+   prove costly (D5).
