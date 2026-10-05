@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faKeyboard as faKeyboardDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import { priceInputCents } from '../../lib/money';
 import type { ResolvedTaxonomy, UnpricedTicket } from '../../lib/api.types';
@@ -299,6 +301,12 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
     }
   }
 
+  const hints = field === 'sku'
+    ? (!skuText ? ['Start typing the SKU'] : shown > 0 ? ['Arrows + Enter to pick a match, or Tab when done typing'] : ['Tab when done typing'])
+    : field === 'details'
+      ? [...(shown > 0 ? ['Arrows + Enter to accept a suggestion'] : details.trim() ? [] : ['Start typing details (optional)']), 'Tab when done typing']
+      : (priceText ? ['Enter to save this ticket'] : ['Start typing the price']);
+
   const left = tickets.length;
   const inputClass = 'w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-600';
 
@@ -346,13 +354,6 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               placeholder={ticketsLoading ? 'Loading…' : 'Ticket number'}
               className={`${inputClass} font-mono`}
             />
-            {field === 'sku' && (
-              <Hints lines={!skuText
-                ? ['Start typing the SKU']
-                : shown > 0
-                  ? ['Arrows + Enter to pick a match, or Tab when done typing']
-                  : ['Tab when done typing']} />
-            )}
             {field === 'sku' && shown > 0 && (
               <Suggestions
                 rows={skuSuggestions.map((t) => ({
@@ -385,12 +386,6 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               placeholder="e.g. Rossignol red skis 170"
               className={`${inputClass} disabled:opacity-50`}
             />
-            {field === 'details' && (
-              <Hints lines={[
-                ...(shown > 0 ? ['Arrows + Enter to accept a suggestion'] : details.trim() ? [] : ['Start typing details (optional)']),
-                'Tab when done typing',
-              ]} />
-            )}
             {field === 'details' && shown > 0 && (
               <Suggestions
                 rows={detailSuggestions.map((s) => ({ key: s.key, label: s.label, sublabel: s.sublabel }))}
@@ -418,9 +413,6 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               aria-label="Price in dollars"
               className={`${inputClass} pl-7 text-right disabled:opacity-50`}
             />
-            {field === 'price' && ticket && (
-              <Hints lines={priceText ? ['Enter to save this ticket'] : ['Start typing the price']} />
-            )}
           </Field>
         </div>
 
@@ -466,19 +458,22 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
             </ul>
           )}
         </div>
+
+        {/* What to do next in the focused field, said as you go. */}
+        <div
+          className="-mx-5 -mb-5 px-5 py-3 bg-surface-100 border-t border-gray-700 rounded-b-lg flex items-center gap-3 text-sm"
+          aria-live="polite"
+        >
+          <FontAwesomeIcon icon={faKeyboardDuo} className="text-brand-500 shrink-0" aria-hidden="true" />
+          <span className="text-xs uppercase text-gray-400 shrink-0 w-16">{FIELD_NAMES[field]}</span>
+          <span className="text-gray-100">{hints.join(' · ')}</span>
+        </div>
       </div>
     </div>
   );
 }
 
-/** What to do next in the focused field, said as you go. */
-function Hints({ lines }: { lines: string[] }) {
-  return (
-    <ul className="mt-1 space-y-0.5 text-xs text-gray-500" aria-live="polite">
-      {lines.map((l) => <li key={l}>{l}</li>)}
-    </ul>
-  );
-}
+const FIELD_NAMES: Record<Field, string> = { sku: 'SKU', details: 'Details', price: 'Price' };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
