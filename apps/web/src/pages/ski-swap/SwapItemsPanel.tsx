@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
+import { faCheckDouble as faCheckDoubleDuo, faPlus as faPlusDuo, faTicket as faTicketDuo, faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
 import type { ItemAttributeInput, ItemResponse, SellerResponse } from '../../lib/api.types';
 import SearchableSelect from '../../components/SearchableSelect';
 import ActionsMenu, { type MenuAction } from '../../components/ActionsMenu';
@@ -528,6 +528,7 @@ export default function SwapItemsPanel({
       ? [{
           key: 'add',
           label: tickets && !tickets.optional ? 'Describe a ticket' : 'Add item',
+          icon: tickets && !tickets.optional ? faTicketDuo : faPlusDuo,
           disabledReason: addBlockedBecause,
           onSelect: () => {
             setShowForm(true);
@@ -542,6 +543,7 @@ export default function SwapItemsPanel({
       ? [{
           key: 'accept',
           label: consignAll.isPending ? 'Accepting…' : `Accept ${sellerName}’s items`,
+          icon: faCheckDoubleDuo,
           disabledReason: consignAll.isPending ? 'Working on it.' : undefined,
           onSelect: () => {
             // Says the reach before it does anything: all of what? Every one

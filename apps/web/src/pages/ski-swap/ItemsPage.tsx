@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { faFileImport as faFileImportDuo, faKeyboard as faKeyboardDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
@@ -90,6 +91,7 @@ export default function ItemsPage() {
           ? [{
               key: 'fast-edit',
               label: `Fast edit tickets (${unpricedCount})`,
+              icon: faKeyboardDuo,
               disabledReason: unpricedCount === 0 ? 'No tickets need a price.' : undefined,
               onSelect: () => setFastEditing(true),
             }]
@@ -97,6 +99,7 @@ export default function ItemsPage() {
         {
           key: 'import',
           label: 'Import for a seller',
+          icon: faFileImportDuo,
           // Said, not hidden: a control that comes and goes teaches staff it's
           // unreliable and gives them nowhere to look for the reason.
           disabledReason: importBlockedBecause || undefined,

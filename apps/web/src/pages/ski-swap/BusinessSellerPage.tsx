@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
+import { faFileImport as faFileImportDuo } from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../../lib/api';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SwapItemsPanel from './SwapItemsPanel';
@@ -75,7 +76,7 @@ export default function BusinessSellerPage() {
       // A shop can import when its rows can be made into items: on tickets, or
       // with generated SKUs when the swap's web isn't tickets-only (Plan 31).
       actions={isShop && (onTickets || (ticketState && !webTicketsOnly)) && sellerSelectedSwapId
-        ? [{ key: 'import', label: 'Import items from a file', onSelect: () => setImporting(true) }]
+        ? [{ key: 'import', label: 'Import items from a file', icon: faFileImportDuo, onSelect: () => setImporting(true) }]
         : []}
       addBlockedBecause={
         webTicketsOnly && ticketState && !onTickets

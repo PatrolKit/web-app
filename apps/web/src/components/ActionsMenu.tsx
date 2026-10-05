@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 
 export interface MenuAction {
   key: string;
   label: string;
+  /** Duotone, as the rest of the app's icons. */
+  icon?: IconDefinition;
   onSelect: () => void;
   /** Why it can't be used right now; shown under it, and the item is inert. */
   disabledReason?: string;
@@ -75,10 +79,16 @@ export default function ActionsMenu({ actions, label = 'Actions', align = 'left'
               role="menuitem"
               disabled={!!a.disabledReason}
               onClick={() => { setOpen(false); a.onSelect(); }}
-              className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-surface-100 focus:bg-surface-100 focus:outline-none disabled:text-gray-500 disabled:hover:bg-transparent"
+              className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-surface-100 focus:bg-surface-100 focus:outline-none disabled:text-gray-500 disabled:hover:bg-transparent flex items-start gap-2.5"
             >
-              {a.label}
-              {a.disabledReason && <span className="block text-xs text-gray-500 mt-0.5 max-w-64">{a.disabledReason}</span>}
+              {/* A fixed-width slot, so labels line up with or without one. */}
+              <span className="w-4 shrink-0 pt-0.5 text-center" aria-hidden="true">
+                {a.icon && <FontAwesomeIcon icon={a.icon} className={a.disabledReason ? 'text-gray-600' : 'text-brand-500'} />}
+              </span>
+              <span>
+                {a.label}
+                {a.disabledReason && <span className="block text-xs text-gray-500 mt-0.5 max-w-64">{a.disabledReason}</span>}
+              </span>
             </button>
           ))}
         </div>
