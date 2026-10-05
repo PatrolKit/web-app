@@ -182,13 +182,30 @@ function describeRanges(ranges: { startNumber: number; endNumber: number }[]): s
  */
 export type ItemStateKey = 'not_received' | 'not_in_square' | 'stock_unknown' | 'for_sale' | 'sold';
 
-export const ITEM_STATE_FILTERS: { value: ItemStateKey; label: string }[] = [
+/**
+ * What the status filter offers. Where an item is in its life, then the two
+ * things staff go looking for: an item that never reached Square, and a
+ * ticket still waiting for its price (Plan 32).
+ *
+ * "Stock unknown" isn't one: it's Square not answering when the page loaded,
+ * not something true of the item, and a notice above the table says so.
+ */
+export type StatusFilter = Exclude<ItemStateKey, 'stock_unknown'> | 'needs_price';
+
+export const ITEM_STATE_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'not_received', label: 'Not yet received' },
-  { value: 'not_in_square', label: 'Not in Square' },
-  { value: 'stock_unknown', label: 'Stock unknown' },
   { value: 'for_sale', label: 'For sale' },
   { value: 'sold', label: 'Sold' },
+  { value: 'not_in_square', label: 'Not in Square' },
+  { value: 'needs_price', label: 'Needs a price' },
 ];
+
+/** Whether an item passes the status filter. */
+export function matchesStatus(item: ItemResponse, filter: '' | StatusFilter): boolean {
+  if (!filter) return true;
+  if (filter === 'needs_price') return item.priceCents === null;
+  return itemState(item).key === filter;
+}
 
 /**
  * Accepts everything one seller is still waiting on.
@@ -319,9 +336,9 @@ export default function SwapItemsPanel({
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
   const [printFilter, setPrintFilter] = useState<'' | 'not_printed' | 'printed'>('');
-  const [stateFilter, setStateFilter] = useState<'' | ItemStateKey>('');
+  // The dashboard's "needs a price" link opens on that filter (Plan 32).
+  const [stateFilter, setStateFilter] = useState<'' | StatusFilter>(initialNeedsPrice ? 'needs_price' : '');
   /** Only tickets still waiting for a price, to work through before sales start (Plan 32). */
-  const [needsPrice, setNeedsPrice] = useState(initialNeedsPrice);
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ItemResponse | null>(null);
   const [printingItem, setPrintingItem] = useState(false);
@@ -546,9 +563,11 @@ export default function SwapItemsPanel({
     // Through `itemState`, not through the underlying fields again: a filter
     // that decided for itself what "sold" meant could disagree with the column
     // beside it, and the column is the one that had to be corrected.
-    .filter((i) => (stateFilter ? itemState(i).key === stateFilter : true))
-    .filter((i) => (needsPrice ? i.priceCents === null : true));
+    .filter((i) => matchesStatus(i, stateFilter));
   const unpricedCount = (data?.items ?? []).filter((i) => i.priceCents === null).length;
+  // Square didn't answer for some of what's in it: those rows can't be called
+  // for sale or sold until it does.
+  const stockUnknown = (data?.items ?? []).filter((i) => itemState(i).key === 'stock_unknown').length;
 
   if (!swapId) return null;
   if (isLoading) return <p className="text-gray-400 text-sm">Loading…</p>;
@@ -574,12 +593,15 @@ export default function SwapItemsPanel({
           )}
           <select
             value={stateFilter}
-            onChange={(e) => setStateFilter(e.target.value as '' | ItemStateKey)}
+            onChange={(e) => setStateFilter(e.target.value as '' | StatusFilter)}
+            aria-label="Filter by status"
             className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
           >
-            <option value="">All states</option>
+            <option value="">All statuses</option>
             {ITEM_STATE_FILTERS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value}>
+                {o.label}{o.value === 'needs_price' && unpricedCount > 0 ? ` (${unpricedCount})` : ''}
+              </option>
             ))}
           </select>
           {sellers && (
@@ -604,19 +626,6 @@ export default function SwapItemsPanel({
             <option value="not_printed">Not printed</option>
             <option value="printed">Printed</option>
           </select>
-          {(unpricedCount > 0 || needsPrice) && (
-            <button
-              type="button"
-              onClick={() => setNeedsPrice(!needsPrice)}
-              aria-pressed={needsPrice}
-              title="Legacy tickets checked in without a price. Unpriced at the register, the clerk has to type one."
-              className={`text-sm px-2 py-1.5 rounded border ${
-                needsPrice ? 'border-amber-500 bg-amber-900/30 text-amber-300' : 'border-gray-700 text-amber-400 hover:bg-surface-100'
-              }`}
-            >
-              Needs a price ({unpricedCount})
-            </button>
-          )}
         </div>
         <div className="flex gap-2 items-center">
         {sellerFilter && panelApi.consignAllForSeller && (
@@ -652,6 +661,13 @@ export default function SwapItemsPanel({
         )}
         </div>
       </div>
+
+      {stockUnknown > 0 && (
+        <p className="text-xs text-amber-400">
+          Square didn’t answer just now, so {stockUnknown} item{stockUnknown === 1 ? '' : 's'} show
+          {stockUnknown === 1 ? 's' : ''} “Stock unknown” and won’t appear under For sale or Sold until it does.
+        </p>
+      )}
 
       {/* Items table */}
       <div className="overflow-x-auto">
