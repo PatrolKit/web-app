@@ -71,6 +71,8 @@ import { StubPayPalClient, StubPosAdapterFactory, payoutStubsEnabled } from './p
 import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { IdentityModule } from '../common/identity/identity.module';
+import { SwapDiagnosticsController } from './diagnostics/swap-diagnostics.controller';
+import { SwapDiagnosticsService } from './diagnostics/swap-diagnostics.service';
 
 @Module({
   imports: [AuthModule, PermissionsModule, IdentityModule],
@@ -103,6 +105,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     ReceiptController,
     SellerReceiptController,
     PublicReceiptController,
+    SwapDiagnosticsController,
   ],
   providers: [
     ReceiptService,
@@ -145,6 +148,7 @@ import { IdentityModule } from '../common/identity/identity.module';
     CheckinService,
     PrintQueueService,
     QrSheetService,
+    SwapDiagnosticsService,
     TaxonomyService,
     TaxonomyIconService,
   ],

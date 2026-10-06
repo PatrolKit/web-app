@@ -462,6 +462,8 @@ model SkiSwap {
   skuCounters  SwapSkuCounter[]
   receipts     Receipt[]
   payoutRuns   PayoutRun[]
+  diagnosticRuns   SwapDiagnosticRun[]
+  diagnosticHidden SwapDiagnosticHidden[]
 
   @@unique([orgId, title])
   @@unique([orgId, activeSkuPrefix])
@@ -1596,4 +1598,76 @@ model PlatformSettings {
   smsEnabled  Boolean  @default(false)
   updatedAt   DateTime @updatedAt
   updatedById String?
+}
+
+// ─── Swap diagnostics (Plan 41) ──────────────────────────────────────────────
+
+/// One run of the swap diagnostics: our items against the swap's Square
+/// category, matched by SKU. The last 30 per swap are kept.
+model SwapDiagnosticRun {
+  id          String    @id @default(cuid())
+  orgId       String
+  swapId      String
+  startedBy   String?
+  startedAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  finishedAt  DateTime?
+  /// "running" | "done" | "failed"
+  status      String    @db.VarChar(16)
+  /// Square items read so far, for the progress line.
+  done        Int       @default(0)
+  error       String?   @db.Text
+  /// Live items of ours, and items in the Square category, when it finished.
+  ourCount    Int?
+  squareCount Int?
+
+  swap   SkiSwap               @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  issues SwapDiagnosticIssue[]
+
+  @@index([swapId, startedAt])
+}
+
+/// One disagreement a run found, and what staff chose to do about it.
+model SwapDiagnosticIssue {
+  id          String    @id @default(cuid())
+  runId       String
+  swapId      String
+  sku         String
+  /// "only_square" | "only_ours" | "differs" | "not_linked" | "twice"
+  kind        String    @db.VarChar(16)
+  /// For "differs": "name" | "notes" | "price".
+  field       String?   @db.VarChar(8)
+  /// What was compared, with ids: our item, and Square's item or copies.
+  ours        Json?
+  square      Json?
+  /// Both sides' compared values, hashed: what "left as is" hides.
+  fingerprint String    @db.VarChar(64)
+  /// "open" | "applied" | "fixed" | "left" | "failed"
+  state       String    @default("open") @db.VarChar(8)
+  choice      String?   @db.VarChar(24)
+  decidedBy   String?
+  decidedAt   DateTime?
+  error       String?   @db.Text
+
+  run SwapDiagnosticRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, kind])
+}
+
+/// An issue marked resolved and left as is: later runs don't raise it again
+/// while both sides hold these values. Kept apart from the issues, which are
+/// pruned with their runs, so a hide lasts as long as the swap.
+model SwapDiagnosticHidden {
+  id          String   @id @default(cuid())
+  swapId      String
+  sku         String
+  kind        String   @db.VarChar(16)
+  field       String   @default("") @db.VarChar(8)
+  fingerprint String   @db.VarChar(64)
+  hiddenBy    String?
+  hiddenAt    DateTime @default(now())
+
+  swap SkiSwap @relation(fields: [swapId], references: [id], onDelete: Cascade)
+
+  @@unique([swapId, sku, kind, field, fingerprint])
 }

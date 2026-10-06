@@ -781,6 +781,30 @@ export const api = {
     /** Puts the swap's accepted tickets that aren't in Square there, in the background. */
     pushTickets: (orgId: string, swapId: string) =>
       request<{ started: boolean }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/ticket-push`, { method: 'POST' }),
+
+    // Swap diagnostics (Plan 41)
+    /** Starts the checks, or answers the run already going. */
+    startDiagnostics: (orgId: string, swapId: string) =>
+      request<{ runId: string }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics`, { method: 'POST' }),
+    /** The latest run with its issues; null before the first. */
+    latestDiagnostics: (orgId: string, swapId: string) =>
+      request<import('./api.types').DiagnosticRunResponse | null>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics/latest`),
+    applyDiagnosticChoice: (
+      orgId: string, swapId: string, issueId: string,
+      body: { choice: import('./api.types').DiagnosticChoice; sellerId?: string; restoreItemId?: string; keepSquareItemId?: string },
+    ) =>
+      request<import('./api.types').DiagnosticIssueResponse>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics/issues/${issueId}`,
+        { method: 'POST', body: JSON.stringify(body) },
+      ),
+    applyDiagnosticChoiceToAll: (
+      orgId: string, swapId: string, runId: string,
+      body: { kind: import('./api.types').DiagnosticIssueKind; field?: import('./api.types').DiagnosticField; choice: import('./api.types').DiagnosticChoice; sellerId?: string },
+    ) =>
+      request<import('./api.types').DiagnosticApplyAllResponse>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics/runs/${runId}/apply-all`,
+        { method: 'POST', body: JSON.stringify(body) },
+      ),
     /** A whole inventory at once. Nothing is written unless every row passes. */
     importTicketItems: (orgId: string, swapId: string, file: File, generateSkus = false) => {
       const form = new FormData();

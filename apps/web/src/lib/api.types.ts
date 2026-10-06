@@ -1275,3 +1275,16 @@ export interface PublicSkuStatus {
 
 /** A ticket still waiting for its price, for the fast edit (Plan 37). */
 export type { UnpricedTicket } from '@patrolkit/contracts/ski-swap.contracts';
+
+// ─── Swap diagnostics (Plan 41) ──────────────────────────────────────────
+
+export type {
+  DiagnosticApplyAllResponse,
+  DiagnosticChoice,
+  DiagnosticField,
+  DiagnosticIssueKind,
+  DiagnosticIssueResponse,
+  DiagnosticOurSide,
+  DiagnosticRunResponse,
+  DiagnosticSquareSide,
+} from '@patrolkit/contracts/swap-diagnostics.contracts';

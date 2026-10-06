@@ -62,7 +62,9 @@ describe('the Items list (Plan 39)', () => {
     await service.list('org-1', 'swap-1', { status: 'not_in_square' });
     await service.list('org-1', 'swap-1', { status: 'needs_price', printed: false });
     await service.list('org-1', 'swap-1', { status: 'not_received' });
-    expect(wheres[0]).toMatchObject({ consignedAt: { not: null }, squareVariationId: null });
+    // Missing either id (Plan 41 D14), as the row's badge reads it.
+    expect(wheres[0]).toMatchObject({ consignedAt: { not: null } });
+    expect((wheres[0] as { AND: unknown[] }).AND).toContainEqual({ OR: [{ squareItemId: null }, { squareVariationId: null }] });
     expect(wheres[1]).toMatchObject({ priceCents: null, hasPrintedTag: false });
     expect(wheres[2]).toMatchObject({ consignedAt: null });
   });

@@ -124,9 +124,11 @@ export class ItemService {
       ...(opts.updatedSince ? {} : { deletedAt: null }),
       ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
       ...(opts.updatedSince ? { updatedAt: { gt: new Date(opts.updatedSince) } } : {}),
-      // Two `OR`s, the search's and the cursor's, each its own entry in `AND`,
-      // so neither replaces the other.
+      // The `OR`s (the search's, the cursor's, "not in Square"'s) each their
+      // own entry in `AND`, so none replaces another.
       AND: [
+        // Missing either id (Plan 41 D14): the same test as the row's badge.
+        ...(opts.status === 'not_in_square' ? [{ OR: [{ squareItemId: null }, { squareVariationId: null }] }] : []),
         ...(opts.query ? [{ OR: [
           { name: { contains: opts.query } },
           { sku: { contains: opts.query } },
@@ -162,7 +164,7 @@ export class ItemService {
       ...(opts.printed === undefined ? {} : { hasPrintedTag: opts.printed }),
       // Each is a fact about our own row (D2): never a Square read.
       ...(opts.status === 'not_received' ? { consignedAt: null } : {}),
-      ...(opts.status === 'not_in_square' ? { consignedAt: { not: null }, squareVariationId: null } : {}),
+      ...(opts.status === 'not_in_square' ? { consignedAt: { not: null } } : {}),
       ...(opts.status === 'needs_price' ? { priceCents: null } : {}),
     };
 
@@ -447,7 +449,7 @@ export class ItemService {
    * finish (D17) — and an item that is not on the floor yet cannot be sold at
    * the register in the meantime.
    */
-  async create(orgId: string, swapId: string, data: { id?: string; categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents?: number | null; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string; approveNewValues?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
+  async create(orgId: string, swapId: string, data: { id?: string; categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents?: number | null; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string; approveNewValues?: boolean; squareIds?: { itemId: string; variationId: string } }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(idempotencyScope(orgId, swapId), idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -558,6 +560,10 @@ export class ItemService {
          * anything already on the floor.
          */
         consignedAt: data.awaitsConsignment ? null : new Date(),
+        // Already in Square (Plan 41's Copy to PatrolKit): linked, not pushed.
+        ...(data.squareIds
+          ? { squareItemId: data.squareIds.itemId, squareVariationId: data.squareIds.variationId, lastSyncedAt: new Date() }
+          : {}),
       },
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: true },
     }).catch(async (err: unknown) => {
@@ -582,7 +588,7 @@ export class ItemService {
 
     // Square is where "on sale" lives, so an item waiting to be accepted must
     // not reach it — not priced at zero, not flagged: absent.
-    if (!data.deferPos && !data.awaitsConsignment) await this.syncItemToPos(orgId, swap, item);
+    if (!data.deferPos && !data.awaitsConsignment && !data.squareIds) await this.syncItemToPos(orgId, swap, item);
 
     const refreshed = data.deferPos
       ? item
@@ -629,7 +635,7 @@ export class ItemService {
       }));
   }
 
-  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; ifUnpriced?: true; actorId?: string; approveNewValues?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
+  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number | null; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; ifUnpriced?: true; actorId?: string; approveNewValues?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(`item-patch:${orgId}:${swapId}`, idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -1386,7 +1392,7 @@ export class ItemService {
       sku: item.sku, priceCents: item.priceCents, originalQuantity: item.originalQuantity,
       inStock, soldCount: Math.max(0, item.originalQuantity - inStock),
       inventoryKnown,
-      squareSynced: !!item.squareItemId,
+      squareSynced: !!item.squareItemId && !!item.squareVariationId,
       donateProceeds: item.donateProceeds,
       hasPrintedTag: item.hasPrintedTag,
       // `ticketNumberOf` is the same parse the scan lookup uses, so there is one

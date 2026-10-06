@@ -35,6 +35,27 @@ export interface PosSaleLine {
   soldAt: Date;
 }
 
+/**
+ * One catalog item as Square holds it, flattened to what the swap diagnostics
+ * compare (Plan 41): one entry per variation, keyed by its SKU.
+ */
+export interface PosCatalogItem {
+  itemId: string;
+  variationId: string;
+  sku: string;
+  name: string;
+  /** The item's description: our notes. Null when it has none. */
+  description: string | null;
+  pricing: { type: 'fixed'; cents: number } | { type: 'variable' };
+  /** The item's version, as a string so it survives JSON. */
+  version: string | null;
+  /** When Square last changed it. Square keeps no creation time. */
+  updatedAt: string | null;
+}
+
+/** One item's outcome in a bulk write: its ids, or Square's reason. */
+export type PosUpsertResult = { posItemId: string; posVariationId: string } | { error: string };
+
 /** Org-scoped POS adapter — all methods operate against one org's credentials. */
 export interface IPosAdapter {
   /** Creates or recreates a POS category and returns its ID. */
@@ -64,6 +85,23 @@ export interface IPosAdapter {
    * off the last page.
    */
   listSales(locationId: string, from: Date, to: Date): Promise<PosSaleLine[]>;
+  /**
+   * Every item in a category (Plan 41), paged to the end. `onPage` hears the
+   * running count, for a progress line.
+   */
+  listCategoryItems(categoryId: string, onPage?: (soFar: number) => void): Promise<PosCatalogItem[]>;
+  /** The category's items with these SKUs (Plan 41): one SKU's current state, re-read. */
+  itemsBySku(categoryId: string, skus: string[]): Promise<PosCatalogItem[]>;
+  /**
+   * Writes many items at once (Plan 41): existing ones (with `posItemId`) at a
+   * fresh version, new ones created with `initialQuantity` in stock. Answers
+   * per item in input order; a batch Square refuses is reported on its items
+   * and the others stand.
+   */
+  upsertItems(items: PosItemSync[], locationId: string, initialQuantity: number): Promise<{
+    results: PosUpsertResult[];
+    resolvedCategoryId: string;
+  }>;
 }
 
 /** Factory that builds an org-scoped adapter, returning null when POS is not configured. */

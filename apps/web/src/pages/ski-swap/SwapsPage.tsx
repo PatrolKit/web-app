@@ -6,6 +6,7 @@ import type { SwapResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import { useAuth } from '../../contexts/AuthContext';
 import SwapSettingsModal from './SwapSettingsModal';
+import SwapDiagnosticsModal from './SwapDiagnosticsModal';
 
 /** "check-in", "web", or both, for a badge. */
 function places(checkin: boolean, web: boolean): string {
@@ -23,6 +24,8 @@ export default function SwapsPage() {
   const qc = useQueryClient();
   /** The swap being edited in the dialog; `'new'` while creating one. */
   const [editing, setEditing] = useState<SwapResponse | 'new' | null>(null);
+  /** The swap whose diagnostics are open (Plan 41). */
+  const [diagnosing, setDiagnosing] = useState<SwapResponse | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [titleSort, setTitleSort] = useState<'creation' | 'asc' | 'desc'>('creation');
 
@@ -50,6 +53,9 @@ export default function SwapsPage() {
 
   return (
     <div className="space-y-4">
+      {diagnosing && (
+        <SwapDiagnosticsModal orgId={orgId} swap={diagnosing} onClose={() => setDiagnosing(null)} />
+      )}
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
           <select
@@ -150,6 +156,8 @@ export default function SwapsPage() {
                   <td className="py-2 flex gap-3">
                     <button onClick={() => setEditing(s)}
                       className="text-xs text-brand-500 hover:underline">Edit</button>
+                    <button onClick={() => setDiagnosing(s)}
+                      className="text-xs text-brand-500 hover:underline">Diagnostics</button>
                     <button onClick={() => toggleMutation.mutate({ id: s.id, active: !s.active })}
                       disabled={toggleMutation.isPending}
                       className="text-xs text-brand-500 hover:underline">

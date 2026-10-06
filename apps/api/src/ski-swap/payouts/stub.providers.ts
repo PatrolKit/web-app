@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { appendFileSync, readFileSync } from 'fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { PayPalClient, type PayoutBatchResult, type PayoutItemRequest } from './paypal.client';
-import { PosAdapterFactory, type IPosAdapter, type PosSaleLine } from '../pos/pos.adapter';
+import {
+  PosAdapterFactory, type IPosAdapter, type PosCatalogItem, type PosItemSync, type PosSaleLine, type PosUpsertResult,
+} from '../pos/pos.adapter';
 
 /**
  * Test doubles for the two things a payout run reaches outside itself: Square's
@@ -132,18 +134,75 @@ class StubPosAdapter implements IPosAdapter {
       .filter((r) => r.soldAt >= from && r.soldAt <= to);
   }
 
+  // ─── A catalog in a file, for the swap diagnostics (Plan 41) ───────────────
+  //
+  // `SMOKE_CATALOG_FILE` is the catalog: read on every call and written back,
+  // so a smoke script can change "Square" between runs as staff would by hand.
+
+  private catalog(): (PosCatalogItem & { categoryId: string })[] {
+    const path = process.env.SMOKE_CATALOG_FILE;
+    if (!path) this.refuse();
+    return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : [];
+  }
+
+  private saveCatalog(rows: (PosCatalogItem & { categoryId: string })[]): void {
+    writeFileSync(process.env.SMOKE_CATALOG_FILE!, JSON.stringify(rows, null, 2));
+  }
+
+  async listCategoryItems(categoryId: string, onPage?: (soFar: number) => void): Promise<PosCatalogItem[]> {
+    const rows = this.catalog().filter((r) => r.categoryId === categoryId);
+    onPage?.(rows.length);
+    return rows;
+  }
+
+  async itemsBySku(categoryId: string, skus: string[]): Promise<PosCatalogItem[]> {
+    return this.catalog().filter((r) => r.categoryId === categoryId && skus.includes(r.sku));
+  }
+
+  async upsertItems(items: PosItemSync[]): Promise<{ results: PosUpsertResult[]; resolvedCategoryId: string }> {
+    const rows = this.catalog();
+    const results = items.map((item): PosUpsertResult => {
+      const row: PosCatalogItem & { categoryId: string } = {
+        itemId: '', variationId: '', version: '1', updatedAt: new Date().toISOString(),
+        sku: item.sku,
+        name: item.name,
+        description: item.description?.trim() || null,
+        pricing: item.priceCents === null ? { type: 'variable' } : { type: 'fixed', cents: item.priceCents },
+        categoryId: item.categoryId,
+      };
+      const at = item.posItemId ? rows.findIndex((r) => r.itemId === item.posItemId) : -1;
+      if (at >= 0) {
+        rows[at] = { ...row, itemId: rows[at].itemId, variationId: rows[at].variationId, version: String(Number(rows[at].version ?? 0) + 1) };
+      } else {
+        const n = rows.length + 1;
+        rows.push({ ...row, itemId: `stub-item-${Date.now().toString(36)}-${n}`, variationId: `stub-var-${Date.now().toString(36)}-${n}` });
+      }
+      const saved = at >= 0 ? rows[at] : rows[rows.length - 1];
+      return { posItemId: saved.itemId, posVariationId: saved.variationId };
+    });
+    this.saveCatalog(rows);
+    return { results, resolvedCategoryId: items[0]?.categoryId ?? '' };
+  }
+
+  async deleteItems(posItemIds: string[]): Promise<void> {
+    this.saveCatalog(this.catalog().filter((r) => !posItemIds.includes(r.itemId)));
+  }
+
   private refuse(): never {
-    throw new Error('The stub POS adapter only answers listSales');
+    throw new Error('The stub POS adapter only answers listSales, and the catalog calls with SMOKE_CATALOG_FILE set');
   }
 
   upsertCategory(): Promise<string> { this.refuse(); }
   syncItem(): never { this.refuse(); }
   deleteItem(): never { this.refuse(); }
   syncNewItems(): never { this.refuse(); }
-  deleteItems(): never { this.refuse(); }
   uploadImage(): never { this.refuse(); }
   deleteImage(): never { this.refuse(); }
-  getInventoryCounts(): never { this.refuse(); }
+  /** No stock in the stub's catalog: an empty answer, which reads as unknown rather than failing a write. */
+  async getInventoryCounts(): Promise<Map<string, number>> {
+    if (!process.env.SMOKE_CATALOG_FILE) this.refuse();
+    return new Map();
+  }
   setInitialInventory(): never { this.refuse(); }
   setInventoryPhysicalCount(): never { this.refuse(); }
 }

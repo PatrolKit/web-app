@@ -4,7 +4,8 @@ import { SquareClient, SquareError } from 'square';
 import { SquareClientService } from '../square-client.service';
 import { PosAdapterFactory, type IPosAdapter, type PosItemSync } from './pos.adapter';
 import type { Square } from 'square';
-import type { PosSaleLine } from './pos.adapter';
+import type { PosCatalogItem, PosSaleLine, PosUpsertResult } from './pos.adapter';
+import { withRateLimitRetry } from './square-retry';
 
 function isSquareMissingReferenceError(err: unknown): boolean {
   if (!(err instanceof SquareError)) return false;
@@ -95,29 +96,160 @@ class SquarePosAdapter implements IPosAdapter {
         return { posItemId, posVariationId };
       });
       ids.push(...chunkIds);
-
-      for (let at = 0; at < chunkIds.length; at += 100) {
-        const variations = chunkIds.slice(at, at + 100).map((x) => x.posVariationId);
-        const stock = () => this.client.inventory.batchCreateChanges({
-          idempotencyKey: uuidv4(),
-          changes: variations.map((catalogObjectId) => ({
-            type: 'ADJUSTMENT' as const,
-            adjustment: {
-              catalogObjectId,
-              fromState: 'NONE' as const,
-              fromLocationId: locationId,
-              toState: 'IN_STOCK' as const,
-              toLocationId: locationId,
-              quantity: String(initialQuantity),
-              occurredAt: new Date().toISOString(),
-            },
-          })),
-        });
-        await stock().catch(() => stock()).catch((err) => console.error('[Square] batch stock failed:', err));
-      }
+      await this.addStartingStock(chunkIds.map((x) => x.posVariationId), locationId, initialQuantity);
     }
 
     return { ids, resolvedCategoryId: categoryId };
+  }
+
+  /**
+   * New items' starting stock, 100 to a call (Square's limit). A call that
+   * fails is retried once and then logged rather than thrown: the catalogue
+   * ids must still come back. An item left with no count is repaired by its
+   * next single sync.
+   */
+  private async addStartingStock(variationIds: string[], locationId: string, quantity: number): Promise<void> {
+    for (let at = 0; at < variationIds.length; at += 100) {
+      const variations = variationIds.slice(at, at + 100);
+      const stock = () => this.client.inventory.batchCreateChanges({
+        idempotencyKey: uuidv4(),
+        changes: variations.map((catalogObjectId) => ({
+          type: 'ADJUSTMENT' as const,
+          adjustment: {
+            catalogObjectId,
+            fromState: 'NONE' as const,
+            fromLocationId: locationId,
+            toState: 'IN_STOCK' as const,
+            toLocationId: locationId,
+            quantity: String(quantity),
+            occurredAt: new Date().toISOString(),
+          },
+        })),
+      });
+      await stock().catch(() => stock()).catch((err) => console.error('[Square] batch stock failed:', err));
+    }
+  }
+
+  // ─── Swap diagnostics (Plan 41) ─────────────────────────────────────────────
+
+  async listCategoryItems(categoryId: string, onPage?: (soFar: number) => void): Promise<PosCatalogItem[]> {
+    const out: PosCatalogItem[] = [];
+    let cursor: string | undefined;
+    do {
+      const res = await withRateLimitRetry(() =>
+        this.client.catalog.searchItems({ categoryIds: [categoryId], limit: 100, cursor }));
+      for (const obj of res.items ?? []) out.push(...catalogEntries(obj));
+      cursor = res.cursor;
+      onPage?.(out.length);
+    } while (cursor);
+    return out;
+  }
+
+  /**
+   * Variations by SKU, with their items, then only the items in the category.
+   * 100 SKUs to a search; Square answers up to 1,000 objects a page.
+   */
+  async itemsBySku(categoryId: string, skus: string[]): Promise<PosCatalogItem[]> {
+    const wanted = new Set(skus);
+    const parents = new Map<string, Square.CatalogObject>();
+    for (let at = 0; at < skus.length; at += 100) {
+      let cursor: string | undefined;
+      do {
+        const res = await withRateLimitRetry(() => this.client.catalog.search({
+          objectTypes: ['ITEM_VARIATION'],
+          includeRelatedObjects: true,
+          limit: 1000,
+          cursor,
+          query: { setQuery: { attributeName: 'sku', attributeValues: skus.slice(at, at + 100) } },
+        }));
+        for (const obj of res.relatedObjects ?? []) if (obj.type === 'ITEM' && obj.id) parents.set(obj.id, obj);
+        cursor = res.cursor;
+      } while (cursor);
+    }
+    return [...parents.values()]
+      .filter((obj) => inCategory(obj, categoryId))
+      .flatMap((obj) => catalogEntries(obj))
+      .filter((entry) => wanted.has(entry.sku));
+  }
+
+  /**
+   * Many items written in as few calls as Square allows: existing ones at the
+   * version Square holds now, read just before, so a write isn't refused for
+   * being stale; new ones with their starting stock. One whose stored id
+   * Square no longer has is created afresh, as `syncItem` does.
+   *
+   * A batch refused for a version mismatch (changed in the meantime) is tried
+   * once more at fresh versions. A batch that still fails is reported on its
+   * items, and the other batches stand.
+   */
+  async upsertItems(items: PosItemSync[], locationId: string, initialQuantity: number) {
+    const results: PosUpsertResult[] = new Array(items.length);
+    let categoryId = items[0]?.categoryId ?? '';
+    const categoryName = items[0]?.categoryName ?? '';
+
+    for (let start = 0; start < items.length; start += 500) {
+      const chunk = items.slice(start, start + 500);
+      const write = async (category: string) => {
+        const versions = await this.versionsOf(
+          chunk.flatMap((item) => (item.posItemId && item.posVariationId ? [item.posItemId] : [])),
+        );
+        const objects = chunk.map((item, i) => {
+          const version = item.posItemId ? versions.get(item.posItemId) : undefined;
+          return version !== undefined
+            ? itemObject(item, category, item.posItemId!, item.posVariationId!, version)
+            : itemObject(item, category, `#item${i}`, `#variation${i}`);
+        });
+        const res = await withRateLimitRetry(() => this.client.catalog.batchUpsert({
+          idempotencyKey: uuidv4(),
+          batches: [{ objects }],
+        }));
+        return { res, objects };
+      };
+
+      try {
+        const { res, objects } = await write(categoryId).catch(async (err: unknown) => {
+          if (err instanceof SquareError && err.errors.some((e) => e.code === 'VERSION_MISMATCH')) {
+            return write(categoryId);
+          }
+          if (!isSquareMissingReferenceError(err)) throw err;
+          console.warn('[Square] Category missing, recreating for swap category:', categoryId);
+          categoryId = await this.upsertCategory(categoryName);
+          return write(categoryId);
+        });
+        const mapped = new Map((res.idMappings ?? []).map((m) => [m.clientObjectId, m.objectId]));
+        const created: string[] = [];
+        objects.forEach((obj, i) => {
+          const fresh = (obj.id ?? '#').startsWith('#');
+          const posItemId = fresh ? mapped.get(`#item${i}`) : obj.id;
+          const posVariationId = fresh ? mapped.get(`#variation${i}`) : chunk[i].posVariationId;
+          results[start + i] = posItemId && posVariationId
+            ? { posItemId, posVariationId }
+            : { error: 'Square did not return ids for this item' };
+          if (fresh && posVariationId) created.push(posVariationId);
+        });
+        await this.addStartingStock(created, locationId, initialQuantity);
+      } catch (err) {
+        const message = err instanceof SquareError
+          ? err.errors.map((e) => e.detail ?? e.code).join('; ') || err.message
+          : err instanceof Error ? err.message : String(err);
+        chunk.forEach((_, i) => { results[start + i] = { error: message }; });
+      }
+    }
+
+    return { results, resolvedCategoryId: categoryId };
+  }
+
+  /** The current version of each item Square still has; absent when it doesn't. */
+  private async versionsOf(itemIds: string[]): Promise<Map<string, bigint>> {
+    const out = new Map<string, bigint>();
+    for (let at = 0; at < itemIds.length; at += 1000) {
+      const res = await withRateLimitRetry(() =>
+        this.client.catalog.batchGet({ objectIds: itemIds.slice(at, at + 1000), includeRelatedObjects: false }));
+      for (const obj of res.objects ?? []) {
+        if (obj.type === 'ITEM' && obj.id && !obj.isDeleted && obj.version !== undefined) out.set(obj.id, obj.version);
+      }
+    }
+    return out;
   }
 
   /** Many items out of the catalogue at once, 200 to a call (Square's limit). */
@@ -407,6 +539,36 @@ export function variationPricing(priceCents: number | null) {
   return priceCents === null
     ? { pricingType: 'VARIABLE_PRICING' as const }
     : { pricingType: 'FIXED_PRICING' as const, priceMoney: { amount: BigInt(priceCents), currency: 'USD' as const } };
+}
+
+/** Whether a catalog item is in a category, in either of the ways Square records it. */
+function inCategory(obj: Square.CatalogObject, categoryId: string): boolean {
+  const data = asItem(obj)?.itemData;
+  return !!data && (data.categoryId === categoryId || (data.categories ?? []).some((c) => c.id === categoryId));
+}
+
+/** A catalog item flattened to its variations, as the diagnostics compare them (Plan 41). */
+export function catalogEntries(obj: Square.CatalogObject): PosCatalogItem[] {
+  const item = asItem(obj);
+  if (!item?.id || !item.itemData || item.isDeleted) return [];
+  const data = item.itemData;
+  const description = (data.description ?? data.descriptionPlaintext ?? '').trim();
+  return (data.variations ?? []).flatMap((v) => {
+    const vd = v.type === 'ITEM_VARIATION' ? (v as Square.CatalogObject.ItemVariation).itemVariationData : null;
+    if (!v.id || !vd || v.isDeleted) return [];
+    return [{
+      itemId: item.id,
+      variationId: v.id,
+      sku: vd.sku ?? '',
+      name: data.name ?? '',
+      description: description || null,
+      pricing: vd.pricingType === 'VARIABLE_PRICING' || vd.priceMoney?.amount == null
+        ? { type: 'variable' as const }
+        : { type: 'fixed' as const, cents: Number(vd.priceMoney.amount) },
+      version: item.version !== undefined ? item.version.toString() : null,
+      updatedAt: item.updatedAt ?? null,
+    }];
+  });
 }
 
 /** An item and its one variation, as the catalogue stores them. */
