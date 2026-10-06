@@ -483,9 +483,9 @@ export async function drawLargeItemTag(
  * however it hangs.
  *
  * The foot is `drawLargeItemTag`'s foot exactly (bars, SKU, branding), and the
- * head mirrors it with the station letter where the branding would be. With
- * the full width between them, price and name run across the label rather
- * than rotated down it.
+ * head mirrors it with the station letter where the branding would be. Price,
+ * name and letter are turned to read with the branding, as on the one-barcode
+ * tag.
  */
 async function drawTwoBarcodeTallTag(
   ctx: SKRSContext2D, W: number, H: number, item: ItemLabelData,
@@ -523,7 +523,7 @@ async function drawTwoBarcodeTallTag(
   const letter = stationCodeOf(item.sku);
   if (letter) {
     const badge = Math.min(Math.round(W * 0.13), bandH);
-    drawStationBadge(ctx, barcodeW + GAP + Math.round((brandColW - badge) / 2), 0, badge, letter);
+    drawStationBadge(ctx, barcodeW + GAP + Math.round((brandColW - badge) / 2), 0, badge, letter, ROTATION);
   }
 
   // ── Foot: bars, SKU and branding, as on the one-barcode tag ───────────────
@@ -531,29 +531,39 @@ async function drawTwoBarcodeTallTag(
   barcodeBand(footTop);
   await drawBrandingIn(ctx, barcodeW + GAP, footTop, brandColW, bandH);
 
-  // ── Price and name, across the middle ─────────────────────────────────────
+  // ── Price and name, rotated down the middle ───────────────────────────────
+  // Turned as the one-barcode tag turns them, and as the branding reads: price
+  // in the wide column, name in the narrow one beside it.
   const midTop = bandH + GAP;
   const midH = footTop - GAP - midTop;
-  const price = `$${(item.priceCents / 100).toFixed(2)}`;
-  const PRICE_SIZE = fitSize(ctx, price, Math.round(W * 0.28), 40, W);
-  const NAME_LINES = 3;
-  const { size: NAME_SIZE, lines: nameLines } =
-    fitWrapped(ctx, item.name, Math.round(W * 0.12), 20, W, NAME_LINES);
-  const priceLead = lineHeight(PRICE_SIZE);
-  const nameLead = lineHeight(NAME_SIZE);
-  const blockH = priceLead + GAP + nameLines.length * nameLead;
-  let y = midTop + Math.max(0, Math.round((midH - blockH) / 2));
+  const midY = midTop + midH / 2;
+  const nameColW = Math.round(W * 0.36);
+  const priceColW = W - nameColW - GAP;
 
+  const price = `$${(item.priceCents / 100).toFixed(2)}`;
+  ctx.save();
+  ctx.translate(priceColW / 2, midY);
+  ctx.rotate(ROTATION);
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.font = labelFont(PRICE_SIZE, 'bold');
-  ctx.fillText(price, W / 2, y);
-  y += priceLead + GAP;
+  ctx.textBaseline = 'middle';
+  ctx.font = labelFont(fitSize(ctx, price, 150, 40, midH - GAP), 'bold');
+  ctx.fillText(price, 0, 0);
+  ctx.restore();
+
+  const NAME_LINES = 2;
+  const { size: NAME_SIZE, lines: nameLines } = fitWrapped(
+    ctx, item.name, Math.floor(nameColW / (NAME_LINES * 1.2)), 14, midH - GAP, NAME_LINES,
+  );
+  ctx.save();
+  ctx.translate(priceColW + GAP + nameColW / 2, midY);
+  ctx.rotate(ROTATION);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   ctx.font = labelFont(NAME_SIZE, 'bold');
-  for (const line of nameLines) {
-    ctx.fillText(line, W / 2, y);
-    y += nameLead;
-  }
+  const nameLead = lineHeight(NAME_SIZE);
+  const nameTop = -((nameLines.length - 1) * nameLead) / 2;
+  nameLines.forEach((line, i) => ctx.fillText(line, 0, nameTop + i * nameLead));
+  ctx.restore();
 }
 
 /**
