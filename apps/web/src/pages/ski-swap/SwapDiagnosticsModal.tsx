@@ -62,24 +62,27 @@ export default function SwapDiagnosticsModal({ orgId, swap, onClose }: {
         className="bg-surface-50 border border-gray-700 rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 p-5 border-b border-gray-800 shrink-0">
-          <div>
-            <h3 className="text-white font-medium">Diagnostics: {swap.title}</h3>
-            <p className="text-sm text-gray-400 mt-0.5">
-              Compares this swap’s items in PatrolKit with its items in Square, by SKU. Nothing changes until you choose.
-            </p>
-            <RunLine run={run ?? null} loading={isLoading} />
+        <div className="p-5 pb-4 space-y-3 border-b border-gray-800 shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-white font-medium">Diagnostics: {swap.title}</h3>
+              <p className="text-sm text-gray-400 mt-0.5">
+                Compares this swap’s items in PatrolKit with its items in Square, by SKU. Nothing changes until you choose.
+              </p>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 text-gray-400 hover:text-white text-lg leading-none">×</button>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
+          {/* The run and the way to run it, together: what was found, and when. */}
+          <div className="flex items-center justify-between gap-4 bg-surface-100 rounded-lg px-3 py-2">
+            <RunLine run={run ?? null} loading={isLoading} />
             <button
               type="button"
               onClick={() => start.mutate()}
               disabled={running}
-              className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-3 py-1.5 rounded text-sm font-medium"
+              className="shrink-0 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-3 py-1.5 rounded text-sm font-medium"
             >
               {running ? 'Checking…' : run ? 'Run checks again' : 'Run checks'}
             </button>
-            <button type="button" onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-white text-lg leading-none">×</button>
           </div>
         </div>
 
@@ -106,9 +109,9 @@ export default function SwapDiagnosticsModal({ orgId, swap, onClose }: {
 
 /** "Last run 9:42 PM by Dana · took 48 s · 9,812 in PatrolKit · 9,809 in Square". */
 function RunLine({ run, loading }: { run: DiagnosticRunResponse | null; loading: boolean }) {
-  if (loading) return <p className="text-xs text-gray-500 mt-1">Loading…</p>;
-  if (!run) return <p className="text-xs text-gray-500 mt-1">Not run yet.</p>;
-  if (run.status === 'interrupted') return <p className="text-xs text-amber-400 mt-1">The last check was interrupted. Run it again.</p>;
+  if (loading) return <p className="text-xs text-gray-400">Loading…</p>;
+  if (!run) return <p className="text-xs text-gray-400">Not run yet.</p>;
+  if (run.status === 'interrupted') return <p className="text-xs text-amber-400">The last check was interrupted. Run it again.</p>;
   const when = new Date(run.startedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const parts = [
     `Last run ${when}${run.startedByName ? ` by ${run.startedByName}` : ''}`,
@@ -116,7 +119,7 @@ function RunLine({ run, loading }: { run: DiagnosticRunResponse | null; loading:
     run.ourCount !== null ? `${run.ourCount.toLocaleString('en-US')} in PatrolKit` : null,
     run.squareCount !== null ? `${run.squareCount.toLocaleString('en-US')} in Square` : null,
   ].filter(Boolean);
-  return <p className="text-xs text-gray-500 mt-1">{parts.join(' · ')}</p>;
+  return <p className="text-xs text-gray-400">{parts.join(' · ')}</p>;
 }
 
 function sellerOptions(sellers: SellerResponse[]) {
