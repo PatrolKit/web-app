@@ -46,9 +46,22 @@ import OrgResortsPage from './pages/org/OrgResortsPage';
 import OrgModulesPage from './pages/org/OrgModulesPage';
 import CheckinPage from './pages/checkin/CheckinPage';
 import ReceiptPage from './pages/ReceiptPage';
+import { useEffect } from 'react';
+import { staffSiteUrl } from './lib/sellerSiteUrl';
 
 // Evaluated once at module load — never changes for a given page load.
 const isSellerSite = window.location.hostname.startsWith('skiswap.');
+
+/**
+ * A page the seller site doesn't have: logging in, the dashboard, anything
+ * else. It's on the staff site at the same address, so go there. The seller
+ * site used to send these back to its own root, which rendered nothing, so its
+ * home page's Log in went nowhere.
+ */
+function ToStaffSite() {
+  useEffect(() => { window.location.replace(staffSiteUrl(window.location)); }, []);
+  return null;
+}
 
 function DefaultDashboardRedirect() {
   const { user, activeOrgId } = useAuth();
@@ -82,10 +95,15 @@ export default function App() {
           <Route path="r/:token" element={<ReceiptPage />} />
           {/* A swap's public SKU lookup (Plan 33). */}
           <Route path=":orgSlug/:swapSlug/status" element={<SkuStatusPage />} />
+          {/* Staff pages, before the slug below would read "dashboard" as an org. */}
+          <Route path="auth/*" element={<ToStaffSite />} />
+          <Route path="dashboard/*" element={<ToStaffSite />} />
           {/* Last: a bare slug is the org lookup, so it must not shadow the
               static segments above it. */}
           <Route path=":orgSlug" element={<OrgSellerLookupPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Logging in, the dashboard and the rest live on the staff site. */}
+          <Route index element={<ToStaffSite />} />
+          <Route path="*" element={<ToStaffSite />} />
         </Routes>
       </AuthProvider>
     );
