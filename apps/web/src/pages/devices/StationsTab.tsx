@@ -647,10 +647,9 @@ function RetireModal({
 }
 
 /**
- * The whole station in one line.
- *
- * Ordered by what stops a tag reaching a seller's hand, worst first, so the
- * label always names the thing someone has to go and fix.
+ * The whole station in one line: a staffed station's iPad, or a self-service
+ * station's bridge and printer, worst first, so the label names the thing
+ * someone has to go and fix.
  */
 function StationStatus({
   station,
@@ -665,12 +664,32 @@ function StationStatus({
 }
 
 function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): HardwareStatus {
-  const staffed = station.kind === 'staffed';
+  // A staffed station is its iPad: the row names the iPad, so its status is
+  // the iPad's. A bridge it may print through doesn't decide it: when the
+  // bridge is down the iPad prints over its own Bluetooth.
+  if (station.kind === 'staffed') {
+    if (!station.attendantDeviceId) {
+      return { icon: faLinkSlashDuo, label: 'No iPad', tone: 'unknown', title: 'Issue a new pairing code to set up its iPad.' };
+    }
+    if (!recentlySeen(queue.attendantLastSeenAt, OFFLINE_AFTER_TABLET_MS)) {
+      return {
+        icon: faPlugCircleXmarkDuo,
+        label: 'iPad offline',
+        tone: 'bad',
+        title: lastSeenTitle(queue.attendantLastSeenAt),
+      };
+    }
+    return {
+      icon: faCircleCheckDuo,
+      label: 'iPad online',
+      tone: 'ok',
+      title: lastSeenTitle(queue.attendantLastSeenAt),
+    };
+  }
 
-  // What a station is missing depends on what kind it is: a self-service one
-  // cannot work without a bridge, because a seller has no other way to get a
-  // tag. A staffed one can — its tablet prints over Bluetooth.
-  if (!staffed && !station.bridgeDeviceId) {
+  // A self-service station has no iPad: it's its bridge, which is the only way
+  // a seller gets a tag.
+  if (!station.bridgeDeviceId) {
     return {
       icon: faLinkSlashDuo,
       label: 'Needs a bridge',
@@ -682,32 +701,12 @@ function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): Hardw
   // A station reaches its printer through its bridge, so a bridge with nothing
   // plugged in is a station that cannot print — and the fix is on the Printers
   // page, not here.
-  if (station.bridgeDeviceId && !station.printerId) {
+  if (!station.printerId) {
     return {
       icon: faLinkSlashDuo,
       label: 'Bridge has no printer',
       tone: 'warn',
       title: 'Bind a printer to this bridge on the Printers page.',
-    };
-  }
-
-  // No bridge on a staffed station: printing goes over the tablet's own
-  // Bluetooth, which the server never sees. The tablet checking in is the only
-  // thing we can honestly report.
-  if (!station.bridgeDeviceId) {
-    if (!recentlySeen(queue.attendantLastSeenAt, OFFLINE_AFTER_TABLET_MS)) {
-      return {
-        icon: faPlugCircleXmarkDuo,
-        label: 'Tablet offline',
-        tone: 'bad',
-        title: lastSeenTitle(queue.attendantLastSeenAt),
-      };
-    }
-    return {
-      icon: faCircleCheckDuo,
-      label: 'Ready — prints over Bluetooth',
-      tone: 'ok',
-      title: 'No bridge is bound, so the tablet drives the printer directly. Whether a tag came out is not visible from here.',
     };
   }
 
