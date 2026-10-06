@@ -44,7 +44,7 @@ export default function CheckinsChartCard({ orgId, swapId }: { orgId: string; sw
   return (
     <div className="bg-surface-50 border border-gray-800 rounded-lg p-4">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <p className="text-gray-400 text-xs uppercase tracking-wide">Check-ins per day</p>
+        <p className="text-gray-400 text-xs uppercase tracking-wide">Item Check-ins Per Day</p>
         <div className="flex gap-2" role="group" aria-label="Show">
           {KINDS.map((k) => (
             <button
@@ -73,7 +73,7 @@ export default function CheckinsChartCard({ orgId, swapId }: { orgId: string; sw
           <svg
             width={layout.width} height={CHART.height} viewBox={`0 0 ${layout.width} ${CHART.height}`}
             className="block" role="img"
-            aria-label={`Check-ins per day, ${dayLabel(days[0].date)} to ${dayLabel(days[days.length - 1].date)}`}
+            aria-label={`Item check-ins per day, ${dayLabel(days[0].date)} to ${dayLabel(days[days.length - 1].date)}`}
           >
             {layout.ticks.map((t) => (
               <g key={t}>

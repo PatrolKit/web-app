@@ -8,7 +8,12 @@ import { checkinsPerDay, type CheckinDay } from './checkins-per-day';
  */
 export interface SwapStats {
   totalItems: number;
+  /** Sellers with an item in this swap. */
   totalSellers: number;
+  /** Of those, how many had an item in an earlier swap of this org. */
+  returningSellers: number;
+  /** The rest: this is the first swap they've sold in here. */
+  newSellers: number;
   /** Tickets checked in without a price and still without one (Plan 32). */
   unpricedItems: number;
   /**
@@ -37,9 +42,22 @@ export class StatsService {
       this.prisma.swapItem.count({ where: { swapId, orgId, deletedAt: null, priceCents: null } }),
     ]);
 
+    // Returning: an item of theirs in a swap that started before this one.
+    // Only swaps run in PatrolKit count, so a first PatrolKit swap reads all new.
+    const sellerIds = totalSellers.map((s) => s.sellerId!).filter(Boolean);
+    const returning = sellerIds.length
+      ? await this.prisma.swapItem.findMany({
+          where: { orgId, sellerId: { in: sellerIds }, deletedAt: null, swap: { createdAt: { lt: swap.createdAt } } },
+          distinct: ['sellerId'],
+          select: { sellerId: true },
+        })
+      : [];
+
     return {
       totalItems,
       totalSellers: totalSellers.length,
+      returningSellers: returning.length,
+      newSellers: totalSellers.length - returning.length,
       unpricedItems,
       consignedItems: consigned.length,
       consignedUnpriced: consigned.filter((i) => i.priceCents === null).length,

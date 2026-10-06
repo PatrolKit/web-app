@@ -492,6 +492,10 @@ export interface CheckinDay {
 export interface SwapStats {
   totalItems: number;
   totalSellers: number;
+  /** Sellers here who had an item in an earlier swap of this org. */
+  returningSellers: number;
+  /** Sellers selling here for the first time (in PatrolKit). */
+  newSellers: number;
   /** Tickets still without a price (Plan 32). */
   unpricedItems: number;
   /** Priced, consigned items at listed prices: moves during check-in. */
