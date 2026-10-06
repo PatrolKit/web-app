@@ -284,6 +284,8 @@ export interface KeyContext {
   priceValid: boolean;
   /** Nothing typed in any field and no ticket loaded. */
   empty: boolean;
+  /** "Skip description": SKU goes straight to Price, and back. */
+  skipDetails: boolean;
 }
 
 export type KeyAction =
@@ -291,8 +293,8 @@ export type KeyAction =
   /** Let the browser have it: typing, moving the cursor. */
   | { do: 'default' }
   | { do: 'highlight'; by: 1 | -1 }
-  | { do: 'loadExact'; then: 'details' }
-  | { do: 'loadHighlighted'; then: 'details' }
+  | { do: 'loadExact'; then: 'details' | 'price' }
+  | { do: 'loadHighlighted'; then: 'details' | 'price' }
   /** The SKU isn't one that can be loaded: say why, and stay. */
   | { do: 'refuseSku' }
   | { do: 'accept'; then: 'stay' | 'price' }
@@ -306,6 +308,7 @@ export type KeyAction =
 /** What a key does in the fast edit (Plan 37 D5). */
 export function fastEditKey(c: KeyContext): KeyAction {
   const { field, key, shift } = c;
+  const afterSku: 'details' | 'price' = c.skipDetails ? 'price' : 'details';
 
   if (key === 'Escape') {
     if (c.suggestionsOpen) return { do: 'closeSuggestions' };
@@ -316,16 +319,16 @@ export function fastEditKey(c: KeyContext): KeyAction {
   }
   if (key === 'Tab' && shift) {
     if (field === 'details') return { do: 'focus', field: 'sku' };
-    if (field === 'price') return { do: 'focus', field: 'details' };
+    if (field === 'price') return { do: 'focus', field: afterSku === 'price' ? 'sku' : 'details' };
     return { do: 'none' };
   }
 
   if (field === 'sku' && (key === 'Enter' || key === 'Tab')) {
     // A suggestion only when picked with the arrows: a partial number never
     // loads its first suggestion by accident.
-    if (c.suggestionsOpen && c.arrowed && c.highlighted >= 0) return { do: 'loadHighlighted', then: 'details' };
-    if (c.skuExact) return { do: 'loadExact', then: 'details' };
-    if (c.loaded) return { do: 'focus', field: 'details' };
+    if (c.suggestionsOpen && c.arrowed && c.highlighted >= 0) return { do: 'loadHighlighted', then: afterSku };
+    if (c.skuExact) return { do: 'loadExact', then: afterSku };
+    if (c.loaded) return { do: 'focus', field: afterSku };
     return { do: 'refuseSku' };
   }
 
@@ -350,6 +353,12 @@ export function fastEditKey(c: KeyContext): KeyAction {
   }
 
   return { do: 'default' };
+}
+
+/** The ticket number after this one, as long as this one: "00999" → "01000". Null for one that isn't a number. */
+export function nextSku(sku: string): string | null {
+  if (!/^\d+$/.test(sku)) return null;
+  return (BigInt(sku) + 1n).toString().padStart(sku.length, '0');
 }
 
 // ─── Saying what will be stored ──────────────────────────────────────────────

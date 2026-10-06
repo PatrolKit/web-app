@@ -9,9 +9,24 @@ import { api, ApiError } from '../../lib/api';
 import { priceInputCents } from '../../lib/money';
 import type { ResolvedTaxonomy, UnpricedTicket } from '../../lib/api.types';
 import {
-  acceptSuggestion, describeParsed, detailsSuggestions, fastEditKey, parseDetails,
+  acceptSuggestion, describeParsed, detailsSuggestions, fastEditKey, nextSku, parseDetails,
   type DetailsSuggestion, type Field, type ParsedDetails,
 } from './fastEditLogic';
+
+/** The two switches, kept per browser: how one person likes to work through a stack. */
+type Switch = 'autoIncrement' | 'skipDetails';
+
+function useSwitch(name: Switch): [boolean, (on: boolean) => void] {
+  const key = `fastEdit.${name}`;
+  const [on, setOn] = useState(() => {
+    try { return localStorage.getItem(key) === '1'; } catch { return false; }
+  });
+  const set = (next: boolean) => {
+    setOn(next);
+    try { localStorage.setItem(key, next ? '1' : '0'); } catch { /* still on for this visit */ }
+  };
+  return [on, set];
+}
 
 interface Saved {
   sku: string;
@@ -63,6 +78,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
   const skuRef = useRef<HTMLInputElement>(null);
   const detailsRef = useRef<HTMLInputElement>(null);
   const priceRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const { data: fetched, isLoading: ticketsLoading } = useQuery({
     queryKey: ['ski-swap/unpriced-tickets', orgId, swapId],
@@ -95,8 +111,12 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
   const [message, setMessage] = useState<Message | null>(null);
   /** Saves still on their way, and how the last one went (apart from `message`, which is the stub being typed). */
   const [inFlight, setInFlight] = useState(0);
-  /** The last save that failed, said prominently; it never enters the list. */
-  const [saveError, setSaveError] = useState<string | null>(null);
+  /** How the last save went: "Saved" until the next stub is typed, or why it failed until one succeeds. */
+  const [lastSave, setLastSave] = useState<{ ok: true } | { ok: false; text: string } | null>(null);
+  const [autoIncrement, setAutoIncrement] = useSwitch('autoIncrement');
+  const [skipDetails, setSkipDetails] = useSwitch('skipDetails');
+  /** Where the cursor goes once a ticket loads. */
+  const afterSku: Field = skipDetails ? 'price' : 'details';
   /** Exit waits for saves still on their way, so the Items list refreshes with them. */
   const [exiting, setExiting] = useState(false);
   useEffect(() => { if (exiting && inFlight === 0) onClose(); }, [exiting, inFlight, onClose]);
@@ -125,6 +145,15 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
       setPendingCursor(null);
     }
   }, [pendingFocus, pendingCursor, pendingSelectSku]);
+
+  // Opened from the actions menu, the menu hands focus back to its button as
+  // it closes, after the focus above: take it back once that's done.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      if (!document.activeElement || !dialogRef.current?.contains(document.activeElement)) skuRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   function focus(f: Field) {
     setField(f);
@@ -183,7 +212,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
       ? { sku: lookedUp.sku, text: standing({ name: lookedUp.name, priceCents: lookedUp.priceCents, sellerName: lookedUp.seller?.displayName ?? null }) }
       : null;
 
-  function load(t: UnpricedTicket) {
+  function load(t: UnpricedTicket, then: Field = afterSku) {
     setTicket(t);
     setSkuText(t.sku);
     setAutoSku(false);
@@ -193,7 +222,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
     setCursor(shownName.length);
     setImpliedCategoryId(null);
     setMessage(null);
-    focus('details');
+    focus(then);
     // Nothing to suggest for a description nobody has started typing.
     setClosed(true);
   }
@@ -212,8 +241,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
   }
 
   /** Says why a typed SKU can't be loaded (D1), from the item it names, if any. */
-  async function refuseSku() {
-    const typed = skuText.trim();
+  async function refuseSku(typed = skuText.trim()) {
     if (!typed) {
       setMessage({ tone: 'error', text: 'Type a ticket number.' });
       return;
@@ -278,31 +306,47 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
     setTickets(remaining);
     setInFlight((n) => n + 1);
     clearTicket();
-    // The next stub in the stack is most likely the next number: fill it in,
-    // selected, so Enter takes it and typing replaces it.
-    const next = remaining
-      .filter((t) => Number(t.sku) > Number(sent.sku))
-      .sort((a, b) => Number(a.sku) - Number(b.sku))[0];
-    if (next) {
-      setSkuText(next.sku);
-      setAutoSku(true);
-      setPendingSelectSku(true);
+    if (autoIncrement) {
+      // The next number, loaded and ready for its details or price. One that
+      // can't be loaded stops the run at SKU, saying why: skipping ahead
+      // quietly would put the next price on the wrong stub.
+      const following = nextSku(sent.sku);
+      const ready = following ? remaining.find((t) => t.sku === following) : undefined;
+      if (ready) load(ready);
+      else if (following) {
+        setSkuText(following);
+        setPendingSelectSku(true);
+        void refuseSku(following);
+      }
+    } else {
+      // The next stub in the stack is most likely the next number: fill it in,
+      // selected, so Enter takes it and typing replaces it.
+      const next = remaining
+        .filter((t) => Number(t.sku) > Number(sent.sku))
+        .sort((a, b) => Number(a.sku) - Number(b.sku))[0];
+      if (next) {
+        setSkuText(next.sku);
+        setAutoSku(true);
+        setPendingSelectSku(true);
+      }
     }
     api.skiSwap.patchItem(orgId, swapId, sent.id, { priceCents: cents, ifUnpriced: true, ...description }, idempotencyKey())
       .then((item) => {
         const sellerName = item.seller?.displayName ?? sent.sellerName;
         const offSquare = item.consignedAt !== null && !item.squareSynced;
-        // Said in the list below, newest first and in green, not as a line here.
         setSaved((s) => [{ sku: item.sku, name: item.name, priceCents: item.priceCents ?? cents, sellerName, offSquare }, ...s]);
-        setSaveError(null);
+        setLastSave({ ok: true });
       })
       .catch((err: unknown) => {
         // Priced elsewhere meanwhile: no longer one to fast edit. Anything
         // else goes back, to be entered again.
         const priced = err instanceof ApiError && err.code === 'TICKET_PRICED';
         if (!priced) setTickets((ts) => [...ts, sent].sort((a, b) => Number(a.sku) - Number(b.sku)));
-        setSaveError(`${sent.sku} wasn’t saved: ${err instanceof ApiError ? err.message : 'the request failed'}`
-          + (priced ? '' : ' Enter it again.'));
+        const reason = err instanceof ApiError ? err.message : 'the request failed';
+        setLastSave({
+          ok: false,
+          text: `${sent.sku} wasn’t saved: ${reason}${/[.!?]$/.test(reason) ? '' : '.'}` + (priced ? '' : ' Enter it again.'),
+        });
       })
       .finally(() => setInFlight((n) => n - 1));
   }
@@ -321,6 +365,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
       loaded: !!ticket && ticket.sku === skuText.trim(),
       priceValid,
       empty,
+      skipDetails,
     });
     if (action.do === 'default') return;
     e.preventDefault();
@@ -331,8 +376,8 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
         setArrowed(true);
         return;
       }
-      case 'loadExact': return load(exact!);
-      case 'loadHighlighted': return load(skuSuggestions[effectiveHighlight]);
+      case 'loadExact': return load(exact!, action.then);
+      case 'loadHighlighted': return load(skuSuggestions[effectiveHighlight], action.then);
       case 'refuseSku': return void refuseSku();
       case 'accept': {
         accept(detailSuggestions[effectiveHighlight]);
@@ -349,7 +394,11 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
     }
   }
 
+  /** "Saved" is about the stub before: gone once the next one is typed. A failure stays. */
+  const typing = () => setLastSave((s) => (s?.ok ? null : s));
+
   function onSkuChange(value: string) {
+    typing();
     const typed = value.replace(/\s/g, '');
     setSkuText(typed);
     setAutoSku(false);
@@ -375,12 +424,27 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
       ? [...(shown > 0 ? ['Arrows + Enter to accept a suggestion'] : details.trim() ? [] : ['Start typing details (optional)']), 'Tab when done typing']
       : (priceText ? ['Enter to save this ticket'] : ['Start typing the price']);
 
+  // Said with an icon and as few words as will do (the hint bar says what's next).
+  const stubStatus: Status | null =
+    message && !(alreadyEntered && message.text.startsWith(`${alreadyEntered.sku} is already entered`))
+      ? { tone: message.tone, text: message.tone === 'error' ? `Error: ${message.text}` : message.text }
+      : alreadyEntered && !ticket
+        ? { tone: 'warn', text: `${alreadyEntered.sku} is already entered: ${alreadyEntered.text}.` }
+        : null;
+  // A failure stays until a save succeeds: its ticket is back to be entered again.
+  const saveStatus: Status | null =
+    lastSave && !lastSave.ok ? { tone: 'error', text: `Error: ${lastSave.text}` }
+    : inFlight > 0 ? { tone: 'pending', text: 'Saving…' }
+    : lastSave?.ok ? { tone: 'ok', text: 'Saved' }
+    : null;
+
   const left = tickets.length;
   const inputClass = 'w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-600';
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-start justify-center p-4 pt-[10vh] z-50">
+    <div className="fixed inset-0 bg-black/60 flex items-start justify-center p-4 pt-[10vh] z-50 overflow-y-auto">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Fast edit tickets"
@@ -406,6 +470,21 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
           >
             {exiting ? 'Finishing…' : 'Exit'}
           </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <SwitchCard
+            label="Auto-increment SKU"
+            note={`Enter saves and loads the next ticket, cursor in ${skipDetails ? 'Price' : 'Details'}`}
+            on={autoIncrement}
+            onChange={(on) => { setAutoIncrement(on); setPendingFocus(field); }}
+          />
+          <SwitchCard
+            label="Skip description"
+            note="Tab goes from SKU straight to Price"
+            on={skipDetails}
+            onChange={(on) => { setSkipDetails(on); setPendingFocus(field === 'details' && on ? 'sku' : field); }}
+          />
         </div>
 
         <div className="grid grid-cols-[13rem_1fr_10rem] gap-2 items-start">
@@ -438,6 +517,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               ref={detailsRef}
               value={details}
               onChange={(e) => {
+                typing();
                 setDetails(e.target.value);
                 setCursor(e.target.selectionStart ?? e.target.value.length);
                 setHighlighted(-1);
@@ -449,10 +529,12 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
               onKeyDown={(e) => onKeyDown(e, 'details')}
               onFocus={() => setField('details')}
               disabled={!ticket}
+              // Skipped, it's still there for a click, just out of the way of Tab.
+              tabIndex={skipDetails ? -1 : undefined}
               autoComplete="off"
               aria-label="Details"
               placeholder="e.g. Rossignol red skis 170"
-              className={`${inputClass} disabled:opacity-50`}
+              className={`${inputClass} disabled:opacity-50 ${skipDetails && field !== 'details' ? 'opacity-50' : ''}`}
             />
             {field === 'details' && shown > 0 && (
               <Suggestions
@@ -471,7 +553,7 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
             <input
               ref={priceRef}
               value={priceText}
-              onChange={(e) => { setPriceText(e.target.value.replace(/\D/g, '')); setMessage(null); }}
+              onChange={(e) => { typing(); setPriceText(e.target.value.replace(/\D/g, '')); setMessage(null); }}
               onKeyDown={(e) => onKeyDown(e, 'price')}
               onFocus={() => setField('price')}
               disabled={!ticket}
@@ -484,47 +566,43 @@ export default function TicketFastEdit({ orgId, swapId, onClose }: {
           </Field>
         </div>
 
-        <div className="min-h-[3.5rem] space-y-1 text-sm">
-          {ticket && (
-            <p className="text-gray-400">
-              <span className="font-mono text-white">{ticket.sku}</span>
-              {ticket.sellerName && <> · {ticket.sellerName}</>}
-              {' · now '}<span className="text-gray-300">{ticket.name}</span>
-            </p>
-          )}
-          {parsed && taxonomy && (
-            <p className="text-gray-400">
-              Saves as <span className="text-gray-200">{parsed.name}</span>
-              <span className="text-gray-500"> ({describeParsed(parsed, taxonomy)})</span>
-            </p>
-          )}
-          {alreadyEntered && !ticket && (
-            <p className="text-amber-400">
-              <span className="font-mono">{alreadyEntered.sku}</span> is already entered: {alreadyEntered.text}.
-            </p>
-          )}
-          {message && !(alreadyEntered && message.text.startsWith(`${alreadyEntered.sku} is already entered`)) && (
-            <p className={message.tone === 'ok' ? 'text-green-400' : message.tone === 'warn' ? 'text-amber-400' : 'text-red-400'}>
-              {message.text}
-            </p>
-          )}
-          {inFlight > 0 && <p className="text-gray-500">Saving {inFlight}…</p>}
+        {/* One line for the stub being typed, one for how the last save went. */}
+        <div className="min-h-[1.25rem] space-y-1" aria-live="polite">
+          {stubStatus && <StatusLine {...stubStatus} />}
+          {saveStatus && <StatusLine {...saveStatus} />}
         </div>
 
-        {/* A failed save, where it can't be missed. It stays out of the list,
-            and its ticket goes back to be entered again. */}
-        {saveError && (
-          <div role="alert" className="flex items-center gap-3 bg-red-950/60 border border-red-800 rounded-lg px-4 py-3">
-            <FontAwesomeIcon icon={faCircleXmarkDuo} className="text-2xl text-red-400 shrink-0" />
-            <p className="flex-1 text-sm text-red-200">{saveError}</p>
-            <button type="button" onClick={() => setSaveError(null)} aria-label="Dismiss" className="text-red-300 hover:text-white text-lg leading-none">×</button>
+        <div>
+          <div className="flex items-baseline justify-between gap-3 mb-1">
+            <span className="text-gray-400 text-xs uppercase">Ticket Preview</span>
+            {ticket?.sellerName && <span className="text-gray-300 text-xs truncate">{ticket.sellerName}</span>}
           </div>
-        )}
+          <div className="border border-gray-700 rounded overflow-hidden">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-gray-700">
+                <PreviewRow label="SKU">
+                  {ticket ? <span className="font-mono text-white">{ticket.sku}</span> : <Muted>—</Muted>}
+                </PreviewRow>
+                <PreviewRow label="Details">
+                  {parsed && taxonomy
+                    ? <><span className="text-white">{parsed.name}</span><span className="text-gray-500"> ({describeParsed(parsed, taxonomy)})</span></>
+                    : detailsChanged ? <span className="text-white">{details.trim()}</span>
+                    : ticket ? <><span className="text-gray-300">{ticket.name}</span><Muted> (unchanged)</Muted></>
+                    : <Muted>—</Muted>}
+                </PreviewRow>
+                <PreviewRow label="Price">
+                  {priceValid ? <span className="text-white">{money(priceCents!)}</span> : <Muted>{ticket ? 'No price yet' : '—'}</Muted>}
+                </PreviewRow>
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         <div className="border-t border-gray-700 pt-3">
-          <p className="text-gray-400 text-xs">
-            {saved.length} priced · {ticketsLoading ? '…' : left} left
-          </p>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-gray-400 text-xs uppercase">Saved</span>
+            <span className="text-gray-400 text-xs">{saved.length} priced · {ticketsLoading ? '…' : left} left</span>
+          </div>
           {saved.length > 0 && (
             <ul className="mt-2 max-h-40 overflow-y-auto space-y-0.5" aria-label="Saved tickets">
               {saved.map((s, i) => (
@@ -597,4 +675,59 @@ function Suggestions({ rows, highlighted, onPick }: {
       ))}
     </ul>
   );
+}
+
+interface Status {
+  tone: 'ok' | 'warn' | 'error' | 'pending';
+  text: string;
+}
+
+function StatusLine({ tone, text }: Status) {
+  const [icon, color] = {
+    ok: [faCircleCheckDuo, 'text-green-400'],
+    warn: [faTriangleExclamationDuo, 'text-amber-400'],
+    error: [faCircleXmarkDuo, 'text-red-400'],
+    pending: [null, 'text-gray-500'],
+  }[tone] as [typeof faCircleCheckDuo | null, string];
+  return (
+    <p role={tone === 'error' ? 'alert' : undefined} className={`flex items-center gap-2 text-sm ${color}`}>
+      {icon && <FontAwesomeIcon icon={icon} className="shrink-0" />}
+      <span>{text}</span>
+    </p>
+  );
+}
+
+function SwitchCard({ label, note, on, onChange }: { label: string; note: string; on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      // Keeps the cursor in the field: the switch is flipped by mouse, mid-stack.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => onChange(!on)}
+      className="flex-1 min-w-[16rem] flex items-start gap-3 text-left bg-surface-100 hover:bg-surface-200 border border-gray-700 rounded px-3 py-2"
+    >
+      <span className={`shrink-0 mt-0.5 w-9 h-5 rounded-full transition-colors ${on ? 'bg-brand-600' : 'bg-surface-200 border border-gray-600'}`}>
+        <span className={`block w-4 h-4 mt-px bg-white rounded-full transition-transform ${on ? 'translate-x-[1.1rem]' : 'translate-x-px'}`} />
+      </span>
+      <span>
+        <span className="block text-sm text-white">{label}</span>
+        <span className="block text-xs text-gray-400">{note}</span>
+      </span>
+    </button>
+  );
+}
+
+function PreviewRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <tr>
+      <th scope="row" className="w-24 text-left font-normal text-gray-400 bg-surface-100 px-3 py-1.5">{label}</th>
+      <td className="px-3 py-1.5">{children}</td>
+    </tr>
+  );
+}
+
+function Muted({ children }: { children: React.ReactNode }) {
+  return <span className="text-gray-500">{children}</span>;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ResolvedAttribute, ResolvedTaxonomy, ResolvedValue } from '../../lib/api.types';
 import {
-  acceptSuggestion, currentWord, detailsSuggestions, fastEditKey, parseDetails, type KeyContext,
+  acceptSuggestion, currentWord, detailsSuggestions, fastEditKey, nextSku, parseDetails, type KeyContext,
 } from './fastEditLogic';
 
 const value = (id: string, label: string, attributes: ResolvedAttribute[] = []): ResolvedValue =>
@@ -160,7 +160,7 @@ describe('suggestions', () => {
 describe('keys (Plan 37 D5)', () => {
   const ctx = (over: Partial<KeyContext>): KeyContext => ({
     field: 'sku', key: 'Enter', shift: false, suggestionsOpen: false, highlighted: -1, arrowed: false,
-    skuExact: false, loaded: false, priceValid: false, empty: false, ...over,
+    skuExact: false, loaded: false, priceValid: false, empty: false, skipDetails: false, ...over,
   });
 
   it('SKU: loads an exact number or an arrowed suggestion, never a partial one', () => {
@@ -193,6 +193,14 @@ describe('keys (Plan 37 D5)', () => {
     expect(fastEditKey(ctx({ field: 'sku', key: 'Tab', shift: true }))).toEqual({ do: 'none' });
   });
 
+  it('Skip description: SKU goes straight to Price, and Shift+Tab straight back', () => {
+    const skip = { skipDetails: true };
+    expect(fastEditKey(ctx({ ...skip, key: 'Tab', skuExact: true }))).toEqual({ do: 'loadExact', then: 'price' });
+    expect(fastEditKey(ctx({ ...skip, suggestionsOpen: true, highlighted: 1, arrowed: true }))).toEqual({ do: 'loadHighlighted', then: 'price' });
+    expect(fastEditKey(ctx({ ...skip, key: 'Tab', loaded: true }))).toEqual({ do: 'focus', field: 'price' });
+    expect(fastEditKey(ctx({ ...skip, field: 'price', key: 'Tab', shift: true }))).toEqual({ do: 'focus', field: 'sku' });
+  });
+
   it('Escape closes suggestions, then clears the ticket, then the dialog', () => {
     expect(fastEditKey(ctx({ key: 'Escape', suggestionsOpen: true }))).toEqual({ do: 'closeSuggestions' });
     expect(fastEditKey(ctx({ key: 'Escape' }))).toEqual({ do: 'clearTicket' });
@@ -203,5 +211,15 @@ describe('keys (Plan 37 D5)', () => {
     expect(fastEditKey(ctx({ key: 'ArrowDown', suggestionsOpen: true }))).toEqual({ do: 'highlight', by: 1 });
     expect(fastEditKey(ctx({ key: 'ArrowUp', suggestionsOpen: true }))).toEqual({ do: 'highlight', by: -1 });
     expect(fastEditKey(ctx({ key: '7' }))).toEqual({ do: 'default' });
+  });
+});
+
+describe('nextSku', () => {
+  it('counts up, keeping the length', () => {
+    expect(nextSku('67169')).toBe('67170');
+    expect(nextSku('00999')).toBe('01000');
+    expect(nextSku('99')).toBe('100');
+    expect(nextSku('A12')).toBeNull();
+    expect(nextSku('')).toBeNull();
   });
 });
