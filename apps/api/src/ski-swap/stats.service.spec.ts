@@ -47,3 +47,34 @@ describe('swap stats', () => {
     expect(await svc.getSwapStats('org', 'swap')).toMatchObject({ totalSellers: 0, returningSellers: 0, newSellers: 0 });
   });
 });
+
+describe('items per category', () => {
+  it('counts each category, busiest first, leaving out Other and counting the uncategorised apart', async () => {
+    const prisma = {
+      skiSwap: { findFirst: async () => ({ id: 'swap' }) },
+      swapItem: {
+        groupBy: async () => [
+          { categoryId: 'skis', _count: { _all: 20 } },
+          { categoryId: 'boots', _count: { _all: 28 } },
+          { categoryId: 'other', _count: { _all: 6 } },
+          { categoryId: 'poles', _count: { _all: 20 } },
+        ],
+        count: async () => 884,
+      },
+      taxonomyNode: {
+        findMany: async () => [
+          { id: 'skis', label: 'Skis' }, { id: 'boots', label: 'Ski boots' },
+          { id: 'other', label: 'Other' }, { id: 'poles', label: 'Poles' },
+        ],
+      },
+    };
+    expect(await new StatsService(prisma as never).getCategoryCounts('org', 'swap')).toEqual({
+      categories: [
+        { categoryId: 'boots', label: 'Ski boots', count: 28 },
+        { categoryId: 'poles', label: 'Poles', count: 20 },
+        { categoryId: 'skis', label: 'Skis', count: 20 },
+      ],
+      uncategorised: 884,
+    });
+  });
+});

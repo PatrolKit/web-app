@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { checkinsHeatmap, type CheckinsHeatmap } from './checkins-per-day';
+import { isCatchAllCategory } from '../contracts/item-name';
 
 /**
  * The dashboard's figures, from our own rows only (Plan 39 D6). Sales live in
@@ -70,6 +71,37 @@ export class StatsService {
       consignedUnpriced: consigned.filter((i) => i.priceCents === null).length,
       consignedValueCents: consigned.reduce((sum, i) => sum + (i.priceCents ?? 0) * i.originalQuantity, 0),
     };
+  }
+
+  /**
+   * Items per category, busiest first, for the dashboard's category chart.
+   * Items with no category aren't in a column, only counted; nor is "Other",
+   * which says nothing about what's in the swap.
+   */
+  async getCategoryCounts(orgId: string, swapId: string): Promise<{
+    categories: { categoryId: string; label: string; count: number }[];
+    uncategorised: number;
+  }> {
+    const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { id: true } });
+    if (!swap) throw new NotFoundException('Swap not found');
+    const [groups, uncategorised] = await Promise.all([
+      this.prisma.swapItem.groupBy({
+        by: ['categoryId'],
+        where: { swapId, orgId, deletedAt: null, categoryId: { not: null } },
+        _count: { _all: true },
+      }),
+      this.prisma.swapItem.count({ where: { swapId, orgId, deletedAt: null, categoryId: null } }),
+    ]);
+    const nodes = await this.prisma.taxonomyNode.findMany({
+      where: { id: { in: groups.map((g) => g.categoryId!) } },
+      select: { id: true, label: true },
+    });
+    const labels = new Map(nodes.map((n) => [n.id, n.label]));
+    const categories = groups
+      .map((g) => ({ categoryId: g.categoryId!, label: labels.get(g.categoryId!) ?? 'Unknown', count: g._count._all }))
+      .filter((c) => !isCatchAllCategory(c.label))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    return { categories, uncategorised };
   }
 
   /**

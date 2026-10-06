@@ -164,7 +164,7 @@ export function NamePreview({ name, parts }: { name: string; parts: number }) {
  * A key this build does not know renders as no icon rather than a placeholder:
  * a missing glyph should be invisible, not a broken frame (§4.2).
  */
-function NodeIcon({ icon, className }: { icon?: ResolvedIcon; className?: string }) {
+export function NodeIcon({ icon, className }: { icon?: ResolvedIcon; className?: string }) {
   if (!icon) return null;
   if (icon.kind === 'image') {
     // Decorative: the label beside it is already the accessible name.

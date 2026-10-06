@@ -30,6 +30,13 @@ export class StatsController {
     return this.statsService.getCheckinsHeatmap(orgId, swapId);
   }
 
+  /** Items per category, busiest first, without "Other". Our rows only. */
+  @Get('categories')
+  @RequirePermissions('ski_swap:report')
+  categories(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    return this.statsService.getCategoryCounts(orgId, swapId);
+  }
+
   /** Sold, for sale, needs a price or description, not on sale yet: reads Square's sales. */
   @Get('breakdown')
   @RequirePermissions('ski_swap:report')

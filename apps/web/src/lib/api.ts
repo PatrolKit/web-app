@@ -598,6 +598,11 @@ export const api = {
     /** Item check-ins by day and hour, with who checked them in, for the heat map. */
     getCheckinsHeatmap: (orgId: string, swapId: string) =>
       request<import('./api.types').CheckinsHeatmap>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/checkins`),
+    /** Items per category, busiest first, without "Other", and how many have no category. */
+    getCategoryCounts: (orgId: string, swapId: string) =>
+      request<{ categories: { categoryId: string; label: string; count: number }[]; uncategorised: number }>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/categories`,
+      ),
     /** The dashboard pie. Reads Square's sales, which the server reuses for two minutes. */
     getItemBreakdown: (orgId: string, swapId: string) =>
       request<import('./api.types').ItemBreakdown>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/breakdown`),
