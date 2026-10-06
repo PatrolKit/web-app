@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -411,7 +411,8 @@ type ComboRow = { kind: 'value'; value: ResolvedValue } | { kind: 'new'; text: s
 /**
  * A question that takes typed answers, at the desk: one box. Typing suggests
  * what's listed; pick one, or keep what you typed and it's added as new for
- * the patrol to approve. It used to be a dropdown, a second box and a "+",
+ * the patrol (approved on save when staff typed it; a seller's waits for
+ * approval). It used to be a dropdown, a second box and a "+",
  * which for a list with nothing on it yet ("What is it?" in Other) was a
  * dropdown offering "Not sure" and "No matches" beside the box that worked.
  *
@@ -629,9 +630,12 @@ function AttributeField({
   // A value typed but not yet minted reads back the same as one that was listed.
   const pendingLabel = answer.freeText?.trim();
   const chosenLabel = chosen?.label ?? pendingLabel ?? '';
+  const staff = useContext(StaffEntryContext);
   const pendingNote = pendingLabel ? (
     <p className="text-xs text-amber-400">
-      “{pendingLabel}” is new — it will be added for your patrol to approve.
+      {staff
+        ? `“${pendingLabel}” is new — saving adds it to your patrol’s list.`
+        : `“${pendingLabel}” is new — it will be added for your patrol to approve.`}
     </p>
   ) : null;
 
@@ -772,17 +776,22 @@ function AttributeField({
 
 // ─── The component ───────────────────────────────────────────────────────────
 
+/** Whether staff are entering this: a value they type is approved on save, not left for approval. */
+const StaffEntryContext = createContext(false);
+
 export interface ItemDescriberProps {
   orgId: string;
   value: DescriberState;
   onChange: (next: DescriberState) => void;
   layout?: 'stacked' | 'grid';
+  /** Staff are entering this, so a value they type is approved on save (a seller's waits). */
+  staff?: boolean;
   /** Rendered under the questions, so the preview sits beside the price. */
   renderPreview?: (name: string, detail: { parts: number }) => React.ReactNode;
 }
 
 export default function ItemDescriber({
-  orgId, value, onChange, layout = 'stacked', renderPreview,
+  orgId, value, onChange, layout = 'stacked', renderPreview, staff = false,
 }: ItemDescriberProps) {
   /**
    * Which question is open. One at a time — two open rows is the stack of
@@ -940,129 +949,131 @@ export default function ItemDescriber({
   }
 
   return (
-    <div className="space-y-3">
-      {/* Collapses to a header once picked, with the way back out beside it. */}
-      <div className="flex items-center justify-between gap-2 pb-1 border-b border-gray-800">
-        <span className="flex items-center gap-2 text-sm font-medium text-white">
-          <NodeIcon icon={category.icon} className="h-4 w-4 text-brand-500" />
-          {category.label}
-        </span>
-        <button
-          type="button"
-          onClick={() => onChange(emptyDescriber)}
-          className="text-xs text-gray-400 hover:text-gray-200"
-        >
-          Change
-        </button>
-      </div>
-
-      {/* Said outright, because nothing else on the screen said it.
-          Every answer here is optional (D6), and `canAdd` bears that out — a
-          category and a price are the whole requirement. The count on "More
-          detail" was the only hint, and it only ever spoke about the questions
-          still hidden, never the ones a seller is looking at, so somebody who
-          does not know a model year had no way to tell whether they were stuck.
-
-          One idea, not two: the preview underneath already shows the name
-          improving as answers go in, so saying that here as well would be
-          explaining what the screen is busy demonstrating. */}
-      {topLevel.length > 0 &&
-        /* Two treatments, because two readers.
-           
-           `stacked` is self check-in: a member of the public, on their own
-           phone, part way through describing a pair of skis and wondering
-           whether they are allowed to stop. They get a box — bordered and set
-           apart, so it reads as the screen speaking rather than as a caption on
-           the question below it, which is what a loose line of grey looked
-           like next to a column of fields.
-           
-           Staff at the desk have read this sentence a hundred times by
-           mid-morning. A box there would take room from a dense form to say
-           something nobody there is still wondering, so it stays a line. */
-        (layout === 'stacked' ? (
-          <div className="flex items-start gap-2.5 rounded-lg border border-gray-700/70 bg-surface-100/50 px-3 py-2.5">
-            <FontAwesomeIcon
-              icon={faCircleInfoDuo}
-              // Not amber, not red. Nothing is wrong and nothing needs doing —
-              // this is permission to move on, and a warning color would say
-              // the opposite of the sentence beside it.
-              className="mt-0.5 h-4 w-4 shrink-0 text-gray-500"
-            />
-            <p className="text-sm text-gray-400">
-              Answer what you know —{' '}
-              <strong className="font-semibold text-gray-200">none of it is required</strong>.
-            </p>
-          </div>
-        ) : (
-          <p className="text-xs text-gray-500">
-            Answer what you know —{' '}
-            {/* Weighted and lifted out of the grey, because this is the half of
-                the sentence someone skims for when they do not know a model
-                year and are wondering whether they are stuck. */}
-            <strong className="font-semibold text-gray-300">none of it is required</strong>.
-          </p>
-        ))}
-
-      {/* Two densities of the same form, as before. The desk has room to show
-          every question at once and staff enter items all day, so nothing there
-          is worth a tap to open. A phone does not, and did not: four questions
-          fitted and the other three sat behind "More detail", which is a worse
-          version of a row you can open. */}
-      {layout === 'grid' ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-          {topLevel.map((a) => (
-            <AttributeField
-              key={a.id}
-              orgId={orgId}
-              attribute={a}
-              state={value}
-              setAnswer={setAnswer}
-              depth={0}
-              onValuesLoaded={onValuesLoaded}
-            />
-          ))}
+    <StaffEntryContext.Provider value={staff}>
+      <div className="space-y-3">
+        {/* Collapses to a header once picked, with the way back out beside it. */}
+        <div className="flex items-center justify-between gap-2 pb-1 border-b border-gray-800">
+          <span className="flex items-center gap-2 text-sm font-medium text-white">
+            <NodeIcon icon={category.icon} className="h-4 w-4 text-brand-500" />
+            {category.label}
+          </span>
+          <button
+            type="button"
+            onClick={() => onChange(emptyDescriber)}
+            className="text-xs text-gray-400 hover:text-gray-200"
+          >
+            Change
+          </button>
         </div>
-      ) : (
-        <div>
-          {topLevel.map((a) => (
-            <AccordionRow
-              key={a.id}
-              attribute={a}
-              summary={answerText(a, value.answers[a.id] ?? {}, labelIndex)}
-              open={openId === a.id}
-              // A question with a sheet behind it has nothing worth showing in a
-              // row, so opening the row opens the sheet, every time it is tapped
-              // rather than only the first — the row is a label and a chevron,
-              // and tapping it can only mean "let me answer this".
-              sheet={usesSheet(a)}
-              onToggle={() => {
-                if (usesSheet(a)) { setOpenId(a.id); setSheetId(a.id); return; }
-                setSheetId(null);
-                setOpenId(openId === a.id ? null : a.id);
-              }}
-            >
+
+        {/* Said outright, because nothing else on the screen said it.
+            Every answer here is optional (D6), and `canAdd` bears that out — a
+            category and a price are the whole requirement. The count on "More
+            detail" was the only hint, and it only ever spoke about the questions
+            still hidden, never the ones a seller is looking at, so somebody who
+            does not know a model year had no way to tell whether they were stuck.
+
+            One idea, not two: the preview underneath already shows the name
+            improving as answers go in, so saying that here as well would be
+            explaining what the screen is busy demonstrating. */}
+        {topLevel.length > 0 &&
+          /* Two treatments, because two readers.
+           
+             `stacked` is self check-in: a member of the public, on their own
+             phone, part way through describing a pair of skis and wondering
+             whether they are allowed to stop. They get a box — bordered and set
+             apart, so it reads as the screen speaking rather than as a caption on
+             the question below it, which is what a loose line of grey looked
+             like next to a column of fields.
+           
+             Staff at the desk have read this sentence a hundred times by
+             mid-morning. A box there would take room from a dense form to say
+             something nobody there is still wondering, so it stays a line. */
+          (layout === 'stacked' ? (
+            <div className="flex items-start gap-2.5 rounded-lg border border-gray-700/70 bg-surface-100/50 px-3 py-2.5">
+              <FontAwesomeIcon
+                icon={faCircleInfoDuo}
+                // Not amber, not red. Nothing is wrong and nothing needs doing —
+                // this is permission to move on, and a warning color would say
+                // the opposite of the sentence beside it.
+                className="mt-0.5 h-4 w-4 shrink-0 text-gray-500"
+              />
+              <p className="text-sm text-gray-400">
+                Answer what you know —{' '}
+                <strong className="font-semibold text-gray-200">none of it is required</strong>.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">
+              Answer what you know —{' '}
+              {/* Weighted and lifted out of the grey, because this is the half of
+                  the sentence someone skims for when they do not know a model
+                  year and are wondering whether they are stuck. */}
+              <strong className="font-semibold text-gray-300">none of it is required</strong>.
+            </p>
+          ))}
+
+        {/* Two densities of the same form, as before. The desk has room to show
+            every question at once and staff enter items all day, so nothing there
+            is worth a tap to open. A phone does not, and did not: four questions
+            fitted and the other three sat behind "More detail", which is a worse
+            version of a row you can open. */}
+        {layout === 'grid' ? (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+            {topLevel.map((a) => (
               <AttributeField
+                key={a.id}
                 orgId={orgId}
                 attribute={a}
                 state={value}
                 setAnswer={setAnswer}
                 depth={0}
                 onValuesLoaded={onValuesLoaded}
-                hideLabel
-                chips
-                {...(usesSheet(a)
-                  ? {
-                      sheetOpen: sheetId === a.id,
-                      onSheetOpenChange: (open: boolean) => setSheetId(open ? a.id : null),
-                    }
-                  : {})}
               />
-            </AccordionRow>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        ) : (
+          <div>
+            {topLevel.map((a) => (
+              <AccordionRow
+                key={a.id}
+                attribute={a}
+                summary={answerText(a, value.answers[a.id] ?? {}, labelIndex)}
+                open={openId === a.id}
+                // A question with a sheet behind it has nothing worth showing in a
+                // row, so opening the row opens the sheet, every time it is tapped
+                // rather than only the first — the row is a label and a chevron,
+                // and tapping it can only mean "let me answer this".
+                sheet={usesSheet(a)}
+                onToggle={() => {
+                  if (usesSheet(a)) { setOpenId(a.id); setSheetId(a.id); return; }
+                  setSheetId(null);
+                  setOpenId(openId === a.id ? null : a.id);
+                }}
+              >
+                <AttributeField
+                  orgId={orgId}
+                  attribute={a}
+                  state={value}
+                  setAnswer={setAnswer}
+                  depth={0}
+                  onValuesLoaded={onValuesLoaded}
+                  hideLabel
+                  chips
+                  {...(usesSheet(a)
+                    ? {
+                        sheetOpen: sheetId === a.id,
+                        onSheetOpenChange: (open: boolean) => setSheetId(open ? a.id : null),
+                      }
+                    : {})}
+                />
+              </AccordionRow>
+            ))}
+          </div>
+        )}
 
-      {renderPreview ? renderPreview(preview, { parts: parts.length }) : null}
-    </div>
+        {renderPreview ? renderPreview(preview, { parts: parts.length }) : null}
+      </div>
+    </StaffEntryContext.Provider>
   );
 }

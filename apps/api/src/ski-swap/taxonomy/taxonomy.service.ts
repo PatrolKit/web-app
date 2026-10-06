@@ -542,7 +542,9 @@ export class TaxonomyService {
    * Used by staff adding one deliberately and by a seller typing one mid-item.
    * An exact normalised match returns the existing node — approved or pending —
    * so two sellers typing "Rossignol" ten minutes apart produce one value with
-   * two items behind it rather than two values (§8.1).
+   * two items behind it rather than two values (§8.1). Minted approved, a
+   * pending match of the org's own is approved too: staff typing what a seller
+   * typed vouches for it.
    */
   async mintValue(
     orgId: string,
@@ -568,7 +570,15 @@ export class TaxonomyService {
         },
       },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (!opts.approved || existing.status !== 'PENDING' || existing.orgId !== orgId) return existing;
+      const approved = await this.prisma.taxonomyNode.update({
+        where: { id: existing.id },
+        data: { status: 'APPROVED', approvedBy: opts.actorId ?? null, approvedAt: new Date() },
+      });
+      await this.bumpVersion(orgId);
+      return approved;
+    }
 
     const last = await this.prisma.taxonomyNode.findFirst({
       where: { parentId: attributeId, kind: 'VALUE' },
@@ -706,7 +716,7 @@ export class TaxonomyService {
    * Validates one item's answers against this org's tree and composes its name.
    *
    * Everything the write path needs in one pass: the answers are checked, any
-   * free text is minted into a pending value, and the name is derived from the
+   * free text is minted into a value (pending unless `approveNew`), and the name is derived from the
    * labels this very fetch already has in hand. Nothing here trusts the client
    * about the shape of the tree — a reachable attribute, a value that belongs to
    * it, a number inside its range — because the alternative is a tag that says
@@ -717,6 +727,7 @@ export class TaxonomyService {
     categoryId: string,
     inputs: ItemAttributeInput[],
     actorId?: string,
+    opts: { approveNew?: boolean } = {},
   ): Promise<ResolvedAnswers> {
     const nodes = await this.visibleNodes(orgId, { approvedOnly: false });
     const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -778,10 +789,11 @@ export class TaxonomyService {
         if (!attribute.allowFreeEntry) {
           throw new BadRequestException(`"${attribute.label}" takes one of the listed answers`);
         }
-        // Pending, and usable by this item immediately: a seller with a queue
-        // behind them cannot wait for an approval (D7).
+        // Usable by this item immediately: a seller with a queue behind them
+        // cannot wait for an approval (D7). Approved when staff typed it, so
+        // it's offered to the next item; a seller's waits for staff.
         value = await this.mintValue(orgId, attribute.id, input.freeText!, {
-          approved: false,
+          approved: !!opts.approveNew,
           actorId,
         });
         byId.set(value.id, value);

@@ -336,6 +336,8 @@ export class ItemService {
       queueTag?: boolean;
       /** Whoever is entering this, so a value they type is attributable. */
       actorId?: string;
+      /** Staff are entering this: a value they type is approved, not pending. */
+      approveNewValues?: boolean;
       /**
        * The seller entered this themselves, with no staff present.
        *
@@ -445,7 +447,7 @@ export class ItemService {
    * finish (D17) — and an item that is not on the floor yet cannot be sold at
    * the register in the meantime.
    */
-  async create(orgId: string, swapId: string, data: { id?: string; categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents?: number | null; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
+  async create(orgId: string, swapId: string, data: { id?: string; categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents?: number | null; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string; approveNewValues?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(idempotencyScope(orgId, swapId), idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -514,7 +516,7 @@ export class ItemService {
       throw new BadRequestException('Pick what the item is before describing it');
     }
     const described = data.categoryId
-      ? await this.taxonomy.resolveAnswers(orgId, data.categoryId, data.attributes ?? [], data.actorId)
+      ? await this.taxonomy.resolveAnswers(orgId, data.categoryId, data.attributes ?? [], data.actorId, { approveNew: data.approveNewValues })
       : null;
 
     /**
@@ -627,7 +629,7 @@ export class ItemService {
       }));
   }
 
-  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; ifUnpriced?: true; actorId?: string }, idempotencyKey?: string): Promise<ItemResponse> {
+  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; ifUnpriced?: true; actorId?: string; approveNewValues?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(`item-patch:${orgId}:${swapId}`, idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -733,7 +735,7 @@ export class ItemService {
   private async redescribe(
     orgId: string,
     existing: { categoryId: string | null; attributes: { attributeId: string; valueId: string | null; numberValue: number | null }[] },
-    data: { categoryId?: string; attributes?: ItemAttributeInput[]; actorId?: string },
+    data: { categoryId?: string; attributes?: ItemAttributeInput[]; actorId?: string; approveNewValues?: boolean },
   ) {
     const categoryId = data.categoryId ?? existing.categoryId;
     if (!categoryId) {
@@ -746,7 +748,7 @@ export class ItemService {
         ...(a.valueId !== null ? { valueId: a.valueId } : {}),
         ...(a.numberValue !== null ? { numberValue: a.numberValue } : {}),
       }));
-    return this.taxonomy.resolveAnswers(orgId, categoryId, attributes, data.actorId);
+    return this.taxonomy.resolveAnswers(orgId, categoryId, attributes, data.actorId, { approveNew: data.approveNewValues });
   }
 
   /**

@@ -376,6 +376,22 @@ describe('free entry', () => {
     expect(out.rows[0].valueId).toBe('pend');
     expect(created).toHaveLength(0);
   });
+
+  it('approves what staff type, so the next item is offered it', async () => {
+    const { service, created } = makeService();
+    await service.resolveAnswers(ORG, 'cat', [{ attributeId: 'mfr', freeText: 'Rossignol' }], 'staff-1', { approveNew: true });
+    expect(created[0]).toMatchObject({ label: 'Rossignol', orgId: ORG, status: 'APPROVED', approvedBy: 'staff-1' });
+  });
+
+  it('approves a seller’s pending value when staff type it too', async () => {
+    const rows = tree();
+    rows.push({ id: 'pend', kind: 'VALUE', orgId: ORG, parentId: 'mfr', label: 'Rossignol', status: 'PENDING' });
+    const { service, store, created } = makeService(rows);
+    const out = await service.resolveAnswers(ORG, 'cat', [{ attributeId: 'mfr', freeText: 'rossignol' }], undefined, { approveNew: true });
+    expect(out.rows[0].valueId).toBe('pend');
+    expect(created).toHaveLength(0);
+    expect(store.find((r) => r.id === 'pend')).toMatchObject({ status: 'APPROVED' });
+  });
 });
 
 // ─── Reordering ──────────────────────────────────────────────────────────────

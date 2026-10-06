@@ -847,6 +847,7 @@ export default function SwapItemsPanel({
             )}
 
             <ItemDescriber
+              staff
               orgId={orgId}
               value={form.describer}
               onChange={(describer) => setForm({ ...form, describer })}

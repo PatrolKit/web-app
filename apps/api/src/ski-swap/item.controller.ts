@@ -255,13 +255,14 @@ export class ItemController {
     @CurrentUser() user: AuthenticatedUser | undefined,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    // `actorId` so a value typed at the counter is attributable in the queue.
-    // Absent when a device is the caller rather than a person: this route takes
-    // `OrDeviceAuthGuard`, and a station iPad has no user id to credit.
+    // `actorId` so a value typed at the counter is attributable. Absent when a
+    // device is the caller rather than a person: this route takes
+    // `OrDeviceAuthGuard`, and a station iPad has no user id to credit. Staff
+    // or a staff iPad either way, so a value typed here is approved.
     return this.itemService.createAtStation(
       orgId,
       swapId,
-      { ...body, ...(user?.userId ? { actorId: user.userId } : {}) },
+      { ...body, ...(user?.userId ? { actorId: user.userId } : {}), approveNewValues: true },
       idempotencyKey,
     );
   }
@@ -281,7 +282,8 @@ export class ItemController {
     @Body() body: PatchItemDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.itemService.patch(orgId, swapId, itemId, body, idempotencyKey);
+    // Staff: a value typed here is approved.
+    return this.itemService.patch(orgId, swapId, itemId, { ...body, approveNewValues: true }, idempotencyKey);
   }
 
   @Delete(':itemId')
