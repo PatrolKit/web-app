@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  faArrowRotateLeft as faRestoreDuo,
   faArrowUpRightFromSquare as faPromoteDuo,
+  faBoxArchive as faRetireDuo,
   faCheck as faCheckDuo,
   faRightLeft as faMergeDuo,
   faTrash as faTrashDuo,
@@ -15,9 +17,13 @@ import type { OrgTaxonomyAdmin, TaxonomyAdminNode } from '../../lib/api.types';
  * The org's half of the item-description tree (Plan 19 §6.3).
  *
  * Two lists and a read-only third. The queue is what a seller typing a brand at
- * the counter produces; the club's own values are what it has approved; the
+ * the counter produces; the patrol's own values are what it has approved; the
  * shared list is visible and not editable here, because an org that wants a
  * global change asks for one (D10).
+ *
+ * A patrol can delete a value it added that nothing uses. One items use is
+ * retired instead: it leaves the list sellers pick from, and those items keep
+ * it, because a node any item points at is never deleted (Plan 19).
  */
 
 function relative(iso: string): string {
@@ -76,6 +82,24 @@ export default function ItemDetailsCard({ orgId }: { orgId: string }) {
     onError: fail,
   });
 
+  /** Retire, or restore: on or off the list sellers pick from. */
+  const retire = useMutation({
+    mutationFn: (v: { nodeId: string; retired: boolean }) =>
+      api.skiSwap.patchTaxonomyNode(orgId, v.nodeId, { retired: v.retired }),
+    onSuccess: () => { setError(''); afterWrite(); },
+    onError: fail,
+  });
+
+  function remove(node: TaxonomyAdminNode) {
+    if (node.itemCount > 0) {
+      if (!confirm(`${node.itemCount} item${node.itemCount === 1 ? ' uses' : 's use'} “${node.label}”. Retire it? It leaves the list sellers pick from; ${node.itemCount === 1 ? 'that item keeps' : 'those items keep'} it.`)) return;
+      retire.mutate({ nodeId: node.id, retired: true });
+    } else {
+      if (!confirm(`Delete “${node.label}”? Nothing uses it.`)) return;
+      discard.mutate(node.id);
+    }
+  }
+
   const suggest = useMutation({
     mutationFn: (nodeId: string) => api.skiSwap.suggestTaxonomyNode(orgId, nodeId),
     onSuccess: () => { setError(''); afterWrite(); },
@@ -85,7 +109,8 @@ export default function ItemDetailsCard({ orgId }: { orgId: string }) {
   if (isLoading) return <p className="text-gray-400 text-sm">Loading…</p>;
   if (!data) return null;
 
-  const values = data.own.filter((n) => n.kind === 'VALUE');
+  const values = data.own.filter((n) => n.kind === 'VALUE' && !n.retiredAt);
+  const retired = data.own.filter((n) => n.kind === 'VALUE' && n.retiredAt);
 
   return (
     <section className="space-y-4">
@@ -93,7 +118,7 @@ export default function ItemDetailsCard({ orgId }: { orgId: string }) {
         <h2 className="text-white font-semibold">Item details</h2>
         <p className="text-sm text-gray-400 mt-0.5">
           What sellers pick from when they describe an item. The shared list comes
-          with PatrolKit; anything your club adds lives alongside it.
+          with PatrolKit; anything your patrol adds lives alongside it.
         </p>
       </div>
 
@@ -130,7 +155,7 @@ export default function ItemDetailsCard({ orgId }: { orgId: string }) {
                   <div className="flex items-center justify-between gap-2 bg-surface-200 rounded px-2 py-1.5">
                     <span className="text-xs text-gray-300">
                       Similar: {similar.label}
-                      {similar.scope === 'global' ? ' (shared list)' : ' (your club)'}
+                      {similar.scope === 'global' ? ' (shared list)' : ' (your patrol)'}
                     </span>
                     <button
                       className="text-xs text-brand-400 hover:text-brand-300 whitespace-nowrap"
@@ -174,10 +199,10 @@ export default function ItemDetailsCard({ orgId }: { orgId: string }) {
         )}
       </div>
 
-      {/* ── The club's own ─────────────────────────────────────────────────── */}
+      {/* ── The patrol's own ───────────────────────────────────────────────── */}
       <div>
         <h3 className="text-sm font-medium text-gray-300 mb-2">
-          Your club’s values{values.length > 0 ? ` (${values.length})` : ''}
+          Your patrol’s values{values.length > 0 ? ` (${values.length})` : ''}
         </h3>
 
         {values.length === 0 ? (
@@ -210,11 +235,51 @@ export default function ItemDetailsCard({ orgId }: { orgId: string }) {
                     <FontAwesomeIcon icon={faPromoteDuo} /> Suggest for everyone
                   </button>
                 )}
+                {/* Deleted when nothing uses it; retired when something does. */}
+                <button
+                  className="text-xs text-gray-400 hover:text-red-400 whitespace-nowrap disabled:opacity-40"
+                  disabled={discard.isPending || retire.isPending}
+                  title={node.itemCount > 0
+                    ? `${node.itemCount} item${node.itemCount === 1 ? ' uses' : 's use'} this, so it’s retired rather than deleted: it leaves the list, and those items keep it.`
+                    : 'Nothing uses this, so it’s deleted.'}
+                  onClick={() => remove(node)}
+                >
+                  <FontAwesomeIcon icon={node.itemCount > 0 ? faRetireDuo : faTrashDuo} /> {node.itemCount > 0 ? 'Retire' : 'Delete'}
+                </button>
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      {/* ── Retired: off the list, still on the items that use them ────────── */}
+      {retired.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-gray-300 mb-2">Retired ({retired.length})</h3>
+          <p className="text-xs text-gray-500 mb-2">
+            Not offered to sellers any more. Items that use one keep it.
+          </p>
+          <ul className="space-y-1.5">
+            {retired.map((node) => (
+              <li key={node.id} className="flex items-center gap-3 bg-surface-100/60 border border-gray-800 rounded px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-gray-400 truncate">{node.label}</p>
+                  <p className="text-xs text-gray-600 truncate">
+                    {node.path} · {node.itemCount} item{node.itemCount === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <button
+                  className="text-xs text-brand-400 hover:text-brand-300 whitespace-nowrap disabled:opacity-40"
+                  disabled={retire.isPending}
+                  onClick={() => retire.mutate({ nodeId: node.id, retired: false })}
+                >
+                  <FontAwesomeIcon icon={faRestoreDuo} /> Restore
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

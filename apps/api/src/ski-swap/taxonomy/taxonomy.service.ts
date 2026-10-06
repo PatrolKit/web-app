@@ -671,15 +671,26 @@ export class TaxonomyService {
   async discard(orgId: string, nodeId: string): Promise<void> {
     const node = await this.findVisibleOrThrow(orgId, nodeId);
     if (node.orgId !== orgId) throw new BadRequestException('That value is not this org’s');
-    if (node.status !== 'PENDING') throw new BadRequestException('Only a pending value can be discarded');
+    // A pending value, or one of the org's own approved values: a patrol can
+    // delete what it added. The shared list isn't its to delete.
+    if (node.kind !== 'VALUE') throw new BadRequestException('Only a value can be deleted');
 
     const itemCount = await this.prisma.swapItemAttribute.count({ where: { valueId: nodeId } });
     if (itemCount > 0) {
       // D4, surfaced as a reason rather than as a foreign-key error after the
-      // click. The queue disables the button using the same count.
+      // click. The page disables the button using the same count, and offers
+      // retiring instead: items keep a value they point at (Plan 19).
       throw new ConflictException(
-        `${itemCount} item${itemCount === 1 ? '' : 's'} use this. Approve it, or merge it into another value.`,
+        node.status === 'PENDING'
+          ? `${itemCount} item${itemCount === 1 ? '' : 's'} use this. Approve it, or merge it into another value.`
+          : `${itemCount} item${itemCount === 1 ? '' : 's'} use this. Retire it instead: it leaves the list, and those items keep it.`,
       );
+    }
+    // Its own follow-up questions would go with it (the tree cascades), and an
+    // item may answer one of those: retire it instead.
+    const children = await this.prisma.taxonomyNode.count({ where: { parentId: nodeId } });
+    if (children > 0) {
+      throw new ConflictException('This value has its own follow-up questions. Retire it instead: it leaves the list, and nothing is lost.');
     }
     await this.prisma.taxonomyNode.delete({ where: { id: nodeId } });
     await this.bumpVersion(orgId);

@@ -165,7 +165,7 @@ export class TaxonomyController {
     return this.taxonomy.suggest(orgId, nodeId, user.userId);
   }
 
-  /** Discards a pending value nothing points at. */
+  /** Deletes a value of the org's own, pending or approved, that nothing points at or hangs off. */
   @Delete('nodes/:nodeId')
   @HttpCode(204)
   @RequirePermissions('ski_swap:admin')
