@@ -484,12 +484,26 @@ export interface ItemBreakdown {
   error: string | null;
 }
 
-/** One day of the check-ins chart: items that entered PatrolKit that day, in the swap's time zone. */
-export interface CheckinDay {
+/** One hour of one day on the check-ins heat map, in the swap's time zone. */
+export interface CheckinCell {
   /** "2026-10-04". */
   date: string;
+  /** 0–23. */
+  hour: number;
   individual: number;
   business: number;
+  /** Indexes into the heat map's `sellers`: who checked items in that hour. */
+  sellers: number[];
+}
+
+/** Item check-ins by day and hour. Days and hours run first to last, gaps included. */
+export interface CheckinsHeatmap {
+  timeZone: string;
+  days: string[];
+  hours: number[];
+  /** Only cells with a check-in. */
+  cells: CheckinCell[];
+  sellers: { business: boolean }[];
 }
 
 /** The dashboard's figures, from our own rows only (Plan 39 D6): sales live in Square. */

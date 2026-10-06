@@ -5,7 +5,7 @@ import { api } from '../../lib/api';
 import { payoutGaps } from '@patrolkit/contracts/payout-gaps';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import ItemsPieCard from './ItemsPieCard';
-import CheckinsChartCard from './CheckinsChartCard';
+import CheckinsHeatmapCard from './CheckinsHeatmapCard';
 
 /** How many unpayable sellers the card names before linking to the rest. */
 const NAMED_SELLERS = 5;
@@ -123,7 +123,7 @@ export default function SkiSwapDashboard() {
       {/* Side by side where there's room, stacked where there isn't. */}
       <div className="grid gap-4 lg:grid-cols-2">
         <ItemsPieCard orgId={orgId} swapId={selectedSwap.id} />
-        <CheckinsChartCard orgId={orgId} swapId={selectedSwap.id} />
+        <CheckinsHeatmapCard orgId={orgId} swapId={selectedSwap.id} />
       </div>
 
       {/* Each card says what's wrong and what to do, and goes where it's
