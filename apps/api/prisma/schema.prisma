@@ -817,6 +817,11 @@ model SkiSwapSettings {
   /// for order.
   taxonomyVersion Int @default(1)
 
+  /// Barcodes on a tall (62 × 100) item tag: 1, across the foot; or 2, one
+  /// across the head and one across the foot, price and name between, so the
+  /// tag scans from either end. The small tag always has one.
+  barcodesPerTicket Int @default(1)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

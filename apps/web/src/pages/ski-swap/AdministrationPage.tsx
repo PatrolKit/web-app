@@ -65,6 +65,8 @@ export default function AdministrationPage() {
 
       <AcceptingItemsSection orgId={orgId} />
 
+      <PrintingSection orgId={orgId} />
+
       <PayoutsSection orgId={orgId} />
 
       <PayPalSection orgId={orgId} />
@@ -223,6 +225,68 @@ function AcceptingItemsSection({ orgId }: { orgId: string }) {
               className={`block w-5 h-5 bg-white rounded-full transition-transform ${on ? 'translate-x-5' : 'translate-x-0.5'}`}
             />
           </button>
+        </div>
+        {mutation.isError && (
+          <p className="text-xs text-red-400">
+            {mutation.error instanceof ApiError ? mutation.error.message : 'Could not save that.'}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * How many barcodes a tall item tag carries. Two puts one across the head as
+ * well as the foot, so a tag scans from either end however it hangs. The
+ * small tag has no room for a second and always has one.
+ */
+function PrintingSection({ orgId }: { orgId: string }) {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['ski-swap/settings', orgId],
+    queryFn: () => api.skiSwap.getSettings(orgId),
+    enabled: !!orgId,
+    staleTime: 60_000,
+  });
+  const mutation = useMutation({
+    mutationFn: (barcodesPerTicket: 1 | 2) => api.skiSwap.updateSettings(orgId, { barcodesPerTicket }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/settings', orgId] }),
+  });
+  const current = settings?.barcodesPerTicket ?? 1;
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-white font-semibold">Printing</h2>
+      <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm text-white">Number of barcodes per ticket</p>
+            <p className="text-xs text-gray-500">
+              1: one barcode across the bottom of the tag. 2: one across the top as well, with the
+              price and name between them, so the tag scans from either end.
+            </p>
+            <p className="text-xs text-gray-500">
+              Applies to tall (62 × 100) tags printed from now on. Small (50 × 30) tags always have one.
+            </p>
+          </div>
+          <div role="radiogroup" aria-label="Number of barcodes per ticket" className="shrink-0 flex rounded-lg border border-gray-700 overflow-hidden">
+            {([1, 2] as const).map((n) => (
+              <button
+                key={n}
+                type="button"
+                role="radio"
+                aria-checked={current === n}
+                onClick={() => { if (current !== n) mutation.mutate(n); }}
+                disabled={mutation.isPending || settings === undefined}
+                className={`w-10 py-1.5 text-sm font-medium disabled:opacity-40 ${
+                  current === n ? 'bg-brand-600 text-white' : 'bg-surface-100 text-gray-300 hover:bg-surface-200'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
         </div>
         {mutation.isError && (
           <p className="text-xs text-red-400">

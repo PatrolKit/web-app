@@ -7,6 +7,7 @@ import { displayName } from '../../common/util/person';
 import { receiptLayout, receiptPrintRefusal, type ReceiptLayout } from '../receipt-layout';
 import { DEFAULT_SWAP_TIME_ZONE, swapTimeText } from '../swap-time-zone';
 import type { ReceiptHeaderData } from './label-templates';
+import { barcodesOf } from '../ski-swap-settings.service';
 
 /** The two lines beside a receipt's QR, per what it opens (Plan 36). */
 const QR_CAPTIONS: Record<NonNullable<ReceiptLayout['link']>['kind'], [string, string]> = {
@@ -74,9 +75,13 @@ export class PrintRecipeService {
         if (item.priceCents === null) {
           throw new BadRequestException('This ticket has no price yet, and a ticket has no printed tag.');
         }
+        const settings = await this.prisma.skiSwapSettings.findUnique({
+          where: { orgId },
+          select: { barcodesPerTicket: true },
+        });
         return [
           await this.renderer.itemTag(
-            { name: item.name, priceCents: item.priceCents, sku: item.sku },
+            { name: item.name, priceCents: item.priceCents, sku: item.sku, barcodes: barcodesOf(settings) },
             target,
           ),
         ];

@@ -904,6 +904,8 @@ export const UpdateSkiSwapSettingsSchema = z
     commissionPercent: z
       .union([z.string().regex(/^\d{1,3}(\.\d{1,2})?%?$/), z.number().min(0).max(100)])
       .optional(),
+    /** Barcodes on a tall item tag: 1 across the foot, or 2, head and foot. */
+    barcodesPerTicket: z.union([z.literal(1), z.literal(2)]).optional(),
   })
   .strict();
 
@@ -915,6 +917,11 @@ export const SkiSwapSettingsResponseSchema = z.object({
    */
   labelsPerItem: z.number().int(),
   requireConsignmentScan: z.boolean(),
+  /**
+   * Barcodes on a tall (62 × 100) item tag: 1 across the foot, or 2, one across
+   * the head as well. The small tag always has one.
+   */
+  barcodesPerTicket: z.union([z.literal(1), z.literal(2)]),
   /** "20%", "20.5%". The form this is edited and displayed in, everywhere. */
   commissionPercent: z.string(),
   /**

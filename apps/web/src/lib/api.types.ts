@@ -628,6 +628,8 @@ export interface SkiSwapSettings {
    * what is already on the floor.
    */
   requireConsignmentScan: boolean;
+  /** Barcodes on a tall (62 × 100) item tag: 1 across the foot, or 2, head and foot. */
+  barcodesPerTicket: 1 | 2;
   /** The org's cut, as a percentage: "20%", "20.5%", "0%". */
   commissionPercent: string;
   /** The same number the server does the arithmetic with. */

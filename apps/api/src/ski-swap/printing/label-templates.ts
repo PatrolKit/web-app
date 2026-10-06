@@ -15,6 +15,11 @@ export interface ItemLabelData {
   name: string;
   priceCents: number;
   sku: string;
+  /**
+   * Barcodes on the tall tag: 2 adds one across the head (the org's setting).
+   * The compact tag always has one.
+   */
+  barcodes?: 1 | 2;
 }
 
 export interface ReceiptHeaderData {
@@ -374,6 +379,7 @@ const ROTATION = Math.PI / 2;
 export async function drawLargeItemTag(
   ctx: SKRSContext2D, W: number, H: number, item: ItemLabelData,
 ): Promise<void> {
+  if (item.barcodes === 2) return drawTwoBarcodeTallTag(ctx, W, H, item);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#000';
@@ -469,6 +475,85 @@ export async function drawLargeItemTag(
 
   // ── Branding, rotated in the foot's right column ──────────────────────────
   await drawBrandingIn(ctx, barcodeW + GAP, footTop, brandColW, footH);
+}
+
+/**
+ * The 62 × 100 mm tag with two barcodes: one across the head and one across
+ * the foot, price and name between them, so a tag scans from either end
+ * however it hangs.
+ *
+ * The foot is `drawLargeItemTag`'s foot exactly (bars, SKU, branding), and the
+ * head mirrors it with the station letter where the branding would be. With
+ * the full width between them, price and name run across the label rather
+ * than rotated down it.
+ */
+async function drawTwoBarcodeTallTag(
+  ctx: SKRSContext2D, W: number, H: number, item: ItemLabelData,
+): Promise<void> {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+
+  // As `drawLargeItemTag`'s foot, so the two read alike.
+  const GAP = Math.round(W * 0.03);
+  const brandColW = Math.round(W * 0.20);
+  const barcodeW = W - brandColW - GAP;
+  const SKU_SIZE = Math.round(W * 0.05);
+  const modules = code128BModules(item.sku);
+  const moduleW = Math.max(1, Math.min(3, Math.floor(barcodeW / modules.length)));
+  const barsW = modules.length * moduleW;
+  const barsH = Math.max(64, Math.round(barsW * 0.30));
+  const bandH = barsH + GAP + lineHeight(SKU_SIZE);
+
+  /** Bars, then the SKU under them, in the left column of a band. */
+  const barcodeBand = (top: number) => {
+    let col = Math.round((barcodeW - barsW) / 2);
+    for (const black of modules) {
+      if (black) ctx.fillRect(col, top, moduleW, barsH);
+      col += moduleW;
+    }
+    ctx.font = labelFont(SKU_SIZE, 'bold');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(item.sku, barcodeW / 2, top + barsH + GAP);
+  };
+
+  // ── Head: bars and SKU, the station letter beside them ────────────────────
+  barcodeBand(0);
+  const letter = stationCodeOf(item.sku);
+  if (letter) {
+    const badge = Math.min(Math.round(W * 0.13), bandH);
+    drawStationBadge(ctx, barcodeW + GAP + Math.round((brandColW - badge) / 2), 0, badge, letter);
+  }
+
+  // ── Foot: bars, SKU and branding, as on the one-barcode tag ───────────────
+  const footTop = H - bandH;
+  barcodeBand(footTop);
+  await drawBrandingIn(ctx, barcodeW + GAP, footTop, brandColW, bandH);
+
+  // ── Price and name, across the middle ─────────────────────────────────────
+  const midTop = bandH + GAP;
+  const midH = footTop - GAP - midTop;
+  const price = `$${(item.priceCents / 100).toFixed(2)}`;
+  const PRICE_SIZE = fitSize(ctx, price, Math.round(W * 0.28), 40, W);
+  const NAME_LINES = 3;
+  const { size: NAME_SIZE, lines: nameLines } =
+    fitWrapped(ctx, item.name, Math.round(W * 0.12), 20, W, NAME_LINES);
+  const priceLead = lineHeight(PRICE_SIZE);
+  const nameLead = lineHeight(NAME_SIZE);
+  const blockH = priceLead + GAP + nameLines.length * nameLead;
+  let y = midTop + Math.max(0, Math.round((midH - blockH) / 2));
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = labelFont(PRICE_SIZE, 'bold');
+  ctx.fillText(price, W / 2, y);
+  y += priceLead + GAP;
+  ctx.font = labelFont(NAME_SIZE, 'bold');
+  for (const line of nameLines) {
+    ctx.fillText(line, W / 2, y);
+    y += nameLead;
+  }
 }
 
 /**

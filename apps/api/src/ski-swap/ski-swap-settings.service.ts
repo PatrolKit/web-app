@@ -7,6 +7,11 @@ import { basisPointsToPercent, percentToBasisPoints } from './payouts/money';
 
 const DEFAULT_LABELS_PER_ITEM = 1;
 
+/** Barcodes on a tall item tag: 2 only when asked for, 1 for an org with no row. */
+export function barcodesOf(row: { barcodesPerTicket: number } | null | undefined): 1 | 2 {
+  return row?.barcodesPerTicket === 2 ? 2 : 1;
+}
+
 @Injectable()
 export class SkiSwapSettingsService {
   constructor(
@@ -21,6 +26,7 @@ export class SkiSwapSettingsService {
       // Off for an org that has never said otherwise: the extra step belongs to
       // organisations that asked for it.
       requireConsignmentScan: row?.requireConsignmentScan ?? false,
+      barcodesPerTicket: barcodesOf(row),
       // 1 for an org with no row, matching what the taxonomy service reports —
       // a client that has cached nothing compares against it and fetches.
       taxonomyVersion: row?.taxonomyVersion ?? 1,
@@ -61,6 +67,7 @@ export class SkiSwapSettingsService {
     data: {
       requireConsignmentScan?: boolean;
       commissionPercent?: string | number;
+      barcodesPerTicket?: 1 | 2;
     },
     actorId?: string,
   ): Promise<SkiSwapSettingsResponse> {
@@ -85,11 +92,13 @@ export class SkiSwapSettingsService {
           ? { requireConsignmentScan: data.requireConsignmentScan }
           : {}),
         ...(commissionBasisPoints !== undefined ? { commissionBasisPoints } : {}),
+        ...(data.barcodesPerTicket !== undefined ? { barcodesPerTicket: data.barcodesPerTicket } : {}),
       },
       create: {
         orgId,
         requireConsignmentScan: data.requireConsignmentScan ?? false,
         commissionBasisPoints: commissionBasisPoints ?? 0,
+        barcodesPerTicket: data.barcodesPerTicket ?? 1,
       },
     });
 
@@ -114,6 +123,7 @@ export class SkiSwapSettingsService {
     return {
       labelsPerItem: await this.runningSwapLabelsPerItem(orgId),
       requireConsignmentScan: row.requireConsignmentScan,
+      barcodesPerTicket: barcodesOf(row),
       taxonomyVersion: row.taxonomyVersion,
       smsEnabled: await this.platform.smsEnabled(),
       commissionPercent: basisPointsToPercent(row.commissionBasisPoints),
