@@ -12,6 +12,7 @@ import {
 import { api } from '../lib/api';
 import { taxonomyIcon } from '../lib/taxonomyIcons';
 import SearchableSelect from './SearchableSelect';
+import { composeName, type NamePart } from '@patrolkit/contracts/item-name';
 import type {
   ItemAttributeInput,
   ResolvedAttribute,
@@ -107,15 +108,15 @@ export function nameParts(
   category: ResolvedCategory | undefined,
   attributesById: Map<string, ResolvedAttribute>,
   valueLabelById: Map<string, string>,
-): string[] {
+): NamePart[] {
   if (!category) return [];
   return Object.entries(state.answers)
     .map(([attributeId, answer]) => ({ attribute: attributesById.get(attributeId), answer }))
     .filter((x): x is { attribute: ResolvedAttribute; answer: DescriberAnswer } => !!x.attribute)
     .filter((x) => x.attribute.nameSlot !== null)
     .sort((a, b) => (a.attribute.nameSlot ?? 0) - (b.attribute.nameSlot ?? 0) || a.attribute.displayOrder - b.attribute.displayOrder)
-    .map(({ attribute, answer }) => answerText(attribute, answer, valueLabelById))
-    .filter((p) => p !== '');
+    .map(({ attribute, answer }) => ({ text: answerText(attribute, answer, valueLabelById), freeEntry: !!attribute.allowFreeEntry }))
+    .filter((p) => p.text !== '');
 }
 
 export function previewName(
@@ -125,8 +126,7 @@ export function previewName(
   valueLabelById: Map<string, string>,
 ): string {
   if (!category) return '';
-  return [...nameParts(state, category, attributesById, valueLabelById), category.label]
-    .join(' ').replace(/\s+/g, ' ').trim();
+  return composeName(nameParts(state, category, attributesById, valueLabelById), category.label);
 }
 
 /**
@@ -380,11 +380,8 @@ function ValueSheet({
 }
 
 /**
- * A long list, or one that takes free entry.
- *
- * `SearchableSelect` handles the listed values; the free-entry row sits beside
- * it, because the select cannot offer something it has never heard of. Kept for
- * the desk, where a pointer and a keyboard make a dropdown the faster control.
+ * A long, closed list, at the desk: a dropdown that searches, where a pointer
+ * and a keyboard make it the faster control.
  */
 function ValueSelect({
   attribute, values, answer, onChange,
@@ -394,54 +391,128 @@ function ValueSelect({
   answer: DescriberAnswer;
   onChange: (next: DescriberAnswer) => void;
 }) {
-  const [typed, setTyped] = useState('');
-
   const options = useMemo(
     () => values.map((v) => ({ value: v.id, label: v.label })),
     [values],
   );
+  return (
+    <SearchableSelect
+      value={answer.valueId ?? ''}
+      onChange={(valueId) => onChange(valueId ? { valueId } : {})}
+      options={options}
+      placeholder={`Choose ${attribute.label.toLowerCase()}…`}
+      clearLabel="Not sure"
+    />
+  );
+}
 
-  // A value typed on a previous render, held until the item is saved.
-  const pendingLabel = answer.freeText?.trim();
+type ComboRow = { kind: 'value'; value: ResolvedValue } | { kind: 'new'; text: string };
+
+/**
+ * A question that takes typed answers, at the desk: one box. Typing suggests
+ * what's listed; pick one, or keep what you typed and it's added as new for
+ * the patrol to approve. It used to be a dropdown, a second box and a "+",
+ * which for a list with nothing on it yet ("What is it?" in Other) was a
+ * dropdown offering "Not sure" and "No matches" beside the box that worked.
+ *
+ * Enter takes the highlighted row; leaving the box keeps what was typed. Typed
+ * text that is a listed value, in any case, is that value, not a new one.
+ */
+function ValueCombo({
+  attribute, values, answer, onChange,
+}: {
+  attribute: ResolvedAttribute;
+  values: ResolvedValue[];
+  answer: DescriberAnswer;
+  onChange: (next: DescriberAnswer) => void;
+}) {
+  const chosen = answer.valueId ? values.find((v) => v.id === answer.valueId) : undefined;
+  const newLabel = answer.freeText?.trim() ?? '';
+  const answerLabel = chosen?.label ?? newLabel;
+
+  /** What's typed, while typing; otherwise the box shows the answer. */
+  const [typed, setTyped] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const text = typed ?? answerLabel;
+  const needle = fold(text.trim());
+
+  const rows = useMemo((): ComboRow[] => {
+    // Only what's typed narrows; the answer sitting in the box doesn't.
+    const searching = typed !== null && needle !== '';
+    const hits = (searching ? values.filter((v) => fold(v.label).includes(needle)) : values).slice(0, 100);
+    const listed = values.some((v) => fold(v.label) === needle);
+    return [
+      ...hits.map((value) => ({ kind: 'value' as const, value })),
+      ...(searching && !listed ? [{ kind: 'new' as const, text: text.trim() }] : []),
+    ];
+  }, [values, typed, needle, text]);
+
+  function settle(row?: ComboRow) {
+    const t = text.trim();
+    const listed = values.find((v) => fold(v.label) === fold(t));
+    if (row?.kind === 'value') onChange({ valueId: row.value.id });
+    else if (typed === null) { /* nothing typed: the answer stands */ }
+    else if (!t) onChange({});
+    else if (listed) onChange({ valueId: listed.id });
+    else onChange({ freeText: t });
+    setTyped(null);
+    setOpen(false);
+  }
 
   return (
-    <div className="space-y-1.5">
-      <SearchableSelect
-        value={answer.valueId ?? ''}
-        onChange={(valueId) => onChange(valueId ? { valueId } : {})}
-        options={options}
-        placeholder={pendingLabel ? `${pendingLabel} — new` : `Choose ${attribute.label.toLowerCase()}…`}
-        clearLabel="Not sure"
+    <div className="relative">
+      <input
+        className="w-full bg-surface-100 border border-gray-700 rounded-lg pl-2.5 pr-16 py-2 text-sm text-white placeholder:text-gray-500 focus:border-brand-600 focus:outline-none"
+        placeholder={values.length ? 'Pick one, or type a new one' : 'Type it'}
+        aria-label={attribute.label}
+        role="combobox"
+        aria-expanded={open && rows.length > 0}
+        value={text}
+        onFocus={() => setOpen(true)}
+        onBlur={() => settle()}
+        onChange={(e) => { setTyped(e.target.value); setHighlight(0); setOpen(true); }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHighlight((h) => Math.min(h + 1, rows.length - 1)); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)); }
+          else if (e.key === 'Enter') {
+            e.preventDefault();
+            settle(open && typed !== null ? rows[highlight] : undefined);
+          } else if (e.key === 'Escape' && open) { e.stopPropagation(); setTyped(null); setOpen(false); }
+        }}
       />
-      {attribute.allowFreeEntry && (
-        <div className="flex gap-1.5">
-          <input
-            className="flex-1 bg-surface-100 border border-gray-700 rounded-lg px-2.5 py-2 text-sm text-white placeholder:text-gray-500 focus:border-brand-600 focus:outline-none"
-            placeholder="Not listed? Type it"
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && typed.trim()) {
-                e.preventDefault();
-                onChange({ freeText: typed.trim() });
-                setTyped('');
-              }
-            }}
-          />
+      <span className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+        {typed === null && !chosen && newLabel && (
+          <span className="text-[10px] uppercase tracking-wide text-amber-400">New</span>
+        )}
+        {typed === null && answerLabel && (
           <button
             type="button"
-            disabled={!typed.trim()}
-            onClick={() => { onChange({ freeText: typed.trim() }); setTyped(''); }}
-            className="px-3 rounded-lg bg-surface-100 border border-gray-700 text-gray-200 text-sm hover:bg-surface-200 disabled:opacity-40"
-          >
-            <FontAwesomeIcon icon={faPlusDuo} />
-          </button>
-        </div>
-      )}
-      {pendingLabel && (
-        <p className="text-xs text-amber-400">
-          “{pendingLabel}” is new — it will be added for your patrol to approve.
-        </p>
+            aria-label={`Clear ${attribute.label}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { onChange({}); setTyped(null); }}
+            className="text-gray-500 hover:text-gray-200 text-sm px-1"
+          >×</button>
+        )}
+      </span>
+      {open && rows.length > 0 && (
+        <ul role="listbox" className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto bg-surface-200 border border-gray-700 rounded shadow-lg py-1 text-sm">
+          {rows.map((row, i) => (
+            <li
+              key={row.kind === 'value' ? row.value.id : 'new'}
+              role="option"
+              aria-selected={row.kind === 'value' && row.value.id === answer.valueId}
+              onMouseEnter={() => setHighlight(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => settle(row)}
+              className={`px-3 py-1.5 cursor-pointer ${highlight === i ? 'bg-surface-100' : ''} ${
+                row.kind === 'new' ? 'text-amber-300' : row.value.id === answer.valueId ? 'text-brand-400' : 'text-white'
+              }`}
+            >
+              {row.kind === 'value' ? row.value.label : `Add “${row.text}” as new`}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -641,7 +712,7 @@ function AttributeField({
                 }`}
               >
                 <FontAwesomeIcon icon={faPlusDuo} className="h-3 w-3" />
-                {answer.freeText?.trim() || 'Something else'}
+                {answer.freeText?.trim() || (values.length ? 'Something else' : 'Type it')}
               </button>
             )}
           </div>
@@ -656,7 +727,17 @@ function AttributeField({
             />
           )}
         </>
-      ) : values.length > 8 || attribute.allowFreeEntry ? (
+      ) : attribute.allowFreeEntry ? (
+        <>
+          <ValueCombo
+            attribute={attribute}
+            values={values}
+            answer={answer}
+            onChange={(next) => setAnswer(attribute.id, next)}
+          />
+          {pendingNote}
+        </>
+      ) : values.length > 8 ? (
         <ValueSelect
           attribute={attribute}
           values={values}
@@ -812,9 +893,7 @@ export default function ItemDescriber({
   };
 
   const parts = nameParts(value, category, attributesById, labelIndex);
-  const preview = category
-    ? [...parts, category.label].join(' ').replace(/\s+/g, ' ').trim()
-    : '';
+  const preview = category ? composeName(parts, category.label) : '';
 
   if (isLoading) return <p className="text-sm text-gray-500">Loading…</p>;
 

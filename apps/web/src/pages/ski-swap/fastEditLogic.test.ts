@@ -111,6 +111,26 @@ describe('reading a description (Plan 37 D2, D3)', () => {
   });
 });
 
+describe('reading a description in "Other"', () => {
+  const other: ResolvedTaxonomy = {
+    version: 1,
+    categories: [{
+      id: 'other', label: 'Other', scope: 'global', displayOrder: 0,
+      attributes: [
+        { ...select('what', 'What is it?', [value('sled', 'Sled')], 0), nameSlot: 10, allowFreeEntry: true },
+        { ...select('color', 'Color', [value('red', 'Red')], 1), nameSlot: 20 },
+      ],
+    }],
+  };
+  it('names it by what it is, not "Other"', () => {
+    expect(parseDetails('other sled red', other)).toMatchObject({ name: 'Red Sled', extra: [] });
+  });
+  it('lets the words that matched nothing say what it is', () => {
+    expect(parseDetails('other red boot bag', other)).toMatchObject({ name: 'Red boot bag', extra: ['boot', 'bag'] });
+    expect(parseDetails('other red', other)).toMatchObject({ name: 'Red Other' });
+  });
+});
+
 describe('suggestions', () => {
   const labels = (text: string, implied: string | null = null) =>
     detailsSuggestions(text, text.length, taxonomy, implied).map((s) => `${s.label} (${s.sublabel})`);

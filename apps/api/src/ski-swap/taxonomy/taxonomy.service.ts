@@ -92,8 +92,11 @@ export interface ItemDescription {
 }
 
 /** The slice of an ATTRIBUTE row that naming cares about. */
-function nameAttributeOf(a: Pick<NodeRow, 'id' | 'label' | 'nameSlot' | 'unit' | 'displayOrder'>): NameAttribute {
+function nameAttributeOf(
+  a: Pick<NodeRow, 'id' | 'label' | 'nameSlot' | 'unit' | 'displayOrder'> & Partial<Pick<NodeRow, 'allowFreeEntry'>>,
+): NameAttribute {
   return {
+    allowFreeEntry: a.allowFreeEntry ?? false,
     id: a.id,
     label: a.label,
     nameSlot: a.nameSlot,

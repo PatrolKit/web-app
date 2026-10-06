@@ -1,4 +1,5 @@
 import type { ItemAttributeInput, ResolvedAttribute, ResolvedCategory, ResolvedTaxonomy, ResolvedValue } from '../../lib/api.types';
+import { composeName } from '@patrolkit/contracts/item-name';
 
 /**
  * The legacy ticket fast edit's logic (Plan 37), kept apart from the dialog so
@@ -73,7 +74,7 @@ function reachableAttributes(category: ResolvedCategory, chosen: Map<string, Res
  *   manufacturer's models) become answerable once it's matched.
  * - The name is composed as everywhere else (iOS, the single-item form, the
  *   server's `deriveName`): the named answers in slot order, then the
- *   category's label. An answer to a question with no name slot is stored,
+ *   category's label (in "Other", what the item is, by `composeName`). An answer to a question with no name slot is stored,
  *   not named.
  * - Nothing is minted: words that matched nothing follow, as typed.
  *
@@ -137,13 +138,13 @@ export function parseDetails(
     .filter(({ a }) => a.nameSlot !== null)
     .sort((x, y) =>
       (x.a.nameSlot ?? 0) - (y.a.nameSlot ?? 0) || x.a.displayOrder - y.a.displayOrder || x.a.label.localeCompare(y.a.label))
-    .map(({ v }) => v.label);
+    .map(({ a, v }) => ({ text: v.label, freeEntry: !!a.allowFreeEntry }));
   const extra = words.filter((_, i) => !used[i]).map((w) => w.raw);
 
   return {
     categoryId: category.id,
     attributes: [...chosen].map(([attributeId, v]) => ({ attributeId, valueId: v.id })),
-    name: [...named, category.label, ...extra].join(' ').replace(/\s+/g, ' ').trim(),
+    name: composeName(named, category.label, extra),
     extra,
   };
 

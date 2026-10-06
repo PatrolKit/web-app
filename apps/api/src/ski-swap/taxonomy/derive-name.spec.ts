@@ -98,3 +98,22 @@ describe('renderAnswer', () => {
     expect(renderAnswer({ attribute: attr('Type', 10) })).toBeNull();
   });
 });
+
+describe('deriveName in "Other"', () => {
+  const what = { ...attr('What is it?', 10), allowFreeEntry: true };
+  const color = attr('Color', 20);
+  it('names the item by what it is, in place of "Other"', () => {
+    expect(deriveName('Other', [
+      { attribute: what, valueLabel: 'Sled' },
+      { attribute: color, valueLabel: 'Red' },
+    ])).toBe('Red Sled');
+  });
+  it('keeps "Other" when nothing says what it is', () => {
+    expect(deriveName('Other', [{ attribute: color, valueLabel: 'Red' }])).toBe('Red Other');
+    expect(deriveName('Other', [])).toBe('Other');
+  });
+  it('leaves every other category as it was', () => {
+    const maker = { ...attr('Manufacturer', 10), allowFreeEntry: true };
+    expect(deriveName('Skis', [{ attribute: maker, valueLabel: 'Head' }])).toBe('Head Skis');
+  });
+});

@@ -6,6 +6,8 @@
  * not depend on a browser agreeing about it.
  */
 
+import { composeName } from '../../contracts/item-name';
+
 /** The fields of an ATTRIBUTE node that decide where its answer lands. */
 export interface NameAttribute {
   id: string;
@@ -13,6 +15,8 @@ export interface NameAttribute {
   nameSlot: number | null;
   unit: string | null;
   displayOrder: number;
+  /** Takes typed values. In "Other", its answer is what the item is. */
+  allowFreeEntry?: boolean;
 }
 
 /** One answer, already resolved against the tree. */
@@ -41,7 +45,9 @@ export function renderAnswer(answer: NameAnswer): string | null {
 }
 
 /**
- * The item's name: the named answers in slot order, then the category.
+ * The item's name: the named answers in slot order, then the category. In
+ * "Other", the answer that says what the item is takes the category's place
+ * (`composeName`).
  *
  * The category label goes last because English puts the head noun there, and
  * because it is the one part always present — a name is never empty, and an item
@@ -59,10 +65,10 @@ export function deriveName(categoryLabel: string, answers: NameAnswer[]): string
         a.attribute.displayOrder - b.attribute.displayOrder ||
         a.attribute.label.localeCompare(b.attribute.label),
     )
-    .map(renderAnswer)
-    .filter((part): part is string => part !== null && part.trim() !== '');
+    .map((a) => ({ text: renderAnswer(a) ?? '', freeEntry: !!a.attribute.allowFreeEntry }))
+    .filter((part) => part.text.trim() !== '');
 
   // Collapsed rather than joined blindly: a label with a stray double space in
   // it would otherwise reach a tag that has no room to waste.
-  return [...parts, categoryLabel].join(' ').replace(/\s+/g, ' ').trim();
+  return composeName(parts, categoryLabel);
 }
