@@ -266,6 +266,11 @@ model Device {
   /// a device's job is its role.
   role       String    @db.VarChar(100)
   lastSeenAt DateTime?
+  /// When the device last traded its client secret for a token. Only the
+  /// current secret can, so one after a code was issued means that code was
+  /// used: what "set up" waits for (an old iPad still on its token keeps
+  /// moving `lastSeenAt`, not this).
+  lastTokenAt DateTime?
   createdBy  String?
   createdAt  DateTime  @default(now())
 

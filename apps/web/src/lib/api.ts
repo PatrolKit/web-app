@@ -370,7 +370,7 @@ export const api = {
         body: JSON.stringify({ resortId }),
       }),
     rotateSecret: (orgId: string, id: string) =>
-      request<{ clientSecret: string }>(`/orgs/${orgId}/devices/${id}/rotate-secret`, { method: 'POST' }),
+      request<{ clientSecret: string; rotatedAt: string }>(`/orgs/${orgId}/devices/${id}/rotate-secret`, { method: 'POST' }),
     revoke: (orgId: string, id: string) =>
       request<void>(`/orgs/${orgId}/devices/${id}`, { method: 'DELETE' }),
   },

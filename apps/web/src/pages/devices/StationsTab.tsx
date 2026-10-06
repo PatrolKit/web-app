@@ -22,6 +22,7 @@ import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
 import { lastSeenTitle, OFFLINE_AFTER_TABLET_MS, recentlySeen, StatusLine, useClockTick } from './hardwareStatus';
 import type { HardwareStatus } from './hardwareStatus';
 import { deviceLabel } from '../../lib/api.types';
+import { timeAgo } from '../../lib/timeAgo';
 import type {
   CheckinStationRecord,
   DeviceItem,
@@ -98,13 +99,14 @@ export default function StationsTab({
    */
   const rotateSecret = useMutation({
     mutationFn: async (v: { station: CheckinStationRecord; deviceId: string }) => {
-      const { clientSecret } = await api.devices.rotateSecret(orgId, v.deviceId);
-      return { v, clientSecret };
+      const { clientSecret, rotatedAt } = await api.devices.rotateSecret(orgId, v.deviceId);
+      return { v, clientSecret, rotatedAt };
     },
-    onSuccess: ({ v, clientSecret }) => {
+    onSuccess: ({ v, clientSecret, rotatedAt }) => {
       refreshAll();
       onStationAdded({
         stationId: v.station.id,
+        codeIssuedAt: rotatedAt,
         newTablet: {
           id: v.deviceId,
           clientId: devices.find((d) => d.id === v.deviceId)?.clientId ?? '',
@@ -247,7 +249,7 @@ export default function StationsTab({
         <StationTable
           stations={staffStations}
           empty="No staff check-in stations yet."
-          columns={['Station', 'Code', 'iPad', 'Print bridge', 'Status', '']}
+          columns={['Station', 'Code', 'iPad', 'Print bridge', 'Status', 'Last seen', '']}
           renderRow={(station) => (
             <StaffStationRow
               key={station.id}
@@ -387,6 +389,27 @@ function appLabel(queue: StationQueueStatus): string | null {
   return null;
 }
 
+/**
+ * When the station's iPad was last heard from. The status cell's query (the
+ * same key, so one request), which already carries it.
+ */
+function LastSeenCell({ orgId, station }: { orgId: string; station: CheckinStationRecord }) {
+  const { data: queue } = useQuery({
+    queryKey: ['ski-swap/stations', orgId, station.id, 'queue'],
+    queryFn: () => api.skiSwap.stationQueue(orgId, station.id),
+    refetchInterval: 5000,
+  });
+  const at = queue?.attendantLastSeenAt ?? null;
+  return (
+    <td className="py-3 pr-4 align-top whitespace-nowrap text-xs">
+      {!queue ? <span className="text-gray-600">…</span>
+        : !station.attendantDeviceId ? <span className="text-gray-600">No iPad</span>
+          : at ? <span className="text-gray-300" title={new Date(at).toLocaleString()}>{timeAgo(at)}</span>
+            : <span className="text-amber-400">Never</span>}
+    </td>
+  );
+}
+
 /** A queue-aware status cell. Its own query, because it polls per station. */
 function StatusCell({ orgId, station }: { orgId: string; station: CheckinStationRecord }) {
   const { data: queue } = useQuery({
@@ -506,6 +529,7 @@ function StaffStationRow({
         required={false}
       />
       <StatusCell orgId={orgId} station={station} />
+      <LastSeenCell orgId={orgId} station={station} />
       <td className="py-3 align-top text-right whitespace-nowrap">
         <RowActions
           orgId={orgId}

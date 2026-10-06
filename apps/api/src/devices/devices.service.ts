@@ -194,6 +194,7 @@ export class DevicesService {
       role: d.role as DeviceRole,
       orgId: d.orgId,
       lastSeenAt: d.lastSeenAt,
+      lastTokenAt: d.lastTokenAt,
       printerLink: (d.printerLink as 'ready' | 'down' | null) ?? null,
       printerLinkAt: d.printerLinkAt,
       printerName: d.bridgedPrinter?.name ?? null,
@@ -214,7 +215,7 @@ export class DevicesService {
     orgId: string,
     deviceId: string,
     actorUserId: string,
-  ): Promise<{ clientSecret: string }> {
+  ): Promise<{ clientSecret: string; rotatedAt: Date }> {
     const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
     if (!device || device.orgId !== orgId) throw new NotFoundException('Device not found');
     await this.assertMayManage(orgId, actorUserId, device.role);
@@ -229,7 +230,9 @@ export class DevicesService {
       action: 'device.secret_rotated', targetType: 'device', targetId: deviceId,
     });
 
-    return { clientSecret: newSecret };
+    // The server's clock, so "used since" compares like with like (the device
+    // list's `lastTokenAt` is stamped by the same clock).
+    return { clientSecret: newSecret, rotatedAt: new Date() };
   }
 
   // ─── Revoke ──────────────────────────────────────────────────────────────────

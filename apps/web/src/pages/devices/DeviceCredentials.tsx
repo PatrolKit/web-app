@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import QRCode from 'react-qr-code';
 import { api } from '../../lib/api';
@@ -26,6 +26,53 @@ export function useServerConfirmation(orgId: string, deviceId: string, since: st
   const device = devices?.find((d) => d.id === deviceId);
   const seenAt = device?.lastSeenAt ?? null;
   return { device, confirmed: !!seenAt && seenAt !== since };
+}
+
+/**
+ * Whether a device has used the code issued at `issuedAt`: traded that client
+ * secret for a token since. Only the current secret can, so an old iPad still
+ * running on its token, which keeps last-seen moving, can't confirm a new code.
+ * `issuedAt` is the server's time (a provision's `createdAt`, a rotation's
+ * `rotatedAt`), as `lastTokenAt` is.
+ */
+export function useCodeUsed(orgId: string, deviceId: string, issuedAt: string | null) {
+  const { data: devices } = useQuery({
+    queryKey: ['devices', orgId],
+    queryFn: () => api.devices.list(orgId),
+    refetchInterval: 2000,
+    refetchIntervalInBackground: true,
+  });
+  const device = devices?.find((d) => d.id === deviceId);
+  const usedAt = device?.lastTokenAt ?? null;
+  return { device, confirmed: !!usedAt && (!issuedAt || Date.parse(usedAt) >= Date.parse(issuedAt)) };
+}
+
+/** The code a device scans: its credentials and where to send them. */
+function provisioningPayload(clientId: string, secret: string): string {
+  return JSON.stringify({
+    v: 1, cid: clientId, sec: secret,
+    api: `${window.location.protocol}//${window.location.host}/api/v1`,
+  });
+}
+
+/** Copies the code, with a fallback for browsers without the async clipboard. */
+function useCopy(text: string) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    navigator.clipboard?.writeText(text).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return { copied, copy };
 }
 
 /** The warning before throwing away the only copy of a client secret. */
@@ -61,49 +108,24 @@ export function ProvisioningCodeCard({
   deviceId,
   clientId,
   secret,
-  sinceLastSeenAt,
+  issuedAt,
   onDismiss,
 }: {
   orgId: string;
   deviceId: string;
   clientId: string;
   secret: string;
-  /**
-   * What the device's last-seen was when this card opened. A rotation leaves a
-   * timestamp from the device's previous life, so confirmation waits for it to
-   * move rather than merely to exist — otherwise every rotation would confirm
-   * itself instantly against history.
-   */
-  sinceLastSeenAt: string | null;
+  /** When this code was issued, by the server's clock (see `useCodeUsed`). */
+  issuedAt: string | null;
   onDismiss: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-
-  const { confirmed } = useServerConfirmation(orgId, deviceId, sinceLastSeenAt);
+  const { confirmed } = useCodeUsed(orgId, deviceId, issuedAt);
+  const { copied, copy } = useCopy(provisioningPayload(clientId, secret));
 
   function dismiss() {
     if (!confirmed && !window.confirm(SECRET_LOSS_WARNING)) return;
     onDismiss();
   }
-  const payload = JSON.stringify({
-    v: 1, cid: clientId, sec: secret,
-    api: `${window.location.protocol}//${window.location.host}/api/v1`,
-  });
-
-  const copy = () => {
-    const el = document.createElement('textarea');
-    el.value = payload;
-    el.style.position = 'fixed';
-    el.style.opacity = '0';
-    document.body.appendChild(el);
-    el.focus();
-    el.select();
-    document.execCommand('copy');
-    document.body.removeChild(el);
-    navigator.clipboard?.writeText(payload).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   return (
     <div className={`rounded-lg p-4 border ${
@@ -119,7 +141,7 @@ export function ProvisioningCodeCard({
 
       <div className="flex flex-col items-center gap-3">
           <div className="bg-white p-3 rounded">
-            <QRCode value={payload} size={200} />
+            <QRCode value={provisioningPayload(clientId, secret)} size={200} />
           </div>
           <p className="text-xs text-gray-400">
             {confirmed
@@ -219,8 +241,8 @@ export function DeviceCredentialList({
     id: string;
     clientId: string;
     secret: string;
-    /** Last-seen before this secret existed, so a rotation cannot confirm itself. */
-    sinceLastSeenAt: string | null;
+    /** When the server issued it, so only its use confirms it. */
+    issuedAt: string | null;
   } | null>(null);
 
   const { data: allDevices = [], isLoading } = useQuery({
@@ -248,7 +270,7 @@ export function DeviceCredentialList({
       setShowProvisionForm(false);
       qc.invalidateQueries({ queryKey: ['devices', orgId] });
       if (onProvisioned) { onProvisioned(d); return; }
-      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, sinceLastSeenAt: null });
+      setRevealedSecret({ id: d.id, clientId: d.clientId, secret: d.clientSecret, issuedAt: d.createdAt });
     },
   });
 
@@ -260,7 +282,7 @@ export function DeviceCredentialList({
         id,
         clientId: device?.clientId ?? '',
         secret: d.clientSecret,
-        sinceLastSeenAt: device?.lastSeenAt ?? null,
+        issuedAt: d.rotatedAt,
       });
     },
   });
@@ -334,7 +356,7 @@ export function DeviceCredentialList({
               deviceId={revealedSecret.id}
               clientId={revealedSecret.clientId}
               secret={revealedSecret.secret}
-              sinceLastSeenAt={revealedSecret.sinceLastSeenAt}
+              issuedAt={revealedSecret.issuedAt}
               onDismiss={() => setRevealedSecret(null)}
             />
           )}
@@ -377,6 +399,91 @@ export function DeviceCredentialList({
             ))}
             {devices.length === 0 && <p className="text-gray-500 text-sm">No devices provisioned yet.</p>}
           </div>
+    </div>
+  );
+}
+
+/** How long the success message stays before the popover closes itself. */
+const PAIRED_CLOSE_MS = 2500;
+
+/**
+ * Pairing a staff check-in iPad: its code in a popover that waits for the iPad.
+ * When the iPad uses the code it says so and closes itself; closed before
+ * then, it warns that the code is the only copy.
+ */
+export function PairingCodePopover({
+  orgId, deviceId, clientId, secret, issuedAt, stationName, onClose,
+}: {
+  orgId: string;
+  deviceId: string;
+  clientId: string;
+  secret: string;
+  /** When the server issued the code (see `useCodeUsed`). */
+  issuedAt: string | null;
+  stationName: string;
+  onClose: () => void;
+}) {
+  const { confirmed } = useCodeUsed(orgId, deviceId, issuedAt);
+  const { copied, copy } = useCopy(provisioningPayload(clientId, secret));
+
+  useEffect(() => {
+    if (!confirmed) return;
+    const t = setTimeout(onClose, PAIRED_CLOSE_MS);
+    return () => clearTimeout(t);
+  }, [confirmed, onClose]);
+
+  function close() {
+    if (!confirmed && !window.confirm(SECRET_LOSS_WARNING)) return;
+    onClose();
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={close}>
+      <div
+        role="dialog" aria-modal="true" aria-label={`Pair ${stationName}’s iPad`}
+        className={`rounded-lg p-5 w-full max-w-sm border ${confirmed ? 'bg-green-950 border-green-700' : 'bg-surface-50 border-gray-700'}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {confirmed ? (
+          <div className="flex flex-col items-center gap-3 py-8 text-center" role="status">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-green-600 text-3xl text-white" aria-hidden="true">✓</span>
+            <p className="text-lg font-semibold text-green-300">Success</p>
+            <p className="text-sm text-green-200/80">{stationName}’s iPad has checked in and is ready to use.</p>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-white font-medium">Pair {stationName}’s iPad</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Scan with PatrolKit on the iPad, or copy the code. It’s shown once.</p>
+              </div>
+              <button type="button" onClick={close} aria-label="Close" className="text-gray-400 hover:text-white text-lg leading-none">×</button>
+            </div>
+            <div className="flex flex-col items-center gap-3">
+              <div className="bg-white p-3 rounded">
+                <QRCode value={provisioningPayload(clientId, secret)} size={200} />
+              </div>
+              <button
+                type="button"
+                onClick={copy}
+                className="text-sm bg-brand-500 hover:bg-brand-600 text-white px-6 py-2 rounded w-full transition-colors"
+              >
+                {copied ? 'Copied!' : 'Copy pairing code'}
+              </button>
+              <p className="flex items-center gap-2 text-xs text-gray-400" role="status">
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" aria-hidden="true" />
+                Waiting for the iPad to check in…
+              </p>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

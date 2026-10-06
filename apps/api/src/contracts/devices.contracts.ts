@@ -76,6 +76,8 @@ export const DeviceListItemSchema = z.object({
   role: DeviceRoleSchema,
   orgId: z.string(),
   lastSeenAt: z.date().nullable(),
+  /** When it last traded its client secret for a token: the code was used. */
+  lastTokenAt: z.date().nullable(),
   /**
    * A bridge's last word on its own BLE link to its printer, and when it said
    * so. Null for every other kind of device. Surfaced here so a bridge can be

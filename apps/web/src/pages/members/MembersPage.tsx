@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { isActiveNow, timeAgo } from '../../lib/timeAgo';
 import type { MemberResponse, ImportOutcome } from '../../lib/api.types';
 import { matchesSearch } from './memberSearch';
 
@@ -167,12 +168,12 @@ export default function MembersPage() {
         <table className="w-full text-sm">
           <thead><tr className="text-left text-gray-500 border-b border-gray-800">
             <th className="py-2 pr-4">Name</th><th className="py-2 pr-4">Email</th>
-            <th className="py-2 pr-4">Status</th><th className="py-2 pr-4">Invited</th><th className="py-2 pr-4">Permissions</th>
+            <th className="py-2 pr-4">Status</th><th className="py-2 pr-4">Invited</th><th className="py-2 pr-4">Last active</th><th className="py-2 pr-4">Permissions</th>
             {(perms.has('users:manage') || perms.has('permissions:assign') || perms.has('users:invite')) && <th className="py-2">Actions</th>}
           </tr></thead>
           <tbody>
           {shown.length === 0 && (
-            <tr><td colSpan={6} className="py-4 text-gray-500">
+            <tr><td colSpan={7} className="py-4 text-gray-500">
               {search.trim() ? `No members match “${search.trim()}”.` : 'No members yet.'}
             </td></tr>
           )}
@@ -192,6 +193,7 @@ export default function MembersPage() {
                     ? <span className="text-gray-300" title={new Date(m.inviteSentAt).toLocaleString()}>{inviteDate(m.inviteSentAt)}</span>
                     : <span className="text-gray-600">Not yet</span>}
                 </td>
+                <td className="py-2 pr-4 text-xs whitespace-nowrap"><LastActive member={m} /></td>
                 <td className="py-2 pr-4 text-xs text-gray-500 max-w-xs truncate">{m.permissions.join(', ') || '—'}</td>
                 <td className="py-2 flex gap-3 items-center flex-wrap">
                   {/* Where and how to sign in, for someone an administrator
@@ -225,7 +227,7 @@ export default function MembersPage() {
               </tr>
               {editingPermsFor === m.userId && (
                 <tr className="border-b border-gray-800 bg-surface-50">
-                  <td colSpan={6} className="px-4 py-3">
+                  <td colSpan={7} className="px-4 py-3">
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1.5 mb-3">
                       {allPerms.map((p) => (
                         <label key={p.key} className="flex items-center gap-2 text-xs cursor-pointer">
@@ -250,5 +252,30 @@ export default function MembersPage() {
       </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * When a member was last active, and whether they're signed in. From their
+ * sessions, which renew every 15 minutes of use: "Active now" is a renewal in
+ * the last 20 minutes.
+ */
+function LastActive({ member }: { member: MemberResponse }) {
+  const at = member.lastActiveAt ?? null;
+  if (!at) return <span className="text-gray-600">Never signed in</span>;
+  const title = new Date(at).toLocaleString();
+  if (isActiveNow(at)) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-green-400" title={title}>
+        <span className="h-2 w-2 rounded-full bg-green-400" aria-hidden="true" />
+        Active now
+      </span>
+    );
+  }
+  return (
+    <span title={title}>
+      <span className="text-gray-300">{timeAgo(at)}</span>
+      <span className="block text-gray-500">{member.signedIn ? 'Signed in' : 'Signed out'}</span>
+    </span>
   );
 }

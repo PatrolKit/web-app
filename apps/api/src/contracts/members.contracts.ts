@@ -21,6 +21,13 @@ export const MemberResponseSchema = z.object({
   inviteSentAt: z.date().nullable(),
   permissions: z.array(PermissionKeySchema),
   roles: z.array(z.enum(['seller', 'patroller'])),
+  /// When they last signed in or their session was renewed: about every 15
+  /// minutes while they use the app, so accurate to 15 minutes. Null ⇒ never.
+  /// Only on the members list.
+  lastActiveAt: z.date().nullable().optional(),
+  /// Whether a session of theirs is still open on some device: signed in, not
+  /// signed out, and not expired. Only on the members list.
+  signedIn: z.boolean().optional(),
 });
 
 export const InviteMemberSchema = z

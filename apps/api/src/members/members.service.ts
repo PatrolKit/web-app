@@ -87,7 +87,29 @@ export class MembersService {
       orderBy: { joinedAt: 'asc' },
     });
 
-    return memberships.map(toMemberResponse);
+    // Activity from sessions: a sign-in or a renewal writes a refresh token,
+    // and a renewal happens only when someone is using the app, so the newest
+    // one is when they were last active. Any still open (not revoked, not
+    // expired) means they're signed in somewhere.
+    const userIds = memberships.map((m) => m.userId);
+    const [last, open] = userIds.length
+      ? await Promise.all([
+          this.prisma.refreshToken.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _max: { createdAt: true } }),
+          this.prisma.refreshToken.groupBy({
+            by: ['userId'],
+            where: { userId: { in: userIds }, revokedAt: null, expiresAt: { gt: new Date() } },
+            _count: { _all: true },
+          }),
+        ])
+      : [[], []];
+    const lastBy = new Map(last.map((r) => [r.userId, r._max.createdAt]));
+    const openBy = new Set(open.map((r) => r.userId));
+
+    return memberships.map((m) => ({
+      ...toMemberResponse(m),
+      lastActiveAt: lastBy.get(m.userId) ?? null,
+      signedIn: openBy.has(m.userId),
+    }));
   }
 
   // ─── Single invite ────────────────────────────────────────────────────────

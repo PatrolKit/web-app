@@ -18,12 +18,14 @@ const verify = argon2.verify as jest.MockedFunction<typeof argon2.verify>;
 
 const SECRET = 'correct-secret';
 
+const updates: Record<string, unknown>[] = [];
+
 async function build(opts: { device?: boolean; verify?: typeof argon2.verify } = {}) {
   const secretHash = await argon2.hash(SECRET, { type: argon2.argon2id, memoryCost: 1024, timeCost: 2 });
   const prisma = {
     device: {
       findUnique: async () => (opts.device === false ? null : { id: 'dev-1', orgId: 'org-1', role: 'ski_swap.staff_check_in', secretHash }),
-      update: async () => ({}),
+      update: async ({ data }: { data: Record<string, unknown> }) => { updates.push(data); return {}; },
     },
   };
   const jwt = { signDeviceToken: async () => 'token-1' };
@@ -32,12 +34,18 @@ async function build(opts: { device?: boolean; verify?: typeof argon2.verify } =
   return svc;
 }
 
-beforeEach(() => verify.mockClear());
+beforeEach(() => { verify.mockClear(); updates.length = 0; });
 
 describe('a device asking for a token', () => {
   it('gets one for its credentials', async () => {
     const svc = await build();
     await expect(svc.getDeviceToken('client-1', SECRET)).resolves.toEqual({ accessToken: 'token-1', tokenType: 'Bearer' });
+  });
+
+  it('stamps when its code was used, which pairing waits for', async () => {
+    const svc = await build();
+    await svc.getDeviceToken('client-1', SECRET);
+    expect(updates[0]).toEqual({ lastSeenAt: expect.any(Date), lastTokenAt: expect.any(Date) });
   });
 
   it('is told DEVICE_REVOKED when its secret was replaced', async () => {

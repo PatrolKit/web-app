@@ -115,6 +115,10 @@ export interface MemberResponse {
   inviteSentAt: string | null;
   permissions: string[];
   roles: OrgRole[];
+  /** Last sign-in or session renewal, accurate to 15 minutes. Null ⇒ never. */
+  lastActiveAt?: string | null;
+  /** A session is still open on some device. */
+  signedIn?: boolean;
 }
 
 export interface ImportOutcome {
@@ -141,6 +145,8 @@ export interface DeviceItem {
   orgId: string;
   permissions: string[];
   lastSeenAt: string | null;
+  /** When it last traded its client secret for a token: a pairing code was used. */
+  lastTokenAt?: string | null;
   /** A bridge's last word on its BLE link to its printer, and when. Null otherwise. */
   printerLink: 'ready' | 'down' | null;
   printerLinkAt: string | null;

@@ -344,9 +344,10 @@ export class AuthService {
       role: device.role,
     });
 
+    const now = new Date();
     await this.prisma.device.update({
       where: { id: device.id },
-      data: { lastSeenAt: new Date() },
+      data: { lastSeenAt: now, lastTokenAt: now },
     });
 
     return { accessToken, tokenType: 'Bearer' };

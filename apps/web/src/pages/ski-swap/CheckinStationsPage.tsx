@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../../lib/api';
 import StationsTab from '../devices/StationsTab';
-import { ProvisioningCodeCard } from '../devices/DeviceCredentials';
+import { PairingCodePopover } from '../devices/DeviceCredentials';
 import type { AddStationResult } from '../devices/AddStationForm';
 import type { ProvisionedDevice } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
@@ -46,10 +46,24 @@ export default function CheckinStationsPage() {
    * replacement iPad, a new code for the same iPad — because a secret nobody
    * sees is a tablet that can never be paired.
    */
-  const [newTablet, setNewTablet] = useState<ProvisionedDevice | null>(null);
+  const [newTablet, setNewTablet] = useState<{ tablet: ProvisionedDevice; issuedAt: string | null; stationName: string } | null>(null);
+  const { data: stations = [] } = useQuery({
+    queryKey: ['ski-swap/stations', orgId],
+    queryFn: () => api.skiSwap.listStations(orgId),
+    enabled: !!orgId,
+  });
+
+  // Stable, because the popover closes itself on a timer that depends on it.
+  const closePairing = useCallback(() => setNewTablet(null), []);
 
   function handleStationAdded(result: AddStationResult) {
-    if (result.newTablet) setNewTablet(result.newTablet);
+    if (!result.newTablet) return;
+    const station = stations.find((s) => s.id === result.stationId);
+    setNewTablet({
+      tablet: result.newTablet,
+      issuedAt: result.codeIssuedAt ?? null,
+      stationName: station?.name ?? result.newTablet.name.replace(/ iPad$/, ''),
+    });
   }
 
   return (
@@ -63,13 +77,14 @@ export default function CheckinStationsPage() {
       />
 
       {newTablet && (
-        <ProvisioningCodeCard
+        <PairingCodePopover
           orgId={orgId}
-          deviceId={newTablet.id}
-          clientId={newTablet.clientId}
-          secret={newTablet.clientSecret}
-          sinceLastSeenAt={null}
-          onDismiss={() => setNewTablet(null)}
+          deviceId={newTablet.tablet.id}
+          clientId={newTablet.tablet.clientId}
+          secret={newTablet.tablet.clientSecret}
+          issuedAt={newTablet.issuedAt}
+          stationName={newTablet.stationName}
+          onClose={closePairing}
         />
       )}
     </div>

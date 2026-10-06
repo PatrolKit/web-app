@@ -11,6 +11,8 @@ export type AddStationResult = {
   stationId: string;
   /** Provisioned here; its secret is shown once and has not been shown yet. */
   newTablet: ProvisionedDevice | null;
+  /** When the server issued the tablet's code, so only its use confirms it. */
+  codeIssuedAt?: string | null;
 };
 
 const inputClass =
@@ -81,7 +83,7 @@ export default function AddStationForm({
         await api.skiSwap.patchStation(orgId, station.id, { bridgeDeviceId: bridgeChoice });
       }
 
-      onDone({ stationId: station.id, newTablet });
+      onDone({ stationId: station.id, newTablet, codeIssuedAt: newTablet?.createdAt ?? null });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not set that station up');
       setBusy(false);
