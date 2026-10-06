@@ -98,8 +98,11 @@ export default function SkiSwapDashboard() {
         />
       </div>
 
-      <ItemsPieCard orgId={orgId} swapId={selectedSwap.id} />
-      <CheckinsChartCard orgId={orgId} swapId={selectedSwap.id} />
+      {/* Side by side where there's room, stacked where there isn't. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ItemsPieCard orgId={orgId} swapId={selectedSwap.id} />
+        <CheckinsChartCard orgId={orgId} swapId={selectedSwap.id} />
+      </div>
 
       {/* Each card says what's wrong and what to do, and goes where it's
           done. Shown only when there is something to act on: a zero here is

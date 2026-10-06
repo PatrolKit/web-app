@@ -24,7 +24,7 @@ export interface Bar {
 }
 
 /** Each day's slot is this wide at least; a long swap scrolls sideways. */
-export const CHART = { height: 200, top: 20, bottom: 24, left: 34, slot: 30, gap: 8, minWidth: 560, maxBar: 64 };
+export const CHART = { height: 200, top: 20, bottom: 24, left: 34, slot: 30, gap: 8, minWidth: 280, maxBar: 64 };
 
 /** A round top for the scale: 7 → 10, 23 → 25, 140 → 200. */
 export function niceMax(n: number): number {
