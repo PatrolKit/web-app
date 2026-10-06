@@ -836,10 +836,10 @@ export default function SellersPage() {
                 <td className="py-2">
                   <div className="flex gap-3 items-center">
                     <button onClick={() => openEdit(s)} className="text-xs text-brand-500 hover:underline">Edit</button>
-                    {canIssueTickets && s.businessName && (
+                    {canIssueTickets && (
                       <button
                         onClick={() => setTicketSeller(s)}
-                        title="Issue a block of pre-printed tickets to this shop"
+                        title="Issue a block of pre-printed tickets to this seller"
                         className="text-xs text-gray-400 hover:text-white flex items-center gap-1 whitespace-nowrap"
                       >
                         <FontAwesomeIcon icon={faTicket} /> Issue Ticket Range

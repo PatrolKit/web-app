@@ -14,8 +14,10 @@ export function runsText(runs: { startNumber: number; endNumber: number }[]): st
 }
 
 /**
- * Issue a block of pre-printed tickets to a shop (Plan 38): every number from
- * the first to the last, both included, becomes an item on sale at once.
+ * Issue a block of pre-printed tickets to a seller (Plan 38): every number
+ * from the first to the last, both included, becomes an item on sale at once.
+ * A shop fills its tickets in from its own desk; an individual's page has no
+ * such desk, so staff fill theirs in (Fast Edit), and the popover says so.
  *
  * Only swaps that take legacy tickets are offered, newest first, and the newest
  * is chosen. The Sellers list shows the action only when there is one.
@@ -105,6 +107,11 @@ export default function IssueTicketRangeModal({ orgId, seller, swaps, onClose }:
               ? <>Already holds <span className="font-mono text-gray-300">{runsText(tickets.runs)}</span> ({tickets.issued.toLocaleString('en-US')}).</>
               : 'No tickets issued yet.'}
           </p>
+          {!seller.businessName && (
+            <p className="text-xs text-amber-400/90">
+              An individual can’t fill in tickets online: staff price and describe them, in Fast Edit.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
