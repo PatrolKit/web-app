@@ -659,8 +659,8 @@ export default function ItemTaxonomyTab() {
             Suggested for everyone{suggestions?.length ? ` (${suggestions.length})` : ''}
           </h2>
           <p className="text-sm text-gray-400 mt-0.5">
-            Values a club has asked to add to the shared list. Promoting one moves
-            it out of that club and into every org’s tree.
+            Values a patrol has asked to add to the shared list. Promoting one moves
+            it out of that patrol and into every org’s tree.
           </p>
         </div>
 
