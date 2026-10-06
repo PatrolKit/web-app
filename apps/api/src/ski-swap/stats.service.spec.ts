@@ -2,44 +2,48 @@ import { StatsService } from './stats.service';
 
 /** The dashboard's figures come from our rows, with no Square read (Plan 39 D6). */
 describe('swap stats', () => {
-  it('values what’s consigned at listed prices, counting what still needs one', async () => {
+  function harness(opts: { sellers: string[]; firstCheckin: Date | null; createdBefore: string[] }) {
+    let asked: Record<string, unknown> | undefined;
     const consigned = [
       { originalQuantity: 1, priceCents: 12000 },
       { originalQuantity: 2, priceCents: 1500 },
       { originalQuantity: 1, priceCents: null },
     ];
     const prisma = {
-      skiSwap: { findFirst: async () => ({ id: 'swap', createdAt: new Date('2026-09-01') }) },
+      skiSwap: { findFirst: async () => ({ id: 'swap' }) },
       swapItem: {
         count: () => 'count',
-        // Inside the transaction a placeholder; the earlier-swap lookup is awaited on its own.
-        findMany: (args: { where: { swap?: unknown } }) => (args.where.swap ? Promise.resolve([{ sellerId: 's1' }]) : 'findMany'),
+        findMany: () => 'findMany',
+        findFirst: async () => (opts.firstCheckin ? { createdAt: opts.firstCheckin } : null),
       },
-      $transaction: async () => [4, [{ sellerId: 's1' }, { sellerId: 's2' }], consigned, 2],
+      sellerProfile: {
+        findMany: async (args: { where: Record<string, unknown> }) => {
+          asked = args.where;
+          return opts.createdBefore.map((id) => ({ id }));
+        },
+      },
+      $transaction: async () => [4, opts.sellers.map((sellerId) => ({ sellerId })), consigned, 2],
     };
-    const stats = await new StatsService(prisma as never).getSwapStats('org', 'swap');
-    expect(stats).toEqual({
+    return { svc: new StatsService(prisma as never), asked: () => asked };
+  }
+
+  it('values what’s consigned at listed prices, counting what still needs one', async () => {
+    const { svc } = harness({ sellers: ['s1', 's2'], firstCheckin: new Date('2026-10-05'), createdBefore: ['s1'] });
+    expect(await svc.getSwapStats('org', 'swap')).toEqual({
       totalItems: 4, totalSellers: 2, returningSellers: 1, newSellers: 1, unpricedItems: 2,
       consignedItems: 3, consignedUnpriced: 1, consignedValueCents: 15000,
     });
   });
 
-  it('counts a seller as returning when they had an item in a swap that started earlier', async () => {
-    let asked: Record<string, unknown> | undefined;
-    const prisma = {
-      skiSwap: { findFirst: async () => ({ id: 'swap', createdAt: new Date('2026-09-01') }) },
-      swapItem: {
-        count: () => 'count',
-        findMany: (args: { where: Record<string, unknown> }) => {
-          if (!args.where.swap) return 'findMany';
-          asked = args.where;
-          return Promise.resolve([]);
-        },
-      },
-      $transaction: async () => [1, [{ sellerId: 's1' }], [], 0],
-    };
-    const stats = await new StatsService(prisma as never).getSwapStats('org', 'swap');
-    expect(stats).toMatchObject({ totalSellers: 1, returningSellers: 0, newSellers: 1 });
-    expect(asked).toMatchObject({ orgId: 'org', sellerId: { in: ['s1'] }, swap: { createdAt: { lt: new Date('2026-09-01') } } });
+  it('counts a seller as returning when they were a seller before the first check-in', async () => {
+    const first = new Date('2026-10-05T17:32:00Z');
+    const { svc, asked } = harness({ sellers: ['s1', 's2', 's3'], firstCheckin: first, createdBefore: ['s1', 's3'] });
+    expect(await svc.getSwapStats('org', 'swap')).toMatchObject({ totalSellers: 3, returningSellers: 2, newSellers: 1 });
+    expect(asked()).toEqual({ id: { in: ['s1', 's2', 's3'] }, createdAt: { lt: first } });
+  });
+
+  it('has nobody returning before anyone has checked in', async () => {
+    const { svc } = harness({ sellers: [], firstCheckin: null, createdBefore: [] });
+    expect(await svc.getSwapStats('org', 'swap')).toMatchObject({ totalSellers: 0, returningSellers: 0, newSellers: 0 });
   });
 });

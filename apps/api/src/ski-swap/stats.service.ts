@@ -10,9 +10,9 @@ export interface SwapStats {
   totalItems: number;
   /** Sellers with an item in this swap. */
   totalSellers: number;
-  /** Of those, how many had an item in an earlier swap of this org. */
+  /** Of those, how many were sellers before this swap's first check-in. */
   returningSellers: number;
-  /** The rest: this is the first swap they've sold in here. */
+  /** The rest: became sellers at or after the first check-in. */
   newSellers: number;
   /** Tickets checked in without a price and still without one (Plan 32). */
   unpricedItems: number;
@@ -42,14 +42,21 @@ export class StatsService {
       this.prisma.swapItem.count({ where: { swapId, orgId, deletedAt: null, priceCents: null } }),
     ]);
 
-    // Returning: an item of theirs in a swap that started before this one.
-    // Only swaps run in PatrolKit count, so a first PatrolKit swap reads all new.
+    // Returning: a seller already on the books before this swap's first
+    // check-in (an item still in it). Earlier years needn't be in PatrolKit:
+    // a seller imported or set up ahead of the swap counts.
     const sellerIds = totalSellers.map((s) => s.sellerId!).filter(Boolean);
-    const returning = sellerIds.length
-      ? await this.prisma.swapItem.findMany({
-          where: { orgId, sellerId: { in: sellerIds }, deletedAt: null, swap: { createdAt: { lt: swap.createdAt } } },
-          distinct: ['sellerId'],
-          select: { sellerId: true },
+    const first = sellerIds.length
+      ? await this.prisma.swapItem.findFirst({
+          where: { swapId, orgId, deletedAt: null },
+          orderBy: { createdAt: 'asc' },
+          select: { createdAt: true },
+        })
+      : null;
+    const returning = first
+      ? await this.prisma.sellerProfile.findMany({
+          where: { id: { in: sellerIds }, createdAt: { lt: first.createdAt } },
+          select: { id: true },
         })
       : [];
 

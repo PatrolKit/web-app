@@ -22,6 +22,27 @@ function StatTile({ label, value, note }: { label: string; value: string | numbe
   );
 }
 
+/** The sellers in this swap: the total, over one bar split new and returning. */
+function SellersTile({ total, fresh, returning }: { total?: number; fresh?: number; returning?: number }) {
+  const known = total !== undefined && fresh !== undefined && returning !== undefined;
+  const share = (n: number) => (known && total ? `${(n / total) * 100}%` : '0%');
+  return (
+    <div className="bg-surface-50 border border-gray-800 rounded-lg p-4">
+      <p className="text-gray-400 text-xs uppercase tracking-wide mb-1">Sellers</p>
+      <p className="text-2xl font-bold text-white">{known ? total.toLocaleString('en-US') : '—'}</p>
+      <div className="flex h-2.5 rounded-full overflow-hidden bg-gray-800 mt-3 mb-2" role="img"
+        aria-label={known ? `${fresh} new, ${returning} returning` : 'Loading'}>
+        <div className="bg-teal-500" style={{ width: share(fresh ?? 0) }} />
+        <div className="bg-indigo-400" style={{ width: share(returning ?? 0) }} />
+      </div>
+      <p className="text-xs text-gray-400 flex flex-wrap gap-x-4">
+        <span><span className="inline-block h-2.5 w-2.5 rounded-sm bg-teal-500 mr-1.5 align-[-1px]" />{known ? fresh.toLocaleString('en-US') : '—'} new</span>
+        <span><span className="inline-block h-2.5 w-2.5 rounded-sm bg-indigo-400 mr-1.5 align-[-1px]" />{known ? returning.toLocaleString('en-US') : '—'} returning</span>
+      </p>
+    </div>
+  );
+}
+
 const dollars = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function SkiSwapDashboard() {
@@ -86,24 +107,8 @@ export default function SkiSwapDashboard() {
       {/* The tiles are our own rows (Plan 39 D6); the pie reads Square's
           sales, at most every two minutes, in its own request. */}
       <div className="grid grid-cols-2 gap-4">
-        {/* Returning: sold in an earlier swap run in PatrolKit; everyone else is new. */}
-        <div className="bg-surface-50 border border-gray-800 rounded-lg p-4">
-          <p className="text-gray-400 text-xs uppercase tracking-wide mb-1">Sellers</p>
-          <div className="flex items-end gap-6">
-            <div>
-              <p className="text-2xl font-bold text-white">{stats ? stats.totalSellers.toLocaleString('en-US') : '—'}</p>
-              <p className="text-xs text-gray-500 mt-0.5">Total</p>
-            </div>
-            <div>
-              <p className="text-lg font-semibold text-gray-200">{stats ? stats.newSellers.toLocaleString('en-US') : '—'}</p>
-              <p className="text-xs text-gray-500 mt-0.5">New</p>
-            </div>
-            <div>
-              <p className="text-lg font-semibold text-gray-200">{stats ? stats.returningSellers.toLocaleString('en-US') : '—'}</p>
-              <p className="text-xs text-gray-500 mt-0.5">Returning</p>
-            </div>
-          </div>
-        </div>
+        {/* Returning: a seller before this swap's first check-in; everyone else is new. */}
+        <SellersTile total={stats?.totalSellers} fresh={stats?.newSellers} returning={stats?.returningSellers} />
         {/* What's on the floor: it climbs through check-in. */}
         <StatTile
           label="Consigned Value"
