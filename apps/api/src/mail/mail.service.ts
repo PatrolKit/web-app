@@ -9,6 +9,11 @@ import { formatSender, PLATFORM_SENDER_NAME, senderAddress } from './sender';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeEmail } from '../common/util/person';
 
+/** An address on the `.invalid` domain, which is reserved for tests and can never receive mail. */
+export function isReservedTestAddress(to: string): boolean {
+  return /\.invalid\.?$/i.test(to.trim().split('@').pop() ?? '');
+}
+
 /** Whose sign-in this is, when the person belongs to exactly one org. */
 export interface SignInBrand {
   name: string;
@@ -277,6 +282,13 @@ export class MailService {
   }
 
   private async send(to: string, subject: string, html: string): Promise<SendOutcome> {
+    // `.invalid` is reserved for tests (RFC 2606) and can never receive mail:
+    // the test org's accounts use it. Sending would only bounce, and bounces
+    // count against the sending account.
+    if (isReservedTestAddress(to)) {
+      this.logger.log({ to, subject }, '[mail suppressed] a .invalid test address');
+      return { status: 'suppressed', reason: 'a .invalid test address, which can never receive mail' };
+    }
     if (!this.config.get<boolean>('app.outboundNotifications', false)) {
       this.logger.log({ to, subject }, '[mail suppressed] OUTBOUND_NOTIFICATIONS is off');
       return { status: 'suppressed', reason: 'OUTBOUND_NOTIFICATIONS is off' };
