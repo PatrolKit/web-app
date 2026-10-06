@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { payoutGaps } from '@patrolkit/contracts/payout-gaps';
 import type { SkiSwapContext } from './SkiSwapLayout';
+import ItemsPieCard from './ItemsPieCard';
 
 /** How many unpayable sellers the card names before linking to the rest. */
 const NAMED_SELLERS = 5;
@@ -81,10 +82,9 @@ export default function SkiSwapDashboard() {
 
   return (
     <div className="space-y-4">
-      {/* Our own rows only (Plan 39 D6): no Square read. Sales are in Square's
-          own reports. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatTile label="Total Items" value={stats?.totalItems ?? '—'} />
+      {/* The tiles are our own rows (Plan 39 D6); the pie reads Square's
+          sales, at most every two minutes, in its own request. */}
+      <div className="grid grid-cols-2 gap-4">
         <StatTile label="Sellers" value={stats?.totalSellers ?? '—'} />
         {/* What's on the floor: it climbs through check-in. */}
         <StatTile
@@ -96,6 +96,8 @@ export default function SkiSwapDashboard() {
             : undefined}
         />
       </div>
+
+      <ItemsPieCard orgId={orgId} swapId={selectedSwap.id} />
 
       {/* Each card says what's wrong and what to do, and goes where it's
           done. Shown only when there is something to act on: a zero here is

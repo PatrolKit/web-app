@@ -463,6 +463,23 @@ export interface TicketSeller {
   usedCount: number;
 }
 
+/**
+ * The dashboard pie: every live item in exactly one slice, sold first (from
+ * Square's sales, less refunds), then no price or description, then not on
+ * sale yet (waiting for a scan, or missing from Square), then for sale.
+ */
+export interface ItemBreakdown {
+  sold: number;
+  forSale: number;
+  needsInfo: number;
+  notOnSale: number;
+  total: number;
+  /** When Square's sales were read (reused for two minutes). */
+  asOf: string;
+  /** Square couldn't be read; nothing else here should be shown. */
+  error: string | null;
+}
+
 /** The dashboard's figures, from our own rows only (Plan 39 D6): sales live in Square. */
 export interface SwapStats {
   totalItems: number;

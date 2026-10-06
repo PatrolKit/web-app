@@ -15,6 +15,7 @@ import { SellerController } from './seller.controller';
 import { ItemService } from './item.service';
 import { ItemController } from './item.controller';
 import { StatsService } from './stats.service';
+import { ItemBreakdownService } from './item-breakdown.service';
 import { StatsController } from './stats.controller';
 import { PublicLookupService } from './public-lookup.service';
 import { PublicLookupController } from './public-lookup.controller';
@@ -133,6 +134,7 @@ import { SwapDiagnosticsService } from './diagnostics/swap-diagnostics.service';
     SellerService,
     ItemService,
     StatsService,
+    ItemBreakdownService,
     PublicLookupService,
     PublicStatusService,
     PublicSellerService,
