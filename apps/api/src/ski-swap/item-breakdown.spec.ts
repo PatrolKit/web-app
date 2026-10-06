@@ -14,14 +14,15 @@ describe('the dashboard pie', () => {
     const items = [
       item('1'),                                                       // for sale
       item('2'),                                                       // sold
-      item('3', { priceCents: null }),                                 // needs a price
-      item('67169', { categoryId: null, name: 'Item #67169' }),        // never described
+      item('3', { priceCents: null }),                                 // no price
+      item('67169', { categoryId: null, name: 'Item #67169' }),        // priced, never described
+      item('67170', { priceCents: null, categoryId: null, name: 'Item #67170' }), // neither: no price
       item('5', { consigned: false }),                                 // waiting for a scan
       item('6', { squareItemId: null, squareVariationId: null }),      // missing from Square
       item('7', { priceCents: null, squareVariationId: 'sv-7' }),      // unpriced ticket that sold anyway
     ];
     const sold = soldByVariation([sale('sv-2'), sale('sv-7')]);
-    expect(breakdown(items, sold)).toEqual({ sold: 2, forSale: 1, needsInfo: 2, notOnSale: 2, total: 7 });
+    expect(breakdown(items, sold)).toEqual({ sold: 2, forSale: 1, noPrice: 2, noDescription: 1, notOnSale: 2, total: 8 });
   });
 
   it('counts an item named by an import, with no category, as described', () => {

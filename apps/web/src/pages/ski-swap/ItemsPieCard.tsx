@@ -3,8 +3,8 @@ import { api } from '../../lib/api';
 import { PIE, percent, pieSlices } from './itemsPie';
 
 /**
- * Every item in the swap as one donut: sold, for sale, no price or
- * description, not on sale yet. Each slice carries its number, the middle the
+ * Every item in the swap as one donut: sold, for sale, no price, priced
+ * but no description, not on sale yet. Each slice carries its number, the middle the
  * total. "Sold" is Square's sales, which the server reads at most every two
  * minutes; the time of that read is shown.
  */

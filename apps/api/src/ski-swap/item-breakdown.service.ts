@@ -8,8 +8,9 @@ import { uncategorisedName } from './sku.util';
  *
  * - **sold**: Square's completed sales at the swap's location, less refunds
  *   (the same read payouts make), cover all its units;
- * - **needsInfo**: no price, or never described (no category, so still named
- *   "Item #<sku>"), such as an issued ticket nobody has filled in;
+ * - **noPrice**: no price yet, such as an issued ticket nobody has filled in;
+ * - **noDescription**: priced, but never described (no category, so still
+ *   named "Item #<sku>"), such as a business's ticket priced from its tag;
  * - **notOnSale**: not accepted yet (waiting for a staff scan), or missing
  *   from Square, so the register can't sell it;
  * - **forSale**: everything else: what the register can sell.
@@ -19,7 +20,8 @@ import { uncategorisedName } from './sku.util';
 export interface ItemBreakdown {
   sold: number;
   forSale: number;
-  needsInfo: number;
+  noPrice: number;
+  noDescription: number;
   notOnSale: number;
   total: number;
   /** When Square's sales were read. */
@@ -47,11 +49,12 @@ export function soldByVariation(sales: PosSaleLine[]): Map<string, number> {
 }
 
 export function breakdown(items: BreakdownItem[], sold: Map<string, number>): Omit<ItemBreakdown, 'asOf' | 'error'> {
-  const out = { sold: 0, forSale: 0, needsInfo: 0, notOnSale: 0, total: items.length };
+  const out = { sold: 0, forSale: 0, noPrice: 0, noDescription: 0, notOnSale: 0, total: items.length };
   for (const i of items) {
     const units = i.squareVariationId ? sold.get(i.squareVariationId) ?? 0 : 0;
     if (units > 0 && units >= i.originalQuantity) out.sold++;
-    else if (i.priceCents === null || (!i.categoryId && i.name === uncategorisedName(i.sku))) out.needsInfo++;
+    else if (i.priceCents === null) out.noPrice++;
+    else if (!i.categoryId && i.name === uncategorisedName(i.sku)) out.noDescription++;
     else if (!i.consigned || !i.squareItemId || !i.squareVariationId) out.notOnSale++;
     else out.forSale++;
   }
@@ -84,7 +87,7 @@ export class ItemBreakdownService {
     } catch (err) {
       this.logger.warn({ err, orgId, swapId }, 'Could not read Square sales for the dashboard');
       return {
-        sold: 0, forSale: 0, needsInfo: 0, notOnSale: 0, total: 0, asOf: new Date().toISOString(),
+        sold: 0, forSale: 0, noPrice: 0, noDescription: 0, notOnSale: 0, total: 0, asOf: new Date().toISOString(),
         error: err instanceof Error ? err.message : 'Square couldn’t be read.',
       };
     }
