@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { checkinsPerDay, type CheckinDay } from './checkins-per-day';
 
 /**
  * The dashboard's figures, from our own rows only (Plan 39 D6). Sales live in
@@ -43,6 +44,24 @@ export class StatsService {
       consignedItems: consigned.length,
       consignedUnpriced: consigned.filter((i) => i.priceCents === null).length,
       consignedValueCents: consigned.reduce((sum, i) => sum + (i.priceCents ?? 0) * i.originalQuantity, 0),
+    };
+  }
+
+  /**
+   * Items checked in per day, individuals and businesses apart, in the swap's
+   * time zone (see `checkinsPerDay`). An item with no seller counts as an
+   * individual's.
+   */
+  async getCheckinsPerDay(orgId: string, swapId: string): Promise<{ timeZone: string; days: CheckinDay[] }> {
+    const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { timeZone: true } });
+    if (!swap) throw new NotFoundException('Swap not found');
+    const items = await this.prisma.swapItem.findMany({
+      where: { swapId, orgId, deletedAt: null },
+      select: { createdAt: true, seller: { select: { businessName: true } } },
+    });
+    return {
+      timeZone: swap.timeZone,
+      days: checkinsPerDay(items.map((i) => ({ createdAt: i.createdAt, business: !!i.seller?.businessName })), swap.timeZone),
     };
   }
 }

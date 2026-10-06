@@ -480,6 +480,14 @@ export interface ItemBreakdown {
   error: string | null;
 }
 
+/** One day of the check-ins chart: items that entered PatrolKit that day, in the swap's time zone. */
+export interface CheckinDay {
+  /** "2026-10-04". */
+  date: string;
+  individual: number;
+  business: number;
+}
+
 /** The dashboard's figures, from our own rows only (Plan 39 D6): sales live in Square. */
 export interface SwapStats {
   totalItems: number;

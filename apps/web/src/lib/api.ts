@@ -595,6 +595,11 @@ export const api = {
     // Stats
     getStats: (orgId: string, swapId: string) =>
       request<import('./api.types').SwapStats>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats`),
+    /** Items checked in per day, individuals and businesses apart, first day with any to the last. */
+    getCheckinsPerDay: (orgId: string, swapId: string) =>
+      request<{ timeZone: string; days: import('./api.types').CheckinDay[] }>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/checkins`,
+      ),
     /** The dashboard pie. Reads Square's sales, which the server reuses for two minutes. */
     getItemBreakdown: (orgId: string, swapId: string) =>
       request<import('./api.types').ItemBreakdown>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/breakdown`),

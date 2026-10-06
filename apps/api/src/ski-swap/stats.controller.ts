@@ -23,6 +23,13 @@ export class StatsController {
     return this.statsService.getSwapStats(orgId, swapId);
   }
 
+  /** Items checked in per day, individuals and businesses apart. Our rows only. */
+  @Get('checkins')
+  @RequirePermissions('ski_swap:report')
+  checkins(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    return this.statsService.getCheckinsPerDay(orgId, swapId);
+  }
+
   /** Sold, for sale, needs a price or description, not on sale yet: reads Square's sales. */
   @Get('breakdown')
   @RequirePermissions('ski_swap:report')
