@@ -440,7 +440,7 @@ function ValueSelect({
       )}
       {pendingLabel && (
         <p className="text-xs text-amber-400">
-          “{pendingLabel}” is new — it will be added for your club to approve.
+          “{pendingLabel}” is new — it will be added for your patrol to approve.
         </p>
       )}
     </div>
@@ -560,7 +560,7 @@ function AttributeField({
   const chosenLabel = chosen?.label ?? pendingLabel ?? '';
   const pendingNote = pendingLabel ? (
     <p className="text-xs text-amber-400">
-      “{pendingLabel}” is new — it will be added for your club to approve.
+      “{pendingLabel}” is new — it will be added for your patrol to approve.
     </p>
   ) : null;
 

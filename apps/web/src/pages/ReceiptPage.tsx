@@ -62,7 +62,7 @@ export default function ReceiptPage() {
         header={
           <PublicPageHeader
             title="Receipt not available"
-            subtitle="This link may have expired or been replaced. Ask the club for a new one."
+            subtitle="This link may have expired or been replaced. Ask the patrol for a new one."
           />
         }
       />
