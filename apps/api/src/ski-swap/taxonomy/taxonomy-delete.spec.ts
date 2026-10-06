@@ -7,16 +7,23 @@ import { TaxonomyService } from './taxonomy.service';
  */
 function harness(node: Record<string, unknown>, opts: { items?: number; children?: number } = {}) {
   const deleted: string[] = [];
+  const cleared: unknown[] = [];
   const prisma = {
     taxonomyNode: {
       findFirst: async () => node,
       count: async () => opts.children ?? 0,
       delete: async ({ where }: { where: { id: string } }) => { deleted.push(where.id); return node; },
     },
-    swapItemAttribute: { count: async () => opts.items ?? 0 },
+    swapItemAttribute: {
+      // Only live items count; the service has to ask for that.
+      count: async ({ where }: { where: { item?: { deletedAt: null } } }) =>
+        where.item?.deletedAt === null ? opts.items ?? 0 : 99,
+      deleteMany: async ({ where }: { where: unknown }) => { cleared.push(where); return { count: 1 }; },
+    },
+    $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
     skiSwapSettings: { upsert: async () => ({}) },
   };
-  return { service: new TaxonomyService(prisma as never, {} as never), deleted };
+  return { service: new TaxonomyService(prisma as never, {} as never), deleted, cleared };
 }
 const value = (over: Record<string, unknown> = {}) => ({ id: 'v1', kind: 'VALUE', orgId: 'org-1', status: 'APPROVED', label: 'bindings', ...over });
 
@@ -30,6 +37,14 @@ describe('deleting a patrol’s own value', () => {
   it('still deletes a pending one, as the queue does', async () => {
     const { service, deleted } = harness(value({ status: 'PENDING' }));
     await service.discard('org-1', 'v1');
+    expect(deleted).toEqual(['v1']);
+  });
+
+  it('deletes one only deleted items used, clearing their answers first', async () => {
+    // A deleted item's answer still points at the value; it's not a use.
+    const { service, deleted, cleared } = harness(value(), { items: 0 });
+    await service.discard('org-1', 'v1');
+    expect(cleared).toEqual([{ valueId: 'v1', item: { deletedAt: { not: null } } }]);
     expect(deleted).toEqual(['v1']);
   });
 

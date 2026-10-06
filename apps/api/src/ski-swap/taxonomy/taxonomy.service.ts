@@ -688,7 +688,9 @@ export class TaxonomyService {
     // delete what it added. The shared list isn't its to delete.
     if (node.kind !== 'VALUE') throw new BadRequestException('Only a value can be deleted');
 
-    const itemCount = await this.prisma.swapItemAttribute.count({ where: { valueId: nodeId } });
+    // A deleted item doesn't hold a value in use: it never comes back, and its
+    // name was frozen when it was saved.
+    const itemCount = await this.prisma.swapItemAttribute.count({ where: { valueId: nodeId, item: { deletedAt: null } } });
     if (itemCount > 0) {
       // D4, surfaced as a reason rather than as a foreign-key error after the
       // click. The page disables the button using the same count, and offers
@@ -705,7 +707,12 @@ export class TaxonomyService {
     if (children > 0) {
       throw new ConflictException('This value has its own follow-up questions. Retire it instead: it leaves the list, and nothing is lost.');
     }
-    await this.prisma.taxonomyNode.delete({ where: { id: nodeId } });
+    // Deleted items' answers still point at it, and the link restricts the
+    // delete, so they go first.
+    await this.prisma.$transaction([
+      this.prisma.swapItemAttribute.deleteMany({ where: { valueId: nodeId, item: { deletedAt: { not: null } } } }),
+      this.prisma.taxonomyNode.delete({ where: { id: nodeId } }),
+    ]);
     await this.bumpVersion(orgId);
   }
 
@@ -1163,14 +1170,15 @@ export class TaxonomyService {
     if (ids.length === 0) return counts;
 
     const [byValue, byAttribute, byCategory] = await Promise.all([
+      // A withdrawn item does not hold a node in use, here as below.
       this.prisma.swapItemAttribute.groupBy({
         by: ['valueId'],
-        where: { valueId: { in: ids } },
+        where: { valueId: { in: ids }, item: { deletedAt: null } },
         _count: { _all: true },
       }),
       this.prisma.swapItemAttribute.groupBy({
         by: ['attributeId'],
-        where: { attributeId: { in: ids } },
+        where: { attributeId: { in: ids }, item: { deletedAt: null } },
         _count: { _all: true },
       }),
       this.prisma.swapItem.groupBy({
