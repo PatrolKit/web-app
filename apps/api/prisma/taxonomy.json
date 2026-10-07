@@ -1867,9 +1867,158 @@
       {
         "label": "Type",
         "input": "SELECT",
+        "nameSlot": 20,
         "values": [
-          "Skis",
-          "Snowboard"
+          {
+            "label": "Skis",
+            "attributes": [
+              {
+                "label": "Manufacturer",
+                "input": "SELECT",
+                "nameSlot": 10,
+                "values": [
+                  "Atomic",
+                  "Dynafit",
+                  "Fritschi",
+                  "G3",
+                  "Head",
+                  "Look",
+                  "Marker",
+                  "Rossignol",
+                  "Salomon",
+                  "Tyrolia"
+                ]
+              },
+              {
+                "label": "Style",
+                "input": "SELECT",
+                "nameSlot": 30,
+                "values": [
+                  "Alpine",
+                  "Alpine touring",
+                  "Telemark",
+                  "Junior",
+                  "System (rail)"
+                ]
+              },
+              {
+                "label": "Max DIN",
+                "input": "NUMBER",
+                "nameSlot": 40,
+                "min": 2,
+                "max": 18,
+                "step": 0.5
+              }
+            ]
+          },
+          {
+            "label": "Snowboard",
+            "attributes": [
+              {
+                "label": "Manufacturer",
+                "input": "SELECT",
+                "nameSlot": 10,
+                "values": [
+                  "Arbor",
+                  "Burton",
+                  "Flow",
+                  "K2",
+                  "Nidecker",
+                  "Now",
+                  "Ride",
+                  "Rome",
+                  "Rossignol",
+                  "Roxy",
+                  "Salomon",
+                  "Union"
+                ]
+              },
+              {
+                "label": "Gender",
+                "input": "SELECT",
+                "nameSlot": 30,
+                "values": [
+                  "Mens",
+                  "Womens",
+                  "Kids",
+                  "Unisex"
+                ]
+              },
+              {
+                "label": "Size",
+                "input": "SELECT",
+                "nameSlot": 40,
+                "values": [
+                  "XS",
+                  "S",
+                  "S/M",
+                  "M",
+                  "M/L",
+                  "L",
+                  "XL"
+                ]
+              },
+              {
+                "label": "Entry",
+                "input": "SELECT",
+                "values": [
+                  "Strap",
+                  "Rear entry",
+                  "Step-on"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Cross-country",
+            "attributes": [
+              {
+                "label": "Binding system",
+                "input": "SELECT",
+                "nameSlot": 30,
+                "values": [
+                  "NNN",
+                  "SNS",
+                  "Prolink",
+                  "Turnamic",
+                  "NNN-BC",
+                  "75mm"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolor"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
         ]
       }
     ]
