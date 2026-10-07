@@ -2002,7 +2002,10 @@
                           "X 20",
                           "X X 12 GW",
                           "X X 12 TL GW",
-                          "X X 14 TL GW"
+                          "X X 14 TL GW",
+                          "N Icon 19 RS",
+                          "N Shift2 16 MN",
+                          "N Strive 10 GW"
                         ]
                       }
                     ]
@@ -2077,7 +2080,12 @@
                           "SX 10",
                           "SX 4.5 AC",
                           "SX 7.5 AC",
-                          "SX 9 JR RACE"
+                          "SX 9 JR RACE",
+                          "LD 100",
+                          "PROTECTOR EVO PR 11 GW",
+                          "PROTECTOR EVO PR 13 GW",
+                          "PROTECTOR+FREEFLEX 14 GW",
+                          "PROTECTOR+FREEFLEX ST 16 GW"
                         ]
                       }
                     ]
@@ -2185,7 +2193,12 @@
                           "Xpress Team",
                           "Xpress W 10 GW",
                           "Xpress W 11",
-                          "Xpress W 11 GW"
+                          "Xpress W 11 GW",
+                          "Kid 4 GW RTS",
+                          "NX 7 GW FLASH",
+                          "NX 7 GW Lifter",
+                          "NX 9 GW FLASH",
+                          "PX 18 WC Maxrace"
                         ]
                       }
                     ]
@@ -2299,7 +2312,20 @@
                           "Xcomp 12 GW",
                           "Xcomp 16",
                           "Xcomp 16 GW",
-                          "Xcomp 18"
+                          "Xcomp 18",
+                          "4.5 (GripWalk)",
+                          "4.5 RTL (GripWalk)",
+                          "7.0 (GripWalk)",
+                          "7.0 RTL (GripWalk)",
+                          "Comp 16 RD",
+                          "Free 7 (GripWalk)",
+                          "Griffon Demo (ID Gen- Toe and Heel)",
+                          "Griffon Demo (X Gen- Toe and Heel)",
+                          "Griffon MN",
+                          "Griffon TCX Demo (ID Gen- Toe)",
+                          "Griffon TCX Demo (X Gen- Toe)",
+                          "Griffon X 13",
+                          "Squire 11 TCX Demo"
                         ]
                       }
                     ]
@@ -2497,7 +2523,12 @@
                           "X 20",
                           "X12 TL GW",
                           "X14 TL GW",
-                          "Z 11"
+                          "Z 11",
+                          "E L10 Easytrack",
+                          "N Icon 19 RS",
+                          "N S/LAB Shift2 16 MN",
+                          "N Strive 10 GW",
+                          "S Z12 Speed Ti"
                         ]
                       }
                     ]
@@ -2648,7 +2679,14 @@
                           "SX 7.5 GW AC",
                           "SX 7.5 GW CA",
                           "SX TEAM 9.0 GW CA",
-                          "TX 10 GW"
+                          "TX 10 GW",
+                          "ATTACK HYBRID 11 MN/PT",
+                          "ATTACK HYBRID 14 MN/PT",
+                          "PROTECTOR EVO PR 11 GW",
+                          "PROTECTOR EVO PR 13 GW",
+                          "PROTECTOR+ATTACK 14 GW",
+                          "PROTECTOR+ATTACK 16 GW",
+                          "VX 12 GW"
                         ]
                       }
                     ]
@@ -2720,7 +2758,9 @@
                           "NR Strive 11 GW Demo",
                           "NR Strive 13 GW Demo",
                           "NR Warden 11 MNC Demo",
-                          "NR Warden 13 MNC Demo"
+                          "NR Warden 13 MNC Demo",
+                          "N Shift2 16 MN",
+                          "N Strive 10 GW"
                         ]
                       }
                     ]
@@ -2765,7 +2805,12 @@
                           "TPX 12 Demo",
                           "TPX 12 Demo W",
                           "Xcell 12 Demo",
-                          "Xcell 14 Demo"
+                          "Xcell 14 Demo",
+                          "Comp 12 Demo",
+                          "Comp 13 Demo",
+                          "Comp 16 GW",
+                          "FDT JR 4.5",
+                          "FDT JR 7.0"
                         ]
                       }
                     ]
@@ -2961,7 +3006,11 @@
                           "ESP 7.5 AC",
                           "ESP 7.5 AC TRACK",
                           "ESP 7.5 AC TRACK PM",
-                          "ESR 10.0"
+                          "ESR 10.0",
+                          "PROTECTOR 11 GW FUSION X",
+                          "PROTECTOR 13 GW FUSION X",
+                          "PROTECTOR SHIFT 10 GW",
+                          "PROTECTOR SHIFT 11 GW"
                         ]
                       }
                     ]
@@ -3094,7 +3143,11 @@
                           "XTR 10 Pro",
                           "XTR 10 Pro GW",
                           "XTR 4 AC Rent",
-                          "XTR 7 AC Pro"
+                          "XTR 7 AC Pro",
+                          "C-Line Z13 RaceTrack",
+                          "RC4 Z 20 X FF Race Service (RD/RS)",
+                          "RS 10 GW SLR/Womentrack",
+                          "VX 13 GW Powerrail"
                         ]
                       }
                     ]
@@ -3155,7 +3208,9 @@
                           "QuikClik ERP 10",
                           "QuikClik M2 10",
                           "QuikClik M3 10",
-                          "Squire 10 Quikclik"
+                          "Squire 10 Quikclik",
+                          "FDT 4.5, S",
+                          "FDT 7.0, L"
                         ]
                       }
                     ]
@@ -3191,7 +3246,8 @@
                           "K4.5 GW AC SLR",
                           "K4.5 GW CA JRS",
                           "K7.5 GW AC SLR",
-                          "K7.5 GW CA JRS"
+                          "K7.5 GW CA JRS",
+                          "K13 ATTACK LYT GW DEMO"
                         ]
                       }
                     ]
@@ -3298,7 +3354,12 @@
                           "TPX 13 ROYAL FDT",
                           "Xcell 12 FDT",
                           "Xcell 14 FDT",
-                          "XCELLL 12 FDT"
+                          "XCELLL 12 FDT",
+                          "JR 4.5 FDT",
+                          "JR 4.5 FDT WB",
+                          "JR 7.0 FDT",
+                          "JR 7.0 FDT WB",
+                          "RACE XCELL 14 GW"
                         ]
                       }
                     ]
@@ -3394,7 +3455,12 @@
                           "NR Strive 13 GW Demo",
                           "NR XM 11 MNC Demo",
                           "NR XM 13 MNC Demo",
-                          "SRT 12"
+                          "SRT 12",
+                          "Griffon Demo (X Gen- Toe and Heel)",
+                          "Griffon X 13",
+                          "Griffon X 13 Mwerks",
+                          "Squire 11",
+                          "Squire 11 TCX Demo"
                         ]
                       }
                     ]
@@ -3423,7 +3489,6 @@
                         "nameSlot": 15,
                         "allowFreeEntry": true,
                         "values": [
-                          "[ine",
                           "E LT 100",
                           "E LT 100 W",
                           "E LW 100",
@@ -3537,7 +3602,14 @@
                         "nameSlot": 15,
                         "allowFreeEntry": true,
                         "values": [
-                          "Comp 13 FDT GW"
+                          "Comp 13 FDT GW",
+                          "Comp 10 TCX",
+                          "Comp 12",
+                          "Comp 12 GW",
+                          "Comp 16",
+                          "Comp 16 GW",
+                          "Comp 16 RD",
+                          "Comp 20"
                         ]
                       }
                     ]
@@ -3593,7 +3665,22 @@
                           "xMotion 11 TCX D",
                           "xMotion 11.0 TCX D",
                           "xMotion 12.0 TC D",
-                          "xMotion 12.0 TCX D"
+                          "xMotion 12.0 TCX D",
+                          "7.0 VMotion Jr.",
+                          "7.0 VMotion Jr. Lady",
+                          "FDT TP 10",
+                          "Lowride 11 TCX GW (ID Gen- Toe)",
+                          "Lowride 11 TCX GW (X Gen Toe)",
+                          "Lowride 12 TCX GW (ID Gen- Toe)",
+                          "Lowride 12 TCX GW (X Gen Toe)",
+                          "Lowride XL 13 GW (Heel)",
+                          "Lowride XL 13 GW (ID Gen- Toe and Heel)",
+                          "VMotion 10",
+                          "VMotion 10 Lady",
+                          "Vmotion 11 TCX",
+                          "VMotion 11 TCX Lady",
+                          "VMotion 12",
+                          "VMotion 9"
                         ]
                       }
                     ]
