@@ -2,7 +2,7 @@
 
 ## Goal
 
-Staff pick a category, and as many of its details as they like, then scan a pile of tags. Every scanned item that has no category gets that category and those details. Nothing else about it changes. An item that already has a category is skipped.
+Staff pick a category, and as many of its details as they like, then scan a pile of tags. Every scanned item that has no category gets that category and those details. Nothing else about it changes, unless staff turn on **Rename items** (off by default), which also gives it the name the category and details derive. An item that already has a category is skipped.
 
 It has to keep up with a scanner in continuous mode, so scans go into a queue and are sent in small batches. It's best effort: a scan that can't be applied is shown and sounded, and the session carries on.
 
@@ -21,7 +21,7 @@ It's for the imported and issued items that arrived as `Item #67169` with no cat
 
 | # | Decision |
 |---|---|
-| D1 | **Only uncategorized items change.** A live item (not deleted) in the swap with `categoryId` null gets the category and the answers. An item with a category is skipped, whatever it is. Nothing else changes: not the name, price, description, seller, quantity, printed flag, Square, or acceptance. The name stays as it is (`Item #67169`); the tag is already printed. |
+| D1 | **Only uncategorized items change.** A live item (not deleted) in the swap with `categoryId` null gets the category and the answers. An item with a category is skipped, whatever it is. Nothing else changes: not the price, description, seller, quantity, printed flag or acceptance, and not the name unless **Rename items** is on (D14). Off, the name stays as it is (`Item #67169`) and Square isn't touched. |
 | D2 | **Any item in the swap,** whatever its state: waiting, accepted, sold or returned. A category is a description, not a sale. |
 | D3 | **The pick: a category and any of its details,** in the same picker as the item form, but **picks only.** No typed values, because one typo would be applied to every item scanned. Number questions (Max DIN, length) can be answered. The pick can change during a session. Each scan keeps the pick it was made under. |
 | D4 | **Scanner only.** The popover needs a connected scanner (`ScannerBanner`). There's no typed-SKU field: a tag that won't scan gets its category from the item's own edit form. A scan before anything is picked is refused, with the error tone: "Pick a category first." |
@@ -33,16 +33,17 @@ It's for the imported and issued items that arrived as `Item #67169` with no cat
 | D10 | **The write is conditional.** "Set where `categoryId` is still null", in one transaction with the answers. An item categorized by someone else in the meantime (the item form, an iPad) answers Skipped, never overwritten. |
 | D11 | **Who.** `ski_swap:manage`, staff on the web (`@NoDeviceAccess`), like the other batch tools. |
 | D12 | **Audited:**<br>• one `ski_swap.items.categorized` per batch, with the category, the answers and the item ids set;<br>• `ski_swap.item.category_cleared` per undo. |
-| D13 | **The iPads need nothing new.** Setting a category moves `updatedAt`, so the walk delivers the category and answers as for any edit. The name doesn't change, so no tag differs from what's printed. |
+| D13 | **The iPads need nothing new.** Setting a category moves `updatedAt`, so the walk delivers the category, the answers and any new name as for any edit. |
+| D14 | **Rename items: a toggle, off by default,** beside the pick.<br>• **What it does:** a set item also gets the name `resolveAnswers` derives from the pick, the same name the item form would give it, US boot sizes included.<br>• **Every item in a batch gets the same name,** because they share one pick. A shallow pick names them all "Skis"; a deeper one names them "Marker Skis". The toggle's line says so: "Names each item from the category and details above, e.g. Marker Skis".<br>• **Per scan,** like the pick: each scan keeps the toggle it was made under, and a batch never mixes them.<br>• **Square:** a renamed item that's in Square is pushed again after the write, so the register shows the new name. The push is serialized per item, fire-and-forget and logged, as on any save. A failed push leaves the rename standing, and Diagnostics' "Name differs" raises it.<br>• **Printed tags keep the old name.** The printed flag isn't touched. The row says "Renamed from Item #67169", and Batch print on the Items page reprints if wanted.<br>• **Undo** also puts the old name back, if the name is still the one this session gave it, and pushes that to Square. |
 
 ## Server
 
 ### Contracts (`ski-swap.contracts.ts`)
 
 - **Answers:** `CategorizeAnswerSchema` is `ItemAttributeInput` without `freeText`, so picks only (D3).
-- **Request:** `CategorizeItemsSchema { categoryId, attributes: CategorizeAnswer[] (≤24), skus: string[1..25] }.strict()`.
-- **Response:** `CategorizeItemsResponse { results: { sku, outcome: 'set' | 'skipped' | 'not_found', item?: { id, name, sellerName, categoryLabel } }[] }`, one per distinct SKU, in request order.
-- **Undo:** `UncategorizeItemSchema { categoryId, attributes }`, what the session set.
+- **Request:** `CategorizeItemsSchema { categoryId, attributes: CategorizeAnswer[] (≤24), rename: boolean (default false), skus: string[1..25] }.strict()`.
+- **Response:** `CategorizeItemsResponse { results: { sku, outcome: 'set' | 'skipped' | 'not_found', item?: { id, name, previousName, sellerName, categoryLabel } }[] }`, one per distinct SKU, in request order. `previousName` is set only when the item was renamed.
+- **Undo:** `UncategorizeItemSchema { categoryId, attributes, rename?: { from, to } }`: what the session set, and the rename it made.
 
 ### Service (`ski-swap/item-categorize.service.ts`, new)
 
@@ -52,12 +53,14 @@ It's for the imported and issued items that arrived as `Item #67169` with no cat
   3. Per item:
      - missing → `not_found`;
      - already has a category → `skipped`, with the category's label;
-     - otherwise, in one transaction: `updateMany({ where: { id, categoryId: null, deletedAt: null }, data: { categoryId } })`, then `createMany` of the answer rows when the count is 1. A count of 0 → `skipped`.
-  4. Audit once (D12).
-  - It never touches `name` and never calls Square.
+     - otherwise, in one transaction: `updateMany({ where: { id, categoryId: null, deletedAt: null }, data: { categoryId, ...(rename ? { name: derived } : {}) } })`, then `createMany` of the answer rows when the count is 1. A count of 0 → `skipped`.
+  4. Audit once (D12), with each renamed item's previous name.
+  5. With `rename`, push each renamed item that's in Square through `ItemService.syncToPos`, after the batch is answered and not awaited (D14).
+  - Without `rename`, it never touches `name` and never calls Square.
 - **`uncategorize(orgId, swapId, itemId, expected, actorId)`:**
   - Refuse `NOT_FOUND`, or `CHANGED_SINCE` (409) unless the item's `categoryId` and its set of answers equal `expected`.
   - Otherwise clear both in one transaction, conditional on `categoryId` still being the expected one.
+  - With `rename`: restore `from` when the name is still `to`, then push to Square. A name changed since is left as it is, and the answer says so.
   - Audit.
 
 ### Routes (`item.controller.ts`, before `:itemId` routes)
@@ -77,15 +80,16 @@ No migration.
   - **Header:** "Batch set category" and **Done**. Done asks first when scans are waiting.
   - **`ScannerBanner`:** "Scan tags to set their category" when connected; the usual not-connected states otherwise.
   - **The pick:** `ItemDescriber` collapsed to a one-line summary once a category is chosen ("Skis · Bindings included: Yes · Marker"), with **Change**. Changing it affects only scans from then on.
+  - **Rename items:** a toggle under the pick, off. On, it shows the name the pick derives ("Names each item: Marker Skis"), worked out on the client the way the item form previews it. Like the pick, it applies to scans from then on (D14).
   - **The latest result on a `Banner`** (D7), with its sound (D8).
   - **Counts:** "Set 42 · Skipped 7 · Not found 2 · Waiting 3".
   - **The session's list, newest first:**
-    - each row: SKU, name, seller, and the outcome as a badge;
+    - each row: SKU, name, seller, and the outcome as a badge; a renamed row adds "Renamed from Item #67169";
     - a set row has **Undo** (D9), which becomes "Undone";
     - a waiting row shows "Waiting" until its batch lands.
 - **`batchCategoryLogic.ts`** (new, pure):
-  - `scanned(state, sku, pick, now)`: queue it, drop a repeat within 3 seconds, or answer "Already scanned".
-  - `nextBatch(state)`: up to 25 waiting rows that share a pick.
+  - `scanned(state, sku, pick, rename, now)`: queue it, drop a repeat within 3 seconds, or answer "Already scanned".
+  - `nextBatch(state)`: up to 25 waiting rows that share a pick and a rename setting.
   - `landed(state, batch, results)`, `failed(state, batch, error)`, `retryDelay(attempt)`.
   - `counts`, `bannerFor(row)`, `toneFor(results)` (the worst outcome), `pickSummary(tree, pick)`.
 - **The drain loop:** a `useEffect` in the modal. While a request is in flight, new scans just queue. When it lands, send the next batch, if any. When a request fails without an answer, wait `retryDelay` and try again.
@@ -96,6 +100,7 @@ No migration.
 
 - **`item-categorize.service.spec.ts`:**
   - sets the category and answers and leaves the name, price, seller and Square alone;
+  - with `rename`, gives each set item the derived name (boot sizes included), records the previous one, and pushes it to Square; a skipped item keeps its name;
   - skips an item with a category and says which;
   - answers not found;
   - a race (the conditional write finds a category) answers skipped;
@@ -103,15 +108,15 @@ No migration.
   - free text is refused by the contract;
   - repeated SKUs in a batch are answered once;
   - audited once per batch.
-- **Undo:** clears exactly what was set; refused once anything changed; leaves the name.
+- **Undo:** clears exactly what was set; refused once anything changed; leaves the name, or with a rename restores the old one unless the name was changed since.
 - **`batchCategoryLogic.test.ts`:**
   - a repeat within 3 seconds is dropped, later it's "Already scanned";
-  - batches never mix picks and never exceed 25;
+  - batches never mix picks or rename settings, and never exceed 25;
   - a failed batch goes back to waiting, and the retry delay grows and caps;
   - counts;
   - the tone is the worst outcome;
   - a scan with no pick is refused.
-- **`scripts/smoke-batch-category.mjs`** (test org): a batch with an uncategorized item, a categorized one and an unknown SKU, which answers set, skipped and not found. The item's name and price are unchanged, and undo works.
+- **`scripts/smoke-batch-category.mjs`** (test org): a batch with an uncategorized item, a categorized one and an unknown SKU, which answers set, skipped and not found. The item's name and price are unchanged, and undo works. A second batch with `rename` renames the item, and its undo restores the name.
 
 ## Rollout
 
@@ -121,7 +126,7 @@ No migration.
 
 ## Out of scope
 
-- Re-deriving names or reprinting tags.
+- Reprinting tags (Batch print does it), or changing the printed flag.
 - Changing an item's existing category (that's the item form).
 - The iPad.
 - A typed SKU.
