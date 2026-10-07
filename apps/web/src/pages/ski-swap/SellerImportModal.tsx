@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
+import { saveFile } from '../../lib/saveFile';
 
 const FIELDS = ['name', 'phone', 'email', 'street', 'city', 'state', 'zip'] as const;
 const FIELD_LABELS: Record<string, string> = {
@@ -23,6 +24,20 @@ export default function SellerImportModal({ orgId, onClose, onDone }: { orgId: s
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ImportResult[]>([]);
   const [outcomeFilter, setOutcomeFilter] = useState<string | null>(null);
+
+  const [downloading, setDownloading] = useState(false);
+
+  async function downloadTemplate() {
+    setDownloading(true);
+    setError(null);
+    try {
+      saveFile(await api.skiSwap.sellerTemplate(orgId), 'sellers-template.csv');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not download the template');
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function handleFileParsed(f: File) {
     setFile(f);
@@ -72,16 +87,18 @@ export default function SellerImportModal({ orgId, onClose, onDone }: { orgId: s
           {/* ── Step 1: Upload ── */}
           {step === 'upload' && (
             <div className="space-y-4">
-              <p className="text-gray-400 text-sm">
+              <div className="text-gray-400 text-sm">
                 <p>Required columns: <span className="text-white">name, phone, email</span></p>
-              <p>Optional: <span className="text-white">street, city, state, zip</span></p>
-              </p>
-              <a
-                href={api.skiSwap.downloadSellerTemplate(orgId)}
-                className="inline-block text-sm text-brand-500 hover:underline"
+                <p>Optional: <span className="text-white">street, city, state, zip</span></p>
+              </div>
+              <button
+                type="button"
+                onClick={downloadTemplate}
+                disabled={downloading}
+                className="inline-block text-sm text-brand-500 hover:underline disabled:opacity-50"
               >
-                ↓ Download template CSV
-              </a>
+                {downloading ? 'Downloading…' : '↓ Download template CSV'}
+              </button>
               <label className="block">
                 <span className="text-gray-400 text-xs uppercase">CSV file</span>
                 <input

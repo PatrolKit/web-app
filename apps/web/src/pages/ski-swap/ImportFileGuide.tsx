@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ImportGuideFile } from '../../lib/api.types';
+import { saveFile } from '../../lib/saveFile';
 
 const SEEN_KEY = 'importFileGuide.seen';
 
@@ -17,18 +18,6 @@ const DOWNLOADS: { file: ImportGuideFile; label: string; saveAs: string }[] = [
   { file: 'example.csv', label: 'Example', saveAs: 'items-example.csv' },
   { file: 'details.csv', label: 'Categories and details', saveAs: 'categories-and-details.csv' },
 ];
-
-function save(blob: Blob, filename: string) {
-  const href = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = href;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Revoking immediately can cancel the save in some browsers.
-  setTimeout(() => URL.revokeObjectURL(href), 10_000);
-}
 
 /**
  * What an item file should hold, and three downloads to start from (Plan 42
@@ -51,7 +40,7 @@ export default function ImportFileGuide({
     setFetching(d.file);
     setError('');
     try {
-      save(await download(d.file), d.saveAs);
+      saveFile(await download(d.file), d.saveAs);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not download that file');
     } finally {

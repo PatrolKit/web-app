@@ -875,7 +875,8 @@ export const api = {
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers/from-person`, {
         method: 'POST', body: JSON.stringify({ userId }),
       }),
-    downloadSellerTemplate: (orgId: string) => `/api/v1/orgs/${orgId}/ski-swap/sellers/import/template`,
+    /** The seller import's header row, fetched with the session token: a plain link can't carry it. */
+    sellerTemplate: (orgId: string) => fetchCsv(`/api/v1/orgs/${orgId}/ski-swap/sellers/import/template`),
     parseSellerCsv: (orgId: string, file: File) => {
       const form = new FormData();
       form.append('file', file);
