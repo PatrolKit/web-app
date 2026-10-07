@@ -209,7 +209,11 @@
                   "Spectrum",
                   "Playmaker",
                   "Wildcat",
-                  "Ibex"
+                  "Ibex",
+                  "Starr",
+                  "Maxx",
+                  "Pinball",
+                  "Element"
                 ]
               }
             ]
@@ -1015,7 +1019,8 @@
                   "Good Times",
                   "Highlander",
                   "Alternator",
-                  "Pantera"
+                  "Pantera",
+                  "Ripper"
                 ]
               }
             ]
@@ -1143,7 +1148,8 @@
                 ]
               }
             ]
-          }
+          },
+          "5th Element"
         ]
       },
       {
@@ -1292,7 +1298,8 @@
                   "Cabrio",
                   "Veloce",
                   "Il Moro",
-                  "Quantum"
+                  "Quantum",
+                  "Menace"
                 ]
               }
             ]
@@ -1534,7 +1541,8 @@
                 ]
               }
             ]
-          }
+          },
+          "Alpina"
         ]
       },
       {
@@ -1652,7 +1660,8 @@
                   "Mora",
                   "Travis Rice",
                   "Mutiny",
-                  "Scout"
+                  "Scout",
+                  "Lotus"
                 ]
               }
             ]
@@ -1802,7 +1811,9 @@
                 ]
               }
             ]
-          }
+          },
+          "Head",
+          "5th Element"
         ]
       },
       {
@@ -2571,7 +2582,11 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom"
+          "Volcom",
+          "Sunice",
+          "Roxy",
+          "DC",
+          "Nils"
         ]
       },
       {
@@ -2892,7 +2907,9 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom"
+          "Volcom",
+          "Terramar",
+          "Under Armour"
         ]
       },
       {
@@ -3108,7 +3125,9 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom"
+          "Volcom",
+          "Dakine",
+          "Swany"
         ]
       },
       {
@@ -3266,7 +3285,10 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom"
+          "Volcom",
+          "Dakine",
+          "High Sierra",
+          "Athalon"
         ]
       },
       {
