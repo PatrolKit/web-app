@@ -1190,6 +1190,7 @@ export const api = {
         /** A percentage, as typed: "20", "20.5", "20.5%". Never basis points. */
         commissionPercent?: string;
         barcodesPerTicket?: 1 | 2;
+        showUsBootSizes?: boolean;
       },
     ) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`, {

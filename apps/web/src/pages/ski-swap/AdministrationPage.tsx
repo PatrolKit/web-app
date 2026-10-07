@@ -250,10 +250,11 @@ function PrintingSection({ orgId }: { orgId: string }) {
     staleTime: 60_000,
   });
   const mutation = useMutation({
-    mutationFn: (barcodesPerTicket: 1 | 2) => api.skiSwap.updateSettings(orgId, { barcodesPerTicket }),
+    mutationFn: (data: { barcodesPerTicket?: 1 | 2; showUsBootSizes?: boolean }) => api.skiSwap.updateSettings(orgId, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ski-swap/settings', orgId] }),
   });
   const current = settings?.barcodesPerTicket ?? 1;
+  const usSizes = settings?.showUsBootSizes ?? false;
 
   return (
     <div className="space-y-3">
@@ -277,7 +278,7 @@ function PrintingSection({ orgId }: { orgId: string }) {
                 type="button"
                 role="radio"
                 aria-checked={current === n}
-                onClick={() => { if (current !== n) mutation.mutate(n); }}
+                onClick={() => { if (current !== n) mutation.mutate({ barcodesPerTicket: n }); }}
                 disabled={mutation.isPending || settings === undefined}
                 className={`w-10 py-1.5 text-sm font-medium disabled:opacity-40 ${
                   current === n ? 'bg-brand-600 text-white' : 'bg-surface-100 text-gray-300 hover:bg-surface-200'
@@ -287,6 +288,30 @@ function PrintingSection({ orgId }: { orgId: string }) {
               </button>
             ))}
           </div>
+        </div>
+        <div className="flex items-start justify-between gap-4 border-t border-gray-800 pt-3">
+          <div className="space-y-1">
+            <p className="text-sm text-white">Show US boot sizes</p>
+            <p className="text-xs text-gray-500">
+              A ski boot marked Mens, Womens or Kids is named with its US size beside its Mondopoint:
+              “Ski boots MP 26.5 (US M 8.5)”. Off: “Ski boots MP 26.5”. A guide: charts differ by about
+              half a size, and the MP is what’s exact.
+            </p>
+            <p className="text-xs text-gray-500">
+              Applies to boots added or edited from now on, here and on the iPads. Names already given stay.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={usSizes}
+            aria-label="Show US boot sizes"
+            onClick={() => mutation.mutate({ showUsBootSizes: !usSizes })}
+            disabled={mutation.isPending || settings === undefined}
+            className={`shrink-0 mt-0.5 w-11 h-6 rounded-full transition-colors disabled:opacity-40 ${usSizes ? 'bg-brand-600' : 'bg-surface-200'}`}
+          >
+            <span className={`block w-5 h-5 bg-white rounded-full transition-transform ${usSizes ? 'translate-x-5' : 'translate-x-0.5'}`} />
+          </button>
         </div>
         {mutation.isError && (
           <p className="text-xs text-red-400">

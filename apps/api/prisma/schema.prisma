@@ -829,6 +829,11 @@ model SkiSwapSettings {
   /// tag scans from either end. The small tag always has one.
   barcodesPerTicket Int @default(1)
 
+  /// A ski boot marked Mens, Womens or Kids is named with its US size beside
+  /// its Mondopoint: "Ski boots MP 26.5 (US M 8.5)". Off: "Ski boots MP 26.5".
+  /// Read when the name is composed, so it changes new names, not old ones.
+  showUsBootSizes Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

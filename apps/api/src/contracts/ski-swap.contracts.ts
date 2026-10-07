@@ -906,6 +906,8 @@ export const UpdateSkiSwapSettingsSchema = z
       .optional(),
     /** Barcodes on a tall item tag: 1 across the foot, or 2, head and foot. */
     barcodesPerTicket: z.union([z.literal(1), z.literal(2)]).optional(),
+    /** Name ski boots with their US size beside the Mondopoint. */
+    showUsBootSizes: z.boolean().optional(),
   })
   .strict();
 
@@ -922,6 +924,12 @@ export const SkiSwapSettingsResponseSchema = z.object({
    * the head as well. The small tag always has one.
    */
   barcodesPerTicket: z.union([z.literal(1), z.literal(2)]),
+  /**
+   * A ski boot marked Mens, Womens or Kids is named with its US size beside
+   * its Mondopoint: "Ski boots MP 26.5 (US M 8.5)". The iPad names the boots
+   * it adds the same way, so it reads this every sync.
+   */
+  showUsBootSizes: z.boolean(),
   /** "20%", "20.5%". The form this is edited and displayed in, everywhere. */
   commissionPercent: z.string(),
   /**

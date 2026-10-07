@@ -6,7 +6,7 @@
  * not depend on a browser agreeing about it.
  */
 
-import { composeName } from '../../contracts/item-name';
+import { bootSizeText, composeName, isMondopoint } from '../../contracts/item-name';
 
 /** The fields of an ATTRIBUTE node that decide where its answer lands. */
 export interface NameAttribute {
@@ -56,7 +56,10 @@ export function renderAnswer(answer: NameAnswer): string | null {
  * An answer whose attribute has no `nameSlot` is captured and not named: a
  * detail worth having in a report and not on a 40×30 label.
  */
-export function deriveName(categoryLabel: string, answers: NameAnswer[]): string {
+export function deriveName(categoryLabel: string, answers: NameAnswer[], opts: { showUsBootSizes?: boolean } = {}): string {
+  // A ski boot's size goes after the noun, as "MP 26.5", with its US size
+  // when the org shows them and the boot says who it's for.
+  const gender = answers.find((a) => a.attribute.label.trim().toLowerCase() === 'gender')?.valueLabel ?? null;
   const parts = answers
     .filter((a) => a.attribute.nameSlot !== null)
     .sort(
@@ -65,7 +68,9 @@ export function deriveName(categoryLabel: string, answers: NameAnswer[]): string
         a.attribute.displayOrder - b.attribute.displayOrder ||
         a.attribute.label.localeCompare(b.attribute.label),
     )
-    .map((a) => ({ text: renderAnswer(a) ?? '', freeEntry: !!a.attribute.allowFreeEntry }))
+    .map((a) => (isMondopoint(a.attribute.label) && a.numberValue != null
+      ? { text: bootSizeText(a.numberValue, gender, !!opts.showUsBootSizes), afterNoun: true }
+      : { text: renderAnswer(a) ?? '', freeEntry: !!a.attribute.allowFreeEntry }))
     .filter((part) => part.text.trim() !== '');
 
   // Collapsed rather than joined blindly: a label with a stray double space in

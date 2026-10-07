@@ -12,7 +12,7 @@ import {
 import { api } from '../lib/api';
 import { taxonomyIcon } from '../lib/taxonomyIcons';
 import SearchableSelect from './SearchableSelect';
-import { composeName, type NamePart } from '@patrolkit/contracts/item-name';
+import { bootSizeText, composeName, isMondopoint, type NamePart } from '@patrolkit/contracts/item-name';
 import type {
   ItemAttributeInput,
   ResolvedAttribute,
@@ -108,14 +108,23 @@ export function nameParts(
   category: ResolvedCategory | undefined,
   attributesById: Map<string, ResolvedAttribute>,
   valueLabelById: Map<string, string>,
+  showUsBootSizes = false,
 ): NamePart[] {
   if (!category) return [];
+  // A ski boot's size reads "MP 26.5" after the noun, as the server names it.
+  const genderAnswer = Object.entries(state.answers).find(([id]) => attributesById.get(id)?.label.trim().toLowerCase() === 'gender')?.[1];
+  const gender = genderAnswer?.valueId ? valueLabelById.get(genderAnswer.valueId) ?? null : null;
   return Object.entries(state.answers)
     .map(([attributeId, answer]) => ({ attribute: attributesById.get(attributeId), answer }))
     .filter((x): x is { attribute: ResolvedAttribute; answer: DescriberAnswer } => !!x.attribute)
     .filter((x) => x.attribute.nameSlot !== null)
     .sort((a, b) => (a.attribute.nameSlot ?? 0) - (b.attribute.nameSlot ?? 0) || a.attribute.displayOrder - b.attribute.displayOrder)
-    .map(({ attribute, answer }) => ({ text: answerText(attribute, answer, valueLabelById), freeEntry: !!attribute.allowFreeEntry }))
+    .map(({ attribute, answer }) => {
+      const n = Number(answer.numberValue);
+      return isMondopoint(attribute.label) && answer.numberValue?.trim() && Number.isFinite(n)
+        ? { text: bootSizeText(n, gender, showUsBootSizes), afterNoun: true }
+        : { text: answerText(attribute, answer, valueLabelById), freeEntry: !!attribute.allowFreeEntry };
+    })
     .filter((p) => p.text !== '');
 }
 

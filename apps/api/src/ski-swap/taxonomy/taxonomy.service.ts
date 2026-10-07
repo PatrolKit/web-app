@@ -125,6 +125,12 @@ export class TaxonomyService {
    * One query rather than a walk. The tree is small enough that filtering it in
    * memory beats a recursive CTE, and it has to be in memory anyway to nest.
    */
+  /** Whether the org names ski boots with their US size too. */
+  private async showsUsBootSizes(orgId: string): Promise<boolean> {
+    const row = await this.prisma.skiSwapSettings.findUnique({ where: { orgId }, select: { showUsBootSizes: true } });
+    return row?.showUsBootSizes ?? false;
+  }
+
   /**
    * Every node `resolveAnswers` reads, once, for a caller describing many
    * items in a row: a file import, which would otherwise re-read the whole
@@ -822,7 +828,7 @@ export class TaxonomyService {
     return {
       categoryId: category.id,
       categoryLabel: category.label,
-      name: deriveName(category.label, answers),
+      name: deriveName(category.label, answers, { showUsBootSizes: await this.showsUsBootSizes(orgId) }),
       rows,
     };
   }

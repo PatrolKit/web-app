@@ -117,3 +117,30 @@ describe('deriveName in "Other"', () => {
     expect(deriveName('Skis', [{ attribute: maker, valueLabel: 'Head' }])).toBe('Head Skis');
   });
 });
+
+describe('a ski boot’s size', () => {
+  const boot = (mp: number, gender?: string): NameAnswer[] => [
+    { attribute: attr('Manufacturer', 10), valueLabel: 'Nordica' },
+    { attribute: attr('Mondopoint', 30), numberValue: mp },
+    ...(gender ? [{ attribute: attr('Gender', 40), valueLabel: gender }] : []),
+  ];
+
+  it('reads "MP" after the noun, so it can’t be taken for something else', () => {
+    expect(deriveName('Ski boots', boot(26.5, 'Mens'))).toBe('Nordica Mens Ski boots MP 26.5');
+    expect(deriveName('Ski boots', [{ attribute: attr('Mondopoint', 30), numberValue: 22 }])).toBe('Ski boots MP 22');
+  });
+
+  it('adds the US size where the org shows them and the boot says who it’s for', () => {
+    const us = { showUsBootSizes: true };
+    expect(deriveName('Ski boots', boot(26.5, 'Mens'), us)).toBe('Nordica Mens Ski boots MP 26.5 (US M 8.5)');
+    expect(deriveName('Ski boots', boot(24, 'Womens'), us)).toBe('Nordica Womens Ski boots MP 24 (US W 7)');
+    expect(deriveName('Ski boots', boot(22, 'Kids'), us)).toBe('Nordica Kids Ski boots MP 22 (US Y 4)');
+    // Unisex, or no gender: the MP alone.
+    expect(deriveName('Ski boots', boot(26, 'Unisex'), us)).toBe('Nordica Unisex Ski boots MP 26');
+    expect(deriveName('Ski boots', boot(26), us)).toBe('Nordica Ski boots MP 26');
+  });
+
+  it('leaves other numbers where they were', () => {
+    expect(deriveName('Skis', [{ attribute: attr('Length', 30, { unit: 'cm' }), numberValue: 170 }])).toBe('170cm Skis');
+  });
+});

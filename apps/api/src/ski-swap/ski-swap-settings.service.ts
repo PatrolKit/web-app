@@ -27,6 +27,7 @@ export class SkiSwapSettingsService {
       // organisations that asked for it.
       requireConsignmentScan: row?.requireConsignmentScan ?? false,
       barcodesPerTicket: barcodesOf(row),
+      showUsBootSizes: row?.showUsBootSizes ?? false,
       // 1 for an org with no row, matching what the taxonomy service reports —
       // a client that has cached nothing compares against it and fetches.
       taxonomyVersion: row?.taxonomyVersion ?? 1,
@@ -68,6 +69,7 @@ export class SkiSwapSettingsService {
       requireConsignmentScan?: boolean;
       commissionPercent?: string | number;
       barcodesPerTicket?: 1 | 2;
+      showUsBootSizes?: boolean;
     },
     actorId?: string,
   ): Promise<SkiSwapSettingsResponse> {
@@ -93,12 +95,14 @@ export class SkiSwapSettingsService {
           : {}),
         ...(commissionBasisPoints !== undefined ? { commissionBasisPoints } : {}),
         ...(data.barcodesPerTicket !== undefined ? { barcodesPerTicket: data.barcodesPerTicket } : {}),
+        ...(data.showUsBootSizes !== undefined ? { showUsBootSizes: data.showUsBootSizes } : {}),
       },
       create: {
         orgId,
         requireConsignmentScan: data.requireConsignmentScan ?? false,
         commissionBasisPoints: commissionBasisPoints ?? 0,
         barcodesPerTicket: data.barcodesPerTicket ?? 1,
+        showUsBootSizes: data.showUsBootSizes ?? false,
       },
     });
 
@@ -124,6 +128,7 @@ export class SkiSwapSettingsService {
       labelsPerItem: await this.runningSwapLabelsPerItem(orgId),
       requireConsignmentScan: row.requireConsignmentScan,
       barcodesPerTicket: barcodesOf(row),
+      showUsBootSizes: row.showUsBootSizes,
       taxonomyVersion: row.taxonomyVersion,
       smsEnabled: await this.platform.smsEnabled(),
       commissionPercent: basisPointsToPercent(row.commissionBasisPoints),

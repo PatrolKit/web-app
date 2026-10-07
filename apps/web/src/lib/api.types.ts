@@ -716,6 +716,8 @@ export interface SkiSwapSettings {
   requireConsignmentScan: boolean;
   /** Barcodes on a tall (62 × 100) item tag: 1 across the foot, or 2, head and foot. */
   barcodesPerTicket: 1 | 2;
+  /** Ski boots marked Mens, Womens or Kids are named with their US size too. */
+  showUsBootSizes: boolean;
   /** The org's cut, as a percentage: "20%", "20.5%", "0%". */
   commissionPercent: string;
   /** The same number the server does the arithmetic with. */
