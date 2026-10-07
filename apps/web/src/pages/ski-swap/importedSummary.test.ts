@@ -6,9 +6,11 @@ describe('what an import says it did (Plan 38)', () => {
 
   it('counts tickets described apart from new items', () => {
     expect(importedSummary([row('updated'), row('updated'), row('created', true)])).toBe(
-      '2 tickets described; 1 new item, each with a SKU to print a label for.',
+      '2 tickets described; 1 new item, each with a SKU to print a label for. Square catches up over the next minute.',
     );
-    expect(importedSummary([row('updated')], 'Stowe Sports')).toBe('1 ticket described for Stowe Sports.');
+    expect(importedSummary([row('updated')], 'Stowe Sports')).toBe('1 ticket described for Stowe Sports. Square catches up over the next minute.');
+    // A shop's own new items wait to be accepted, so they aren't headed for Square yet.
+    expect(importedSummary([row('created', true)])).toBe('1 new item, each with a SKU to print a label for.');
   });
 
   it('knows whether anything was written', () => {

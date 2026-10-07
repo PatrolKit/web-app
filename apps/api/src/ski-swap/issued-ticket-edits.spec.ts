@@ -96,7 +96,7 @@ describe('a file of ticket rows', () => {
     expect(results.map((r) => r.outcome)).toEqual(['updated', 'updated']);
     // The second row only names its ticket: nothing to write.
     expect(patched).toEqual([
-      { id: 't67169', data: { name: 'Salomon boots', description: '27.5', priceCents: 18000 } },
+      { id: 't67169', data: { name: 'Salomon boots', description: '27.5', priceCents: 18000, deferPos: true } },
     ]);
   });
 

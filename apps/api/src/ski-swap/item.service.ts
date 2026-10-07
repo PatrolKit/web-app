@@ -15,6 +15,7 @@ import { SkuService } from './sku.service';
 import { PrintQueueService } from './print-queue.service';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { LegacyTicketService, ticketNumberOf, type ImportRowResult } from './legacy-ticket.service';
+import { IssuedTicketService } from './issued-ticket.service';
 import { TaxonomyService, type ItemAttributeInput, type ItemDescription } from './taxonomy/taxonomy.service';
 import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
@@ -33,6 +34,9 @@ export interface ItemPhotoResponse { id: string; url: string; }
 export type { ItemResponse };
 
 type SwapShape = { id: string; title: string; squareCategoryId: string; locationId: string; skuPrefix: string; skuCounter: number };
+
+/** Items per Square write after a file import: one of Square's batch upserts. */
+const IMPORT_PUSH_BATCH = 500;
 
 /** Keys are client-supplied, so they are only ever meaningful within one swap. */
 function idempotencyScope(orgId: string, swapId: string): string {
@@ -90,6 +94,8 @@ export class ItemService {
     private readonly settings: SkiSwapSettingsService,
     private readonly tickets: LegacyTicketService,
     private readonly taxonomy: TaxonomyService,
+    // Optional for the unit tests that build this by hand; Nest always supplies it.
+    private readonly issued?: IssuedTicketService,
   ) {}
 
   async list(orgId: string, swapId: string, opts: {
@@ -635,7 +641,7 @@ export class ItemService {
       }));
   }
 
-  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number | null; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; ifUnpriced?: true; actorId?: string; approveNewValues?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
+  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number | null; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; ifUnpriced?: true; actorId?: string; approveNewValues?: boolean; deferPos?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(`item-patch:${orgId}:${swapId}`, idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -697,7 +703,8 @@ export class ItemService {
       throw err;
     });
 
-    await this.syncItemToPos(orgId, swap, updated);
+    // A file import writes every row first and sends Square the lot after.
+    if (!data.deferPos) await this.syncItemToPos(orgId, swap, updated);
 
     if (data.quantity !== undefined && updated.squareVariationId && swap.locationId) {
       const pos = await this.posFactory.forOrg(orgId);
@@ -716,7 +723,8 @@ export class ItemService {
         ? await this.consign(orgId, swapId, itemId, data.actorId ?? null)
         : await (async () => {
             const [inventoryMap, descriptions] = await Promise.all([
-              this.displayStock(orgId, swap, [updated]),
+              // Stock is a Square read: none for a deferred write.
+              data.deferPos ? new Map<string, number>() : this.displayStock(orgId, swap, [updated]),
               this.fetchDescriptions([updated]),
             ]);
             return this.toResponse(updated, inventoryMap, descriptions);
@@ -958,6 +966,12 @@ export class ItemService {
       }
     }
 
+    /*
+     * Rows are written first and Square follows in the background, in
+     * batches: a push per row kept a shop's 1,000-row file waiting on Square
+     * for minutes, well past the request's timeout.
+     */
+    const written: string[] = [];
     for (let i = 0; i < rows.length; i++) {
       // A ticket row fills in the issued ticket it names (Plan 38): the ticket
       // exists from the moment it was issued, so there's nothing to create.
@@ -971,7 +985,10 @@ export class ItemService {
           ...(rows[i].priceCents !== null ? { priceCents: rows[i].priceCents! } : {}),
         };
         // A row that only names its ticket changes nothing, so it writes nothing.
-        if (Object.keys(changes).length) await this.patch(orgId, swapId, itemId, changes);
+        if (Object.keys(changes).length) {
+          await this.patch(orgId, swapId, itemId, { ...changes, deferPos: true });
+          written.push(itemId);
+        }
         results[i] = { ...results[i], outcome: 'updated' };
         continue;
       }
@@ -989,7 +1006,9 @@ export class ItemService {
         sellerId,
         sku,
         awaitsConsignment: opts.selfService,
+        deferPos: true,
       });
+      written.push(item.id);
 
       // A generated SKU has no label yet: the seller prints one from the web.
       if (generated) {
@@ -1008,7 +1027,72 @@ export class ItemService {
       results[i] = { ...results[i], outcome: 'created' };
     }
 
+    void this.withItemLock(`import:${swapId}`, () => this.pushImported(orgId, swapId, written));
     return results;
+  }
+
+  /**
+   * The Square half of a file import, after the uploader has been answered:
+   * the accepted ones among `itemIds`, in batches. Items waiting to be
+   * accepted stay out of Square, as ever. Never throws; nothing is waiting.
+   *
+   * Issued tickets not in Square yet go up through their own push first,
+   * which reads what was just written. Otherwise a block issued moments
+   * before could be created twice, once by each.
+   */
+  private async pushImported(orgId: string, swapId: string, itemIds: string[]): Promise<void> {
+    try {
+      if (itemIds.length === 0) return;
+      const swap = await this.findSwapOrThrow(orgId, swapId);
+      if (!swap.locationId) return;
+      const pos = await this.posFactory.forOrg(orgId);
+      if (!pos) return;
+      await this.issued?.push(orgId, swapId);
+
+      let categoryId = swap.squareCategoryId;
+      let failed = 0;
+      for (let at = 0; at < itemIds.length; at += IMPORT_PUSH_BATCH) {
+        const items = await this.prisma.swapItem.findMany({
+          where: { id: { in: itemIds.slice(at, at + IMPORT_PUSH_BATCH) }, swapId, deletedAt: null, consignedAt: { not: null } },
+        });
+        if (items.length === 0) continue;
+        const { results, resolvedCategoryId } = await pos.upsertItems(
+          items.map((o) => ({
+            posItemId: o.squareItemId ?? undefined,
+            posVariationId: o.squareVariationId ?? undefined,
+            name: o.name,
+            description: o.description ?? undefined,
+            priceCents: o.priceCents,
+            sku: o.sku,
+            categoryId,
+            categoryName: swap.title,
+          })),
+          swap.locationId,
+          1,
+        );
+        if (resolvedCategoryId && resolvedCategoryId !== categoryId) {
+          categoryId = resolvedCategoryId;
+          await this.prisma.skiSwap.update({ where: { id: swapId }, data: { squareCategoryId: categoryId } });
+        }
+        const syncedAt = new Date();
+        const landed = items.flatMap((o, i) => {
+          const r = results[i];
+          if ('error' in r) {
+            failed++;
+            return [];
+          }
+          return [this.prisma.swapItem.update({
+            where: { id: o.id },
+            data: { squareItemId: r.posItemId, squareVariationId: r.posVariationId, lastSyncedAt: syncedAt },
+          })];
+        });
+        await this.prisma.$transaction(landed);
+      }
+      // Left as they are for Diagnostics, or a re-push from Items, to find.
+      if (failed) this.logger.warn({ orgId, swapId, failed, of: itemIds.length }, 'Import finished with items not in Square');
+    } catch (err) {
+      this.logger.error({ err, orgId, swapId }, 'Square push after an import stopped');
+    }
   }
 
   // ─── Consignment ───────────────────────────────────────────────────────────
