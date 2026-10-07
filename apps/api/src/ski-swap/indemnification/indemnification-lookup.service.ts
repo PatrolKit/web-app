@@ -40,15 +40,22 @@ type Registry = {
   entries: Map<string, EntryRow[]>;
   /** Model node → entries hidden from this patrol (D5). */
   hidden: Map<string, number>;
+  /** Model node → the newest season among its hidden entries. */
+  hiddenNewest: Map<string, string>;
 };
+
+/** How long a patrol's registry is reused. Imports, notes and the NSSRA declaration clear it at once. */
+const CACHE_MS = 60_000;
 
 /**
  * The patrol-facing side (Plan 44 D4, D5, D10): the answer for a model,
  * computed when asked against its program's latest season, with NSSRA-sourced
  * entries dropped for a patrol that hasn't declared membership.
  *
- * Reads the whole registry per request. It is a few thousand rows at most,
- * and a glance at check-in isn't worth a cache that can be stale.
+ * The registry is a few thousand rows, read whole and kept for a minute per
+ * patrol: a search reads it per keystroke, and the item form per model picked.
+ * An import, a program's notes and the NSSRA declaration clear it at once;
+ * a merge or retire in Item Details shows within the minute.
  */
 @Injectable()
 export class IndemnificationLookupService {
@@ -57,7 +64,25 @@ export class IndemnificationLookupService {
     private readonly taxonomy: TaxonomyService,
   ) {}
 
-  private async load(orgId: string): Promise<Registry> {
+  private readonly cache = new Map<string, { at: number; reg: Promise<Registry> }>();
+
+  /** Forget what's cached: every patrol's, or one's. */
+  invalidate(orgId?: string): void {
+    if (orgId) this.cache.delete(orgId);
+    else this.cache.clear();
+  }
+
+  private load(orgId: string): Promise<Registry> {
+    const hit = this.cache.get(orgId);
+    if (hit && Date.now() - hit.at < CACHE_MS) return hit.reg;
+    const reg = this.read(orgId);
+    this.cache.set(orgId, { at: Date.now(), reg });
+    // A failed read isn't kept.
+    reg.catch(() => { if (this.cache.get(orgId)?.reg === reg) this.cache.delete(orgId); });
+    return reg;
+  }
+
+  private async read(orgId: string): Promise<Registry> {
     const [settings, programRows, attr] = await Promise.all([
       this.prisma.skiSwapSettings.findUnique({ where: { orgId }, select: { nssraMember: true } }),
       this.prisma.bindingIndemnificationProgram.findMany(),
@@ -67,7 +92,7 @@ export class IndemnificationLookupService {
     const programs = new Map(programRows.map((p) => [p.key, p]));
     const seasons = programRows.map((p) => p.latestSeason).filter((s): s is string => !!s).sort();
     const latestSeason = seasons.length ? seasons[seasons.length - 1] : null;
-    const empty: Registry = { nssraMember, latestSeason, programs, makers: [], makerOf: new Map(), models: [], entries: new Map(), hidden: new Map() };
+    const empty: Registry = { nssraMember, latestSeason, programs, makers: [], makerOf: new Map(), models: [], entries: new Map(), hidden: new Map(), hiddenNewest: new Map() };
     if (!attr) return empty;
 
     const visible = { OR: [{ orgId: null }, { orgId }], status: 'APPROVED' as const, retiredAt: null };
@@ -98,16 +123,19 @@ export class IndemnificationLookupService {
     })) as EntryRow[];
     const entries = new Map<string, EntryRow[]>();
     const hidden = new Map<string, number>();
+    const hiddenNewest = new Map<string, string>();
     for (const e of entryRows) {
       if (e.source === 'NSSRA' && !nssraMember) {
         hidden.set(e.nodeId, (hidden.get(e.nodeId) ?? 0) + 1);
+        // Newest season first, so the first seen is the newest.
+        if (!hiddenNewest.has(e.nodeId)) hiddenNewest.set(e.nodeId, e.season);
         continue;
       }
       const list = entries.get(e.nodeId);
       if (list) list.push(e);
       else entries.set(e.nodeId, [e]);
     }
-    return { nssraMember, latestSeason, programs, makers, makerOf, models, entries, hidden };
+    return { nssraMember, latestSeason, programs, makers, makerOf, models, entries, hidden, hiddenNewest };
   }
 
   private lines(e: EntryRow): IndemnificationLine[] {
@@ -138,6 +166,12 @@ export class IndemnificationLookupService {
     const programRef = program ? { key: program.key, name: program.name } : { key: latest.programKey, name: latest.programKey };
     const season = program?.latestSeason ?? latest.season;
     const current = held.find((e) => e.season === season);
+    // What this patrol can't see may be newer than what it can: a model on the
+    // members-only list this season isn't lapsed, it's unavailable (D4, D5).
+    const hiddenNewest = reg.hiddenNewest.get(model.id);
+    if (!current && hiddenNewest && hiddenNewest > latest.season) {
+      return { ...base, answer: 'unavailable', season, lastListedSeason: null };
+    }
     if (!current) {
       return {
         ...base,
@@ -193,8 +227,8 @@ export class IndemnificationLookupService {
 
   /** Every token of the query starts a token of "maker model"; brand order, then model. */
   async search(orgId: string, q: string): Promise<BindingLookup[]> {
-    const reg = await this.load(orgId);
     if (!q.trim()) return [];
+    const reg = await this.load(orgId);
     const hits: BindingLookup[] = [];
     for (const m of reg.models) {
       const maker = reg.makerOf.get(m.id)!;

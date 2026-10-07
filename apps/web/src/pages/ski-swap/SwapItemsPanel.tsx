@@ -901,6 +901,8 @@ export default function SwapItemsPanel({
 
             <ItemDescriber
               staff
+              // The indemnified-lists answer is for staff, not a seller's own page (Plan 44).
+              lookups={!selfService}
               orgId={orgId}
               value={form.describer}
               onChange={(describer) => setForm({ ...form, describer })}

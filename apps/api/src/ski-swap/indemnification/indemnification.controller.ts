@@ -1,23 +1,26 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OrDeviceAuthGuard } from '../../common/guards/or-device-auth.guard';
 import { OrgContextGuard } from '../../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../../common/guards/module-enabled.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequireModule } from '../../common/decorators/require-module.decorator';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { RequireDeviceRole } from '../../common/decorators/require-device-role.decorator';
 import { IndemnificationLookupService } from './indemnification-lookup.service';
 import { LookupSearchQueryDto } from '../../contracts/indemnification.contracts';
 
 /**
- * The lookup, for anyone in the patrol (Plan 44 D10).
+ * The lookup, for the patrol's staff and its check-in iPads (Plan 44 D10).
  *
- * Membership and nothing more: `OrgContextGuard` has proven an active
- * membership, and the point is a glance at check-in by whoever is standing
- * there. `JwtAuthGuard` rather than the device-or-user guard: no iPad reads
- * this yet (D13), and the handoff says when that changes. Never under
- * `public/*`.
+ * Not for sellers. They are members of the patrol too, with no ski-swap
+ * permission, and a business seller is a retail shop: exactly who NSSRA's
+ * members-only list is kept from. `ski_swap:report` is the staff floor, as on
+ * the Items list. Never under `public/*`.
  */
 @Controller('orgs/:orgId/ski-swap/bindings/indemnification')
-@UseGuards(JwtAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@RequireDeviceRole('ski_swap.staff_check_in')
+@RequirePermissions('ski_swap:report')
 @RequireModule('ski_swap')
 export class IndemnificationController {
   constructor(private readonly lookup: IndemnificationLookupService) {}

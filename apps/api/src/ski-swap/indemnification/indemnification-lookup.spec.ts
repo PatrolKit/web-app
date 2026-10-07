@@ -24,6 +24,9 @@ const nodes: Node[] = [
   { id: 'pine', parentId: 'larch-model', kind: 'VALUE', label: 'Pine 2.0 15 GW', orgId: null },
   { id: 'flow', parentId: 'larch-model', kind: 'VALUE', label: 'SRX 12 Flow', orgId: null },
   { id: 'el10', parentId: 'elm-model', kind: 'VALUE', label: 'EM 10.0', orgId: null },
+  { id: 'tamarack', parentId: 'mfr', kind: 'VALUE', label: 'Tamarack', orgId: null },
+  { id: 'tamarack-model', parentId: 'tamarack', kind: 'ATTRIBUTE', label: 'Model', orgId: null },
+  { id: 'torque', parentId: 'tamarack-model', kind: 'VALUE', label: 'Torque 14 GW', orgId: null },
 ];
 
 const entries = [
@@ -33,6 +36,9 @@ const entries = [
   { nodeId: 'pine', programKey: 'rowan', season: '2025-26', status: 'LISTED', retail: true, rental: false, demo: false, currentLine: true, nonIso: false, source: 'NSSRA', sourceRef: 'Combined list p.56', note: null },
   { nodeId: 'flow', programKey: 'rowan', season: '2025-26', status: 'FINAL_SEASON', retail: false, rental: false, demo: false, currentLine: false, nonIso: false, source: 'NSSRA', sourceRef: null, note: 'Classic Grip toe piece' },
   // Elm's sheet hasn't arrived for 2025-26: its program is still on 2024-25.
+  // The maker's own sheet last season; this season only the members-only list has it.
+  { nodeId: 'torque', programKey: 'tamarack', season: '2025-26', status: 'LISTED', retail: true, rental: false, demo: false, currentLine: true, nonIso: false, source: 'NSSRA', sourceRef: null, note: null },
+  { nodeId: 'torque', programKey: 'tamarack', season: '2024-25', status: 'LISTED', retail: true, rental: false, demo: false, currentLine: true, nonIso: false, source: 'MANUFACTURER', sourceRef: null, note: null },
   { nodeId: 'el10', programKey: 'elm', season: '2024-25', status: 'LISTED', retail: false, rental: false, demo: false, currentLine: null, nonIso: false, source: 'NSSRA', sourceRef: null, note: null },
 ];
 
@@ -40,9 +46,10 @@ const programs = [
   { key: 'elevate', name: 'Elevate (Maple)', notes: 'Dealer terms.', latestSeason: '2025-26' },
   { key: 'rowan', name: 'Rowan Group', notes: '', latestSeason: '2025-26' },
   { key: 'elm', name: 'Elm', notes: '', latestSeason: '2024-25' },
+  { key: 'tamarack', name: 'Tamarack', notes: '', latestSeason: '2025-26' },
 ];
 
-function makeService(nssraMember: boolean) {
+function makeService(nssraMember: boolean, reads = { n: 0 }) {
   const visible = (n: Node, where: Record<string, unknown>) => {
     const or = where.OR as { orgId: string | null }[] | undefined;
     if (or && !or.some((o) => o.orgId === n.orgId)) return false;
@@ -58,7 +65,7 @@ function makeService(nssraMember: boolean) {
     return true;
   };
   const prisma = {
-    skiSwapSettings: { findUnique: async () => ({ nssraMember }) },
+    skiSwapSettings: { findUnique: async () => { reads.n += 1; return { nssraMember }; } },
     bindingIndemnificationProgram: { findMany: async () => programs },
     taxonomyNode: {
       findMany: async ({ where }: { where: Record<string, unknown> }) => nodes.filter((n) => visible(n, where)),
@@ -149,5 +156,33 @@ describe('a patrol that has not declared NSSRA membership (D5)', () => {
     const { nssraMember, manufacturers } = await service.manufacturers('org-1');
     expect(nssraMember).toBe(false);
     expect(manufacturers.find((m) => m.label === 'Larch')).toMatchObject({ listed: 0, programs: [] });
+  });
+});
+
+describe('what a non-member can\'t see is never read as lapsed (D4, D5)', () => {
+  it('answers unavailable when the newest entry is on the members-only list', async () => {
+    const [torque] = await makeService(false).search('org-1', 'torque');
+    expect(torque).toMatchObject({ answer: 'unavailable', lastListedSeason: null });
+    const [asMember] = await makeService(true).search('org-1', 'torque');
+    expect(asMember).toMatchObject({ answer: 'indemnified', season: '2025-26' });
+  });
+});
+
+describe('the registry, read once a minute per patrol', () => {
+  it('is reused between requests, and read again once cleared', async () => {
+    const reads = { n: 0 };
+    const service = makeService(true, reads);
+    await service.search('org-1', 'glade');
+    await service.models('org-1', 'maple');
+    expect(reads.n).toBe(1);
+    service.invalidate('org-1');
+    await service.search('org-1', 'glade');
+    expect(reads.n).toBe(2);
+  });
+
+  it('isn\'t read for an empty search', async () => {
+    const reads = { n: 0 };
+    expect(await makeService(true, reads).search('org-1', '  ')).toEqual([]);
+    expect(reads.n).toBe(0);
   });
 });

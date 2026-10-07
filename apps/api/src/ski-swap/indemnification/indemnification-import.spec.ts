@@ -1,5 +1,7 @@
 import {
+  liveFirst,
   matchesQuery,
+  planChangesAnything,
   normalizeModel,
   parseEntriesCsv,
   planImport,
@@ -191,5 +193,32 @@ describe('planning an import', () => {
     const plan = planImport(rows, errors, tree, [], programs);
     expect(plan.entries.map((e) => e.season)).toEqual(['2015-16', '2025-26']);
     expect(plan.season).toBe('2025-26');
+  });
+});
+
+describe('a re-run, and which node a row lands on', () => {
+  it('writes nothing when the file has already been imported', () => {
+    const existing = [entry({ season: '2025-26' })];
+    const { rows, errors } = parseEntriesCsv(csv('elevate,Maple,Glade 13 ID,2025-26,listed,retail,yes,,manufacturer,,'), PROGRAMS);
+    const programs = [{ key: 'elevate', latestSeason: '2025-26' }];
+    expect(planChangesAnything(planImport(rows, errors, tree, existing, programs), programs)).toBe(false);
+    // The same file a season on moves the program, so it writes.
+    const behind = [{ key: 'elevate', latestSeason: '2024-25' }];
+    expect(planChangesAnything(planImport(rows, errors, tree, existing, behind), behind)).toBe(true);
+  });
+
+  it('prefers a live node over a retired one that reads the same, every time', () => {
+    const rows = [
+      { id: 'b', retiredAt: new Date(), displayOrder: 10 },
+      { id: 'c', retiredAt: null, displayOrder: 30 },
+      { id: 'a', retiredAt: null, displayOrder: 30 },
+    ];
+    expect(liveFirst(rows).map((r) => r.id)).toEqual(['a', 'c', 'b']);
+  });
+
+  it('names the line a row ends on, past blank lines', () => {
+    const text = csv('', 'elevate,Maple,Glade,2025-26,listed,retail,yes,,bogus,,');
+    const { errors } = parseEntriesCsv(text, PROGRAMS);
+    expect(errors[0]).toMatchObject({ line: 3 });
   });
 });

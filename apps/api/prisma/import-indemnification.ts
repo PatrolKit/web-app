@@ -3,6 +3,8 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import {
   applyImport,
+  liveFirst,
+  planChangesAnything,
   parseEntriesCsv,
   planImport,
   type ExistingEntry,
@@ -27,7 +29,7 @@ const prisma = new PrismaClient();
 async function snapshot(): Promise<TreeSnapshot> {
   const nodes = await prisma.taxonomyNode.findMany({
     where: { orgId: null },
-    select: { id: true, parentId: true, label: true, kind: true, orgId: true },
+    select: { id: true, parentId: true, label: true, kind: true, orgId: true, retiredAt: true, displayOrder: true },
   });
   const attr = findByPath(nodes, BINDING_MANUFACTURER_PATH);
   if (!attr) throw new Error('The tree has no Bindings › Type › Skis › Manufacturer. Seed the taxonomy first.');
@@ -40,7 +42,7 @@ async function snapshot(): Promise<TreeSnapshot> {
         id: m.id,
         label: m.label,
         modelAttrId: modelAttr?.id ?? null,
-        models: modelAttr ? nodes.filter((n) => n.parentId === modelAttr.id && n.kind === 'VALUE').map((n) => ({ id: n.id, label: n.label })) : [],
+        models: modelAttr ? liveFirst(nodes.filter((n) => n.parentId === modelAttr.id && n.kind === 'VALUE')).map((n) => ({ id: n.id, label: n.label })) : [],
       };
     }),
   };
@@ -58,14 +60,16 @@ async function main() {
   const programsPath = join(dir, 'programs.json');
   if (!existsSync(entriesPath)) throw new Error(`No ${entriesPath}`);
 
-  // Program names and notes travel with the season's file.
+  // Program names and notes travel with the season's file. Notes an admin
+  // has already written in Platform Admin are theirs, and stay.
   if (existsSync(programsPath)) {
     const programs = JSON.parse(readFileSync(programsPath, 'utf8')) as { key: string; name: string; notes: string }[];
     for (const p of programs) {
+      const held = await prisma.bindingIndemnificationProgram.findUnique({ where: { key: p.key }, select: { notes: true } });
       await prisma.bindingIndemnificationProgram.upsert({
         where: { key: p.key },
         create: { key: p.key, name: p.name, notes: p.notes ?? '' },
-        update: { name: p.name, notes: p.notes ?? '' },
+        update: { name: p.name, ...(held?.notes.trim() ? {} : { notes: p.notes ?? '' }) },
       });
     }
     console.log(`✓ ${programs.length} programs`);
@@ -87,11 +91,19 @@ async function main() {
   );
   for (const l of plan.lapsing) console.log(`  ${l.programKey}: ${l.models.length} model(s) lapse from ${l.fromSeason} to ${l.toSeason}`);
 
+  if (!planChangesAnything(plan, programRows)) {
+    console.log(`✓ ${season} is already in: nothing to write`);
+    return;
+  }
   const result = await prisma.$transaction(
-    (tx) => applyImport(tx, plan, tree, { actorId: null, fileName: `prisma/indemnification/${season}/entries.csv` }),
+    async (tx) => {
+      const applied = await applyImport(tx, plan, tree, { actorId: null, fileName: `prisma/indemnification/${season}/entries.csv` });
+      // Only a changed tree makes every org's iPads and browsers refetch it.
+      if (applied.treeChanged) await tx.skiSwapSettings.updateMany({ data: { taxonomyVersion: { increment: 1 } } });
+      return applied;
+    },
     { timeout: 180_000, maxWait: 15_000 },
   );
-  await prisma.skiSwapSettings.updateMany({ data: { taxonomyVersion: { increment: 1 } } });
   console.log(`✓ Imported ${season}: ${result.entriesWritten} entries written (import ${result.importId})`);
 }
 

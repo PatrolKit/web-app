@@ -4,6 +4,8 @@ import { TaxonomyService } from '../taxonomy/taxonomy.service';
 import { displayName } from '../../common/util/person';
 import {
   applyImport,
+  liveFirst,
+  planChangesAnything,
   parseEntriesCsv,
   planImport,
   type ExistingEntry,
@@ -11,6 +13,7 @@ import {
   type TreeSnapshot,
 } from './indemnification-import';
 import { BINDING_MODEL_LABEL } from '../taxonomy/binding-tree';
+import { IndemnificationLookupService } from './indemnification-lookup.service';
 import type {
   IndemnificationImportPlan,
   IndemnificationImportRecord,
@@ -29,6 +32,7 @@ export class IndemnificationImportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly taxonomy: TaxonomyService,
+    private readonly lookup: IndemnificationLookupService,
   ) {}
 
   /** The global binding makers and their models, as the planner reads them. */
@@ -40,17 +44,17 @@ export class IndemnificationImportService {
     const makers = await this.prisma.taxonomyNode.findMany({
       where: { parentId: attr.id, kind: 'VALUE', orgId: null },
       select: { id: true, label: true },
-      orderBy: { displayOrder: 'asc' },
+      orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
     });
     const attrs = await this.prisma.taxonomyNode.findMany({
       where: { parentId: { in: makers.map((m) => m.id) }, kind: 'ATTRIBUTE', orgId: null },
       select: { id: true, parentId: true, label: true },
     });
     const modelAttrs = attrs.filter((a) => a.label.trim().toLowerCase() === BINDING_MODEL_LABEL.toLowerCase());
-    const models = await this.prisma.taxonomyNode.findMany({
+    const models = liveFirst(await this.prisma.taxonomyNode.findMany({
       where: { parentId: { in: modelAttrs.map((a) => a.id) }, kind: 'VALUE', orgId: null },
-      select: { id: true, parentId: true, label: true },
-    });
+      select: { id: true, parentId: true, label: true, retiredAt: true, displayOrder: true },
+    }));
     return {
       manufacturerAttrId: attr.id,
       manufacturers: makers.map((m) => {
@@ -65,12 +69,12 @@ export class IndemnificationImportService {
     };
   }
 
-  private async plan(file: Buffer): Promise<{ plan: ImportPlan; tree: TreeSnapshot }> {
+  private async plan(file: Buffer): Promise<{ plan: ImportPlan; tree: TreeSnapshot; programs: { key: string; latestSeason: string | null }[] }> {
     const programs = await this.prisma.bindingIndemnificationProgram.findMany({ select: { key: true, latestSeason: true } });
     const { rows, errors } = parseEntriesCsv(file.toString('utf8'), new Set(programs.map((p) => p.key)));
     const tree = await this.snapshot();
     const existing = (await this.prisma.bindingIndemnification.findMany()) as ExistingEntry[];
-    return { plan: planImport(rows, errors, tree, existing, programs), tree };
+    return { plan: planImport(rows, errors, tree, existing, programs), tree, programs };
   }
 
   /** What the file would do. Nothing written (D8). */
@@ -80,39 +84,49 @@ export class IndemnificationImportService {
     return this.describe(plan, season, null);
   }
 
-  /** The file, written: one transaction, every org's tree version bumped, audited. */
+  /**
+   * The file, written: one transaction, audited inside it. Every org's tree
+   * version bumps only when the tree itself changed (minted nodes, free entry
+   * turned on); entries alone don't make an iPad refetch it. A file that
+   * changes nothing writes nothing.
+   */
   async commit(file: Buffer, season: string, actorId: string, fileName: string | null, ipAddress?: string): Promise<IndemnificationImportPlan> {
     this.assertSeason(season);
-    const { plan, tree } = await this.plan(file);
-    if (plan.errors.length) throw new BadRequestException({ message: 'The file has errors; nothing was imported', errors: plan.errors });
+    const { plan, tree, programs } = await this.plan(file);
+    if (plan.errors.length) {
+      throw new BadRequestException({ message: 'The file has errors; nothing was imported', details: { errors: plan.errors } });
+    }
     if (plan.season && plan.season !== season) {
       throw new BadRequestException(`The file's newest season is ${plan.season}, not ${season}`);
     }
+    if (!planChangesAnything(plan, programs)) return this.describe(plan, season, null);
     const result = await this.prisma.$transaction(
-      (tx) => applyImport(tx, plan, tree, { actorId, fileName }),
+      async (tx) => {
+        const applied = await applyImport(tx, plan, tree, { actorId, fileName });
+        // New global nodes are in every org's tree.
+        if (applied.treeChanged) await tx.skiSwapSettings.updateMany({ data: { taxonomyVersion: { increment: 1 } } });
+        await tx.auditLog.create({
+          data: {
+            actorType: 'user',
+            actorId,
+            action: 'ski_swap.indemnification.imported',
+            targetType: 'BindingIndemnificationImport',
+            targetId: applied.importId,
+            ipAddress: ipAddress ?? null,
+            metadata: {
+              season,
+              fileName,
+              mintedManufacturers: applied.mintedManufacturers,
+              mintedModels: applied.mintedModels,
+              entriesWritten: applied.entriesWritten,
+            },
+          },
+        });
+        return applied;
+      },
       { timeout: 180_000, maxWait: 15_000 },
     );
-    // New global nodes are in every org's tree.
-    await this.prisma.skiSwapSettings.updateMany({ data: { taxonomyVersion: { increment: 1 } } });
-    await this.prisma.auditLog
-      .create({
-        data: {
-          actorType: 'user',
-          actorId,
-          action: 'ski_swap.indemnification.imported',
-          targetType: 'BindingIndemnificationImport',
-          targetId: result.importId,
-          ipAddress: ipAddress ?? null,
-          metadata: {
-            season,
-            fileName,
-            mintedManufacturers: result.mintedManufacturers,
-            mintedModels: result.mintedModels,
-            entriesWritten: result.entriesWritten,
-          },
-        },
-      })
-      .catch(() => {});
+    this.lookup.invalidate();
     return this.describe(plan, season, result.importId);
   }
 
@@ -176,6 +190,7 @@ export class IndemnificationImportService {
       where: { key },
       data: { ...(data.name !== undefined ? { name: data.name } : {}), ...(data.notes !== undefined ? { notes: data.notes } : {}), updatedById: actorId },
     });
+    this.lookup.invalidate();
     return (await this.programs()).find((p) => p.key === key)!;
   }
 

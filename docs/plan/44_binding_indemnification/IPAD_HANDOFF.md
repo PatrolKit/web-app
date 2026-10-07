@@ -4,7 +4,7 @@ What the server now does that the staff iPad can use, and what it must know even
 
 ## 1. The lookup API (online only)
 
-Base: `orgs/:orgId/ski-swap/bindings/indemnification`. User sessions only for now: the routes are behind `JwtAuthGuard` + membership, and a device token is refused. Say when the iPad wants it and the guard changes to the device-or-user one with `@RequireDeviceRole('ski_swap.staff_check_in')`.
+Base: `orgs/:orgId/ski-swap/bindings/indemnification`. Open to the check-in iPad's device token (`ski_swap.staff_check_in`) and to staff with `ski_swap:report`. Sellers are refused (`403`), so a seller-facing screen never calls it.
 
 | Route | Answers |
 |---|---|

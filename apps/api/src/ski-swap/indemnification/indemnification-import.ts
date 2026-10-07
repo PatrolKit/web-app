@@ -67,14 +67,15 @@ export function parseEntriesCsv(text: string, programs: Set<string>): { rows: En
       trim: true,
       bom: true,
       relax_column_count: true,
-    }) as Record<string, string>[];
+      info: true,
+    }).map((rec: { record: Record<string, string>; info: { lines: number } }) => ({ ...rec.record, __line: String(rec.info.lines) }));
   } catch (err) {
     return { rows: [], errors: [{ line: 0, message: `Couldn't read the file: ${(err as Error).message}` }] };
   }
 
   const rows: EntryRow[] = [];
   records.forEach((r, i) => {
-    const line = i + 2; // 1-based, after the header
+    const line = Number(r.__line) || i + 2; // where the row ends in the file
     const program = (r.program ?? '').trim().toLowerCase();
     const manufacturer = (r.manufacturer ?? '').trim().replace(/\s+/g, ' ');
     const model = (r.model ?? '').trim().replace(/\s+/g, ' ');
@@ -349,6 +350,8 @@ export interface ApplyResult {
   mintedManufacturers: number;
   mintedModels: number;
   entriesWritten: number;
+  /** Something every org's tree shows was added or changed: the version bumps. */
+  treeChanged: boolean;
 }
 
 /**
@@ -375,9 +378,6 @@ export async function applyImport(
     if (m.modelAttrId) modelAttrByMakerKey.set(mfrKey(m.label), m.modelAttrId);
     for (const v of m.models) modelIdByKey.set(`${mfrKey(m.label)}\u0000${normalizeModel(v.label)}`, v.id);
   }
-
-  // Unlisted makers stay describable: the question takes typed answers (D1).
-  await tx.taxonomyNode.update({ where: { id: tree.manufacturerAttrId }, data: { allowFreeEntry: true } });
 
   let order = Math.max(0, ...(await tx.taxonomyNode.findMany({
     where: { parentId: tree.manufacturerAttrId }, select: { displayOrder: true },
@@ -473,10 +473,41 @@ export async function applyImport(
     }
   }
 
+  // Unlisted makers stay describable: the question takes typed answers (D1).
+  // Last, and only when it's off: the row is every binding maker's parent, so
+  // holding its lock for the whole import would stall check-in saves that
+  // type a new maker.
+  const freeEntry = await tx.taxonomyNode.updateMany({
+    where: { id: tree.manufacturerAttrId, allowFreeEntry: false },
+    data: { allowFreeEntry: true },
+  });
+
   return {
     importId: record.id,
     mintedManufacturers: plan.mintManufacturers.length,
     mintedModels: plan.mintModels.length,
     entriesWritten: written,
+    treeChanged: plan.mintManufacturers.length + needAttr.size + plan.mintModels.length + freeEntry.count > 0,
   };
+}
+
+/**
+ * Whether a plan writes anything at all. Re-running last August's file is a
+ * no-op: no import record, and nobody's tree is refetched.
+ */
+export function planChangesAnything(plan: ImportPlan, programs: { key: string; latestSeason: string | null }[]): boolean {
+  const latest = new Map(programs.map((p) => [p.key, p.latestSeason]));
+  return plan.mintManufacturers.length > 0 || plan.mintModelAttributes.length > 0 || plan.mintModels.length > 0
+    || plan.entries.some((e) => e.change !== 'unchanged')
+    || plan.programSeasons.some(({ key, season }) => { const at = latest.get(key); return !at || at < season; });
+}
+
+/**
+ * A snapshot's models, live ones first, then in list order: where two nodes
+ * read the same once normalized ("S/Lab 10", "S-Lab 10"), or one was retired,
+ * the planner's first match is the live one, every time.
+ */
+export function liveFirst<T extends { id: string; retiredAt: Date | null; displayOrder: number }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) =>
+    Number(a.retiredAt !== null) - Number(b.retiredAt !== null) || a.displayOrder - b.displayOrder || a.id.localeCompare(b.id));
 }

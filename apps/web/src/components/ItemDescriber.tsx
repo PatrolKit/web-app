@@ -672,6 +672,7 @@ function AttributeField({
   const pendingLabel = answer.freeText?.trim();
   const chosenLabel = chosen?.label ?? pendingLabel ?? '';
   const staff = useContext(StaffEntryContext);
+  const lookups = useContext(LookupsContext);
   const pendingNote = pendingLabel ? (
     <p className="text-xs text-amber-400">
       {staff
@@ -799,10 +800,10 @@ function AttributeField({
 
       {/* A binding maker's model, once picked, says what the indemnified lists
           say about it (Plan 44 D11). A model typed fresh isn't on any yet. */}
-      {attribute.lookup === 'indemnification' && chosen && (
+      {lookups && attribute.lookup === 'indemnification' && chosen && (
         <IndemnificationNote orgId={orgId} nodeId={chosen.id} />
       )}
-      {attribute.lookup === 'indemnification' && !chosen && pendingLabel && (
+      {lookups && attribute.lookup === 'indemnification' && !chosen && pendingLabel && (
         <p className="text-xs text-gray-500">Not on any indemnified list we hold.</p>
       )}
 
@@ -836,6 +837,12 @@ function AttributeField({
 
 /** Whether staff are entering this: a value they type is approved on save, not left for approval. */
 const StaffEntryContext = createContext(false);
+/**
+ * Whether a picked binding model shows what the indemnified lists say (Plan
+ * 44 D11). Staff screens only: the lists aren't for sellers, and the lookup
+ * refuses them.
+ */
+const LookupsContext = createContext(false);
 
 export interface ItemDescriberProps {
   orgId: string;
@@ -846,10 +853,12 @@ export interface ItemDescriberProps {
   staff?: boolean;
   /** Rendered under the questions, so the preview sits beside the price. */
   renderPreview?: (name: string, detail: { parts: number }) => React.ReactNode;
+  /** Show the indemnified-lists answer beside a picked binding model: staff screens only. */
+  lookups?: boolean;
 }
 
 export default function ItemDescriber({
-  orgId, value, onChange, layout = 'stacked', renderPreview, staff = false,
+  orgId, value, onChange, layout = 'stacked', renderPreview, staff = false, lookups = false,
 }: ItemDescriberProps) {
   /**
    * Which question is open. One at a time — two open rows is the stack of
@@ -1012,6 +1021,7 @@ export default function ItemDescriber({
 
   return (
     <StaffEntryContext.Provider value={staff}>
+    <LookupsContext.Provider value={lookups}>
       <div className="space-y-3">
         {/* Collapses to a header once picked, with the way back out beside it. */}
         <div className="flex items-center justify-between gap-2 pb-1 border-b border-gray-800">
@@ -1136,6 +1146,7 @@ export default function ItemDescriber({
 
         {renderPreview ? renderPreview(preview, { parts: parts.length }) : null}
       </div>
+    </LookupsContext.Provider>
     </StaffEntryContext.Provider>
   );
 }

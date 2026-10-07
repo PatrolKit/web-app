@@ -1,10 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { SkiSwapSettingsResponse } from '../contracts/ski-swap.contracts';
 import type { DevicePinResponse } from '../contracts/devices.contracts';
 import { PlatformSettingsService } from '../platform/platform-settings.service';
 import { basisPointsToPercent, percentToBasisPoints } from './payouts/money';
-import { displayName } from '../common/util/person';
+import { IndemnificationLookupService } from './indemnification/indemnification-lookup.service';
 
 const DEFAULT_LABELS_PER_ITEM = 1;
 
@@ -18,6 +18,8 @@ export class SkiSwapSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly platform: PlatformSettingsService,
+    /** Cleared when the NSSRA declaration changes, so the lookup follows at once. */
+    @Optional() private readonly indemnification?: IndemnificationLookupService,
   ) {}
 
   async get(orgId: string): Promise<SkiSwapSettingsResponse> {
@@ -72,12 +74,15 @@ export class SkiSwapSettingsService {
     const by = row?.nssraMemberSetBy
       ? await this.prisma.user.findUnique({
           where: { id: row.nssraMemberSetBy },
-          select: { firstName: true, lastName: true, email: true, phone: true },
+          select: { firstName: true, lastName: true },
         })
       : null;
+    // A name or nothing: this reaches every reporter and the check-in iPads,
+    // and an email or phone number isn't theirs to read.
+    const name = by ? [by.firstName, by.lastName].map((s) => s?.trim()).filter(Boolean).join(' ') : '';
     return {
       nssraMember: row?.nssraMember ?? false,
-      nssraMemberSetBy: by ? displayName(by) : null,
+      nssraMemberSetBy: name || null,
       nssraMemberSetAt: row?.nssraMemberSetAt?.toISOString() ?? null,
     };
   }
@@ -139,6 +144,7 @@ export class SkiSwapSettingsService {
     });
 
     if ('nssraMember' in nssra) {
+      this.indemnification?.invalidate(orgId);
       await this.prisma.auditLog.create({
         data: {
           actorType: 'user',

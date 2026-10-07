@@ -126,12 +126,12 @@ export default function BindingsPage() {
   const [makerId, setMakerId] = useState<string | null>(null);
   const q = useDebounced(query.trim(), 250);
 
-  const { data: makers, isLoading } = useQuery({
+  const { data: makers, isLoading, error: makersError } = useQuery({
     queryKey: ['indemnification/manufacturers', orgId],
     queryFn: () => api.skiSwap.indemnification.manufacturers(orgId),
     staleTime: 60_000,
   });
-  const { data: hits, isFetching: searching } = useQuery({
+  const { data: hits, isFetching: searching, error: searchError } = useQuery({
     queryKey: ['indemnification/search', orgId, q],
     queryFn: () => api.skiSwap.indemnification.search(orgId, q),
     enabled: q.length > 0,
@@ -176,11 +176,16 @@ export default function BindingsPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           aria-label="Search bindings"
+          maxLength={120}
         />
       </div>
 
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading…</p>
+      ) : makersError ? (
+        <p className="text-sm text-red-400">
+          Couldn't load the lists{makersError instanceof Error && makersError.message ? `: ${makersError.message}` : '.'}
+        </p>
       ) : !loaded ? (
         <p className="text-sm text-gray-500">No lists loaded yet.</p>
       ) : (
@@ -219,7 +224,9 @@ export default function BindingsPage() {
                 {maker.programs.length > 0 && <> · {maker.programs.map((p) => p.name).join(', ')}</>}
               </p>
             )}
-            {mode !== 'idle' && list.length === 0 && !searching && (
+            {mode === 'search' && searchError && !searching ? (
+              <p className="text-sm text-red-400">Couldn't search. Try a shorter search.</p>
+            ) : mode !== 'idle' && list.length === 0 && !searching && (
               <p className="text-sm text-gray-500">Nothing matches.</p>
             )}
             <ul>

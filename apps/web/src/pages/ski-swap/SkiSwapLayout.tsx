@@ -200,9 +200,10 @@ export default function SkiSwapLayout() {
           {perms.has('ski_swap:report') && (
             <NavLink to="check-in" className={navClass}>Check-in</NavLink>
           )}
-          {/* Anyone in the patrol: the indemnified-bindings lookup is a glance at
-              check-in, and needs no permission beyond membership (Plan 44 D10). */}
-          <NavLink to="bindings" className={navClass}>Bindings</NavLink>
+          {/* Staff: the indemnified lists aren't for sellers (Plan 44 D10). */}
+          {perms.has('ski_swap:report') && (
+            <NavLink to="bindings" className={navClass}>Bindings</NavLink>
+          )}
           {/* The route stays /printers: the page has held bridges as well as
               printers for a while, and now scanners too, so only the label was
               ever wrong. Renaming the path would break saved links for nothing. */}
