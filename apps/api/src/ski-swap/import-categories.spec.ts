@@ -84,6 +84,13 @@ describe('an import with categories and details (Plan 42)', () => {
     expect(t.patched[0].data).toMatchObject({ name: 'Volkl Mantra 84 177', categoryId: 'skis', priceCents: 4500, deferPos: true });
   });
 
+  it('composes the name when the file’s only repeats the category, so details reach the tag', async () => {
+    const t = importer([ticket(101, 2), ticket(102, 3)]);
+    await t.service.importItems('org-1', 'swap-1', 'seller-1', [row('101', 'Skis', 'Skis', 'Volkl'), row('102', 'ski', 'Skis', 'Volkl')], { selfService: false, headers });
+    expect(t.patched.map((p) => p.data.name)).toEqual([undefined, undefined]);
+    expect(t.patched[0].data).toMatchObject({ categoryId: 'skis' });
+  });
+
   it('reads the tree once for the whole file', async () => {
     const t = importer(checked);
     await t.service.importItems('org-1', 'swap-1', 'seller-1', file, { selfService: false, headers, acceptUnknown: true });

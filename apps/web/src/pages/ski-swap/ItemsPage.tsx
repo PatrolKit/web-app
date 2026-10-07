@@ -105,6 +105,7 @@ export default function ItemsPage() {
       sellers={sellers}
       queryKeyPrefix="ski-swap/items"
       labelsPerItem={labelsPerItem}
+      batchPrint={canManage}
       actions={canManage ? [
         // Where the swap takes legacy tickets, or has some waiting for a
         // price (Plan 37).

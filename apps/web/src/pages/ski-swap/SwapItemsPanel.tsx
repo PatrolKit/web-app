@@ -6,6 +6,7 @@ import { faCheckDouble as faCheckDoubleDuo, faPlus as faPlusDuo, faTicket as faT
 import type { ItemAttributeInput, ItemListSort, ItemListStatus, ItemListView, ItemResponse, SellerResponse } from '../../lib/api.types';
 import SearchableSelect from '../../components/SearchableSelect';
 import ActionsMenu, { type MenuAction } from '../../components/ActionsMenu';
+import BatchPrintModal from './BatchPrintModal';
 import ItemDescriber, {
   emptyDescriber, toAttributeInputs, NamePreview, type DescriberState,
 } from '../../components/ItemDescriber';
@@ -109,6 +110,8 @@ export interface SwapItemsPanelProps {
   sellers?: SellerResponse[];
   emptyMessage?: string;
   labelsPerItem?: number;
+  /** Offer "Batch print" for the rows on screen: staff's Items page. */
+  batchPrint?: boolean;
   /**
    * The page's own actions, in the toolbar's one Actions menu after Add item:
    * the staff page's fast edit and seller import, a shop's file upload.
@@ -262,7 +265,7 @@ export function itemState(item: ItemResponse): {
 
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService,
-  showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1,
+  showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1, batchPrint = false,
   tickets, actions = [], toolbarNote, addBlockedBecause,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
@@ -300,6 +303,8 @@ export default function SwapItemsPanel({
   const [editItem, setEditItem] = useState<ItemResponse | null>(null);
   const [printingItem, setPrintingItem] = useState(false);
   const [showUnsupportedModal, setShowUnsupportedModal] = useState(false);
+  /** The rows being batch printed, as they were when it was opened. */
+  const [batchPrinting, setBatchPrinting] = useState<ItemResponse[] | null>(null);
   const [pendingPhoto, setPendingPhoto] = useState<{ file: File; preview: string } | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
@@ -562,6 +567,25 @@ export default function SwapItemsPanel({
         }]
       : []),
     ...actions,
+    // Every label on screen, one after another. Only when none of them is a
+    // legacy ticket: those carry their tag from a box, and a page mixing the
+    // two is a page that would print some and skip the rest.
+    ...(batchPrint
+      ? [{
+          key: 'batch-print',
+          label: total > items.length ? `Batch print this page (${items.length})` : `Batch print (${items.length})`,
+          icon: faPrintDuo,
+          disabledReason: items.length === 0
+            ? 'No items on screen.'
+            : items.some((i) => i.legacyTicket)
+              ? 'Only when every item on screen has a printed label. Filter out the legacy tickets first.'
+              : undefined,
+          onSelect: () => {
+            if (!isWebBluetoothSupported()) { setShowUnsupportedModal(true); return; }
+            setBatchPrinting(items);
+          },
+        }]
+      : []),
     ...(sellerFilter && panelApi.consignAllForSeller && waitingHere > 0 && !consignAll.data
       ? [{
           key: 'accept',
@@ -1024,6 +1048,16 @@ export default function SwapItemsPanel({
 
       {/* Printer selector modal */}
       {/* (removed — browser picker handles selection via PrinterContext) */}
+
+      {batchPrinting && (
+        <BatchPrintModal
+          items={batchPrinting}
+          labelsPerItem={labelsPerItem}
+          printItem={printItem}
+          markPrinted={async (item) => { replaceRow(await panelApi.patchItem(item.id, { hasPrintedTag: true })); }}
+          onClose={() => setBatchPrinting(null)}
+        />
+      )}
 
       {/* Unsupported browser modal */}
       {showUnsupportedModal && (

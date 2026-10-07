@@ -971,9 +971,11 @@ export class ItemService {
 
     // Matched before deciding anything, so a refused file lists its unknowns
     // beside its row errors and both can be fixed in one go.
-    const matched: MatchedFile = opts.headers?.length
-      ? matchImportDetails(opts.headers, rows.map((r) => r.cells ?? []), await this.taxonomy.resolve(orgId, { full: true }))
+    const tree = opts.headers?.length ? await this.taxonomy.resolve(orgId, { full: true }) : null;
+    const matched: MatchedFile = tree
+      ? matchImportDetails(opts.headers!, rows.map((r) => r.cells ?? []), tree)
       : { rows: rows.map(() => ({ attributes: [], unknown: [] })), ignoredColumns: [] };
+    const categoryLabel = new Map((tree?.categories ?? []).map((c) => [c.id, c.label]));
     matched.rows.forEach((m, i) => {
       if (m.categoryId) results[i] = { ...results[i], categoryId: m.categoryId };
       if (m.unknown.length) results[i] = { ...results[i], unknown: m.unknown };
@@ -1009,7 +1011,10 @@ export class ItemService {
       const { categoryId, attributes } = matched.rows[i];
       // Only what matched; an unknown category leaves the row as it was.
       const described = categoryId ? { categoryId, attributes, taxonomyNodes } : {};
-      const name = rows[i].name?.trim();
+      // A name that only repeats the category ("Ski boots") says nothing the
+      // details don't: the item gets its composed name ("Ski boots 26.5").
+      const fileName = rows[i].name?.trim();
+      const name = fileName && categoryId && isJustTheCategory(fileName, categoryLabel.get(categoryId)) ? undefined : fileName;
 
       // A ticket row fills in the issued ticket it names (Plan 38): the ticket
       // exists from the moment it was issued, so there's nothing to create.
@@ -1584,3 +1589,10 @@ function ticketPriced(sku: string, priceCents: number | null): ConflictException
 // Lives with the SKU helpers so the ticket service can use it too; re-exported
 // here for everything that has always imported it from this file.
 export { uncategorisedName };
+
+/** Whether a file's name is only its category's label, in any case or number ("ski boot", "Ski Boots"). */
+export function isJustTheCategory(name: string, label: string | undefined): boolean {
+  if (!label) return false;
+  const norm = (x: string) => x.trim().toLowerCase().replace(/\s+/g, ' ').replace(/s$/, '');
+  return norm(name) === norm(label);
+}
