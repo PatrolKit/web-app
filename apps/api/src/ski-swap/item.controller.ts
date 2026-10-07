@@ -18,7 +18,8 @@ import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ItemService, decodeCursor } from './item.service';
 import { LegacyTicketService } from './legacy-ticket.service';
 import { IssuedTicketService } from './issued-ticket.service';
-import { BatchTicketsDto, CreateItemDto, PatchItemDto } from '../contracts/ski-swap.contracts';
+import { BatchTicketsDto, CreateItemDto, PatchItemDto, ReturnBySkuDto, ReturnItemDto } from '../contracts/ski-swap.contracts';
+import { ItemReturnService, type ReturnActor } from './item-return.service';
 import type { Request, Response } from 'express';
 import { isImportGuideFile } from './import-guide';
 
@@ -33,6 +34,7 @@ export class ItemController {
     private readonly itemService: ItemService,
     private readonly tickets: LegacyTicketService,
     private readonly issued: IssuedTicketService,
+    private readonly returns: ItemReturnService,
   ) {}
 
   @Get()
@@ -160,6 +162,65 @@ export class ItemController {
     @Param('sku') sku: string,
   ) {
     return this.itemService.findBySku(orgId, swapId, sku);
+  }
+
+  // ─── Returning unsold items to their sellers (Plan 43) ─────────────────────
+
+  /**
+   * The web scanner's return, by the SKU on the tag: one request per scan, so
+   * what the screen says is what was done. Staff on the web only.
+   */
+  @Post('return-by-sku')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:manage')
+  @NoDeviceAccess()
+  returnBySku(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Body() body: ReturnBySkuDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.returns.returnBySku(orgId, swapId, body.sku, { type: 'user', id: user.userId }, { sellerId: body.sellerId });
+  }
+
+  /** A locked session's list (D5): the seller's items still out. */
+  @Get('unreturned')
+  @RequirePermissions('ski_swap:manage')
+  @NoDeviceAccess()
+  unreturned(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @Query('sellerId') sellerId?: string) {
+    if (!sellerId) throw new BadRequestException('sellerId is required');
+    return this.returns.unreturned(orgId, swapId, sellerId);
+  }
+
+  /**
+   * Returns one item: the iPad's path, queued offline and replayed with its
+   * `Idempotency-Key`, and staff's. A double return answers `already_returned`.
+   */
+  @Post(':itemId/return')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:manage')
+  returnItem(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Param('itemId') itemId: string,
+    @Body() body: ReturnItemDto,
+    @Req() req: Request & { user?: { userId: string }; device?: { deviceId: string } },
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.returns.returnItem(orgId, swapId, itemId, actorOf(req), body, idempotencyKey);
+  }
+
+  /** Undoes a return (D4): back on sale. Staff on the web only. */
+  @Delete(':itemId/return')
+  @RequirePermissions('ski_swap:manage')
+  @NoDeviceAccess()
+  undoReturn(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.returns.undo(orgId, swapId, itemId, { type: 'user', id: user.userId });
   }
 
   /**
@@ -337,4 +398,11 @@ export class ItemController {
   ) {
     await this.itemService.deletePhoto(orgId, swapId, itemId, photoId);
   }
+}
+
+/** Who is acting: a staff member, or the check-in iPad. */
+function actorOf(req: { user?: { userId: string }; device?: { deviceId: string } }): ReturnActor {
+  if (req.user?.userId) return { type: 'user', id: req.user.userId };
+  if (req.device?.deviceId) return { type: 'device', id: req.device.deviceId };
+  throw new BadRequestException('No one to act as');
 }

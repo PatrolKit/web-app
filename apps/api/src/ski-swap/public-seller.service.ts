@@ -87,6 +87,8 @@ export class PublicSellerService {
         donateProceeds: true,
         consignedAt: true,
         squareVariationId: true,
+        returnedAt: true,
+        returnedUnits: true,
       },
     });
 
@@ -129,6 +131,17 @@ export class PublicSellerService {
           swapId: s.swapId,
           swapTitle: s.swapTitle,
           items: s.items.map((item) => {
+            // Handed back (Plan 43): out of Square, so its count there says
+            // nothing. What didn't go home sold; the rest went back.
+            if (item.returnedAt) {
+              const back = item.returnedUnits ?? item.originalQuantity;
+              return {
+                itemId: item.id, name: item.name, sku: item.sku, priceCents: item.priceCents,
+                originalQuantity: item.originalQuantity, inStock: 0,
+                soldCount: Math.max(0, item.originalQuantity - back), inventoryKnown: true,
+                donateProceeds: item.donateProceeds, consigned: true, returnedAt: item.returnedAt.toISOString(),
+              };
+            }
             // Only an item in Square has stock to not know about. Anything
             // not there yet has all of its stock, by our own record.
             const inventoryKnown = counts !== null || !item.squareVariationId;
@@ -150,6 +163,7 @@ export class PublicSellerService {
               // A date rather than the date: the seller is told whether their item
               // was taken, not when a volunteer got to it.
               consigned: item.consignedAt !== null,
+              returnedAt: null,
             };
           }),
         };

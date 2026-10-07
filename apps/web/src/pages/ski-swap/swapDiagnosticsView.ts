@@ -53,6 +53,10 @@ const ORDER: { kind: DiagnosticIssueKind; field: DiagnosticField | null; title: 
     kind: 'only_square', field: null, title: 'In Square, not in PatrolKit',
     explain: 'The register can sell these, but no seller would be paid for them.',
   },
+  {
+    kind: 'returned', field: null, title: 'Returned, still in Square',
+    explain: 'Handed back to their sellers, but taking them out of Square failed: the register could still sell them.',
+  },
 ];
 
 export const CHOICE_LABEL: Record<DiagnosticChoice, string> = {
@@ -62,6 +66,7 @@ export const CHOICE_LABEL: Record<DiagnosticChoice, string> = {
   use_ours: 'Use ours',
   link: 'Link to it',
   keep: 'Keep this copy',
+  remove_from_square: 'Remove from Square',
   resolve: 'Mark resolved',
 };
 
@@ -74,6 +79,7 @@ export function groupChoiceLabel(choice: DiagnosticChoice, n: number): string {
     case 'use_square': return `Use Square’s for all ${count}`;
     case 'use_ours': return `Use ours for all ${count}`;
     case 'link': return `Link all ${count}`;
+    case 'remove_from_square': return `Remove all ${count} from Square`;
     case 'resolve': return `Mark all ${count} resolved`;
     default: return CHOICE_LABEL[choice];
   }

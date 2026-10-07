@@ -174,7 +174,8 @@ export class ItemService {
       ...(opts.printed === undefined ? {} : { hasPrintedTag: opts.printed }),
       // Each is a fact about our own row (D2): never a Square read.
       ...(opts.status === 'not_received' ? { consignedAt: null } : {}),
-      ...(opts.status === 'not_in_square' ? { consignedAt: { not: null } } : {}),
+      ...(opts.status === 'not_in_square' ? { consignedAt: { not: null }, returnedAt: null } : {}),
+      ...(opts.status === 'returned' ? { returnedAt: { not: null } } : {}),
       ...(opts.status === 'needs_price' ? { priceCents: null } : {}),
     };
 
@@ -1525,20 +1526,28 @@ export class ItemService {
     return this.taxonomy.describeItems(items);
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number | null; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number> | null, descriptions?: Map<string, ItemDescription>): ItemResponse {
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number | null; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; returnedAt?: Date | null; returnedByName?: string | null; returnedUnits?: number | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number> | null, descriptions?: Map<string, ItemDescription>): ItemResponse {
     // Only an item in Square has stock to not know about. For everything else
     // the answer is a fact about our own row, whatever Square is doing.
-    const inventoryKnown = inventoryMap !== null || !item.squareVariationId;
+    // A returned item (Plan 43) is out of Square, whose count of it then says
+    // nothing: none in stock, and sold is what didn't go back.
+    const returned = !!item.returnedAt;
+    const inventoryKnown = returned || inventoryMap !== null || !item.squareVariationId;
     // Unknown reads as unsold, not as sold out. Both are guesses; the first
     // sends a buyer to the floor to look, the second sends them home.
-    const inStock = !inventoryKnown
-      ? item.originalQuantity
-      : item.squareVariationId ? (inventoryMap!.get(item.squareVariationId) ?? 0) : 0;
+    const inStock = returned
+      ? 0
+      : !inventoryKnown
+        ? item.originalQuantity
+        : item.squareVariationId ? (inventoryMap!.get(item.squareVariationId) ?? 0) : 0;
+    const soldCount = returned
+      ? Math.max(0, item.originalQuantity - (item.returnedUnits ?? item.originalQuantity))
+      : Math.max(0, item.originalQuantity - inStock);
     return {
       id: item.id, swapId: item.swapId, orgId: item.orgId,
       name: item.name, description: item.description,
       sku: item.sku, priceCents: item.priceCents, originalQuantity: item.originalQuantity,
-      inStock, soldCount: Math.max(0, item.originalQuantity - inStock),
+      inStock, soldCount,
       inventoryKnown,
       squareSynced: !!item.squareItemId && !!item.squareVariationId,
       donateProceeds: item.donateProceeds,
@@ -1548,6 +1557,9 @@ export class ItemService {
       // here and a third in the web client.
       legacyTicket: ticketNumberOf(item.sku) !== null,
       consignedAt: item.consignedAt?.toISOString() ?? null,
+      returnedAt: item.returnedAt?.toISOString() ?? null,
+      returnedBy: item.returnedAt ? (item.returnedByName ?? null) : null,
+      returnedUnits: item.returnedAt ? (item.returnedUnits ?? null) : null,
       deletedAt: item.deletedAt?.toISOString() ?? null,
       seller: item.seller
         ? {

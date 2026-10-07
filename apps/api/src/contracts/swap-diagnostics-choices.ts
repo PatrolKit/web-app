@@ -4,14 +4,14 @@
  * these, and the popover offers the same ones.
  */
 
-export const DIAGNOSTIC_ISSUE_KINDS = ['only_square', 'only_ours', 'differs', 'not_linked', 'twice'] as const;
+export const DIAGNOSTIC_ISSUE_KINDS = ['only_square', 'only_ours', 'differs', 'not_linked', 'twice', 'returned'] as const;
 export type DiagnosticIssueKind = (typeof DIAGNOSTIC_ISSUE_KINDS)[number];
 
 export const DIAGNOSTIC_FIELDS = ['name', 'notes', 'price'] as const;
 export type DiagnosticField = (typeof DIAGNOSTIC_FIELDS)[number];
 
 export const DIAGNOSTIC_CHOICES = [
-  'copy_to_patrolkit', 'copy_to_square', 'use_square', 'use_ours', 'link', 'keep', 'resolve',
+  'copy_to_patrolkit', 'copy_to_square', 'use_square', 'use_ours', 'link', 'keep', 'remove_from_square', 'resolve',
 ] as const;
 export type DiagnosticChoice = (typeof DIAGNOSTIC_CHOICES)[number];
 
@@ -22,4 +22,6 @@ export const CHOICES_FOR: Record<DiagnosticIssueKind, readonly DiagnosticChoice[
   differs: ['use_square', 'use_ours', 'resolve'],
   not_linked: ['link', 'resolve'],
   twice: ['keep', 'resolve'],
+  // Returned to its seller and still in Square (Plan 43 D9): its delete failed.
+  returned: ['remove_from_square', 'resolve'],
 };

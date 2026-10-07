@@ -194,14 +194,24 @@ class StubPosAdapter implements IPosAdapter {
 
   upsertCategory(): Promise<string> { this.refuse(); }
   syncItem(): never { this.refuse(); }
-  deleteItem(): never { this.refuse(); }
+  /** Out of the stub's catalog (Plan 43's returns), as `deleteItems` does. */
+  async deleteItem(posItemId: string): Promise<void> {
+    this.saveCatalog(this.catalog().filter((r) => r.itemId !== posItemId));
+  }
   syncNewItems(): never { this.refuse(); }
   uploadImage(): never { this.refuse(); }
   deleteImage(): never { this.refuse(); }
-  /** No stock in the stub's catalog: an empty answer, which reads as unknown rather than failing a write. */
-  async getInventoryCounts(): Promise<Map<string, number>> {
+  /**
+   * Stock, from `SMOKE_INVENTORY_FILE` ({ variationId: count }) when a script
+   * gives one, so it can say what has sold. Otherwise an empty answer, which
+   * reads as unknown rather than failing a write.
+   */
+  async getInventoryCounts(variationIds: string[] = []): Promise<Map<string, number>> {
     if (!process.env.SMOKE_CATALOG_FILE) this.refuse();
-    return new Map();
+    const path = process.env.SMOKE_INVENTORY_FILE;
+    if (!path || !existsSync(path)) return new Map();
+    const counts = JSON.parse(readFileSync(path, 'utf8')) as Record<string, number>;
+    return new Map(variationIds.filter((id) => id in counts).map((id) => [id, counts[id]]));
   }
   setInitialInventory(): never { this.refuse(); }
   setInventoryPhysicalCount(): never { this.refuse(); }

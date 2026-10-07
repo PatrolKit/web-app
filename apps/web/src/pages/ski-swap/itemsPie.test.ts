@@ -3,9 +3,9 @@ import { percent, pieSlices } from './itemsPie';
 
 describe('the dashboard pie', () => {
   it('draws a slice per kind, in order, skipping empty ones', () => {
-    const slices = pieSlices({ sold: 50, forSale: 30, noPrice: 15, noDescription: 5, notOnSale: 0, total: 100 });
+    const slices = pieSlices({ sold: 45, returned: 5, forSale: 30, noPrice: 15, noDescription: 5, notOnSale: 0, total: 100 });
     expect(slices.map((s) => [s.key, s.count, s.path !== ''])).toEqual([
-      ['sold', 50, true], ['forSale', 30, true], ['noPrice', 15, true], ['noDescription', 5, true], ['notOnSale', 0, false],
+      ['sold', 45, true], ['returned', 5, true], ['forSale', 30, true], ['noPrice', 15, true], ['noDescription', 5, true], ['notOnSale', 0, false],
     ]);
   });
 

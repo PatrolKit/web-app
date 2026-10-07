@@ -695,6 +695,17 @@ export const api = {
     itemImportFile: (orgId: string, swapId: string, file: import('./api.types').ImportGuideFile) =>
       fetchCsv(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/import/${file}`),
     /** One item by the number on its tag, exactly — what a scanner needs. */
+    /** Returns the item with this SKU to its seller (Plan 43); `sellerId` locks it to one. */
+    returnItemBySku: (orgId: string, swapId: string, sku: string, sellerId?: string) =>
+      request<import('./api.types').ReturnResult>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/return-by-sku`, {
+        method: 'POST', body: JSON.stringify({ sku, ...(sellerId ? { sellerId } : {}) }),
+      }),
+    /** Undoes a return: back on sale (Plan 43 D4). */
+    undoItemReturn: (orgId: string, swapId: string, itemId: string) =>
+      request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/return`, { method: 'DELETE' }),
+    /** A seller's items still out, for a locked return session (Plan 43 D5). */
+    unreturnedItems: (orgId: string, swapId: string, sellerId: string) =>
+      request<import('./api.types').UnreturnedItems>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/unreturned?sellerId=${encodeURIComponent(sellerId)}`),
     findItemBySku: (orgId: string, swapId: string, sku: string) =>
       request<import('./api.types').ItemResponse>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/by-sku/${encodeURIComponent(sku)}`,

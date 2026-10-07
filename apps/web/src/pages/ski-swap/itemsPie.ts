@@ -6,7 +6,7 @@ import type { ItemBreakdown } from '../../lib/api.types';
  */
 
 export interface PieSlice {
-  key: 'sold' | 'forSale' | 'noPrice' | 'noDescription' | 'notOnSale';
+  key: 'sold' | 'returned' | 'forSale' | 'noPrice' | 'noDescription' | 'notOnSale';
   label: string;
   count: number;
   /** Tailwind fill and background classes, for the slice and its legend dot. */
@@ -22,6 +22,7 @@ export const PIE = { size: 180, outer: 86, inner: 52 };
 
 const KINDS: Omit<PieSlice, 'count' | 'path' | 'labelAt'>[] = [
   { key: 'sold', label: 'Sold', fill: 'fill-green-500', dot: 'bg-green-500' },
+  { key: 'returned', label: 'Returned', fill: 'fill-violet-400', dot: 'bg-violet-400' },
   { key: 'forSale', label: 'For sale', fill: 'fill-sky-500', dot: 'bg-sky-500' },
   { key: 'noPrice', label: 'No price', fill: 'fill-amber-400', dot: 'bg-amber-400' },
   { key: 'noDescription', label: 'Priced, no description', fill: 'fill-orange-300', dot: 'bg-orange-300' },
@@ -48,11 +49,12 @@ function ringPath(a0: number, a1: number): string {
     + `L ${fmt(i1.x)} ${fmt(i1.y)} A ${inner} ${inner} 0 ${large} 0 ${fmt(i0.x)} ${fmt(i0.y)} Z`;
 }
 
-export function pieSlices(b: Pick<ItemBreakdown, 'sold' | 'forSale' | 'noPrice' | 'noDescription' | 'notOnSale' | 'total'>): PieSlice[] {
+export function pieSlices(b: Pick<ItemBreakdown, 'sold' | 'forSale' | 'noPrice' | 'noDescription' | 'notOnSale' | 'total'> & { returned?: number }): PieSlice[] {
   const total = b.total || 0;
   let at = 0;
   return KINDS.map((k) => {
-    const count = b[k.key];
+    // Absent from a server older than Plan 43: none returned.
+    const count = b[k.key] ?? 0;
     if (!total || count === 0) return { ...k, count, path: '', labelAt: null };
     const span = (count / total) * Math.PI * 2;
     const slice: PieSlice = {

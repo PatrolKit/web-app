@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser, faBuilding, faReceipt, faCheckCircle, faCircle, faTicket } from '@fortawesome/free-solid-svg-icons';
+import { faUser, faBuilding, faReceipt, faCheckCircle, faCircle, faTicket, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SellerImportModal from './SellerImportModal';
 import SellerTicketSource from './SellerTicketSource';
 import IssueTicketRangeModal from './IssueTicketRangeModal';
+import ReturnItemsModal from './ReturnItemsModal';
 import { useFeatures } from '../../lib/features';
 import PrintReceiptModal from './PrintReceiptModal';
 import { payoutGaps } from '@patrolkit/contracts/payout-gaps';
@@ -124,6 +125,8 @@ export default function SellersPage() {
   const [showImport, setShowImport] = useState(false);
   const [receiptSeller, setReceiptSeller] = useState<SellerResponse | null>(null);
   const [ticketSeller, setTicketSeller] = useState<SellerResponse | null>(null);
+  /** Handing this seller's unsold items back (Plan 43): the return screen, locked to them. */
+  const [returnSeller, setReturnSeller] = useState<SellerResponse | null>(null);
   const [form, setForm] = useState<SellerForm>(emptyForm);
   const [sortKey, setSortKey] = useState<SellerSortKey>('displayName');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -845,6 +848,15 @@ export default function SellersPage() {
                         <FontAwesomeIcon icon={faTicket} /> Issue Ticket Range
                       </button>
                     )}
+                    {selectedSwap && s.receiptSwaps.some((w) => w.id === selectedSwap.id) && (
+                      <button
+                        onClick={() => setReturnSeller(s)}
+                        title="Scan this seller’s unsold items as they go back to them"
+                        className="text-xs text-gray-400 hover:text-white flex items-center gap-1 whitespace-nowrap"
+                      >
+                        <FontAwesomeIcon icon={faRotateLeft} /> Return items
+                      </button>
+                    )}
                     {/* Only for a seller with items in an active swap: a receipt
                         lists items, and there is nothing to list otherwise. */}
                     {s.receiptSwaps.length > 0 && (
@@ -875,6 +887,17 @@ export default function SellersPage() {
 
       {ticketSeller && (
         <IssueTicketRangeModal orgId={orgId} seller={ticketSeller} swaps={ticketSwaps} onClose={() => setTicketSeller(null)} />
+      )}
+
+      {returnSeller && selectedSwap && (
+        <ReturnItemsModal
+          orgId={orgId}
+          swapId={selectedSwap.id}
+          sellers={sellers}
+          lockedTo={returnSeller.id}
+          onClose={() => setReturnSeller(null)}
+          onChanged={() => undefined}
+        />
       )}
 
       {receiptSeller && (

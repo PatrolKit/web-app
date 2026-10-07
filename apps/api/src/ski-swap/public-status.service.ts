@@ -44,14 +44,14 @@ export class PublicStatusService {
     const item = sku
       ? await this.prisma.swapItem.findFirst({
           where: { orgId: org.id, swapId: swap.id, sku, deletedAt: null },
-          select: { sku: true, name: true, consignedAt: true, squareVariationId: true, originalQuantity: true },
+          select: { sku: true, name: true, consignedAt: true, squareVariationId: true, originalQuantity: true, returnedAt: true },
         })
       : null;
     if (!item) throw notFound();
 
     // A failed or impossible read is null, which the helper reports as unknown.
     let counts: Map<string, number> | null = null;
-    if (item.consignedAt && item.squareVariationId && swap.locationId) {
+    if (item.consignedAt && !item.returnedAt && item.squareVariationId && swap.locationId) {
       const pos = await this.posFactory.forOrg(org.id).catch(() => null);
       counts = pos ? await pos.getInventoryCounts([item.squareVariationId], swap.locationId).catch(() => null) : null;
     }

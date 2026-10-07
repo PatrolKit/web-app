@@ -390,6 +390,12 @@ export interface ItemResponse {
    * this is set — so null is also the answer to "can this be sold".
    */
   consignedAt: string | null;
+  /** When it was handed back to its seller, unsold (Plan 43), or null. */
+  returnedAt?: string | null;
+  /** Who handed it back, by name. Null unless returned. */
+  returnedBy?: string | null;
+  /** How many went back: the quantity less any sold. Null unless returned. */
+  returnedUnits?: number | null;
   /**
    * When this item was withdrawn, or null.
    *
@@ -504,6 +510,8 @@ export interface TicketSeller {
  */
 export interface ItemBreakdown {
   sold: number;
+  /** Handed back to their sellers, unsold (Plan 43). */
+  returned: number;
   forSale: number;
   /** No price yet. */
   noPrice: number;
@@ -558,7 +566,21 @@ export interface SwapStats {
 }
 
 /** The Items page's filters and sort (Plan 39): every one answered by the server. */
-export type ItemListStatus = 'not_received' | 'not_in_square' | 'needs_price';
+export type ItemListStatus = 'not_received' | 'not_in_square' | 'needs_price' | 'returned';
+
+/** One return's answer (Plan 43). `already_returned` is a double scan, not an error. */
+export interface ReturnResult {
+  item: ItemResponse;
+  outcome: 'returned' | 'already_returned';
+  /** False when Square couldn't be read: returned anyway. */
+  squareChecked: boolean;
+}
+
+/** A locked return session's list: the seller's items still out. */
+export interface UnreturnedItems {
+  items: { id: string; sku: string; name: string; priceCents: number | null; units: number }[];
+  squareChecked: boolean;
+}
 export type ItemListSort = 'sku' | 'name' | 'price' | 'seller' | 'tag';
 export interface ItemListView {
   status?: ItemListStatus;
@@ -892,6 +914,8 @@ export interface PublicSellerDetailItem {
   donateProceeds: boolean;
   /** False while the item is still waiting for a staff member to accept it. */
   consigned: boolean;
+  /** When it was handed back to the seller (Plan 43); absent from an older API. */
+  returnedAt?: string | null;
 }
 
 export interface PublicSellerDetailSwap {
@@ -1356,7 +1380,7 @@ export interface PublicSwapStatusPage {
 export interface PublicSkuStatus {
   sku: string;
   name: string;
-  status: 'not_received' | 'for_sale' | 'sold' | 'unknown';
+  status: 'not_received' | 'for_sale' | 'sold' | 'returned' | 'unknown';
   soldCount?: number;
   quantity?: number;
 }

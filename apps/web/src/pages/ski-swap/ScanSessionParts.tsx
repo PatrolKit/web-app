@@ -32,9 +32,12 @@ export function errorTone() {
   } catch { /* no audio: the red message still says it */ }
 }
 
-/** A banner that can't be missed: red for trouble, green for "go" and "done" (not the brand's red). */
+/**
+ * A banner that can't be missed: red for trouble, green for "go" and "done"
+ * (not the brand's red), amber for done with a caveat (Plan 43's returns).
+ */
 export function Banner({ tone, icon, title, text, action }: {
-  tone: 'error' | 'ready';
+  tone: 'error' | 'ready' | 'warn';
   icon: Parameters<typeof FontAwesomeIcon>[0]['icon'];
   title: string;
   text: string;
@@ -42,10 +45,12 @@ export function Banner({ tone, icon, title, text, action }: {
 }) {
   const look = tone === 'error'
     ? 'bg-red-950/60 border-red-800 text-red-200'
-    : 'bg-green-950/40 border-green-800 text-white';
+    : tone === 'warn'
+      ? 'bg-amber-950/50 border-amber-700 text-amber-100'
+      : 'bg-green-950/40 border-green-800 text-white';
   return (
     <div className={`shrink-0 border rounded-lg px-4 py-3 flex items-center gap-4 ${look}`} role={tone === 'error' ? 'alert' : 'status'}>
-      <FontAwesomeIcon icon={icon} className={`text-3xl shrink-0 ${tone === 'error' ? 'text-red-400' : 'text-green-400'}`} />
+      <FontAwesomeIcon icon={icon} className={`text-3xl shrink-0 ${tone === 'error' ? 'text-red-400' : tone === 'warn' ? 'text-amber-400' : 'text-green-400'}`} />
       <div className="flex-1 min-w-0">
         <p className="text-lg font-semibold">{title}</p>
         <p className="text-sm opacity-80">{text}</p>

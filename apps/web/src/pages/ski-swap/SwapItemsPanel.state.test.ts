@@ -89,8 +89,16 @@ describe('itemState', () => {
    * without asking Square (Plan 39 D2). For sale and Sold aren't filters.
    */
   it('offers the filters the server answers from our own rows', () => {
-    expect(ITEM_STATE_FILTERS.map((f) => f.value)).toEqual(['not_received', 'not_in_square', 'needs_price']);
-    expect(ITEM_STATE_FILTERS.map((f) => f.label)).toEqual(['Not yet received', 'Not in Square', 'Needs a price']);
+    expect(ITEM_STATE_FILTERS.map((f) => f.value)).toEqual(['not_received', 'not_in_square', 'needs_price', 'returned']);
+    expect(ITEM_STATE_FILTERS.map((f) => f.label)).toEqual(['Not yet received', 'Not in Square', 'Needs a price', 'Returned to seller']);
+  });
+
+  it('says returned first, whatever Square counts (Plan 43)', () => {
+    // Out of Square, its count is none: without this it would read as sold.
+    const st = itemState(item({ inStock: 0, squareSynced: true, returnedAt: '2026-10-12T18:00:00.000Z', returnedBy: 'Pat' }));
+    expect(st.key).toBe('returned');
+    expect(st.label).toBe('Returned to seller');
+    expect(st.title).toContain('by Pat');
   });
 
   it('gives every state a tone and an explanation', () => {

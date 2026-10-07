@@ -10,7 +10,7 @@
 import { BadRequestException } from '@nestjs/common';
 
 /** The Items page's status filters (Plan 39 D2): each answered by our own row. */
-export const ITEM_LIST_STATUSES = ['not_received', 'not_in_square', 'needs_price'] as const;
+export const ITEM_LIST_STATUSES = ['not_received', 'not_in_square', 'needs_price', 'returned'] as const;
 export type ItemListStatus = (typeof ITEM_LIST_STATUSES)[number];
 
 export const ITEM_SORTS = ['sku', 'name', 'price', 'seller', 'tag'] as const;

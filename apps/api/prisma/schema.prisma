@@ -557,6 +557,17 @@ model SwapItem {
   /// The audit log carries which of the two, so this does not need to.
   consignedBy String?
 
+  /// Handed back to its seller, unsold (Plan 43). A state of a live item, not
+  /// a delete: it stays on the seller's record and on the iPads. A returned
+  /// item is out of Square, so it can't ring up after it has gone home.
+  returnedAt    DateTime?
+  /// Whoever handed it back: a user id, or a device id when an iPad did.
+  returnedBy    String?   @db.VarChar(191)
+  /// Their name as it was then, for "Already returned by Pat" without a lookup.
+  returnedByName String?  @db.VarChar(191)
+  /// How many went back: the quantity less any sold. 1 for nearly every item.
+  returnedUnits Int?
+
   /// The CATEGORY node this item was described under. Null for an item created
   /// by an importer that only had a name (Plan 19 D12).
   categoryId String?
@@ -589,6 +600,7 @@ model SwapItem {
   @@index([orgId])
   @@index([sellerId])
   @@index([swapId, consignedAt])
+  @@index([swapId, returnedAt])
   @@index([orgId, categoryId])
 }
 

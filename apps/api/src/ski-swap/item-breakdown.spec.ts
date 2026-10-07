@@ -2,7 +2,7 @@ import { breakdown, soldByVariation, ItemBreakdownService, type BreakdownItem } 
 import type { PosSaleLine } from './pos/pos.adapter';
 
 const item = (sku: string, over: Partial<BreakdownItem> = {}): BreakdownItem => ({
-  sku, name: 'Red Skis', priceCents: 4500, categoryId: 'cat', consigned: true,
+  sku, name: 'Red Skis', priceCents: 4500, categoryId: 'cat', consigned: true, returned: false,
   squareItemId: `sq-${sku}`, squareVariationId: `sv-${sku}`, originalQuantity: 1, ...over,
 });
 const sale = (variationId: string, quantity = 1, refundedQuantity = 0): PosSaleLine => ({
@@ -10,6 +10,11 @@ const sale = (variationId: string, quantity = 1, refundedQuantity = 0): PosSaleL
 });
 
 describe('the dashboard pie', () => {
+  it('counts a returned item as returned, unless it sold (Plan 43)', () => {
+    const out = breakdown([item('1', { returned: true, priceCents: null }), item('2', { returned: true })], soldByVariation([sale('sv-2')]));
+    expect(out).toMatchObject({ returned: 1, sold: 1, noPrice: 0 });
+  });
+
   it('puts every item in exactly one slice, sold first', () => {
     const items = [
       item('1'),                                                       // for sale
@@ -22,7 +27,7 @@ describe('the dashboard pie', () => {
       item('7', { priceCents: null, squareVariationId: 'sv-7' }),      // unpriced ticket that sold anyway
     ];
     const sold = soldByVariation([sale('sv-2'), sale('sv-7')]);
-    expect(breakdown(items, sold)).toEqual({ sold: 2, forSale: 1, noPrice: 2, noDescription: 1, notOnSale: 2, total: 8 });
+    expect(breakdown(items, sold)).toEqual({ sold: 2, returned: 0, forSale: 1, noPrice: 2, noDescription: 1, notOnSale: 2, total: 8 });
   });
 
   it('counts an item named by an import, with no category, as described', () => {

@@ -501,6 +501,15 @@ export const ItemResponseSchema = z.object({
    * set — null means it cannot be sold, because it is not in the catalogue.
    */
   consignedAt: z.string().datetime().nullable(),
+  /**
+   * When this item was handed back to its seller, unsold (Plan 43), or null.
+   * A returned item is out of Square and can't sell; it stays on the record.
+   */
+  returnedAt: z.string().datetime().nullable(),
+  /** Who handed it back, as their name read then. Null unless returned. */
+  returnedBy: z.string().nullable(),
+  /** How many went back: the quantity less any sold. Null unless returned. */
+  returnedUnits: z.number().int().nullable(),
   seller: SellerResponseSchema.pick({ id: true, displayName: true, phone: true }).nullable(),
   photos: z.array(z.object({ id: z.string(), url: z.string() })),
   /**
@@ -762,6 +771,27 @@ export const BatchTicketsSchema = z
   })
   .strict();
 export class BatchTicketsDto extends createZodDto(BatchTicketsSchema) {}
+
+/**
+ * Returning an item to its seller (Plan 43). `sellerId` locks the return to
+ * that seller (D5); `returnedAt` is when an offline iPad scanned it (D7).
+ */
+export const ReturnItemSchema = z
+  .object({
+    sellerId: z.string().min(1).optional(),
+    returnedAt: z.string().datetime().optional(),
+  })
+  .strict();
+export class ReturnItemDto extends createZodDto(ReturnItemSchema) {}
+
+/** The web scanner's return: the SKU on the tag. */
+export const ReturnBySkuSchema = z
+  .object({
+    sku: z.string().trim().min(1).max(64),
+    sellerId: z.string().min(1).optional(),
+  })
+  .strict();
+export class ReturnBySkuDto extends createZodDto(ReturnBySkuSchema) {}
 export type TicketSeller = z.infer<typeof TicketSellerSchema>;
 export type TicketFormState = z.infer<typeof TicketFormStateSchema>;
 
@@ -982,6 +1012,8 @@ export const PublicSellerDetailItemSchema = z.object({
    * a seller who checks later can see which of their things were taken.
    */
   consigned: z.boolean(),
+  /** When it was handed back to the seller, unsold (Plan 43), or null. */
+  returnedAt: z.string().datetime().nullable(),
 });
 
 export const PublicSellerDetailSwapSchema = z.object({

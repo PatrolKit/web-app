@@ -15,7 +15,7 @@ import {
 } from '../../contracts/swap-diagnostics.contracts';
 import {
   diagnose, issueKey,
-  type FoundIssue, type IssueKind, type OurDeletedItem, type OurItem, type OurSide, type SquareSide,
+  type FoundIssue, type IssueKind, type OurDeletedItem, type OurItem, type OurReturnedItem, type OurSide, type SquareSide,
 } from './diagnose';
 
 /** A run still marked running this long after its last update was cut off (D9). */
@@ -92,8 +92,8 @@ export class SwapDiagnosticsService {
     });
     await progress;
 
-    const { ours, deleted } = await this.ourItems(swap.id);
-    const found = diagnose({ ours, deleted, square });
+    const { ours, deleted, returned } = await this.ourItems(swap.id);
+    const found = diagnose({ ours, deleted, returned, square });
     const hidden = await this.hiddenKeys(swap.id);
     const kept = found.filter((i) => !hidden.has(`${issueKey(i)}\u0000${i.fingerprint}`));
 
@@ -326,6 +326,13 @@ export class SwapDiagnosticsService {
         });
         return out;
 
+      case 'remove_from_square': {
+        // A returned item whose delete failed (Plan 43 D9): delete it now.
+        const pos = await this.posOrThrow(swap);
+        await each(async (issue) => { await pos.deleteItems([squareOf(issue)!.itemId]); });
+        return out;
+      }
+
       case 'keep':
         await each(async (issue) => {
           const copies = (issue.square as unknown as { copies: SquareSide[] } | null)?.copies ?? [];
@@ -387,26 +394,30 @@ export class SwapDiagnosticsService {
   private async recheck(swap: Swap, skus: string[]): Promise<Map<string, FoundIssue>> {
     const pos = await this.posOrThrow(swap);
     const square = await pos.itemsBySku(swap.squareCategoryId, skus);
-    const { ours, deleted } = await this.ourItems(swap.id, skus);
-    const found = diagnose({ ours, deleted, square, onlySkus: new Set(skus) });
+    const { ours, deleted, returned } = await this.ourItems(swap.id, skus);
+    const found = diagnose({ ours, deleted, returned, square, onlySkus: new Set(skus) });
     return new Map(found.map((i) => [issueKey(i), i]));
   }
 
-  private async ourItems(swapId: string, skus?: string[]): Promise<{ ours: OurItem[]; deleted: OurDeletedItem[] }> {
+  private async ourItems(swapId: string, skus?: string[]): Promise<{ ours: OurItem[]; deleted: OurDeletedItem[]; returned: OurReturnedItem[] }> {
     const rows = await this.prisma.swapItem.findMany({
       where: { swapId, ...(skus ? { sku: { in: skus } } : {}) },
       select: {
-        id: true, sku: true, name: true, description: true, priceCents: true, consignedAt: true, deletedAt: true,
+        id: true, sku: true, name: true, description: true, priceCents: true, consignedAt: true, deletedAt: true, returnedAt: true,
         squareItemId: true, squareVariationId: true,
         seller: { include: SELLER_NAME_INCLUDE },
       },
     });
     const ours: OurItem[] = [];
     const deleted: OurDeletedItem[] = [];
+    const returned: OurReturnedItem[] = [];
     for (const r of rows) {
       const sellerName = sellerDisplayName(r.seller);
       if (r.deletedAt) {
         deleted.push({ id: r.id, sku: r.sku, name: r.name, sellerName });
+      } else if (r.returnedAt) {
+        // Handed back (Plan 43): out of Square on purpose, so not compared.
+        returned.push({ id: r.id, sku: r.sku, name: r.name, sellerName });
       } else {
         ours.push({
           id: r.id, sku: r.sku, name: r.name, description: r.description, priceCents: r.priceCents,
@@ -414,7 +425,7 @@ export class SwapDiagnosticsService {
         });
       }
     }
-    return { ours, deleted };
+    return { ours, deleted, returned };
   }
 
   private async hiddenKeys(swapId: string): Promise<Set<string>> {
