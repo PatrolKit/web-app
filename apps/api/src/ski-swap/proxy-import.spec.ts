@@ -43,7 +43,7 @@ describe('reading a shop’s file', () => {
       csv('sku,price,name,description\n67169,180.00,Salomon boots,27.5 mondo\n'),
     );
 
-    expect(rows[0]).toEqual({
+    expect(rows[0]).toMatchObject({
       sku: '67169', priceCents: 18000, name: 'Salomon boots', description: '27.5 mondo',
     });
   });
@@ -64,7 +64,18 @@ describe('reading a shop’s file', () => {
       csv('ticket,cost,item,notes\n67169,180.00,Boots,27.5\n'),
     );
 
-    expect(rows[0]).toEqual({ sku: '67169', priceCents: 18000, name: 'Boots', description: '27.5' });
+    expect(rows[0]).toMatchObject({ sku: '67169', priceCents: 18000, name: 'Boots', description: '27.5' });
+  });
+
+  it('hands back the header and every cell, for the category and detail columns (Plan 42)', () => {
+    const file = service().parseItemCsv(csv('ticket,Category,Manufacturer\n67169,Skis,Volkl\n'));
+    expect(file.headers).toEqual(['ticket', 'Category', 'Manufacturer']);
+    expect(file.rows[0].cells).toEqual(['67169', 'Skis', 'Volkl']);
+  });
+
+  it('keeps a quote typed inside a cell, as in 42" poles (Plan 42)', () => {
+    const { rows } = service().parseItemCsv(csv('sku,name,Length\n67169,Leki poles,42"\n'));
+    expect(rows[0].cells).toEqual(['67169', 'Leki poles', '42"']);
   });
 
   it('reads a price however it was written', async () => {
@@ -98,13 +109,13 @@ describe('reading a shop’s file', () => {
 
   it('reads a file with no sku column as rows without tickets (Plan 31)', () => {
     // Each row then gets a generated SKU, or an error saying it needs a ticket.
-    expect(service().parseItemCsv(csv('price,name\n180.00,Boots\n')).rows).toEqual([
+    expect(service().parseItemCsv(csv('price,name\n180.00,Boots\n')).rows).toMatchObject([
       { sku: '', name: 'Boots', description: undefined, priceCents: 18000 },
     ]);
   });
 
   it('reads a file with no price column as tickets priced later (Plan 32)', () => {
-    expect(service().parseItemCsv(csv('sku,name\n67169,Boots\n')).rows).toEqual([
+    expect(service().parseItemCsv(csv('sku,name\n67169,Boots\n')).rows).toMatchObject([
       { sku: '67169', name: 'Boots', description: undefined, priceCents: null },
     ]);
   });

@@ -1,7 +1,7 @@
 import {
   BadRequestException,
-  Body, Controller, Delete, Get, Headers, HttpCode, Param,
-  Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors,
+  Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param,
+  Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { DeviceStockInterceptor } from './device-stock.interceptor';
 import { parseItemListView } from './item-list-order';
@@ -19,7 +19,8 @@ import { ItemService, decodeCursor } from './item.service';
 import { LegacyTicketService } from './legacy-ticket.service';
 import { IssuedTicketService } from './issued-ticket.service';
 import { BatchTicketsDto, CreateItemDto, PatchItemDto } from '../contracts/ski-swap.contracts';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
+import { isImportGuideFile } from './import-guide';
 
 @Controller('orgs/:orgId/ski-swap/swaps/:swapId/items')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
@@ -211,6 +212,18 @@ export class ItemController {
     return this.itemService.consignAllForSeller(orgId, swapId, sellerId, actorId);
   }
 
+  /** The downloads beside an upload (Plan 42): a template, an example, and the categories and details. */
+  @Get('import/:file')
+  @RequirePermissions('ski_swap:manage')
+  @NoDeviceAccess()
+  async importGuide(@Param('orgId') orgId: string, @Param('file') file: string, @Res() res: Response): Promise<void> {
+    if (!isImportGuideFile(file)) throw new NotFoundException();
+    const { csv, filename } = await this.itemService.importGuide(orgId, file);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.end(csv);
+  }
+
   /**
    * A shop's inventory, uploaded by staff on their behalf.
    *
@@ -228,12 +241,15 @@ export class ItemController {
     @Param('swapId') swapId: string,
     @UploadedFile() file: Express.Multer.File,
     @Body('sellerId') sellerId: string,
-    // A multipart field, so a string: "true" turns it on (Plan 31).
+    // Multipart fields, so strings: "true" turns each on (Plans 31, 42).
     @Body('generateSkus') generateSkus?: string,
+    @Body('acceptUnknown') acceptUnknown?: string,
   ) {
     if (!sellerId) throw new BadRequestException('Choose which seller the file is for.');
-    const { rows } = this.tickets.parseItemCsv(file.buffer);
-    return this.itemService.importForSeller(orgId, swapId, sellerId, rows, generateSkus === 'true');
+    return this.itemService.importForSeller(orgId, swapId, sellerId, this.tickets.parseItemCsv(file.buffer), {
+      generateSkus: generateSkus === 'true',
+      acceptUnknown: acceptUnknown === 'true',
+    });
   }
 
   /**

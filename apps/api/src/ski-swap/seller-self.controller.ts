@@ -12,9 +12,13 @@ import {
   Query,
   UploadedFile,
   Headers,
+  NotFoundException,
+  Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { isImportGuideFile } from './import-guide';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
@@ -39,6 +43,21 @@ export class SellerSelfController {
     private readonly tickets: LegacyTicketService,
   ) {}
 
+  /** The downloads beside a shop's upload (Plan 42): a template, an example, and the categories and details. */
+  @Get('items/import/:file')
+  async importGuide(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('file') file: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!isImportGuideFile(file)) throw new NotFoundException();
+    const { csv, filename } = await this.sellerSelfService.importGuide(orgId, user.userId, file);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.end(csv);
+  }
+
   /**
    * A whole inventory at once, for a shop with more items than patience.
    *
@@ -53,11 +72,14 @@ export class SellerSelfController {
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file: Express.Multer.File,
     @Body('swapId') swapId: string,
-    // A multipart field, so a string: "true" turns it on (Plan 31).
+    // Multipart fields, so strings: "true" turns each on (Plans 31, 42).
     @Body('generateSkus') generateSkus?: string,
+    @Body('acceptUnknown') acceptUnknown?: string,
   ) {
-    const { rows } = this.tickets.parseItemCsv(file.buffer);
-    return this.sellerSelfService.importItems(orgId, user.userId, swapId, rows, generateSkus === 'true');
+    return this.sellerSelfService.importItems(orgId, user.userId, swapId, this.tickets.parseItemCsv(file.buffer), {
+      generateSkus: generateSkus === 'true',
+      acceptUnknown: acceptUnknown === 'true',
+    });
   }
 
   /**

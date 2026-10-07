@@ -450,7 +450,40 @@ export interface TicketImportRow {
   error?: string;
   /** A row without a ticket that got a generated SKU (Plan 31). */
   generated?: boolean;
+  /** The issued ticket a ticket row fills in (Plan 38). */
+  itemId?: string;
+  /** The category the row matched (Plan 42). */
+  categoryId?: string;
+  /** Cells that matched nothing, and so aren't stored (Plan 42). */
+  unknown?: ImportUnknown[];
 }
+
+/** A category or detail cell an import couldn't match (Plan 42). */
+export interface ImportUnknown {
+  /** The detail as we spell it, or `category`. */
+  column: string;
+  value: string;
+  reason: 'unknown_category' | 'unknown_value' | 'needs_parent' | 'out_of_range' | 'off_step' | 'not_a_number';
+  /** The row's category, when we know it. */
+  category?: string;
+  /** A nested detail's parent ("Manufacturer"), and the row's answer to it ("Volkl"). */
+  parent?: string;
+  under?: string;
+  /** For a number between the detail's steps: the step it goes in. */
+  step?: number;
+}
+
+/** What an upload answers (Plan 42): each row, and whether the file was written. */
+export interface TicketImportResult {
+  rows: TicketImportRow[];
+  /** Columns that are neither ours nor any category's detail. */
+  ignoredColumns: string[];
+  /** Why nothing was written; null once written. */
+  refused: 'errors' | 'unknown' | null;
+}
+
+/** The downloads beside an item upload (Plan 42). */
+export type ImportGuideFile = 'template.csv' | 'example.csv' | 'details.csv';
 
 /** A seller staff can upload a file for: one holding tickets in this swap. */
 export interface TicketSeller {

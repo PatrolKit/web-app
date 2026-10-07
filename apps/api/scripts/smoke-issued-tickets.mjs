@@ -208,7 +208,9 @@ const upload = async (csv) => {
   form.append('file', new Blob([csv], { type: 'text/csv' }), 'items.csv');
   form.append('swapId', swap.id);
   const res = await fetch(importUrl, { method: 'POST', headers: { authorization: `Bearer ${shopToken}` }, body: form });
-  return { status: res.status, body: await res.json() };
+  const body = await res.json();
+  // The rows, as the upload answered them (Plan 42 puts them under `rows`).
+  return { status: res.status, body: { ...body, data: body.data?.rows } };
 };
 
 // One bad row stops the whole file.

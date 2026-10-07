@@ -53,7 +53,7 @@ describe('an individual seller', () => {
       svc.deleteItem('org-1', 'user-1', 'item-1'),
       svc.uploadPhoto('org-1', 'user-1', 'item-1', photo),
       svc.deletePhoto('org-1', 'user-1', 'item-1', 'photo-1'),
-      svc.importItems('org-1', 'user-1', 'swap-1', []),
+      svc.importItems('org-1', 'user-1', 'swap-1', { headers: [], rows: [] }),
     ]) {
       await expect(attempt).rejects.toBeInstanceOf(ForbiddenException);
     }
@@ -74,7 +74,7 @@ describe('a shop', () => {
     const { svc, calls } = build('Alpine Sports');
     await svc.createItem('org-1', 'user-1', ITEM);
     await svc.updateItem('org-1', 'user-1', 'item-1', { priceCents: 100 });
-    await svc.importItems('org-1', 'user-1', 'swap-1', []);
+    await svc.importItems('org-1', 'user-1', 'swap-1', { headers: [], rows: [] });
     expect(calls).toEqual(['create', 'patch', 'import']);
   });
 });

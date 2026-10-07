@@ -125,6 +125,15 @@ export class TaxonomyService {
    * One query rather than a walk. The tree is small enough that filtering it in
    * memory beats a recursive CTE, and it has to be in memory anyway to nest.
    */
+  /**
+   * Every node `resolveAnswers` reads, once, for a caller describing many
+   * items in a row: a file import, which would otherwise re-read the whole
+   * tree per item (Plan 42 D9).
+   */
+  answerNodes(orgId: string): Promise<NodeRow[]> {
+    return this.visibleNodes(orgId, { approvedOnly: false });
+  }
+
   private async visibleNodes(orgId: string, opts: { approvedOnly: boolean }): Promise<NodeRow[]> {
     return this.prisma.taxonomyNode.findMany({
       where: {
@@ -734,9 +743,9 @@ export class TaxonomyService {
     categoryId: string,
     inputs: ItemAttributeInput[],
     actorId?: string,
-    opts: { approveNew?: boolean } = {},
+    opts: { approveNew?: boolean; nodes?: NodeRow[] } = {},
   ): Promise<ResolvedAnswers> {
-    const nodes = await this.visibleNodes(orgId, { approvedOnly: false });
+    const nodes = opts.nodes ?? (await this.visibleNodes(orgId, { approvedOnly: false }));
     const byId = new Map(nodes.map((n) => [n.id, n]));
 
     const category = byId.get(categoryId);

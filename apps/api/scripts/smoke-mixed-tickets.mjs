@@ -71,14 +71,14 @@ const selfUpload = (headers, csv, generateSkus) => {
   form.append('file', new Blob([csv], { type: 'text/csv' }), 'items.csv');
   form.append('swapId', swap.id);
   if (generateSkus) form.append('generateSkus', 'true');
-  return fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/import`, { method: 'POST', headers, body: form }).then(unwrap);
+  return fetch(`${BASE}/orgs/${org.id}/ski-swap/seller/me/items/import`, { method: 'POST', headers, body: form }).then(unwrap).then((d) => d.rows ?? d); // The rows, under `rows` since Plan 42.
 };
 const staffUpload = (sellerId, csv, generateSkus) => {
   const form = new FormData();
   form.append('file', new Blob([csv], { type: 'text/csv' }), 'items.csv');
   form.append('sellerId', sellerId);
   if (generateSkus) form.append('generateSkus', 'true');
-  return fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}/items/import`, { method: 'POST', headers: S, body: form }).then(unwrap);
+  return fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps/${swap.id}/items/import`, { method: 'POST', headers: S, body: form }).then(unwrap).then((d) => d.rows ?? d); // The rows, under `rows` since Plan 42.
 };
 
 // ─── The swap ────────────────────────────────────────────────────────────────

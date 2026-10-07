@@ -78,7 +78,7 @@ describe('Square after a file import', () => {
   it('writes every row without Square, then sends them in one batch', async () => {
     const t = setup([ticket(86828), ticket(86829)]);
     const results = await t.run();
-    expect(results.map((r) => r.outcome)).toEqual(['updated', 'updated']);
+    expect(results.rows.map((r) => r.outcome)).toEqual(['updated', 'updated']);
     expect(t.patched.every((p) => p.data.deferPos === true)).toBe(true);
     await t.settled();
     expect(t.order).toEqual(['patch', 'patch', 'issued push', 'upsert']);
@@ -113,7 +113,7 @@ describe('Square after a file import', () => {
   it('answers the upload even when Square is down', async () => {
     const t = setup([ticket(86828)], { squareThrows: true });
     const results = await t.run();
-    expect(results[0].outcome).toBe('updated');
+    expect(results.rows[0].outcome).toBe('updated');
     await expect(t.settled()).resolves.toBeUndefined();
     expect(t.stored).toHaveLength(0);
   });

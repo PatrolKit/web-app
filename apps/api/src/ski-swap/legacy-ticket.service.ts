@@ -4,6 +4,7 @@ import { parse as parseCsv } from 'csv-parse/sync';
 import { displayName } from '../common/util/person';
 import type { TicketSeller } from '../contracts/ski-swap.contracts';
 import { uncategorisedName } from './sku.util';
+import { BASE_COLUMNS, type ImportUnknown } from './import-details';
 
 /** A bare ticket number: digits and nothing else. */
 const TICKET_NUMBER = /^\d+$/;
@@ -23,7 +24,30 @@ export type ImportRowResult = {
   generated?: boolean;
   /** The issued ticket a ticket row fills in (Plan 38). */
   itemId?: string;
+  /** The category the row matched (Plan 42). */
+  categoryId?: string;
+  /** Cells that matched nothing, and so aren't stored (Plan 42). */
+  unknown?: ImportUnknown[];
 };
+
+/** One row of an imported file, as parsed. */
+export interface ImportFileRow {
+  sku: string;
+  name?: string;
+  description?: string;
+  priceCents: number | null;
+  /** Every cell, for the category and detail columns (Plan 42). Absent from callers that build rows by hand. */
+  cells?: string[];
+}
+
+/** What an upload answers: each row, and whether the file was written (Plan 42). */
+export interface ImportResult {
+  rows: ImportRowResult[];
+  /** Columns that are neither ours nor any category's detail. */
+  ignoredColumns: string[];
+  /** Why nothing was written: a row error, or unknowns without `acceptUnknown`. Null once written. */
+  refused: 'errors' | 'unknown' | null;
+}
 
 /** How an upload treats rows without a ticket (Plan 31). */
 export interface ImportRules {
@@ -234,9 +258,7 @@ export class LegacyTicketService {
    * from the file entirely. Aliases follow the seller import's approach so that
    * `price`, `Price`, `amount` and `cost` all land on the same field.
    */
-  parseItemCsv(
-    buffer: Buffer,
-  ): { rows: { sku: string; name?: string; description?: string; priceCents: number | null }[] } {
+  parseItemCsv(buffer: Buffer): { headers: string[]; rows: ImportFileRow[] } {
     /**
      * Strict about column counts on purpose, but not about how it says so.
      *
@@ -248,27 +270,30 @@ export class LegacyTicketService {
      */
     let records: string[][];
     try {
-      records = parseCsv(buffer, { skip_empty_lines: true, trim: true });
+      // A quote inside a cell is kept as typed: a shop writes pole lengths as
+      // 42", and a spreadsheet only quotes the cell when it exports it.
+      records = parseCsv(buffer, { skip_empty_lines: true, trim: true, relax_quotes: true });
     } catch (err) {
-      const line = /on line (\d+)/.exec(err instanceof Error ? err.message : '')?.[1];
-      throw new BadRequestException(
-        `Line ${line ?? '?'} has more columns than the header. ` +
-          'A name or description containing a comma has to be in quotes: "170cm, edges good".',
-      );
+      const message = err instanceof Error ? err.message : '';
+      const line = /(?:on|at) line (\d+)/.exec(message)?.[1] ?? '?';
+      if ((err as { code?: string }).code === 'CSV_RECORD_INCONSISTENT_FIELDS_LENGTH') {
+        throw new BadRequestException(
+          `Line ${line} has more columns than the header. ` +
+            'A name or description containing a comma has to be in quotes: "170cm, edges good".',
+        );
+      }
+      throw new BadRequestException(`Line ${line} couldn’t be read: check its quotes. A cell that starts with a quote has to end with one.`);
     }
-    if (!records.length) return { rows: [] };
+    if (!records.length) return { headers: [], rows: [] };
 
     const [rawHeaders, ...dataRows] = records;
     const headers = rawHeaders.map((h) => h.trim().toLowerCase());
     const indexOf = (aliases: string[]) => headers.findIndex((h) => aliases.includes(h));
 
-    const skuAt = indexOf(['sku', 'ticket', 'ticket number', 'number', 'tag']);
-    const nameAt = indexOf(['name', 'item', 'title']);
-    // Its own column, not a name any more. Square shows a description to
-    // buyers, and a shop writing "177cm, small topsheet scratch" means it as
-    // the detail under the title rather than as the title.
-    const descAt = indexOf(['description', 'details', 'notes']);
-    const priceAt = indexOf(['price', 'amount', 'cost', 'value']);
+    const skuAt = indexOf([...BASE_COLUMNS.sku]);
+    const nameAt = indexOf([...BASE_COLUMNS.name]);
+    const descAt = indexOf([...BASE_COLUMNS.description]);
+    const priceAt = indexOf([...BASE_COLUMNS.price]);
 
     // No ticket column is a file of rows without tickets: fine when SKUs are
     // generated, and each row says so when they aren't (`checkImportRows`).
@@ -282,8 +307,10 @@ export class LegacyTicketService {
       // blank cell is no price; anything else that isn't an amount is NaN, and
       // refused as one.
       priceCents: priceOf(priceAt === -1 ? '' : (row[priceAt] ?? '')),
+      // Every cell, for the category and detail columns (Plan 42).
+      cells: row,
     }));
-    return { rows };
+    return { headers: rawHeaders, rows };
   }
 
   /**

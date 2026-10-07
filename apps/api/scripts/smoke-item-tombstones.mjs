@@ -284,7 +284,7 @@ const upload = async (url, tokenToUse, rows, extra = {}) => {
     method: 'POST',
     headers: { authorization: `Bearer ${tokenToUse}` },
     body: form,
-  }).then(unwrap);
+  }).then(unwrap).then((d) => d.rows ?? d); // The rows, under `rows` since Plan 42.
 };
 
 const staffUpload = await upload(`${ITEMS}/import`, token, ['78001', '78002'], {

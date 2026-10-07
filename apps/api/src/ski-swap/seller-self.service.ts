@@ -6,7 +6,8 @@ import type { SellerResponse } from '../contracts/ski-swap.contracts';
 import { SellerService } from './seller.service';
 import { PrintQueueService } from './print-queue.service';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
-import { isUntouched, LegacyTicketService, ticketNumberOf, type TicketFields } from './legacy-ticket.service';
+import type { ImportGuideFile } from './import-guide';
+import { isUntouched, LegacyTicketService, ticketNumberOf, type ImportFileRow, type TicketFields } from './legacy-ticket.service';
 import type { ItemAttributeInput } from './taxonomy/taxonomy.service';
 
 @Injectable()
@@ -103,6 +104,13 @@ export class SellerSelfService {
     return this.itemService.get(orgId, item.swapId, itemId);
   }
 
+  /** A download beside the shop's upload (Plan 42 D12). Shops only, as the upload is. */
+  async importGuide(orgId: string, userId: string, file: ImportGuideFile) {
+    const seller = await this.getSellerRecord(orgId, userId);
+    if (!seller.businessName) throw new ForbiddenException('Only a shop can upload its items from a file.');
+    return this.itemService.importGuide(orgId, file);
+  }
+
   /**
    * The signed-in seller's own inventory, from a file they uploaded.
    *
@@ -113,16 +121,18 @@ export class SellerSelfService {
     orgId: string,
     userId: string,
     swapId: string,
-    rows: { sku: string; name?: string; description?: string; priceCents: number | null }[],
-    generateSkus = false,
+    file: { headers: string[]; rows: ImportFileRow[] },
+    opts: { generateSkus?: boolean; acceptUnknown?: boolean } = {},
   ) {
     const seller = await this.getSellerRecord(orgId, userId);
     if (!seller.businessName) throw new ForbiddenException('Only a shop can upload its items from a file.');
     // The shop's own file: a list of what they mean to bring, none of which
     // anybody has seen. It waits for staff like everything else they enter.
-    return this.itemService.importItems(orgId, swapId, seller.id, rows, {
+    return this.itemService.importItems(orgId, swapId, seller.id, file.rows, {
       selfService: true,
-      generateSkus,
+      generateSkus: opts.generateSkus,
+      headers: file.headers,
+      acceptUnknown: opts.acceptUnknown,
     });
   }
 

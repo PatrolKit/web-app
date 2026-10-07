@@ -1,15 +1,19 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
-import type { TicketImportRow } from '../../lib/api.types';
-import { GenerateSkusSwitch, importedSummary, wroteAny } from './ImportSkuOptions';
+import type { TicketImportResult } from '../../lib/api.types';
+import { GenerateSkusSwitch, wroteAny } from './ImportSkuOptions';
+import ImportFileGuide, { markImportGuideSeen } from './ImportFileGuide';
+import ImportResultPanel from './ImportResultPanel';
 
 /**
  * A shop's whole inventory in one file.
  *
- * Three columns: the ticket number, an optional name, and a price, which a
- * ticket row may leave blank to be priced later (Plan 32). Nothing is
- * written unless every row passes — a half-imported inventory is worse than a
- * rejected one, because the seller cannot tell which half went in.
+ * The ticket number, an optional name and description, a price, which a
+ * ticket row may leave blank to be priced later (Plan 32), and what the item
+ * is (Plan 42). Nothing is written unless every row passes — a half-imported
+ * inventory is worse than a rejected one, because the seller cannot tell which
+ * half went in — or, for categories and details we don't know, until the shop
+ * imports anyway.
  *
  * Rows may skip numbers and go backwards. What the item form suggests has no
  * say here; a pad worked through out of order is exactly the file this accepts.
@@ -30,25 +34,29 @@ export default function TicketItemImportModal({
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [generateSkus, setGenerateSkus] = useState(false);
-  const [rows, setRows] = useState<TicketImportRow[] | null>(null);
+  const [result, setResult] = useState<TicketImportResult | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const failures = rows?.filter((r) => r.outcome === 'error') ?? [];
-  const created = rows?.filter((r) => r.outcome === 'created' || r.outcome === 'updated') ?? [];
+  const wrote = result?.refused === null && wroteAny(result.rows);
+  const clear = () => { setResult(null); setError(''); };
 
-  async function submit() {
+  async function submit(acceptUnknown = false) {
     if (!file) return;
     setBusy(true);
     setError('');
-    setRows(null);
     try {
-      const res = await api.skiSwap.importTicketItems(orgId, swapId, file, allowGenerate && generateSkus);
-      if (!res.success) {
+      const res = await api.skiSwap.importTicketItems(orgId, swapId, file, {
+        generateSkus: allowGenerate && generateSkus,
+        acceptUnknown,
+      });
+      markImportGuideSeen();
+      if (!res.success || !res.data) {
+        setResult(null);
         setError(res.error ?? 'Could not read that file');
       } else {
-        setRows(res.data ?? []);
-        if (wroteAny(res.data)) onImported();
+        setResult(res.data);
+        if (res.data.refused === null && wroteAny(res.data.rows)) onImported();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not read that file');
@@ -65,65 +73,33 @@ export default function TicketItemImportModal({
       >
         <h3 className="text-white font-medium">Import items from a file</h3>
 
-        <div className="text-sm text-gray-400 space-y-2">
-          <p>
-            One row per ticket: it describes that ticket, which can be done once. The ticket
-            number is required{allowGenerate ? ', unless SKUs are generated below for items without a ticket, which need a price' : ''}.
-            A name and a price are optional; a ticket left unpriced is priced at the register.
-          </p>
-          <pre className="bg-surface-100 border border-gray-700 rounded p-3 text-xs text-gray-300 overflow-x-auto">
-{`sku,name,price
-67169,Rossignol Experience 88 skis 170cm,250.00
-67170,,180.00
-67171,Salomon QST boots,`}
-          </pre>
-        </div>
+        <p className="text-sm text-gray-400">
+          A row describes one of your tickets, which can be done once. A ticket left unpriced is priced at the register.
+        </p>
+        <ImportFileGuide download={(f) => api.skiSwap.ticketImportFile(orgId, f)} allowGenerate={allowGenerate} />
 
         {allowGenerate && (
-          <GenerateSkusSwitch checked={generateSkus} onChange={(on) => { setGenerateSkus(on); setRows(null); setError(''); }} />
+          <GenerateSkusSwitch checked={generateSkus} onChange={(on) => { setGenerateSkus(on); clear(); }} />
         )}
 
         <input
           type="file"
           accept=".csv,text/csv"
-          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setRows(null); setError(''); }}
+          onChange={(e) => { setFile(e.target.files?.[0] ?? null); clear(); }}
           className="block w-full text-sm text-gray-300 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-surface-100 file:text-gray-200"
         />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 
-        {rows && failures.length > 0 && (
-          <div className="space-y-2">
-            {/* Nothing was written: the file is reported whole so every problem
-                can be fixed in one pass rather than one upload at a time. */}
-            <p className="text-sm text-amber-400">
-              Nothing was imported. {failures.length} row{failures.length === 1 ? '' : 's'} need
-              {failures.length === 1 ? 's' : ''} fixing first.
-            </p>
-            <ul className="space-y-1 text-xs">
-              {failures.map((r) => (
-                <li key={r.line} className="text-gray-400">
-                  <span className="text-gray-500">Line {r.line}</span>
-                  {r.sku ? <span className="font-mono text-gray-300"> {r.sku}</span> : null}
-                  {' — '}
-                  <span className="text-red-400">{r.error}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {rows && failures.length === 0 && created.length > 0 && (
-          <p className="text-sm text-green-400">{importedSummary(created)}</p>
-        )}
+        {result && <ImportResultPanel result={result} busy={busy} onImportAnyway={() => submit(true)} />}
 
         <div className="flex gap-2 justify-end">
           <button onClick={onClose} className="text-sm text-gray-400 hover:text-white px-3 py-2">
-            {created.length > 0 ? 'Done' : 'Cancel'}
+            {wrote ? 'Done' : 'Cancel'}
           </button>
           <button
-            onClick={submit}
-            disabled={!file || busy}
+            onClick={() => submit()}
+            disabled={!file || busy || wrote}
             className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm disabled:opacity-40"
           >
             {busy ? 'Checking…' : 'Import'}

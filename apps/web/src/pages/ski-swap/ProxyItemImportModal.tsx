@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import type { TicketImportRow, TicketSeller } from '../../lib/api.types';
-import { GenerateSkusSwitch, importedSummary, wroteAny } from './ImportSkuOptions';
+import type { TicketImportResult, TicketSeller } from '../../lib/api.types';
+import { GenerateSkusSwitch, wroteAny } from './ImportSkuOptions';
+import ImportFileGuide, { markImportGuideSeen } from './ImportFileGuide';
+import ImportResultPanel from './ImportResultPanel';
 
 /** "67000–67499", or two blocks for a shop given a second pad. */
 function describeRanges(s: TicketSeller): string {
@@ -17,7 +19,9 @@ function describeRanges(s: TicketSeller): string {
  * go wrong. Three things make a wrong choice a refusal rather than a mess: only
  * sellers holding tickets in this swap are offered, their ranges are shown
  * beside the picker before a file is read, and the server refuses any number
- * outside those ranges by name. Nothing is written unless every row passes.
+ * outside those ranges by name. Nothing is written unless every row passes,
+ * or, for categories and details we don't know, until staff import anyway
+ * (Plan 42).
  */
 export default function ProxyItemImportModal({
   orgId,
@@ -36,7 +40,7 @@ export default function ProxyItemImportModal({
   const [sellerId, setSellerId] = useState('');
   const [generateSkus, setGenerateSkus] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [rows, setRows] = useState<TicketImportRow[] | null>(null);
+  const [result, setResult] = useState<TicketImportResult | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -47,21 +51,25 @@ export default function ProxyItemImportModal({
   });
 
   const chosen = sellers.find((s) => s.sellerId === sellerId) ?? null;
-  const failures = rows?.filter((r) => r.outcome === 'error') ?? [];
-  const created = rows?.filter((r) => r.outcome === 'created' || r.outcome === 'updated') ?? [];
+  const wrote = result?.refused === null && wroteAny(result.rows);
+  const clear = () => { setResult(null); setError(''); };
 
-  async function submit() {
+  async function submit(acceptUnknown = false) {
     if (!file || !sellerId) return;
     setBusy(true);
     setError('');
-    setRows(null);
     try {
-      const res = await api.skiSwap.importItemsForSeller(orgId, swapId, sellerId, file, allowGenerate && generateSkus);
-      if (!res.success) {
+      const res = await api.skiSwap.importItemsForSeller(orgId, swapId, sellerId, file, {
+        generateSkus: allowGenerate && generateSkus,
+        acceptUnknown,
+      });
+      markImportGuideSeen();
+      if (!res.success || !res.data) {
+        setResult(null);
         setError(res.error ?? 'Could not read that file');
       } else {
-        setRows(res.data ?? []);
-        if (wroteAny(res.data)) onImported();
+        setResult(res.data);
+        if (res.data.refused === null && wroteAny(res.data.rows)) onImported();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not read that file');
@@ -82,7 +90,7 @@ export default function ProxyItemImportModal({
           <span className="block text-xs text-gray-400 uppercase tracking-wider">Seller</span>
           <select
             value={sellerId}
-            onChange={(e) => { setSellerId(e.target.value); setRows(null); setError(''); }}
+            onChange={(e) => { setSellerId(e.target.value); clear(); }}
             disabled={isLoading || sellers.length === 0}
             className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white disabled:opacity-50"
           >
@@ -104,68 +112,41 @@ export default function ProxyItemImportModal({
           )}
         </label>
 
-        <div className="text-sm text-gray-400 space-y-2">
-          <p>
-            One row per item. A ticket row fills in that issued ticket: its name, description
-            and price, any of which may be blank. The ticket number is required
-            {allowGenerate ? ', unless SKUs are generated below for items without a ticket, which need a price' : ''}.
-            Rows for numbers the seller doesn’t hold are refused.
-          </p>
-          <pre className="bg-surface-100 border border-gray-700 rounded p-3 text-xs text-gray-300 overflow-x-auto">
-{`sku,price,name,description
-67169,250.00,Rossignol Experience 88 skis,"170cm, edges good"
-67170,180.00,Salomon QST boots,27.5 mondo
-67171,,,Poles`}
-          </pre>
-        </div>
+        <p className="text-sm text-gray-400">
+          A ticket row fills in that issued ticket. Rows for numbers the seller doesn’t hold are refused.
+        </p>
+        <ImportFileGuide download={(f) => api.skiSwap.itemImportFile(orgId, swapId, f)} allowGenerate={allowGenerate} />
 
         {allowGenerate && (
-          <GenerateSkusSwitch checked={generateSkus} onChange={(on) => { setGenerateSkus(on); setRows(null); setError(''); }} />
+          <GenerateSkusSwitch checked={generateSkus} onChange={(on) => { setGenerateSkus(on); clear(); }} />
         )}
 
         <input
           type="file"
           accept=".csv,text/csv"
           disabled={!sellerId}
-          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setRows(null); setError(''); }}
+          onChange={(e) => { setFile(e.target.files?.[0] ?? null); clear(); }}
           className="block w-full text-sm text-gray-300 disabled:opacity-40 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-surface-100 file:text-gray-200"
         />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 
-        {rows && failures.length > 0 && (
-          <div className="space-y-2">
-            {/* Nothing was written: the file is reported whole so every problem
-                can be fixed in one pass rather than one upload at a time. */}
-            <p className="text-sm text-amber-400">
-              Nothing was imported for {chosen?.displayName ?? 'this seller'}.{' '}
-              {failures.length} row{failures.length === 1 ? '' : 's'} need
-              {failures.length === 1 ? 's' : ''} fixing first.
-            </p>
-            <ul className="space-y-1 text-xs">
-              {failures.map((r) => (
-                <li key={r.line} className="text-gray-400">
-                  <span className="text-gray-500">Line {r.line}</span>
-                  {r.sku ? <span className="font-mono text-gray-300"> {r.sku}</span> : null}
-                  {' — '}
-                  <span className="text-red-400">{r.error}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {rows && failures.length === 0 && created.length > 0 && (
-          <p className="text-sm text-green-400">{importedSummary(created, chosen?.displayName ?? 'this seller')}</p>
+        {result && (
+          <ImportResultPanel
+            result={result}
+            forWhom={chosen?.displayName ?? 'this seller'}
+            busy={busy}
+            onImportAnyway={() => submit(true)}
+          />
         )}
 
         <div className="flex gap-2 justify-end">
           <button onClick={onClose} className="text-sm text-gray-400 hover:text-white px-3 py-2">
-            {created.length > 0 ? 'Done' : 'Cancel'}
+            {wrote ? 'Done' : 'Cancel'}
           </button>
           <button
-            onClick={submit}
-            disabled={!file || !sellerId || busy}
+            onClick={() => submit()}
+            disabled={!file || !sellerId || busy || wrote}
             className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm disabled:opacity-40"
           >
             {busy ? 'Checking…' : 'Import'}

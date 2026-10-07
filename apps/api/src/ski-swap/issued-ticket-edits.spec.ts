@@ -93,7 +93,7 @@ describe('a file of ticket rows', () => {
   it('fills in the issued tickets it names, rather than creating any', async () => {
     const { service, patched } = importer(checked);
     const results = await service.importItems('org-1', 'swap-1', 'seller-1', rows, { selfService: false });
-    expect(results.map((r) => r.outcome)).toEqual(['updated', 'updated']);
+    expect(results.rows.map((r) => r.outcome)).toEqual(['updated', 'updated']);
     // The second row only names its ticket: nothing to write.
     expect(patched).toEqual([
       { id: 't67169', data: { name: 'Salomon boots', description: '27.5', priceCents: 18000, deferPos: true } },
@@ -103,7 +103,7 @@ describe('a file of ticket rows', () => {
   it('from a shop, writes nothing if any of its tickets has sold', async () => {
     const { service, patched } = importer(checked, { sold: ['t67170'] });
     const results = await service.importItems('org-1', 'swap-1', 'seller-1', rows, { selfService: true });
-    expect(results[1]).toMatchObject({ outcome: 'error', error: '67170 has sold. Ask the swap’s staff to change it.' });
+    expect(results.rows[1]).toMatchObject({ outcome: 'error', error: '67170 has sold. Ask the swap’s staff to change it.' });
     expect(patched).toHaveLength(0);
   });
 });

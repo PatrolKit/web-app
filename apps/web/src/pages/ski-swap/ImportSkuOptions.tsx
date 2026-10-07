@@ -33,7 +33,10 @@ export function importedSummary(written: TicketImportRow[], forWhom?: string): s
   // Square follows in the background for what's on sale: every ticket, and
   // new items staff imported. A shop's new items wait to be accepted.
   const toSquare = described > 0 || (generated > 0 && !!forWhom);
-  return `${parts.join('; ') || 'Nothing imported'}${whom}.${toSquare ? ' Square catches up over the next minute.' : ''}`;
+  // How many came with a category (Plan 42), when any did.
+  const withCategory = written.filter((r) => r.categoryId).length;
+  const categorized = withCategory ? `, ${withCategory.toLocaleString('en-US')} with a category` : '';
+  return `${parts.join('; ') || 'Nothing imported'}${whom}${categorized}.${toSquare ? ' Square catches up over the next minute.' : ''}`;
 }
 
 /** Whether an import wrote anything: new items, or tickets filled in. */

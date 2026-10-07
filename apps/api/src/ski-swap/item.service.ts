@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Logger,
   Injectable,
   NotFoundException,
@@ -14,7 +15,10 @@ import { IdempotencyService } from '../common/services/idempotency.service';
 import { SkuService } from './sku.service';
 import { PrintQueueService } from './print-queue.service';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
-import { LegacyTicketService, ticketNumberOf, type ImportRowResult } from './legacy-ticket.service';
+import { LegacyTicketService, ticketNumberOf, type ImportFileRow, type ImportResult } from './legacy-ticket.service';
+import { matchImportDetails, type MatchedFile } from './import-details';
+import { IMPORT_GUIDE_FILES, type ImportGuideFile } from './import-guide';
+import type { TaxonomyNode } from '@prisma/client';
 import { IssuedTicketService } from './issued-ticket.service';
 import { TaxonomyService, type ItemAttributeInput, type ItemDescription } from './taxonomy/taxonomy.service';
 import { createId } from '@paralleldrive/cuid2';
@@ -455,7 +459,7 @@ export class ItemService {
    * finish (D17) — and an item that is not on the floor yet cannot be sold at
    * the register in the meantime.
    */
-  async create(orgId: string, swapId: string, data: { id?: string; categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents?: number | null; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string; approveNewValues?: boolean; squareIds?: { itemId: string; variationId: string } }, idempotencyKey?: string): Promise<ItemResponse> {
+  async create(orgId: string, swapId: string, data: { id?: string; categoryId?: string; attributes?: ItemAttributeInput[]; fallbackName?: string; printedName?: string; description?: string; priceCents?: number | null; quantity: number; sellerId?: string; donateProceeds?: boolean; sku?: string; stationCode?: string | null; deferPos?: boolean; awaitsConsignment?: boolean; actorId?: string; approveNewValues?: boolean; squareIds?: { itemId: string; variationId: string }; taxonomyNodes?: TaxonomyNode[] }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(idempotencyScope(orgId, swapId), idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -524,7 +528,7 @@ export class ItemService {
       throw new BadRequestException('Pick what the item is before describing it');
     }
     const described = data.categoryId
-      ? await this.taxonomy.resolveAnswers(orgId, data.categoryId, data.attributes ?? [], data.actorId, { approveNew: data.approveNewValues })
+      ? await this.taxonomy.resolveAnswers(orgId, data.categoryId, data.attributes ?? [], data.actorId, { approveNew: data.approveNewValues, nodes: data.taxonomyNodes })
       : null;
 
     /**
@@ -641,7 +645,7 @@ export class ItemService {
       }));
   }
 
-  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number | null; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; ifUnpriced?: true; actorId?: string; approveNewValues?: boolean; deferPos?: boolean }, idempotencyKey?: string): Promise<ItemResponse> {
+  async patch(orgId: string, swapId: string, itemId: string, data: { categoryId?: string; attributes?: ItemAttributeInput[]; name?: string; description?: string | null; priceCents?: number | null; quantity?: number; sellerId?: string | null; donateProceeds?: boolean; hasPrintedTag?: boolean; ifUnpriced?: true; actorId?: string; approveNewValues?: boolean; deferPos?: boolean; taxonomyNodes?: TaxonomyNode[] }, idempotencyKey?: string): Promise<ItemResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(`item-patch:${orgId}:${swapId}`, idempotencyKey);
       if (cached) return cached as unknown as ItemResponse;
@@ -749,7 +753,7 @@ export class ItemService {
   private async redescribe(
     orgId: string,
     existing: { categoryId: string | null; attributes: { attributeId: string; valueId: string | null; numberValue: number | null }[] },
-    data: { categoryId?: string; attributes?: ItemAttributeInput[]; actorId?: string; approveNewValues?: boolean },
+    data: { categoryId?: string; attributes?: ItemAttributeInput[]; actorId?: string; approveNewValues?: boolean; taxonomyNodes?: TaxonomyNode[] },
   ) {
     const categoryId = data.categoryId ?? existing.categoryId;
     if (!categoryId) {
@@ -762,7 +766,7 @@ export class ItemService {
         ...(a.valueId !== null ? { valueId: a.valueId } : {}),
         ...(a.numberValue !== null ? { numberValue: a.numberValue } : {}),
       }));
-    return this.taxonomy.resolveAnswers(orgId, categoryId, attributes, data.actorId, { approveNew: data.approveNewValues });
+    return this.taxonomy.resolveAnswers(orgId, categoryId, attributes, data.actorId, { approveNew: data.approveNewValues, nodes: data.taxonomyNodes });
   }
 
   /**
@@ -915,35 +919,45 @@ export class ItemService {
     orgId: string,
     swapId: string,
     sellerId: string,
-    rows: { sku: string; name?: string; description?: string; priceCents: number | null }[],
-    generateSkus = false,
-  ): Promise<ImportRowResult[]> {
+    file: { headers: string[]; rows: ImportFileRow[] },
+    opts: { generateSkus?: boolean; acceptUnknown?: boolean } = {},
+  ): Promise<ImportResult> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     // Staff upload ticket rows only for a swap whose web takes legacy tickets;
     // generated rows go in either way, and ticket rows among them are refused.
-    if (!swap.allowLegacyWeb && !generateSkus) {
+    if (!swap.allowLegacyWeb && !opts.generateSkus) {
       throw new BadRequestException('This swap doesn’t take legacy tickets on the web.');
     }
     await this.sellerService.findOrThrow(orgId, sellerId);
     // Staff uploaded it, so the goods are already accounted for.
-    return this.importItems(orgId, swapId, sellerId, rows, { selfService: false, generateSkus });
+    return this.importItems(orgId, swapId, sellerId, file.rows, {
+      selfService: false,
+      generateSkus: opts.generateSkus,
+      headers: file.headers,
+      acceptUnknown: opts.acceptUnknown,
+    });
   }
 
   /**
    * A seller's inventory from a spreadsheet, by the seller or by staff for
    * them. Checked whole before anything is written (`checkImportRows`).
    *
-   * A row with a ticket is created on it and marked printed: the ticket came
-   * out of a box. A row without one, when SKUs are generated (Plan 31), gets
-   * the swap's next SKU, without a station letter, and a label to print.
+   * A row with a ticket fills in the issued ticket it names. A row without
+   * one, when SKUs are generated (Plan 31), gets the swap's next SKU, without
+   * a station letter, and a label to print.
+   *
+   * Its category and details (Plan 42) are matched against the tree once for
+   * the file. A cell that matches nothing refuses the file, listed, unless the
+   * uploader chose to import anyway (`acceptUnknown`): then it isn't stored,
+   * and the rest of its row is.
    */
   async importItems(
     orgId: string,
     swapId: string,
     sellerId: string,
-    rows: { sku: string; name?: string; description?: string; priceCents: number | null }[],
-    opts: { selfService: boolean; generateSkus?: boolean },
-  ): Promise<ImportRowResult[]> {
+    rows: ImportFileRow[],
+    opts: { selfService: boolean; generateSkus?: boolean; headers?: string[]; acceptUnknown?: boolean },
+  ): Promise<ImportResult> {
     const swap = await this.findSwapOrThrow(orgId, swapId);
     const results = await this.tickets.checkImportRows(swapId, sellerId, rows, {
       generateSkus: !!opts.generateSkus,
@@ -954,17 +968,36 @@ export class ItemService {
       // A shop fills in each ticket once; staff aren't held to that (Plan 38).
       shopOwn: opts.selfService,
     });
-    if (results.some((r) => r.outcome === 'error')) return results;
+
+    // Matched before deciding anything, so a refused file lists its unknowns
+    // beside its row errors and both can be fixed in one go.
+    const matched: MatchedFile = opts.headers?.length
+      ? matchImportDetails(opts.headers, rows.map((r) => r.cells ?? []), await this.taxonomy.resolve(orgId, { full: true }))
+      : { rows: rows.map(() => ({ attributes: [], unknown: [] })), ignoredColumns: [] };
+    matched.rows.forEach((m, i) => {
+      if (m.categoryId) results[i] = { ...results[i], categoryId: m.categoryId };
+      if (m.unknown.length) results[i] = { ...results[i], unknown: m.unknown };
+    });
+    const answer = (refused: ImportResult['refused']): ImportResult =>
+      ({ rows: results, ignoredColumns: matched.ignoredColumns, refused });
+
+    if (results.some((r) => r.outcome === 'error')) return answer('errors');
 
     // Nor may a shop's file describe a ticket that has already sold (D6).
     if (opts.selfService) {
       const sold = await this.soldAmong(orgId, swapId, results.map((r) => r.itemId).filter((id): id is string => !!id));
       if (sold.size) {
-        return results.map((r) => (r.itemId && sold.has(r.itemId)
-          ? { ...r, outcome: 'error' as const, error: `${r.sku} has sold. Ask the swap’s staff to change it.` }
-          : r));
+        results.forEach((r, i) => {
+          if (r.itemId && sold.has(r.itemId)) results[i] = { ...r, outcome: 'error', error: `${r.sku} has sold. Ask the swap’s staff to change it.` };
+        });
+        return answer('errors');
       }
     }
+
+    if (!opts.acceptUnknown && matched.rows.some((m) => m.unknown.length)) return answer('unknown');
+
+    // The tree once for every item described, not once per row (D9).
+    const taxonomyNodes = matched.rows.some((m) => m.categoryId) ? await this.taxonomy.answerNodes(orgId) : undefined;
 
     /*
      * Rows are written first and Square follows in the background, in
@@ -972,17 +1005,23 @@ export class ItemService {
      * for minutes, well past the request's timeout.
      */
     const written: string[] = [];
-    for (let i = 0; i < rows.length; i++) {
+    const writeRow = async (i: number) => {
+      const { categoryId, attributes } = matched.rows[i];
+      // Only what matched; an unknown category leaves the row as it was.
+      const described = categoryId ? { categoryId, attributes, taxonomyNodes } : {};
+      const name = rows[i].name?.trim();
+
       // A ticket row fills in the issued ticket it names (Plan 38): the ticket
       // exists from the moment it was issued, so there's nothing to create.
       const itemId = results[i].itemId;
       if (itemId) {
-        const name = rows[i].name?.trim();
         const description = rows[i].description?.trim();
         const changes = {
+          // The file's name stays the tag name, with the details beside it (D7).
           ...(name ? { name } : {}),
           ...(description ? { description } : {}),
           ...(rows[i].priceCents !== null ? { priceCents: rows[i].priceCents! } : {}),
+          ...described,
         };
         // A row that only names its ticket changes nothing, so it writes nothing.
         if (Object.keys(changes).length) {
@@ -990,16 +1029,17 @@ export class ItemService {
           written.push(itemId);
         }
         results[i] = { ...results[i], outcome: 'updated' };
-        continue;
+        return;
       }
 
       const generated = !!results[i].generated;
       const sku = generated ? undefined : rows[i].sku.trim();
       const item = await this.create(orgId, swapId, {
-        // The CSV importer has a name column and no taxonomy (Plan 19 D12), so
-        // items it creates are named, not described. A blank name is left to
-        // `create`, which calls it by its number like any uncategorised item.
-        ...(rows[i].name?.trim() ? { fallbackName: rows[i].name!.trim() } : {}),
+        // Named by the file when it has a name, described or not; otherwise a
+        // described item gets its composed name, and an undescribed one is
+        // called by its number by `create`.
+        ...(name ? (categoryId ? { printedName: name } : { fallbackName: name }) : {}),
+        ...described,
         description: rows[i].description?.trim() || undefined,
         priceCents: rows[i].priceCents,
         quantity: 1,
@@ -1013,7 +1053,7 @@ export class ItemService {
       // A generated SKU has no label yet: the seller prints one from the web.
       if (generated) {
         results[i] = { ...results[i], sku: item.sku, outcome: 'created' };
-        continue;
+        return;
       }
 
       // `create` has no `alreadyPrinted` — that belongs to the station path —
@@ -1025,10 +1065,29 @@ export class ItemService {
       });
 
       results[i] = { ...results[i], outcome: 'created' };
+    };
+
+    /*
+     * The checks above are the ones the writes make, so a row failing here is
+     * a change in between (a value retired, a ticket taken). It's reported on
+     * its line, and the rows after it still go in: stopping would leave the
+     * file half-written with nothing saying which half.
+     */
+    for (let i = 0; i < rows.length; i++) {
+      await writeRow(i).catch((err: unknown) => {
+        this.logger.warn({ err, orgId, swapId, line: results[i].line }, 'Import row failed to write');
+        results[i] = { ...results[i], outcome: 'error', error: err instanceof HttpException ? err.message : 'Couldn’t be saved.' };
+      });
     }
 
     void this.withItemLock(`import:${swapId}`, () => this.pushImported(orgId, swapId, written));
-    return results;
+    return answer(null);
+  }
+
+  /** One of the downloads beside an item upload (Plan 42 D12), from the patrol's tree as it is now. */
+  async importGuide(orgId: string, file: ImportGuideFile): Promise<{ csv: string; filename: string }> {
+    const tree = await this.taxonomy.resolve(orgId, { full: true });
+    return IMPORT_GUIDE_FILES[file](tree);
   }
 
   /**

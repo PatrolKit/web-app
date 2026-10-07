@@ -45,6 +45,18 @@ function setListView(params: URLSearchParams, view?: import('./api.types').ItemL
 }
 let refreshPromise: Promise<boolean> | null = null;
 
+/** A CSV the API builds, fetched with the session token: a plain link can't carry it. */
+async function fetchCsv(url: string): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+  const res = await fetch(url, { credentials: 'include', headers });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message ?? 'Could not download that file');
+  }
+  return res.blob();
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -658,11 +670,12 @@ export const api = {
      * Returns the per-row verdict rather than throwing, the same as the shop's
      * own upload — a rejected file is a list of things to fix, not an error.
      */
-    importItemsForSeller: async (orgId: string, swapId: string, sellerId: string, file: File, generateSkus = false) => {
+    importItemsForSeller: async (orgId: string, swapId: string, sellerId: string, file: File, opts: { generateSkus?: boolean; acceptUnknown?: boolean } = {}) => {
       const form = new FormData();
       form.append('file', file);
       form.append('sellerId', sellerId);
-      if (generateSkus) form.append('generateSkus', 'true');
+      if (opts.generateSkus) form.append('generateSkus', 'true');
+      if (opts.acceptUnknown) form.append('acceptUnknown', 'true');
       const headers: Record<string, string> = {};
       if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
       const res = await fetch(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/import`, {
@@ -670,10 +683,17 @@ export const api = {
       });
       return (await res.json()) as {
         success: boolean;
-        data?: import('./api.types').TicketImportRow[];
+        data?: import('./api.types').TicketImportResult;
         error?: string;
       };
     },
+    /**
+     * A download beside staff's upload (Plan 42): the template, the example,
+     * or the categories and details. Fetched rather than linked: the session
+     * token travels in a header, which a plain link can't carry.
+     */
+    itemImportFile: (orgId: string, swapId: string, file: import('./api.types').ImportGuideFile) =>
+      fetchCsv(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/import/${file}`),
     /** One item by the number on its tag, exactly — what a scanner needs. */
     findItemBySku: (orgId: string, swapId: string, sku: string) =>
       request<import('./api.types').ItemResponse>(
@@ -817,11 +837,12 @@ export const api = {
         { method: 'POST', body: JSON.stringify(body) },
       ),
     /** A whole inventory at once. Nothing is written unless every row passes. */
-    importTicketItems: (orgId: string, swapId: string, file: File, generateSkus = false) => {
+    importTicketItems: (orgId: string, swapId: string, file: File, opts: { generateSkus?: boolean; acceptUnknown?: boolean } = {}) => {
       const form = new FormData();
       form.append('file', file);
       form.append('swapId', swapId);
-      if (generateSkus) form.append('generateSkus', 'true');
+      if (opts.generateSkus) form.append('generateSkus', 'true');
+      if (opts.acceptUnknown) form.append('acceptUnknown', 'true');
       const headers: Record<string, string> = {};
       if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
       return fetch(`/api/v1/orgs/${orgId}/ski-swap/seller/me/items/import`, {
@@ -829,9 +850,12 @@ export const api = {
       }).then((r) => r.json() as Promise<{
         success: boolean;
         error?: string;
-        data?: import('./api.types').TicketImportRow[];
+        data?: import('./api.types').TicketImportResult;
       }>);
     },
+    /** A download beside the shop's own upload (Plan 42). */
+    ticketImportFile: (orgId: string, file: import('./api.types').ImportGuideFile) =>
+      fetchCsv(`/api/v1/orgs/${orgId}/ski-swap/seller/me/items/import/${file}`),
     /** What the seller's own item form opens with. */
     ticketState: (orgId: string, swapId: string) =>
       request<import('./api.types').TicketFormState>(
