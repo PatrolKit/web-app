@@ -6,7 +6,7 @@ import { faChevronDown as faChevronDownDuo, faChevronRight as faChevronRightDuo,
 import { api } from '../../lib/api';
 import type { BindingLookup, BindingLookupDetail } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { answerBadge, filterModels } from './bindingsLogic';
+import { answerBadge, filterModels, brandsAZ } from './bindingsLogic';
 
 /**
  * The Bindings tab (Plan 44): will anyone stand behind these bindings?
@@ -193,7 +193,7 @@ export default function BindingsPage() {
           <aside className="space-y-1">
             <p className="text-xs text-gray-500 px-2">Brands</p>
             <ul className="max-h-[70vh] overflow-y-auto">
-              {makers!.manufacturers.map((m) => (
+              {brandsAZ(makers!.manufacturers).map((m) => (
                 <li key={m.nodeId}>
                   <button
                     type="button"

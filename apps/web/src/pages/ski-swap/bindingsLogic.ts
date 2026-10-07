@@ -85,3 +85,12 @@ export function filterModels(models: BindingLookup[], query: string): BindingLoo
   if (!query.trim()) return models;
   return models.filter((m) => matchesTokens(`${m.manufacturer} ${m.model}`, query));
 }
+
+/**
+ * The brand list, A to Z. The tree keeps the item picker's own order, which
+ * puts the makers it started with first; a lookup is easier to scan
+ * alphabetically. Accents and case don't move a brand ("Kästle" by K).
+ */
+export function brandsAZ<T extends { label: string }>(brands: T[]): T[] {
+  return [...brands].sort((a, b) => a.label.localeCompare(b.label, 'en', { sensitivity: 'base', numeric: true }));
+}

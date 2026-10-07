@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { answerBadge, filterModels, matchesTokens } from './bindingsLogic';
+import { answerBadge, filterModels, matchesTokens, brandsAZ } from './bindingsLogic';
 import type { BindingLookup } from '../../lib/api.types';
 
 const lookup = (over: Partial<BindingLookup>): BindingLookup => ({
@@ -30,5 +30,12 @@ describe('matching as the server does', () => {
     const models = [lookup({ model: 'Glade 13 ID' }), lookup({ model: 'Spruce 10' })];
     expect(filterModels(models, 'spr').map((m) => m.model)).toEqual(['Spruce 10']);
     expect(filterModels(models, '  ')).toHaveLength(2);
+  });
+});
+
+describe('the brand list', () => {
+  it('reads A to Z, whatever order the tree keeps, accents and case aside', () => {
+    const brands = ['Tyrolia', 'Atomic', 'völkl', 'Kästle', 'Armada', '4FRNT', 'Kessler'].map((label) => ({ label }));
+    expect(brandsAZ(brands).map((b) => b.label)).toEqual(['4FRNT', 'Armada', 'Atomic', 'Kästle', 'Kessler', 'Tyrolia', 'völkl']);
   });
 });
