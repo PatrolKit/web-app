@@ -740,6 +740,16 @@ export const api = {
     /** A seller's items still out, for a locked return session (Plan 43 D5). */
     unreturnedItems: (orgId: string, swapId: string, sellerId: string) =>
       request<import('./api.types').UnreturnedItems>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/unreturned?sellerId=${encodeURIComponent(sellerId)}`),
+    /** Batch set category (Plan 45): up to 25 scanned tags get one category, if they have none. */
+    categorizeItems: (orgId: string, swapId: string, body: { categoryId: string; attributes: import('./api.types').CategorizeAnswer[]; rename: boolean; skus: string[] }) =>
+      request<import('./api.types').CategorizeItemsResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/categorize`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    /** Undoes one row of a batch set category (Plan 45 D9). */
+    uncategorizeItem: (orgId: string, swapId: string, itemId: string, body: { categoryId: string; attributes: import('./api.types').CategorizeAnswer[]; rename?: { from: string; to: string } }) =>
+      request<import('./api.types').UncategorizeItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/uncategorize`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
     findItemBySku: (orgId: string, swapId: string, sku: string) =>
       request<import('./api.types').ItemResponse>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/by-sku/${encodeURIComponent(sku)}`,

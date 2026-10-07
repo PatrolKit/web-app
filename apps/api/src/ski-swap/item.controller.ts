@@ -18,7 +18,8 @@ import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ItemService, decodeCursor } from './item.service';
 import { LegacyTicketService } from './legacy-ticket.service';
 import { IssuedTicketService } from './issued-ticket.service';
-import { BatchTicketsDto, CreateItemDto, PatchItemDto, ReturnBySkuDto, ReturnItemDto } from '../contracts/ski-swap.contracts';
+import { BatchTicketsDto, CategorizeItemsDto, CreateItemDto, PatchItemDto, ReturnBySkuDto, ReturnItemDto, UncategorizeItemDto } from '../contracts/ski-swap.contracts';
+import { ItemCategorizeService } from './item-categorize.service';
 import { ItemReturnService, type ReturnActor } from './item-return.service';
 import type { Request, Response } from 'express';
 import { isImportGuideFile } from './import-guide';
@@ -35,6 +36,7 @@ export class ItemController {
     private readonly tickets: LegacyTicketService,
     private readonly issued: IssuedTicketService,
     private readonly returns: ItemReturnService,
+    private readonly categorizer: ItemCategorizeService,
   ) {}
 
   @Get()
@@ -170,6 +172,38 @@ export class ItemController {
    * The web scanner's return, by the SKU on the tag: one request per scan, so
    * what the screen says is what was done. Staff on the web only.
    */
+  /**
+   * Batch set category (Plan 45): up to 25 scanned tags at once get one
+   * category and its details, if they have none. Staff on the web only.
+   */
+  @Post('categorize')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:manage')
+  @NoDeviceAccess()
+  categorize(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Body() body: CategorizeItemsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.categorizer.categorize(orgId, swapId, body, user.userId);
+  }
+
+  /** Undo one row of a batch set category (Plan 45 D9). */
+  @Post(':itemId/uncategorize')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:manage')
+  @NoDeviceAccess()
+  uncategorize(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Param('itemId') itemId: string,
+    @Body() body: UncategorizeItemDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.categorizer.uncategorize(orgId, swapId, itemId, body, user.userId);
+  }
+
   @Post('return-by-sku')
   @HttpCode(200)
   @RequirePermissions('ski_swap:manage')

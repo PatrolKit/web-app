@@ -11,25 +11,40 @@ import { useScanner } from '../../contexts/ScannerContext';
  * tone for a refused scan. One look, one set of words, in both.
  */
 
-/** A short, low double beep for a refused or unknown scan. Made here; no sound file. */
-export function errorTone() {
+/** Beeps made here, no sound file: each `[startSeconds, hz]`, square-wave, short. */
+function beeps(notes: [number, number][], length = 0.14, volume = 0.15) {
   try {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
     const ctx = new Ctx();
-    [0, 0.18].forEach((at) => {
+    for (const [at, hz] of notes) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'square';
-      osc.frequency.value = 220;
-      gain.gain.setValueAtTime(0.15, ctx.currentTime + at);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + at + 0.14);
+      osc.frequency.value = hz;
+      gain.gain.setValueAtTime(volume, ctx.currentTime + at);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + at + length);
       osc.connect(gain).connect(ctx.destination);
       osc.start(ctx.currentTime + at);
-      osc.stop(ctx.currentTime + at + 0.15);
-    });
+      osc.stop(ctx.currentTime + at + length + 0.01);
+    }
     setTimeout(() => void ctx.close(), 600);
-  } catch { /* no audio: the red message still says it */ }
+  } catch { /* no audio: the message on screen still says it */ }
+}
+
+/** A short, low double beep for a refused or unknown scan. */
+export function errorTone() {
+  beeps([[0, 220], [0.18, 220]]);
+}
+
+/** One short high beep: done (Plan 45). */
+export function successTone() {
+  beeps([[0, 1320]], 0.08, 0.1);
+}
+
+/** Two quick mid beeps: nothing to do, not wrong (Plan 45's skip). */
+export function skipTone() {
+  beeps([[0, 660], [0.11, 660]], 0.06, 0.1);
 }
 
 /**
@@ -64,7 +79,12 @@ export function Banner({ tone, icon, title, text, action }: {
  * The scanner's state, prominently: can't scan here, none set up, not
  * connected (with Connect), or ready. `ready` is what "go" says on this screen.
  */
-export function ScannerBanner({ ready }: { ready: { title: string; text: string } }) {
+export function ScannerBanner({ ready, typed = true }: {
+  ready: { title: string; text: string };
+  /** The screen also takes typed codes. Batch set category doesn't (Plan 45 D4). */
+  typed?: boolean;
+}) {
+  const orType = typed ? ' You can still type numbers below.' : '';
   const scanner = useScanner();
   const [connectError, setConnectError] = useState<string | null>(null);
 
@@ -81,11 +101,11 @@ export function ScannerBanner({ ready }: { ready: { title: string; text: string 
 
   if (!scanner.isSupported) {
     return <Banner tone="error" icon={faTriangleExclamationDuo} title="This browser can’t use a scanner"
-      text="Scanning needs Chrome or Edge, which can use Bluetooth. You can still type numbers below." />;
+      text={`Scanning needs Chrome or Edge, which can use Bluetooth.${orType}`} />;
   }
   if (scanner.scanners.length === 0) {
     return <Banner tone="error" icon={faTriangleExclamationDuo} title="No scanner set up"
-      text="Add one on the Hardware page. You can still type numbers below." />;
+      text={`Add one on the Hardware page.${orType}`} />;
   }
   if (!scanner.connected) {
     return (

@@ -29,7 +29,7 @@ It's for the imported and issued items that arrived as `Item #67169` with no cat
 | D6 | **Repeats.** In continuous mode a scanner reads a held tag again and again. The same SKU within 3 seconds of its last scan is dropped silently. Later, it's a row reading "Already scanned this session", answered locally with no request. |
 | D7 | **Best effort.** Every scan ends in a row and a sound. Nothing stops the session.<br>• **Set:** green. "Set to Skis · Bindings included: Yes".<br>• **Skipped:** amber. "Already a Boots item".<br>• **Not found:** red. "No item has this SKU in this swap".<br>• **Failed:** red, with the server's sentence (for example, the pick no longer exists because someone retired a value mid-session).<br>• **No connection:** the batch's rows go back to waiting, and the queue retries with backoff (1, 2, 5, 10 seconds, then every 10). The banner reads "Can't reach PatrolKit: N waiting, retrying". Nothing is dropped. Closing the popover with scans waiting asks first. |
 | D8 | **Sound, as results land, not as scans arrive.** The scanner already beeps on a read, so the app's sound reports what happened.<br>• **Set:** one short high beep.<br>• **Skipped:** two quick mid beeps.<br>• **Not found or failed:** the existing low double (`errorTone`).<br>A batch that lands plays one sound: the worst outcome in it. A burst of results doesn't become a burst of noise, and an error is never drowned out. |
-| D9 | **Undo, per row,** for a row that was set. It clears that item's category and answers, but only if they're still exactly what this session set. If anyone has changed them since, it's refused ("Changed since: edit it instead"). The name is untouched, as when it was set. |
+| D9 | **Undo, per row,** for a row that was set. It clears that item's category and answers, but only if they're still exactly what this session set. If anyone has changed them since, it's refused ("Changed since: edit it instead"). The name is untouched, unless the row renamed it (D14). |
 | D10 | **The write is conditional.** "Set where `categoryId` is still null", in one transaction with the answers. An item categorized by someone else in the meantime (the item form, an iPad) answers Skipped, never overwritten. |
 | D11 | **Who.** `ski_swap:manage`, staff on the web (`@NoDeviceAccess`), like the other batch tools. |
 | D12 | **Audited:**<br>• one `ski_swap.items.categorized` per batch, with the category, the answers and the item ids set;<br>• `ski_swap.item.category_cleared` per undo. |
@@ -75,11 +75,12 @@ No migration.
 - **`ItemsPage.tsx`:** Actions gains **Batch set category** (staff with manage), opening the popover.
 - **`ItemDescriber.tsx`:**
   - A `typedValues?: boolean` prop (default `true`). With `false`, the "type a value" path is hidden on every question (D3).
-  - The popover passes `typedValues={false}`. It also passes no `renderPreview`, so no name preview: names don't change here.
+  - The popover passes `typedValues={false}`.
+  - An `onPreview({ name, summary })` callback reports the name the answers derive and a one-line summary ("Skis · Type: Carving · Bindings included: Yes"), using the labels the form has loaded, deferred lists included. The popover uses them for the collapsed pick and the Rename line.
 - **`BatchSetCategoryModal.tsx`** (new), from the scan screens' parts:
   - **Header:** "Batch set category" and **Done**. Done asks first when scans are waiting.
-  - **`ScannerBanner`:** "Scan tags to set their category" when connected; the usual not-connected states otherwise.
-  - **The pick:** `ItemDescriber` collapsed to a one-line summary once a category is chosen ("Skis · Bindings included: Yes · Marker"), with **Change**. Changing it affects only scans from then on.
+  - **`ScannerBanner`:** "Scan tags to set their category" when connected; the usual not-connected states otherwise, with `typed={false}` so they don't offer typing a number.
+  - **The pick:** `ItemDescriber`, with **Use this** to collapse it to its one-line summary once a category is chosen, and **Change** to open it again. Scans are taken while it's open too. Changing it affects only scans from then on.
   - **Rename items:** a toggle under the pick, off. On, it shows the name the pick derives ("Names each item: Marker Skis"), worked out on the client the way the item form previews it. Like the pick, it applies to scans from then on (D14).
   - **The latest result on a `Banner`** (D7), with its sound (D8).
   - **Counts:** "Set 42 · Skipped 7 · Not found 2 · Waiting 3".
@@ -94,6 +95,7 @@ No migration.
   - `counts`, `bannerFor(row)`, `toneFor(results)` (the worst outcome), `pickSummary(tree, pick)`.
 - **The drain loop:** a `useEffect` in the modal. While a request is in flight, new scans just queue. When it lands, send the next batch, if any. When a request fails without an answer, wait `retryDelay` and try again.
 - **`ScanSessionParts.tsx`:** add `successTone()` and `skipTone()` beside `errorTone()`, from the same `AudioContext`-made beep.
+- **`ScannerContext.tsx`:** in development only, `window.__patrolkitScan('67169')` delivers a scan as a scanner would, so a scan screen can be driven with no hardware. It's not in a production build.
 - **`lib/api.ts`:** `skiSwap.categorizeItems` and `skiSwap.uncategorizeItem`, with their types in `api.types.ts`.
 
 ## Tests

@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -611,7 +611,7 @@ function AccordionRow({
 
 /** One question, and whatever its answer opens up beneath it. */
 function AttributeField({
-  orgId, attribute, state, setAnswer, depth, onValuesLoaded, hideLabel = false,
+  orgId, attribute: asked, state, setAnswer, depth, onValuesLoaded, hideLabel = false,
   chips = false, sheetOpen, onSheetOpenChange,
 }: {
   orgId: string;
@@ -635,6 +635,10 @@ function AttributeField({
   sheetOpen?: boolean;
   onSheetOpenChange?: (open: boolean) => void;
 }) {
+  // A batch pick takes no typed values (Plan 45 D3): the question reads as
+  // one that doesn't, everywhere below.
+  const typed = useContext(TypedValuesContext);
+  const attribute = typed || !asked.allowFreeEntry ? asked : { ...asked, allowFreeEntry: false };
   const answer = state.answers[attribute.id] ?? {};
   const [ownSheetOpen, setOwnSheetOpen] = useState(false);
   const showSheet = sheetOpen ?? ownSheetOpen;
@@ -843,6 +847,11 @@ const StaffEntryContext = createContext(false);
  * refuses them.
  */
 const LookupsContext = createContext(false);
+/**
+ * Whether a question that takes typed answers offers to type one. Off for a
+ * batch (Plan 45 D3): one typo would be applied to every item scanned.
+ */
+const TypedValuesContext = createContext(true);
 
 export interface ItemDescriberProps {
   orgId: string;
@@ -855,10 +864,17 @@ export interface ItemDescriberProps {
   renderPreview?: (name: string, detail: { parts: number }) => React.ReactNode;
   /** Show the indemnified-lists answer beside a picked binding model: staff screens only. */
   lookups?: boolean;
+  /** Offer to type a value the list doesn't hold, where a question allows it. Off for a batch pick. */
+  typedValues?: boolean;
+  /**
+   * Told the name the answers derive, and the answers as one line of
+   * "Question: answer", whenever either changes (Plan 45's batch pick).
+   */
+  onPreview?: (preview: { name: string; summary: string }) => void;
 }
 
 export default function ItemDescriber({
-  orgId, value, onChange, layout = 'stacked', renderPreview, staff = false, lookups = false,
+  orgId, value, onChange, layout = 'stacked', renderPreview, staff = false, lookups = false, typedValues = true, onPreview,
 }: ItemDescriberProps) {
   /**
    * Which question is open. One at a time — two open rows is the stack of
@@ -974,6 +990,15 @@ export default function ItemDescriber({
 
   const parts = nameParts(value, category, attributesById, labelIndex, false, viaPointer);
   const preview = category ? composeName(parts, category.label) : '';
+  const summary = category
+    ? [category.label, ...reachable.flatMap((a) => {
+        const text = answerText(a, value.answers[a.id] ?? {}, labelIndex);
+        return text ? [`${a.label}: ${text}`] : [];
+      })].join(' · ')
+    : '';
+  const onPreviewRef = useRef(onPreview);
+  onPreviewRef.current = onPreview;
+  useEffect(() => { onPreviewRef.current?.({ name: preview, summary }); }, [preview, summary]);
 
   if (isLoading) return <p className="text-sm text-gray-500">Loading…</p>;
 
@@ -1022,6 +1047,7 @@ export default function ItemDescriber({
   return (
     <StaffEntryContext.Provider value={staff}>
     <LookupsContext.Provider value={lookups}>
+    <TypedValuesContext.Provider value={typedValues}>
       <div className="space-y-3">
         {/* Collapses to a header once picked, with the way back out beside it. */}
         <div className="flex items-center justify-between gap-2 pb-1 border-b border-gray-800">
@@ -1146,6 +1172,7 @@ export default function ItemDescriber({
 
         {renderPreview ? renderPreview(preview, { parts: parts.length }) : null}
       </div>
+    </TypedValuesContext.Provider>
     </LookupsContext.Provider>
     </StaffEntryContext.Provider>
   );

@@ -86,6 +86,16 @@ export function ScannerProvider({ orgId, userId, enabled, children }: {
     for (const fn of listeners.current) fn(scan);
   }, []);
 
+  // Development only: `window.__patrolkitScan('67169')` delivers a scan as a
+  // scanner would, for driving a scan screen with no hardware. Not in a
+  // production build.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const w = window as unknown as { __patrolkitScan?: (payload: string) => void };
+    w.__patrolkitScan = (payload: string) => onScan({ symbology: 'code128', payload });
+    return () => { delete w.__patrolkitScan; };
+  }, [onScan]);
+
   const attach = useCallback(async (device: BluetoothDevice) => {
     stopRef.current?.();
     stopRef.current = await listenForScans(device, onScan, () => {

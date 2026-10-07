@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -9,6 +9,7 @@ import {
   faKeyboard as faKeyboardDuo,
   faRotateLeft as faRotateLeftDuo,
   faHandHoldingBox as faHandHoldingBoxDuo,
+  faTags as faTagsDuo,
 } from '@fortawesome/pro-duotone-svg-icons';
 import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
@@ -20,6 +21,7 @@ import ReturnTicketsModal from './ReturnTicketsModal';
 import BatchAddTicketsModal from './BatchAddTicketsModal';
 import ScanTicketModal from './ScanTicketModal';
 import ReturnItemsModal from './ReturnItemsModal';
+import BatchSetCategoryModal from './BatchSetCategoryModal';
 import TicketSquareModal, { useTicketPushStatus } from './TicketSquareModal';
 
 export default function ItemsPage() {
@@ -28,6 +30,11 @@ export default function ItemsPage() {
   const canManage = perms.has('ski_swap:manage');
   const swapId = selectedSwap?.id ?? null;
   const qc = useQueryClient();
+  // Stable, for Batch set category's queue, which re-runs when it changes.
+  const onItemsChanged = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId] });
+    void qc.invalidateQueries({ queryKey: ['ski-swap/stats', orgId] });
+  }, [qc, orgId]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [importing, setImporting] = useState(false);
   // The dashboard's unpriced-tickets card opens Fast Edit directly.
@@ -37,6 +44,7 @@ export default function ItemsPage() {
   const [scanning, setScanning] = useState(false);
   /** Handing unsold items back to their sellers (Plan 43). */
   const [returningItems, setReturningItems] = useState(false);
+  const [categorizing, setCategorizing] = useState(false);
   const [pushingOpen, setPushingOpen] = useState(false);
   const canAdmin = perms.has('ski_swap:admin');
 
@@ -167,6 +175,13 @@ export default function ItemsPage() {
           icon: faHandHoldingBoxDuo,
           onSelect: () => setReturningItems(true),
         },
+        // Plan 45: scanned items with no category get one.
+        {
+          key: 'batch-category',
+          label: 'Batch set category',
+          icon: faTagsDuo,
+          onSelect: () => setCategorizing(true),
+        },
         {
           key: 'import',
           label: 'Import for a seller',
@@ -219,6 +234,15 @@ export default function ItemsPage() {
           void qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId] });
           void qc.invalidateQueries({ queryKey: ['ski-swap/stats', orgId] });
         }}
+      />
+    )}
+
+    {categorizing && swapId && (
+      <BatchSetCategoryModal
+        orgId={orgId}
+        swapId={swapId}
+        onClose={() => setCategorizing(false)}
+        onChanged={onItemsChanged}
       />
     )}
 

@@ -798,6 +798,69 @@ export const ReturnBySkuSchema = z
   })
   .strict();
 export class ReturnBySkuDto extends createZodDto(ReturnBySkuSchema) {}
+
+// ─── Batch set category (Plan 45) ───────────────────────────────────────────
+
+/**
+ * One answer for a batch: a picked value or a number, never typed text (D3).
+ * One typo would be applied to every item scanned.
+ */
+export const CategorizeAnswerSchema = z
+  .object({
+    attributeId: z.string().min(1),
+    valueId: z.string().min(1).optional(),
+    numberValue: z.number().optional(),
+  })
+  .strict()
+  .refine((a) => (a.valueId === undefined) !== (a.numberValue === undefined), {
+    message: 'An answer is a picked value or a number',
+  });
+export type CategorizeAnswer = z.infer<typeof CategorizeAnswerSchema>;
+
+/** A batch of scanned tags to give one category and its details (D5). */
+export const CategorizeItemsSchema = z
+  .object({
+    categoryId: z.string().min(1),
+    attributes: z.array(CategorizeAnswerSchema).max(24).default([]),
+    /** Also give each item the name the pick derives (D14). */
+    rename: z.boolean().default(false),
+    skus: z.array(z.string().trim().min(1).max(64)).min(1).max(25),
+  })
+  .strict();
+export class CategorizeItemsDto extends createZodDto(CategorizeItemsSchema) {}
+
+export interface CategorizeItemResult {
+  sku: string;
+  outcome: 'set' | 'skipped' | 'not_found';
+  item?: {
+    id: string;
+    name: string;
+    /** Set only when this batch renamed the item. */
+    previousName: string | null;
+    sellerName: string | null;
+    /** The item's category: the one just set, or for a skip, the one it already had. */
+    categoryLabel: string | null;
+  };
+}
+export interface CategorizeItemsResponse {
+  results: CategorizeItemResult[];
+}
+
+/** Undo one row (D9): what the session set, and the rename it made. */
+export const UncategorizeItemSchema = z
+  .object({
+    categoryId: z.string().min(1),
+    attributes: z.array(CategorizeAnswerSchema).max(24).default([]),
+    rename: z.object({ from: z.string().min(1).max(200), to: z.string().min(1).max(200) }).strict().optional(),
+  })
+  .strict();
+export class UncategorizeItemDto extends createZodDto(UncategorizeItemSchema) {}
+
+export interface UncategorizeItemResponse {
+  /** False when a rename was asked to be put back but the name had changed since. */
+  nameRestored: boolean;
+  name: string;
+}
 export type TicketSeller = z.infer<typeof TicketSellerSchema>;
 export type TicketFormState = z.infer<typeof TicketFormStateSchema>;
 
