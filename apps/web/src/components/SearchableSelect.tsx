@@ -20,6 +20,10 @@ export interface SearchableSelectProps {
   maxVisible?: number;
   disabled?: boolean;
   className?: string;
+  /** The field's look, for a filter bar that's denser than a form. */
+  inputClassName?: string;
+  /** Names the field for assistive tech when there's no visible label. */
+  ariaLabel?: string;
 }
 
 function normalize(s: string): string {
@@ -34,6 +38,8 @@ export default function SearchableSelect({
   maxVisible = 100,
   disabled = false,
   className = '',
+  inputClassName = 'bg-surface-100 px-3 py-2',
+  ariaLabel,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -130,6 +136,7 @@ export default function SearchableSelect({
         role="combobox"
         aria-expanded={open}
         aria-autocomplete="list"
+        aria-label={ariaLabel}
         autoComplete="off"
         disabled={disabled}
         value={displayValue}
@@ -138,7 +145,7 @@ export default function SearchableSelect({
         onFocus={openList}
         onMouseDown={() => { if (!open) openList(); }}
         onKeyDown={handleKeyDown}
-        className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 pr-8 text-sm text-white placeholder-gray-500 disabled:opacity-50"
+        className={`w-full ${inputClassName} border border-gray-700 rounded pr-8 text-sm text-white placeholder-gray-500 disabled:opacity-50`}
       />
 
       {selected && !open ? (

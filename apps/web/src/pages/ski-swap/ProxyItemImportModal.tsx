@@ -5,6 +5,8 @@ import type { TicketImportResult, TicketSeller } from '../../lib/api.types';
 import { GenerateSkusSwitch, wroteAny } from './ImportSkuOptions';
 import ImportFileGuide, { markImportGuideSeen } from './ImportFileGuide';
 import ImportResultPanel from './ImportResultPanel';
+import SearchableSelect from '../../components/SearchableSelect';
+import { ticketSellerOptions } from './IssueTicketRangeModal';
 
 /** "67000–67499", or two blocks for a shop given a second pad. */
 function describeRanges(s: TicketSeller): string {
@@ -86,21 +88,18 @@ export default function ProxyItemImportModal({
       >
         <h3 className="text-white font-medium">Import items for a seller</h3>
 
-        <label className="block space-y-1">
+        <div className="space-y-1">
           <span className="block text-xs text-gray-400 uppercase tracking-wider">Seller</span>
-          <select
+          <SearchableSelect
             value={sellerId}
-            onChange={(e) => { setSellerId(e.target.value); clear(); }}
+            onChange={(v) => { setSellerId(v); clear(); }}
+            options={ticketSellerOptions(sellers)}
             disabled={isLoading || sellers.length === 0}
-            className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white disabled:opacity-50"
-          >
-            <option value="">
-              {isLoading ? 'Loading…' : sellers.length ? 'Choose a seller…' : 'No seller can be uploaded for in this swap'}
-            </option>
-            {sellers.map((s) => (
-              <option key={s.sellerId} value={s.sellerId}>{s.displayName}</option>
-            ))}
-          </select>
+            placeholder={isLoading ? 'Loading…' : sellers.length ? 'Choose a seller…' : 'No seller can be uploaded for in this swap'}
+            clearLabel="No seller chosen"
+            emptyMessage="No sellers match."
+            ariaLabel="Seller"
+          />
           {/* Shown before the file is read, so the wrong shop is visible at the
               point of choosing rather than only in a page of failures. */}
           {chosen && (
@@ -110,7 +109,7 @@ export default function ProxyItemImportModal({
                 : 'No tickets in this swap: every row needs a generated SKU.'}
             </span>
           )}
-        </label>
+        </div>
 
         <p className="text-sm text-gray-400">
           A ticket row fills in that issued ticket. Rows for numbers the seller doesn’t hold are refused.

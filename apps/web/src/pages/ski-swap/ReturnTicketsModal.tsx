@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { RemoveTicketsResult, TicketSeller } from '../../lib/api.types';
-import { runsText } from './IssueTicketRangeModal';
+import { runsText, ticketSellerOptions } from './IssueTicketRangeModal';
+import SearchableSelect from '../../components/SearchableSelect';
 
 const inputClass = 'w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white font-mono';
 
@@ -66,15 +67,16 @@ export default function ReturnTicketsModal({ orgId, swapId, holders, onClose, on
         </p>
 
         <div className="space-y-1">
-          <select
+          <SearchableSelect
             value={sellerId}
-            onChange={(e) => { setSellerId(e.target.value); reset(); }}
-            aria-label="Shop"
-            className="w-full bg-surface-100 border border-gray-700 rounded px-2 py-1.5 text-sm text-white"
-          >
-            {holders.length !== 1 && <option value="">Choose a shop…</option>}
-            {holders.map((h) => <option key={h.sellerId} value={h.sellerId}>{h.displayName}</option>)}
-          </select>
+            onChange={(v) => { setSellerId(v); reset(); }}
+            options={ticketSellerOptions(holders)}
+            placeholder="Choose a shop…"
+            clearLabel="No shop chosen"
+            emptyMessage="No shops match."
+            inputClassName="bg-surface-100 px-2 py-1.5"
+            ariaLabel="Shop"
+          />
           {holder && (
             <p className="text-xs text-gray-500">
               Holds <span className="font-mono text-gray-300">{runsText(holder.ranges)}</span>{' '}

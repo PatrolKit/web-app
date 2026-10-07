@@ -9,6 +9,15 @@ const inputClass = 'w-full bg-surface-100 border border-gray-700 rounded px-2 py
 const LARGE_BLOCK = 1000;
 
 /** "67000–67499, 68000" */
+/** Sellers holding tickets, for a searchable picker: by name, with their ranges beside it. */
+export function ticketSellerOptions(sellers: { sellerId: string; displayName: string; ranges: { startNumber: number; endNumber: number }[] }[]) {
+  return sellers.map((s) => ({
+    value: s.sellerId,
+    label: s.displayName,
+    ...(s.ranges.length ? { sublabel: runsText(s.ranges) } : {}),
+  }));
+}
+
 export function runsText(runs: { startNumber: number; endNumber: number }[]): string {
   return runs.map((r) => (r.startNumber === r.endNumber ? `${r.startNumber}` : `${r.startNumber}–${r.endNumber}`)).join(', ');
 }

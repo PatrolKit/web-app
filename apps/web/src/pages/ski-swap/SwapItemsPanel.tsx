@@ -615,17 +615,17 @@ export default function SwapItemsPanel({
             ))}
           </select>
           {sellers && (
-            <select
+            <SearchableSelect
               value={sellerFilter}
-              onChange={(e) => setView({ seller: e.target.value || null })}
-              aria-label="Filter by seller"
-              className="bg-surface-50 border border-gray-700 rounded px-2 py-1.5 text-sm text-white max-w-52"
-            >
-              <option value="">All sellers</option>
-              {sellers.map((sl) => (
-                <option key={sl.id} value={sl.id}>{sl.displayName}</option>
-              ))}
-            </select>
+              onChange={(v) => setView({ seller: v || null })}
+              options={sellers.map((sl) => ({ value: sl.id, label: sl.displayName, keywords: [sl.phone, sl.email].filter(Boolean).join(' ') }))}
+              placeholder="All sellers"
+              clearLabel="All sellers"
+              emptyMessage="No sellers match."
+              className="w-52"
+              inputClassName="bg-surface-50 px-2 py-1.5"
+              ariaLabel="Filter by seller"
+            />
           )}
           <select
             value={printFilter}
