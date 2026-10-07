@@ -10,7 +10,7 @@
         "allowFreeEntry": true,
         "values": [
           {
-            "label": "Head",
+            "label": "4FRNT",
             "attributes": [
               {
                 "label": "Model",
@@ -18,24 +18,18 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Kore",
-                  "Supershape",
-                  "Monster",
-                  "e-Rally",
-                  "Total Joy",
-                  "Absolut Joy",
-                  "Pure Joy",
-                  "Wild Joy",
-                  "Raw Instinct",
-                  "Oblivion",
-                  "Worldcup Rebels",
-                  "Shape"
+                  "MSP",
+                  "Devastator",
+                  "Hoji",
+                  "Raven",
+                  "Switchblade",
+                  "Inthayne"
                 ]
               }
             ]
           },
           {
-            "label": "Völkl",
+            "label": "Armada",
             "attributes": [
               {
                 "label": "Model",
@@ -43,57 +37,21 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Kendo",
-                  "Mantra",
-                  "Blaze",
-                  "Deacon",
-                  "Katana",
-                  "Revolt",
-                  "Secret",
-                  "Kenja",
-                  "Yumi",
-                  "Aura",
-                  "Bridge",
-                  "Gotama",
-                  "Bash",
-                  "RTM",
-                  "Racetiger",
-                  "Peregrine",
-                  "Flair",
-                  "Kanjo",
-                  "Rise"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Rossignol",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Experience",
-                  "Sender",
-                  "Soul 7",
-                  "Hero",
-                  "Super 7",
-                  "Blackops",
-                  "Smash",
-                  "Nova",
-                  "Savage",
-                  "Sky 7",
-                  "Seek",
-                  "Escaper",
-                  "Rallybird",
-                  "Temptation",
-                  "Saphir",
-                  "Scratch",
-                  "Squad 7",
-                  "Sin 7",
-                  "Attraxion"
+                  "ARV",
+                  "Declivity",
+                  "Stranger",
+                  "Tracer",
+                  "Locator",
+                  "Reliance",
+                  "Trace",
+                  "Whitewalker",
+                  "JJ",
+                  "Invictus",
+                  "Victa",
+                  "Magic J",
+                  "Edollo",
+                  "BDog",
+                  "Al Dente"
                 ]
               }
             ]
@@ -125,7 +83,7 @@
             ]
           },
           {
-            "label": "Salomon",
+            "label": "Black Crows",
             "attributes": [
               {
                 "label": "Model",
@@ -133,80 +91,20 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "QST",
-                  "Stance",
-                  "S/Force",
-                  "Addikt",
-                  "XDR",
-                  "X-Drive",
-                  "Enduro",
-                  "BBR",
-                  "Rocker2",
-                  "MTN",
-                  "Pocket Rocket",
-                  "Teneighty",
-                  "Scrambler",
-                  "X-Scream",
-                  "Sentinel",
-                  "Shogun",
-                  "Czar",
-                  "Threat",
-                  "Suspect",
-                  "TNT",
-                  "Rockette",
-                  "Origins",
-                  "Lord",
-                  "Aira",
-                  "Mynx",
-                  "Siam",
-                  "X-Max",
-                  "X-Pro",
-                  "Crossmax",
-                  "Q-Lab",
-                  "Instinct",
-                  "Verse"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "K2",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Mindbender",
-                  "Reckoner",
-                  "Disruption",
-                  "Pinnacle",
-                  "Shreditor",
-                  "Poacher",
-                  "Sight",
-                  "Omen",
-                  "Anthem",
-                  "Talkback",
-                  "Wayback",
-                  "Press",
-                  "Domain",
-                  "Rictor",
-                  "Kung Fujas",
-                  "Obsethed",
-                  "Hellbent",
-                  "Pon2oon",
-                  "Marksman",
-                  "Catamaran",
-                  "Missconduct",
-                  "Empress",
-                  "Luv Bug",
-                  "Secret Luv",
-                  "Amp",
-                  "Apache",
-                  "Recon",
-                  "Photon",
-                  "Fulluvit"
+                  "Camox",
+                  "Navis",
+                  "Atris",
+                  "Corvus",
+                  "Anima",
+                  "Justis",
+                  "Orb",
+                  "Daemon",
+                  "Captis",
+                  "Ferox",
+                  "Draco",
+                  "Divus",
+                  "Mirus",
+                  "Vertis"
                 ]
               }
             ]
@@ -244,8 +142,9 @@
               }
             ]
           },
+          "Blossom",
           {
-            "label": "Nordica",
+            "label": "DPS",
             "attributes": [
               {
                 "label": "Model",
@@ -253,45 +152,15 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Enforcer",
-                  "Santa Ana",
-                  "Dobermann",
-                  "Navigator",
-                  "Unleashed",
-                  "Steadfast",
-                  "Wild Belle",
-                  "Astral",
-                  "Belle",
-                  "Soul Rider",
-                  "Patron",
-                  "Helldorado",
-                  "Hell & Back",
-                  "Avenger",
-                  "Fire Arrow"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Fischer",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Ranger",
-                  "RC4",
-                  "Transalp",
-                  "Nightstick",
-                  "Pro Mtn",
-                  "Motive",
-                  "Koa",
-                  "Hannibal",
-                  "Watea",
-                  "Progressor",
-                  "RC One"
+                  "Pagoda",
+                  "Foundation",
+                  "Alchemist",
+                  "Wailer",
+                  "Lotus",
+                  "Cassiar",
+                  "Yvette",
+                  "Koala",
+                  "Kaizen"
                 ]
               }
             ]
@@ -345,6 +214,195 @@
               }
             ]
           },
+          "Extrem",
+          {
+            "label": "Faction",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Prodigy",
+                  "Dictator",
+                  "Agent",
+                  "Studio",
+                  "La Machine",
+                  "Mana",
+                  "Dancer",
+                  "Candide"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Fischer",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Ranger",
+                  "RC4",
+                  "Transalp",
+                  "Nightstick",
+                  "Pro Mtn",
+                  "Motive",
+                  "Koa",
+                  "Hannibal",
+                  "Watea",
+                  "Progressor",
+                  "RC One"
+                ]
+              }
+            ]
+          },
+          "Folsom",
+          {
+            "label": "Head",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Kore",
+                  "Supershape",
+                  "Monster",
+                  "e-Rally",
+                  "Total Joy",
+                  "Absolut Joy",
+                  "Pure Joy",
+                  "Wild Joy",
+                  "Raw Instinct",
+                  "Oblivion",
+                  "Worldcup Rebels",
+                  "Shape"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Icelantic",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Nomad",
+                  "Pioneer",
+                  "Natural",
+                  "Maiden",
+                  "Mystic",
+                  "Saba",
+                  "Riveter",
+                  "Shaman"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "J Skis",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Masterblaster",
+                  "Hotshot",
+                  "Allplay",
+                  "Vacation",
+                  "Friend",
+                  "Whipit"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "K2",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Mindbender",
+                  "Reckoner",
+                  "Disruption",
+                  "Pinnacle",
+                  "Shreditor",
+                  "Poacher",
+                  "Sight",
+                  "Omen",
+                  "Anthem",
+                  "Talkback",
+                  "Wayback",
+                  "Press",
+                  "Domain",
+                  "Rictor",
+                  "Kung Fujas",
+                  "Obsethed",
+                  "Hellbent",
+                  "Pon2oon",
+                  "Marksman",
+                  "Catamaran",
+                  "Missconduct",
+                  "Empress",
+                  "Luv Bug",
+                  "Secret Luv",
+                  "Amp",
+                  "Apache",
+                  "Recon",
+                  "Photon",
+                  "Fulluvit"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Kästle",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "MX",
+                  "FX",
+                  "ZX",
+                  "TX",
+                  "RX"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Liberty",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Origin",
+                  "Helix",
+                  "Evolv",
+                  "Genesis"
+                ]
+              }
+            ]
+          },
           {
             "label": "Line",
             "attributes": [
@@ -374,162 +432,6 @@
             ]
           },
           {
-            "label": "Armada",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "ARV",
-                  "Declivity",
-                  "Stranger",
-                  "Tracer",
-                  "Locator",
-                  "Reliance",
-                  "Trace",
-                  "Whitewalker",
-                  "JJ",
-                  "Invictus",
-                  "Victa",
-                  "Magic J",
-                  "Edollo",
-                  "BDog",
-                  "Al Dente"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Black Crows",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Camox",
-                  "Navis",
-                  "Atris",
-                  "Corvus",
-                  "Anima",
-                  "Justis",
-                  "Orb",
-                  "Daemon",
-                  "Captis",
-                  "Ferox",
-                  "Draco",
-                  "Divus",
-                  "Mirus",
-                  "Vertis"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "DPS",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Pagoda",
-                  "Foundation",
-                  "Alchemist",
-                  "Wailer",
-                  "Lotus",
-                  "Cassiar",
-                  "Yvette",
-                  "Koala",
-                  "Kaizen"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Faction",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Prodigy",
-                  "Dictator",
-                  "Agent",
-                  "Studio",
-                  "La Machine",
-                  "Mana",
-                  "Dancer",
-                  "Candide"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Stöckli",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Laser",
-                  "Stormrider",
-                  "Nela",
-                  "Montero",
-                  "Edge"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Icelantic",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Nomad",
-                  "Pioneer",
-                  "Natural",
-                  "Maiden",
-                  "Mystic",
-                  "Saba",
-                  "Riveter",
-                  "Shaman"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "4FRNT",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "MSP",
-                  "Devastator",
-                  "Hoji",
-                  "Raven",
-                  "Switchblade",
-                  "Inthayne"
-                ]
-              }
-            ]
-          },
-          {
             "label": "Moment",
             "attributes": [
               {
@@ -544,6 +446,35 @@
                   "Meridian",
                   "Bibby",
                   "Exit World"
+                ]
+              }
+            ]
+          },
+          "Movement",
+          {
+            "label": "Nordica",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Enforcer",
+                  "Santa Ana",
+                  "Dobermann",
+                  "Navigator",
+                  "Unleashed",
+                  "Steadfast",
+                  "Wild Belle",
+                  "Astral",
+                  "Belle",
+                  "Soul Rider",
+                  "Patron",
+                  "Helldorado",
+                  "Hell & Back",
+                  "Avenger",
+                  "Fire Arrow"
                 ]
               }
             ]
@@ -565,8 +496,11 @@
               }
             ]
           },
+          "Parlor",
+          "Praxis",
+          "Renoun",
           {
-            "label": "J Skis",
+            "label": "Rossignol",
             "attributes": [
               {
                 "label": "Model",
@@ -574,18 +508,31 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Masterblaster",
-                  "Hotshot",
-                  "Allplay",
-                  "Vacation",
-                  "Friend",
-                  "Whipit"
+                  "Experience",
+                  "Sender",
+                  "Soul 7",
+                  "Hero",
+                  "Super 7",
+                  "Blackops",
+                  "Smash",
+                  "Nova",
+                  "Savage",
+                  "Sky 7",
+                  "Seek",
+                  "Escaper",
+                  "Rallybird",
+                  "Temptation",
+                  "Saphir",
+                  "Scratch",
+                  "Squad 7",
+                  "Sin 7",
+                  "Attraxion"
                 ]
               }
             ]
           },
           {
-            "label": "Liberty",
+            "label": "Salomon",
             "attributes": [
               {
                 "label": "Model",
@@ -593,28 +540,38 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Origin",
-                  "Helix",
-                  "Evolv",
-                  "Genesis"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Kästle",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "MX",
-                  "FX",
-                  "ZX",
-                  "TX",
-                  "RX"
+                  "QST",
+                  "Stance",
+                  "S/Force",
+                  "Addikt",
+                  "XDR",
+                  "X-Drive",
+                  "Enduro",
+                  "BBR",
+                  "Rocker2",
+                  "MTN",
+                  "Pocket Rocket",
+                  "Teneighty",
+                  "Scrambler",
+                  "X-Scream",
+                  "Sentinel",
+                  "Shogun",
+                  "Czar",
+                  "Threat",
+                  "Suspect",
+                  "TNT",
+                  "Rockette",
+                  "Origins",
+                  "Lord",
+                  "Aira",
+                  "Mynx",
+                  "Siam",
+                  "X-Max",
+                  "X-Pro",
+                  "Crossmax",
+                  "Q-Lab",
+                  "Instinct",
+                  "Verse"
                 ]
               }
             ]
@@ -636,18 +593,61 @@
               }
             ]
           },
-          "Movement",
-          "Zag",
-          "Whitedot",
-          "Renoun",
           "Season",
-          "Parlor",
-          "Wagner",
-          "Folsom",
-          "Praxis",
-          "Extrem",
+          {
+            "label": "Stöckli",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Laser",
+                  "Stormrider",
+                  "Nela",
+                  "Montero",
+                  "Edge"
+                ]
+              }
+            ]
+          },
           "Voile",
-          "Blossom"
+          {
+            "label": "Völkl",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Kendo",
+                  "Mantra",
+                  "Blaze",
+                  "Deacon",
+                  "Katana",
+                  "Revolt",
+                  "Secret",
+                  "Kenja",
+                  "Yumi",
+                  "Aura",
+                  "Bridge",
+                  "Gotama",
+                  "Bash",
+                  "RTM",
+                  "Racetiger",
+                  "Peregrine",
+                  "Flair",
+                  "Kanjo",
+                  "Rise"
+                ]
+              }
+            ]
+          },
+          "Wagner",
+          "Whitedot",
+          "Zag"
         ]
       },
       {
@@ -734,6 +734,50 @@
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
+          "Academy",
+          {
+            "label": "Arbor",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Element",
+                  "Coda",
+                  "Westmark",
+                  "Formula",
+                  "Swoon",
+                  "Cadence",
+                  "Crosscut",
+                  "Satori",
+                  "Shiloh",
+                  "Draft",
+                  "Bryan Iguchi Pro"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Bataleon",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Evil Twin",
+                  "Goliath",
+                  "Whatever",
+                  "Disaster",
+                  "Party Wave",
+                  "Fun.Kink"
+                ]
+              }
+            ]
+          },
           {
             "label": "Burton",
             "attributes": [
@@ -779,6 +823,109 @@
             ]
           },
           {
+            "label": "Capita",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "DOA",
+                  "Mercury",
+                  "Mega Death",
+                  "Defenders of Awesome",
+                  "Pathfinder",
+                  "Navigator",
+                  "Outerspace Living",
+                  "Birds of a Feather",
+                  "Paradise",
+                  "Kazu Kokubo Pro",
+                  "Asymulator",
+                  "Spring Break"
+                ]
+              }
+            ]
+          },
+          "DC",
+          "Endeavor",
+          "Flow",
+          "Forum",
+          "Gentemstick",
+          {
+            "label": "GNU",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Riders Choice",
+                  "Ladies Choice",
+                  "Money",
+                  "Head Space",
+                  "Banked Country",
+                  "Gremlin",
+                  "Asym Carbon Credit",
+                  "Klassy",
+                  "Barrett",
+                  "Antigravity"
+                ]
+              }
+            ]
+          },
+          "Head",
+          {
+            "label": "Jones",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Mountain Twin",
+                  "Flagship",
+                  "Hovercraft",
+                  "Stratos",
+                  "Explorer",
+                  "Frontier",
+                  "Storm Chaser",
+                  "Twin Sister",
+                  "Dream Catcher",
+                  "Mind Expander",
+                  "Ultra Mountain Twin"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "K2",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Raygun",
+                  "Antidote",
+                  "Manifest",
+                  "Excavator",
+                  "Broadcast",
+                  "Instrument",
+                  "Alchemist",
+                  "Cold Shoulder",
+                  "First Lite",
+                  "Party Platter",
+                  "Dreamsicle"
+                ]
+              }
+            ]
+          },
+          "Korua",
+          {
             "label": "Lib Tech",
             "attributes": [
               {
@@ -801,29 +948,6 @@
                   "Attack Banana",
                   "Jamie Lynn",
                   "No Other Choice"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "GNU",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Riders Choice",
-                  "Ladies Choice",
-                  "Money",
-                  "Head Space",
-                  "Banked Country",
-                  "Gremlin",
-                  "Asym Carbon Credit",
-                  "Klassy",
-                  "Barrett",
-                  "Antigravity"
                 ]
               }
             ]
@@ -854,7 +978,7 @@
             ]
           },
           {
-            "label": "Ride",
+            "label": "Nidecker",
             "attributes": [
               {
                 "label": "Model",
@@ -862,162 +986,12 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Warpig",
-                  "Algorhythm",
-                  "Shadowban",
-                  "Twinpig",
-                  "Berzerker",
-                  "Agenda",
-                  "Manic",
-                  "Kink",
-                  "Psychocandy",
-                  "Superpig",
-                  "Magic Stick"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Capita",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "DOA",
-                  "Mercury",
-                  "Mega Death",
-                  "Defenders of Awesome",
-                  "Pathfinder",
-                  "Navigator",
-                  "Outerspace Living",
-                  "Birds of a Feather",
-                  "Paradise",
-                  "Kazu Kokubo Pro",
-                  "Asymulator",
-                  "Spring Break"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Arbor",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Element",
-                  "Coda",
-                  "Westmark",
-                  "Formula",
-                  "Swoon",
-                  "Cadence",
-                  "Crosscut",
-                  "Satori",
-                  "Shiloh",
-                  "Draft",
-                  "Bryan Iguchi Pro"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Jones",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Mountain Twin",
-                  "Flagship",
-                  "Hovercraft",
-                  "Stratos",
-                  "Explorer",
-                  "Frontier",
-                  "Storm Chaser",
-                  "Twin Sister",
-                  "Dream Catcher",
-                  "Mind Expander",
-                  "Ultra Mountain Twin"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Rome",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Agent",
-                  "Ravine",
-                  "Stale Crewzer",
-                  "National",
-                  "Ryan Crosbie Pro",
-                  "Mechanic",
-                  "Artifact",
-                  "Gang Plank",
-                  "Muse",
-                  "Royal"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Salomon",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Assassin",
-                  "Huck Knife",
-                  "Sleepwalker",
-                  "Dancehaul",
-                  "Super 8",
-                  "Pulse",
-                  "Villain",
-                  "Craft",
-                  "Sight",
-                  "Wonder",
-                  "Oh Yeah",
-                  "No Drama"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "K2",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Raygun",
-                  "Antidote",
-                  "Manifest",
-                  "Excavator",
-                  "Broadcast",
-                  "Instrument",
-                  "Alchemist",
-                  "Cold Shoulder",
-                  "First Lite",
-                  "Party Platter",
-                  "Dreamsicle"
+                  "Escape",
+                  "Sensor",
+                  "Merc",
+                  "Play",
+                  "Ora",
+                  "Thruster"
                 ]
               }
             ]
@@ -1046,8 +1020,11 @@
               }
             ]
           },
+          "Option",
+          "Palmer",
+          "Public",
           {
-            "label": "Yes",
+            "label": "Ride",
             "attributes": [
               {
                 "label": "Model",
@@ -1055,20 +1032,23 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Basic",
-                  "Typo",
-                  "Standard",
-                  "Greats",
-                  "Hybrid",
-                  "Optimistic",
-                  "Warca",
-                  "Hel Yes"
+                  "Warpig",
+                  "Algorhythm",
+                  "Shadowban",
+                  "Twinpig",
+                  "Berzerker",
+                  "Agenda",
+                  "Manic",
+                  "Kink",
+                  "Psychocandy",
+                  "Superpig",
+                  "Magic Stick"
                 ]
               }
             ]
           },
           {
-            "label": "Bataleon",
+            "label": "Rome",
             "attributes": [
               {
                 "label": "Model",
@@ -1076,12 +1056,16 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Evil Twin",
-                  "Goliath",
-                  "Whatever",
-                  "Disaster",
-                  "Party Wave",
-                  "Fun.Kink"
+                  "Agent",
+                  "Ravine",
+                  "Stale Crewzer",
+                  "National",
+                  "Ryan Crosbie Pro",
+                  "Mechanic",
+                  "Artifact",
+                  "Gang Plank",
+                  "Muse",
+                  "Royal"
                 ]
               }
             ]
@@ -1108,8 +1092,9 @@
               }
             ]
           },
+          "Roxy",
           {
-            "label": "Nidecker",
+            "label": "Salomon",
             "attributes": [
               {
                 "label": "Model",
@@ -1117,33 +1102,48 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Escape",
-                  "Sensor",
-                  "Merc",
-                  "Play",
-                  "Ora",
-                  "Thruster"
+                  "Assassin",
+                  "Huck Knife",
+                  "Sleepwalker",
+                  "Dancehaul",
+                  "Super 8",
+                  "Pulse",
+                  "Villain",
+                  "Craft",
+                  "Sight",
+                  "Wonder",
+                  "Oh Yeah",
+                  "No Drama"
                 ]
               }
             ]
           },
-          "Endeavor",
-          "Weston",
-          "Korua",
-          "Gentemstick",
-          "Public",
-          "Academy",
-          "Slash",
-          "Signal",
-          "Flow",
-          "DC",
-          "Head",
-          "Stepchild",
-          "Forum",
-          "Option",
-          "Palmer",
           "Santa Cruz",
-          "Roxy"
+          "Signal",
+          "Slash",
+          "Stepchild",
+          "Weston",
+          {
+            "label": "Yes",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Basic",
+                  "Typo",
+                  "Standard",
+                  "Greats",
+                  "Hybrid",
+                  "Optimistic",
+                  "Warca",
+                  "Hel Yes"
+                ]
+              }
+            ]
+          }
         ]
       },
       {
@@ -1224,11 +1224,39 @@
     "icon": "ski-boots",
     "attributes": [
       {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
         "label": "Manufacturer",
         "input": "SELECT",
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
+          {
+            "label": "Apex",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "MC",
+                  "HP",
+                  "ML",
+                  "Antero"
+                ]
+              }
+            ]
+          },
           {
             "label": "Atomic",
             "attributes": [
@@ -1247,110 +1275,7 @@
               }
             ]
           },
-          {
-            "label": "Head",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Formula",
-                  "Edge",
-                  "Kore",
-                  "Nexo",
-                  "Advant Edge",
-                  "Raptor",
-                  "Vector"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Lange",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "RX",
-                  "Shadow",
-                  "XT3",
-                  "RS",
-                  "XT",
-                  "SX",
-                  "Banshee",
-                  "Freetour"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Nordica",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Speedmachine",
-                  "Promachine",
-                  "HF",
-                  "Sportmachine",
-                  "Strider",
-                  "Cruise",
-                  "Dobermann",
-                  "Enforcer",
-                  "Unlimited"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Salomon",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "S/Pro",
-                  "Shift",
-                  "QST",
-                  "X Pro",
-                  "X Access",
-                  "S/Max",
-                  "MTN",
-                  "Quest"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Tecnica",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Mach1",
-                  "Cochise",
-                  "Zero G",
-                  "Mach Sport",
-                  "Zero G Tour",
-                  "Ten.2",
-                  "Phoenix"
-                ]
-              }
-            ]
-          },
+          "Atomic Backland",
           {
             "label": "Dalbello",
             "attributes": [
@@ -1368,6 +1293,24 @@
                   "Veloce",
                   "Il Moro",
                   "Quantum"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Dynafit",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Hoji",
+                  "TLT",
+                  "Radical",
+                  "Ridge",
+                  "Blacklight"
                 ]
               }
             ]
@@ -1410,6 +1353,26 @@
             ]
           },
           {
+            "label": "Head",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Formula",
+                  "Edge",
+                  "Kore",
+                  "Nexo",
+                  "Advant Edge",
+                  "Raptor",
+                  "Vector"
+                ]
+              }
+            ]
+          },
+          {
             "label": "K2",
             "attributes": [
               {
@@ -1429,6 +1392,52 @@
               }
             ]
           },
+          "La Sportiva",
+          {
+            "label": "Lange",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "RX",
+                  "Shadow",
+                  "XT3",
+                  "RS",
+                  "XT",
+                  "SX",
+                  "Banshee",
+                  "Freetour"
+                ]
+              }
+            ]
+          },
+          "Movement",
+          {
+            "label": "Nordica",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Speedmachine",
+                  "Promachine",
+                  "HF",
+                  "Sportmachine",
+                  "Strider",
+                  "Cruise",
+                  "Dobermann",
+                  "Enforcer",
+                  "Unlimited"
+                ]
+              }
+            ]
+          },
+          "Nordica Dobermann",
           {
             "label": "Rossignol",
             "attributes": [
@@ -1445,6 +1454,43 @@
                   "Speed",
                   "Evo",
                   "Alltrack Elite"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Roxa",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "R3",
+                  "RFIT",
+                  "Element"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Salomon",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "S/Pro",
+                  "Shift",
+                  "QST",
+                  "X Pro",
+                  "X Access",
+                  "S/Max",
+                  "MTN",
+                  "Quest"
                 ]
               }
             ]
@@ -1468,8 +1514,9 @@
               }
             ]
           },
+          "Technica",
           {
-            "label": "Apex",
+            "label": "Tecnica",
             "attributes": [
               {
                 "label": "Model",
@@ -1477,53 +1524,17 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "MC",
-                  "HP",
-                  "ML",
-                  "Antero"
+                  "Mach1",
+                  "Cochise",
+                  "Zero G",
+                  "Mach Sport",
+                  "Zero G Tour",
+                  "Ten.2",
+                  "Phoenix"
                 ]
               }
             ]
-          },
-          {
-            "label": "Roxa",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "R3",
-                  "RFIT",
-                  "Element"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Dynafit",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Hoji",
-                  "TLT",
-                  "Radical",
-                  "Ridge",
-                  "Blacklight"
-                ]
-              }
-            ]
-          },
-          "La Sportiva",
-          "Movement",
-          "Atomic Backland",
-          "Nordica Dobermann",
-          "Technica"
+          }
         ]
       },
       {
@@ -1535,17 +1546,6 @@
         "min": 14,
         "max": 34,
         "step": 0.5
-      },
-      {
-        "label": "Gender",
-        "input": "SELECT",
-        "nameSlot": 40,
-        "values": [
-          "Mens",
-          "Womens",
-          "Kids",
-          "Unisex"
-        ]
       },
       {
         "label": "Flex",
@@ -1595,11 +1595,23 @@
     "icon": "snowboard-boots",
     "attributes": [
       {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
         "label": "Manufacturer",
         "input": "SELECT",
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
+          "Adidas",
           {
             "label": "Burton",
             "attributes": [
@@ -1645,6 +1657,9 @@
               }
             ]
           },
+          "Deeluxe",
+          "Flow",
+          "Flux",
           {
             "label": "K2",
             "attributes": [
@@ -1688,6 +1703,23 @@
             ]
           },
           {
+            "label": "Northwave",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Decade",
+                  "Domain",
+                  "Freedom",
+                  "Drake"
+                ]
+              }
+            ]
+          },
+          {
             "label": "Ride",
             "attributes": [
               {
@@ -1708,6 +1740,7 @@
               }
             ]
           },
+          "Rome",
           {
             "label": "Salomon",
             "attributes": [
@@ -1769,29 +1802,7 @@
                 ]
               }
             ]
-          },
-          {
-            "label": "Northwave",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Decade",
-                  "Domain",
-                  "Freedom",
-                  "Drake"
-                ]
-              }
-            ]
-          },
-          "Rome",
-          "Flow",
-          "Adidas",
-          "Deeluxe",
-          "Flux"
+          }
         ]
       },
       {
@@ -1803,17 +1814,6 @@
         "min": 1,
         "max": 16,
         "step": 0.5
-      },
-      {
-        "label": "Gender",
-        "input": "SELECT",
-        "nameSlot": 40,
-        "values": [
-          "Mens",
-          "Womens",
-          "Kids",
-          "Unisex"
-        ]
       },
       {
         "label": "Lacing",
@@ -1861,6 +1861,20 @@
     ]
   },
   {
+    "label": "Bindings",
+    "icon": "snowboard-boots",
+    "attributes": [
+      {
+        "label": "Type",
+        "input": "SELECT",
+        "values": [
+          "Skis",
+          "Snowboard"
+        ]
+      }
+    ]
+  },
+  {
     "label": "Cross-country skis",
     "icon": "nordic",
     "attributes": [
@@ -1870,6 +1884,41 @@
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
+          {
+            "label": "Alpina",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Discovery",
+                  "Control",
+                  "Sports"
+                ]
+              }
+            ]
+          },
+          "Åsnes",
+          {
+            "label": "Atomic",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Pro",
+                  "Redster",
+                  "Savor",
+                  "Mover",
+                  "Rainier"
+                ]
+              }
+            ]
+          },
           {
             "label": "Fischer",
             "attributes": [
@@ -1891,6 +1940,28 @@
               }
             ]
           },
+          "Järvinen",
+          "Karhu",
+          {
+            "label": "Madshus",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Panorama",
+                  "Redline",
+                  "Endurace",
+                  "Eon",
+                  "Epoch",
+                  "Annum"
+                ]
+              }
+            ]
+          },
+          "Peltonen",
           {
             "label": "Rossignol",
             "attributes": [
@@ -1928,65 +1999,8 @@
               }
             ]
           },
-          {
-            "label": "Atomic",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Pro",
-                  "Redster",
-                  "Savor",
-                  "Mover",
-                  "Rainier"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Madshus",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Panorama",
-                  "Redline",
-                  "Endurace",
-                  "Eon",
-                  "Epoch",
-                  "Annum"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Alpina",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Discovery",
-                  "Control",
-                  "Sports"
-                ]
-              }
-            ]
-          },
-          "Peltonen",
-          "Karhu",
-          "Järvinen",
-          "Yoko",
-          "Åsnes",
-          "Voile"
+          "Voile",
+          "Yoko"
         ]
       },
       {
@@ -2032,6 +2046,99 @@
     ]
   },
   {
+    "label": "Cross-country boots",
+    "icon": "nordic",
+    "attributes": [
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "values": [
+          "Alpina",
+          "Atomic",
+          "Fischer",
+          "Madshus",
+          "Rossignol",
+          "Salomon"
+        ]
+      },
+      {
+        "label": "Size",
+        "input": "NUMBER",
+        "nameSlot": 30,
+        "unit": "EU",
+        "min": 25,
+        "max": 50,
+        "step": 0.5
+      },
+      {
+        "label": "Style",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "values": [
+          "Classic",
+          "Skate",
+          "Combi",
+          "Backcountry"
+        ]
+      },
+      {
+        "label": "Binding",
+        "input": "SELECT",
+        "values": [
+          "NNN",
+          "SNS",
+          "Prolink",
+          "Turnamic",
+          "NNN-BC",
+          "75mm"
+        ]
+      },
+      {
+        "label": "Gender",
+        "input": "SELECT",
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolor"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
     "label": "Poles",
     "icon": "poles",
     "attributes": [
@@ -2041,21 +2148,21 @@
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
-          "Leki",
-          "Swix",
-          "Scott",
-          "Black Diamond",
-          "Komperdell",
-          "Goode",
+          "Armada",
           "Atomic",
+          "Black Diamond",
+          "Faction",
+          "Goode",
+          "Kerma",
+          "Komperdell",
+          "Leki",
+          "Line",
+          "MSR",
           "Rossignol",
           "Salomon",
-          "Volkl",
-          "Kerma",
-          "Armada",
-          "Line",
-          "Faction",
-          "MSR"
+          "Scott",
+          "Swix",
+          "Volkl"
         ]
       },
       {
@@ -2113,22 +2220,22 @@
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
-          "Giro",
-          "Smith",
-          "POC",
-          "Salomon",
-          "Oakley",
-          "Sweet Protection",
-          "Bern",
           "Anon",
           "Atomic",
-          "K2",
+          "Bern",
+          "Bolle",
+          "Giro",
           "Head",
+          "K2",
           "Marker",
+          "Oakley",
+          "POC",
           "Pret",
-          "Shred",
+          "Salomon",
           "Scott",
-          "Bolle"
+          "Shred",
+          "Smith",
+          "Sweet Protection"
         ]
       },
       {
@@ -2210,22 +2317,22 @@
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
-          "Oakley",
-          "Smith",
-          "Giro",
+          "100%",
           "Anon",
-          "POC",
+          "Bolle",
           "Dragon",
           "Electric",
-          "Scott",
-          "Bolle",
-          "Zeal",
+          "Giro",
           "Julbo",
-          "Spy",
+          "Oakley",
+          "POC",
           "Salomon",
+          "Scott",
+          "Smith",
+          "Spy",
           "Sweet Protection",
           "Von Zipper",
-          "100%"
+          "Zeal"
         ]
       },
       {
@@ -2280,11 +2387,23 @@
     "icon": "jacket",
     "attributes": [
       {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
         "label": "Manufacturer",
         "input": "SELECT",
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
+          "686",
           "Arc’teryx",
           "Burton",
           "Columbia",
@@ -2303,19 +2422,7 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom",
-          "686"
-        ]
-      },
-      {
-        "label": "Gender",
-        "input": "SELECT",
-        "nameSlot": 30,
-        "values": [
-          "Mens",
-          "Womens",
-          "Kids",
-          "Unisex"
+          "Volcom"
         ]
       },
       {
@@ -2384,31 +2491,14 @@
     "icon": "pants",
     "attributes": [
       {
-        "label": "Manufacturer",
+        "label": "Gender",
         "input": "SELECT",
-        "nameSlot": 10,
-        "allowFreeEntry": true,
+        "nameSlot": 30,
         "values": [
-          "Arc’teryx",
-          "Burton",
-          "Columbia",
-          "Descente",
-          "Eddie Bauer",
-          "Flylow",
-          "Helly Hansen",
-          "Mammut",
-          "Marmot",
-          "Mountain Hardwear",
-          "Norrøna",
-          "Obermeyer",
-          "Outdoor Research",
-          "Patagonia",
-          "Picture",
-          "Spyder",
-          "The North Face",
-          "Trew",
-          "Volcom",
-          "686"
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
         ]
       },
       {
@@ -2418,17 +2508,6 @@
         "values": [
           "Regular",
           "Bib"
-        ]
-      },
-      {
-        "label": "Gender",
-        "input": "SELECT",
-        "nameSlot": 30,
-        "values": [
-          "Mens",
-          "Womens",
-          "Kids",
-          "Unisex"
         ]
       },
       {
@@ -2455,6 +2534,34 @@
           "Youth 12",
           "Youth 14",
           "Youth 16"
+        ]
+      },
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "686",
+          "Arc’teryx",
+          "Burton",
+          "Columbia",
+          "Descente",
+          "Eddie Bauer",
+          "Flylow",
+          "Helly Hansen",
+          "Mammut",
+          "Marmot",
+          "Mountain Hardwear",
+          "Norrøna",
+          "Obermeyer",
+          "Outdoor Research",
+          "Patagonia",
+          "Picture",
+          "Spyder",
+          "The North Face",
+          "Trew",
+          "Volcom"
         ]
       },
       {
@@ -2497,11 +2604,23 @@
     "icon": "vest",
     "attributes": [
       {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
         "label": "Manufacturer",
         "input": "SELECT",
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
+          "686",
           "Arc’teryx",
           "Burton",
           "Columbia",
@@ -2520,19 +2639,7 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom",
-          "686"
-        ]
-      },
-      {
-        "label": "Gender",
-        "input": "SELECT",
-        "nameSlot": 30,
-        "values": [
-          "Mens",
-          "Womens",
-          "Kids",
-          "Unisex"
+          "Volcom"
         ]
       },
       {
@@ -2601,11 +2708,23 @@
     "icon": "base-layer",
     "attributes": [
       {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
         "label": "Manufacturer",
         "input": "SELECT",
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
+          "686",
           "Arc’teryx",
           "Burton",
           "Columbia",
@@ -2624,19 +2743,7 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom",
-          "686"
-        ]
-      },
-      {
-        "label": "Gender",
-        "input": "SELECT",
-        "nameSlot": 30,
-        "values": [
-          "Mens",
-          "Womens",
-          "Kids",
-          "Unisex"
+          "Volcom"
         ]
       },
       {
@@ -2701,15 +2808,15 @@
     ]
   },
   {
-    "label": "Gloves",
-    "icon": "gloves",
+    "label": "Mid layer",
+    "icon": "base-layer",
     "attributes": [
       {
         "label": "Manufacturer",
         "input": "SELECT",
         "nameSlot": 10,
-        "allowFreeEntry": true,
         "values": [
+          "686",
           "Arc’teryx",
           "Burton",
           "Columbia",
@@ -2728,17 +2835,18 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom",
-          "686"
+          "Volcom"
         ]
       },
       {
-        "label": "Style",
+        "label": "Type",
         "input": "SELECT",
         "nameSlot": 20,
         "values": [
-          "Glove",
-          "Mitten"
+          "Fleece",
+          "Insulated",
+          "Softshell",
+          "Hoodie"
         ]
       },
       {
@@ -2750,6 +2858,117 @@
           "Womens",
           "Kids",
           "Unisex"
+        ]
+      },
+      {
+        "label": "Size",
+        "input": "SELECT",
+        "nameSlot": 40,
+        "values": [
+          "XXS",
+          "XS",
+          "S",
+          "M",
+          "L",
+          "XL",
+          "XXL",
+          "XXXL",
+          "Youth 2",
+          "Youth 3",
+          "Youth 4",
+          "Youth 5",
+          "Youth 6",
+          "Youth 8",
+          "Youth 10",
+          "Youth 12",
+          "Youth 14",
+          "Youth 16"
+        ]
+      },
+      {
+        "label": "Color",
+        "input": "SELECT",
+        "nameSlot": 50,
+        "values": [
+          "Black",
+          "White",
+          "Grey",
+          "Red",
+          "Blue",
+          "Navy",
+          "Green",
+          "Yellow",
+          "Orange",
+          "Purple",
+          "Pink",
+          "Brown",
+          "Teal",
+          "Multicolor"
+        ]
+      },
+      {
+        "label": "Condition",
+        "input": "SELECT",
+        "values": [
+          "New",
+          "Excellent",
+          "Good",
+          "Fair",
+          "Well used"
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Gloves",
+    "icon": "gloves",
+    "attributes": [
+      {
+        "label": "Gender",
+        "input": "SELECT",
+        "nameSlot": 30,
+        "values": [
+          "Mens",
+          "Womens",
+          "Kids",
+          "Unisex"
+        ]
+      },
+      {
+        "label": "Manufacturer",
+        "input": "SELECT",
+        "nameSlot": 10,
+        "allowFreeEntry": true,
+        "values": [
+          "686",
+          "Arc’teryx",
+          "Burton",
+          "Columbia",
+          "Descente",
+          "Eddie Bauer",
+          "Flylow",
+          "Helly Hansen",
+          "Mammut",
+          "Marmot",
+          "Mountain Hardwear",
+          "Norrøna",
+          "Obermeyer",
+          "Outdoor Research",
+          "Patagonia",
+          "Picture",
+          "Spyder",
+          "The North Face",
+          "Trew",
+          "Volcom"
+        ]
+      },
+      {
+        "label": "Style",
+        "input": "SELECT",
+        "nameSlot": 20,
+        "values": [
+          "Glove",
+          "Mitten"
         ]
       },
       {
@@ -2823,15 +3042,15 @@
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
-          "Mad River Rocket",
-          "Hammerhead",
-          "Paricon",
-          "Flexible Flyer",
-          "Lucky Bums",
-          "ZipFy",
-          "Slippery Racer",
           "Airhead",
-          "Gizmo Riders"
+          "Flexible Flyer",
+          "Gizmo Riders",
+          "Hammerhead",
+          "Lucky Bums",
+          "Mad River Rocket",
+          "Paricon",
+          "Slippery Racer",
+          "ZipFy"
         ]
       },
       {
@@ -2879,6 +3098,7 @@
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
+          "686",
           "Arc’teryx",
           "Burton",
           "Columbia",
@@ -2897,8 +3117,7 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom",
-          "686"
+          "Volcom"
         ]
       },
       {
@@ -2957,8 +3176,10 @@
         "nameSlot": 10,
         "allowFreeEntry": true,
         "values": [
+          "All-City",
+          "Banshee",
           {
-            "label": "Trek",
+            "label": "Bianchi",
             "attributes": [
               {
                 "label": "Model",
@@ -2966,34 +3187,22 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Marlin",
-                  "FX",
-                  "Domane",
-                  "Émonda",
-                  "Fuel EX",
-                  "Roscoe",
-                  "Checkpoint",
-                  "Verve",
-                  "Madone",
-                  "Top Fuel",
-                  "Slash",
-                  "Remedy",
-                  "Procaliber",
-                  "X-Caliber",
-                  "Dual Sport",
-                  "Rail",
-                  "Powerfly",
-                  "Farley",
-                  "Supercaliber",
-                  "1120",
-                  "920",
-                  "820"
+                  "Oltre",
+                  "Specialissima",
+                  "Infinito",
+                  "Impulso",
+                  "Sprint",
+                  "Via Nirone",
+                  "Methanol",
+                  "Arcadex"
                 ]
               }
             ]
           },
+          "Bike Friday",
+          "BMC",
           {
-            "label": "Specialized",
+            "label": "Brompton",
             "attributes": [
               {
                 "label": "Model",
@@ -3001,55 +3210,10 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Rockhopper",
-                  "Stumpjumper",
-                  "Allez",
-                  "Tarmac",
-                  "Diverge",
-                  "Sirrus",
-                  "Epic",
-                  "Enduro",
-                  "Status",
-                  "Fuse",
-                  "Chisel",
-                  "Roubaix",
-                  "Aethos",
-                  "Crux",
-                  "Turbo Levo",
-                  "Turbo Vado",
-                  "Hardrock",
-                  "Riprock",
-                  "Demo"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Giant",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Talon",
-                  "Trance",
-                  "Defy",
-                  "TCR",
-                  "Escape",
-                  "Revolt",
-                  "Stance",
-                  "Reign",
-                  "Anthem",
-                  "Fathom",
-                  "Propel",
-                  "Contend",
-                  "Roam",
-                  "Trance X",
-                  "XTC",
-                  "Glory",
-                  "Sedona"
+                  "C Line",
+                  "P Line",
+                  "A Line",
+                  "T Line"
                 ]
               }
             ]
@@ -3080,301 +3244,6 @@
                   "Adventure",
                   "Moterra",
                   "Catalyst"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Santa Cruz",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Hightower",
-                  "Tallboy",
-                  "Bronson",
-                  "Chameleon",
-                  "Nomad",
-                  "Blur",
-                  "5010",
-                  "Megatower",
-                  "Heckler",
-                  "Stigmata",
-                  "Hightower LT",
-                  "Highball"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Scott",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Scale",
-                  "Spark",
-                  "Addict",
-                  "Aspect",
-                  "Genius",
-                  "Speedster",
-                  "Ransom",
-                  "Foil",
-                  "Contessa",
-                  "Sub Cross",
-                  "Solace"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Salsa",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Timberjack",
-                  "Journeyman",
-                  "Cutthroat",
-                  "Warbird",
-                  "Fargo",
-                  "Beargrease",
-                  "Rangefinder",
-                  "Blackborow",
-                  "Spearfish",
-                  "Horsethief"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Surly",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Karate Monkey",
-                  "Cross-Check",
-                  "Long Haul Trucker",
-                  "Pugsley",
-                  "Ice Cream Truck",
-                  "Midnight Special",
-                  "Straggler",
-                  "Bridge Club",
-                  "Ogre",
-                  "Krampus",
-                  "Disc Trucker"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Kona",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Process",
-                  "Honzo",
-                  "Unit",
-                  "Sutra",
-                  "Rove",
-                  "Hei Hei",
-                  "Dew",
-                  "Big Honzo",
-                  "Explosif",
-                  "Cinder Cone",
-                  "Lava Dome"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Yeti",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "SB130",
-                  "SB140",
-                  "SB150",
-                  "SB160",
-                  "SB100",
-                  "SB165",
-                  "ARC",
-                  "ASR"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Ibis",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Ripley",
-                  "Ripmo",
-                  "Mojo",
-                  "HD",
-                  "Hakka MX",
-                  "DV9",
-                  "Exie"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Pivot",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Mach 4",
-                  "Mach 5",
-                  "Mach 6",
-                  "Switchblade",
-                  "Firebird",
-                  "Trail 429",
-                  "Shuttle",
-                  "Vault",
-                  "LES"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Norco",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Sight",
-                  "Range",
-                  "Fluid",
-                  "Optic",
-                  "Storm",
-                  "Search",
-                  "Scene",
-                  "Charger",
-                  "Bigfoot",
-                  "Indie"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "GT",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Avalanche",
-                  "Aggressor",
-                  "Sensor",
-                  "Force",
-                  "Zaskar",
-                  "Grade",
-                  "Transeo",
-                  "Fury",
-                  "Traffic",
-                  "Palomar"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Marin",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Rift Zone",
-                  "Hawk Hill",
-                  "Bobcat Trail",
-                  "Alpine Trail",
-                  "San Quentin",
-                  "Four Corners",
-                  "Nicasio",
-                  "Fairfax",
-                  "Pine Mountain"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Rocky Mountain",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Altitude",
-                  "Instinct",
-                  "Element",
-                  "Slayer",
-                  "Growler",
-                  "Fusion",
-                  "Blizzard",
-                  "Reaper",
-                  "Solo"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Orbea",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Oiz",
-                  "Occam",
-                  "Alma",
-                  "Orca",
-                  "Avant",
-                  "Terra",
-                  "Rise",
-                  "Laufey",
-                  "Wild"
                 ]
               }
             ]
@@ -3421,89 +3290,7 @@
               }
             ]
           },
-          {
-            "label": "Bianchi",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Oltre",
-                  "Specialissima",
-                  "Infinito",
-                  "Impulso",
-                  "Sprint",
-                  "Via Nirone",
-                  "Methanol",
-                  "Arcadex"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Diamondback",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Release",
-                  "Atroz",
-                  "Hatch",
-                  "Haanjo",
-                  "Century",
-                  "Overdrive",
-                  "Line",
-                  "Sync'r",
-                  "Catch"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Raleigh",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Talus",
-                  "Redux",
-                  "Cadent",
-                  "Merit",
-                  "Willard",
-                  "Tokul",
-                  "Detour"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Schwinn",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "High Timber",
-                  "Sidewinder",
-                  "Mesa",
-                  "Discover",
-                  "Wayfarer",
-                  "Volare",
-                  "Signature"
-                ]
-              }
-            ]
-          },
+          "Chromag",
           {
             "label": "Co-op Cycles",
             "attributes": [
@@ -3522,63 +3309,7 @@
               }
             ]
           },
-          {
-            "label": "Electra",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Townie",
-                  "Cruiser",
-                  "Loft",
-                  "Bike-a-Long",
-                  "Ponto"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Transition",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Sentinel",
-                  "Patrol",
-                  "Spur",
-                  "Smuggler",
-                  "Scout",
-                  "Repeater",
-                  "Ripcord"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Evil",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Following",
-                  "Offering",
-                  "Insurgent",
-                  "Wreckoning",
-                  "Calling",
-                  "Chamois Hagar"
-                ]
-              }
-            ]
-          },
+          "Colnago",
           {
             "label": "Commencal",
             "attributes": [
@@ -3617,6 +3348,143 @@
             ]
           },
           {
+            "label": "Diamondback",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Release",
+                  "Atroz",
+                  "Hatch",
+                  "Haanjo",
+                  "Century",
+                  "Overdrive",
+                  "Line",
+                  "Sync'r",
+                  "Catch"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Electra",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Townie",
+                  "Cruiser",
+                  "Loft",
+                  "Bike-a-Long",
+                  "Ponto"
+                ]
+              }
+            ]
+          },
+          "Esker",
+          {
+            "label": "Evil",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Following",
+                  "Offering",
+                  "Insurgent",
+                  "Wreckoning",
+                  "Calling",
+                  "Chamois Hagar"
+                ]
+              }
+            ]
+          },
+          "Focus",
+          "Forbidden",
+          "Fuji",
+          {
+            "label": "Giant",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Talon",
+                  "Trance",
+                  "Defy",
+                  "TCR",
+                  "Escape",
+                  "Revolt",
+                  "Stance",
+                  "Reign",
+                  "Anthem",
+                  "Fathom",
+                  "Propel",
+                  "Contend",
+                  "Roam",
+                  "Trance X",
+                  "XTC",
+                  "Glory",
+                  "Sedona"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "GT",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Avalanche",
+                  "Aggressor",
+                  "Sensor",
+                  "Force",
+                  "Zaskar",
+                  "Grade",
+                  "Transeo",
+                  "Fury",
+                  "Traffic",
+                  "Palomar"
+                ]
+              }
+            ]
+          },
+          "Guerrilla Gravity",
+          {
+            "label": "Ibis",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Ripley",
+                  "Ripmo",
+                  "Mojo",
+                  "HD",
+                  "Hakka MX",
+                  "DV9",
+                  "Exie"
+                ]
+              }
+            ]
+          },
+          {
             "label": "Intense",
             "attributes": [
               {
@@ -3635,6 +3503,56 @@
               }
             ]
           },
+          "Jamis",
+          "Knolly",
+          {
+            "label": "Kona",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Process",
+                  "Honzo",
+                  "Unit",
+                  "Sutra",
+                  "Rove",
+                  "Hei Hei",
+                  "Dew",
+                  "Big Honzo",
+                  "Explosif",
+                  "Cinder Cone",
+                  "Lava Dome"
+                ]
+              }
+            ]
+          },
+          "Linus",
+          {
+            "label": "Marin",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Rift Zone",
+                  "Hawk Hill",
+                  "Bobcat Trail",
+                  "Alpine Trail",
+                  "San Quentin",
+                  "Four Corners",
+                  "Nicasio",
+                  "Fairfax",
+                  "Pine Mountain"
+                ]
+              }
+            ]
+          },
+          "Merida",
           {
             "label": "Niner",
             "attributes": [
@@ -3656,7 +3574,7 @@
             ]
           },
           {
-            "label": "Brompton",
+            "label": "Norco",
             "attributes": [
               {
                 "label": "Model",
@@ -3664,38 +3582,339 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "C Line",
-                  "P Line",
-                  "A Line",
-                  "T Line"
+                  "Sight",
+                  "Range",
+                  "Fluid",
+                  "Optic",
+                  "Storm",
+                  "Search",
+                  "Scene",
+                  "Charger",
+                  "Bigfoot",
+                  "Indie"
                 ]
               }
             ]
           },
           "Nukeproof",
-          "Vitus",
-          "Knolly",
-          "Banshee",
-          "Revel",
-          "Forbidden",
-          "Chromag",
-          "Guerrilla Gravity",
-          "All-City",
-          "State Bicycle",
-          "Priority",
-          "Linus",
-          "Pinarello",
-          "Colnago",
-          "BMC",
-          "Focus",
-          "Merida",
-          "Fuji",
-          "Jamis",
-          "Public",
-          "Bike Friday",
+          {
+            "label": "Orbea",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Oiz",
+                  "Occam",
+                  "Alma",
+                  "Orca",
+                  "Avant",
+                  "Terra",
+                  "Rise",
+                  "Laufey",
+                  "Wild"
+                ]
+              }
+            ]
+          },
           "Otso",
+          "Pinarello",
+          {
+            "label": "Pivot",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Mach 4",
+                  "Mach 5",
+                  "Mach 6",
+                  "Switchblade",
+                  "Firebird",
+                  "Trail 429",
+                  "Shuttle",
+                  "Vault",
+                  "LES"
+                ]
+              }
+            ]
+          },
+          "Priority",
+          "Public",
+          {
+            "label": "Raleigh",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Talus",
+                  "Redux",
+                  "Cadent",
+                  "Merit",
+                  "Willard",
+                  "Tokul",
+                  "Detour"
+                ]
+              }
+            ]
+          },
+          "Revel",
+          {
+            "label": "Rocky Mountain",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Altitude",
+                  "Instinct",
+                  "Element",
+                  "Slayer",
+                  "Growler",
+                  "Fusion",
+                  "Blizzard",
+                  "Reaper",
+                  "Solo"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Salsa",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Timberjack",
+                  "Journeyman",
+                  "Cutthroat",
+                  "Warbird",
+                  "Fargo",
+                  "Beargrease",
+                  "Rangefinder",
+                  "Blackborow",
+                  "Spearfish",
+                  "Horsethief"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Santa Cruz",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Hightower",
+                  "Tallboy",
+                  "Bronson",
+                  "Chameleon",
+                  "Nomad",
+                  "Blur",
+                  "5010",
+                  "Megatower",
+                  "Heckler",
+                  "Stigmata",
+                  "Hightower LT",
+                  "Highball"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Schwinn",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "High Timber",
+                  "Sidewinder",
+                  "Mesa",
+                  "Discover",
+                  "Wayfarer",
+                  "Volare",
+                  "Signature"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Scott",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Scale",
+                  "Spark",
+                  "Addict",
+                  "Aspect",
+                  "Genius",
+                  "Speedster",
+                  "Ransom",
+                  "Foil",
+                  "Contessa",
+                  "Sub Cross",
+                  "Solace"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Specialized",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Rockhopper",
+                  "Stumpjumper",
+                  "Allez",
+                  "Tarmac",
+                  "Diverge",
+                  "Sirrus",
+                  "Epic",
+                  "Enduro",
+                  "Status",
+                  "Fuse",
+                  "Chisel",
+                  "Roubaix",
+                  "Aethos",
+                  "Crux",
+                  "Turbo Levo",
+                  "Turbo Vado",
+                  "Hardrock",
+                  "Riprock",
+                  "Demo"
+                ]
+              }
+            ]
+          },
+          "State Bicycle",
+          {
+            "label": "Surly",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Karate Monkey",
+                  "Cross-Check",
+                  "Long Haul Trucker",
+                  "Pugsley",
+                  "Ice Cream Truck",
+                  "Midnight Special",
+                  "Straggler",
+                  "Bridge Club",
+                  "Ogre",
+                  "Krampus",
+                  "Disc Trucker"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Transition",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Sentinel",
+                  "Patrol",
+                  "Spur",
+                  "Smuggler",
+                  "Scout",
+                  "Repeater",
+                  "Ripcord"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Trek",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Marlin",
+                  "FX",
+                  "Domane",
+                  "Émonda",
+                  "Fuel EX",
+                  "Roscoe",
+                  "Checkpoint",
+                  "Verve",
+                  "Madone",
+                  "Top Fuel",
+                  "Slash",
+                  "Remedy",
+                  "Procaliber",
+                  "X-Caliber",
+                  "Dual Sport",
+                  "Rail",
+                  "Powerfly",
+                  "Farley",
+                  "Supercaliber",
+                  "1120",
+                  "920",
+                  "820"
+                ]
+              }
+            ]
+          },
+          "Vitus",
           "Why Cycles",
-          "Esker"
+          {
+            "label": "Yeti",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "SB130",
+                  "SB140",
+                  "SB150",
+                  "SB160",
+                  "SB100",
+                  "SB165",
+                  "ARC",
+                  "ASR"
+                ]
+              }
+            ]
+          }
         ]
       },
       {
@@ -3843,7 +4062,7 @@
         "allowFreeEntry": true,
         "values": [
           {
-            "label": "Wilderness Systems",
+            "label": "Advanced Elements",
             "attributes": [
               {
                 "label": "Model",
@@ -3851,20 +4070,406 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Pungo",
-                  "Tarpon",
-                  "Aspire",
-                  "Tsunami",
-                  "Radar",
-                  "Recon",
-                  "Pamlico",
-                  "Focus",
-                  "Tempest",
-                  "ATAK",
-                  "Ride",
-                  "Zephyr",
-                  "Targa",
-                  "Commander"
+                  "AdvancedFrame",
+                  "StraitEdge",
+                  "AirFusion",
+                  "Lagoon",
+                  "PackLite",
+                  "Convertible"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Aquaglide",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Chelan",
+                  "Navarro",
+                  "Deschutes",
+                  "Chinook",
+                  "Blackfoot"
+                ]
+              }
+            ]
+          },
+          "Bending Branches",
+          "Bic Sport",
+          {
+            "label": "Bonafide",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "SS127",
+                  "SS107",
+                  "EX123",
+                  "RVR119",
+                  "P127"
+                ]
+              }
+            ]
+          },
+          "Boreal Design",
+          {
+            "label": "Current Designs",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Kestrel",
+                  "Solara",
+                  "Breeze",
+                  "Squamish",
+                  "Willow",
+                  "Extreme",
+                  "Vision",
+                  "Sirocco",
+                  "Prana"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Dagger",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Mamba",
+                  "Axiom",
+                  "Stratos",
+                  "Rewind",
+                  "Code",
+                  "Katana",
+                  "Crossfire",
+                  "Nomad",
+                  "Zydeco",
+                  "Roam",
+                  "Approach",
+                  "RPM",
+                  "Agent",
+                  "Torrent"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Delta",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "12s",
+                  "14",
+                  "15.5",
+                  "16",
+                  "17",
+                  "12.10",
+                  "10s"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Eddyline",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Caribbean",
+                  "Sitka",
+                  "Skylark",
+                  "Sandpiper",
+                  "Equinox",
+                  "Fathom",
+                  "Rio",
+                  "Denali",
+                  "Journey"
+                ]
+              }
+            ]
+          },
+          "Elie",
+          "Emotion",
+          "Epic Kayaks",
+          {
+            "label": "Feelfree",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Lure",
+                  "Moken",
+                  "Move",
+                  "Aventura",
+                  "Roamer",
+                  "Corona"
+                ]
+              }
+            ]
+          },
+          "Field & Stream",
+          "Heritage",
+          {
+            "label": "Hobie",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Mirage Outback",
+                  "Mirage Compass",
+                  "Mirage Revolution",
+                  "Mirage Passport",
+                  "Mirage Pro Angler",
+                  "Mirage Sport",
+                  "Eclipse",
+                  "Quest",
+                  "Lynx"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Hurricane",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Skimmer",
+                  "Santee",
+                  "Tampico",
+                  "Sojourn"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Jackson Kayak",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Zen",
+                  "Antix",
+                  "Coosa",
+                  "Bite",
+                  "Nirvana",
+                  "Rockstar",
+                  "Kilroy",
+                  "Liska",
+                  "Tripper",
+                  "Tupelo",
+                  "Karma",
+                  "Big Rig",
+                  "Cuda",
+                  "Riviera",
+                  "Fun",
+                  "All Star"
+                ]
+              }
+            ]
+          },
+          "Lifetime",
+          {
+            "label": "Liquidlogic",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Remix",
+                  "Braaap",
+                  "Party Braaap",
+                  "Stinger",
+                  "Marvel",
+                  "Inuit",
+                  "Saluda",
+                  "Deuce Coupe"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Native Watercraft",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Slayer",
+                  "Titan",
+                  "Ultimate",
+                  "Manta Ray",
+                  "Falcon",
+                  "Stingray"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Necky",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Chatham",
+                  "Manitou",
+                  "Eliza",
+                  "Sky",
+                  "Looksha",
+                  "Zoar",
+                  "Rip",
+                  "Amaruk",
+                  "Nootka"
+                ]
+              }
+            ]
+          },
+          "Nigel Dennis",
+          "NRS",
+          {
+            "label": "NuCanoe",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Frontier",
+                  "Pursuit",
+                  "Flint",
+                  "Unlimited"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Ocean Kayak",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Frenzy",
+                  "Malibu",
+                  "Scrambler",
+                  "Caper",
+                  "Tetra",
+                  "Prowler",
+                  "Trident",
+                  "Venus",
+                  "Banzai"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Old Town",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Loon",
+                  "Vapor",
+                  "Predator",
+                  "Sportsman",
+                  "Heron",
+                  "Topwater",
+                  "Dirigo",
+                  "Next",
+                  "Sorrento",
+                  "Castine",
+                  "Camden",
+                  "Malibu",
+                  "Twister",
+                  "Otter"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "P&H",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Cetus",
+                  "Scorpio",
+                  "Delphin",
+                  "Virgo",
+                  "Volan",
+                  "Aries"
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Pelican",
+            "attributes": [
+              {
+                "label": "Model",
+                "input": "SELECT",
+                "nameSlot": 20,
+                "allowFreeEntry": true,
+                "values": [
+                  "Argo",
+                  "Sentinel",
+                  "Sprint",
+                  "Catch",
+                  "Mustang",
+                  "Trailblazer",
+                  "Maxim",
+                  "Challenger",
+                  "Basscreek"
                 ]
               }
             ]
@@ -3900,8 +4505,9 @@
               }
             ]
           },
+          "Point 65",
           {
-            "label": "Old Town",
+            "label": "Prijon",
             "attributes": [
               {
                 "label": "Model",
@@ -3909,76 +4515,11 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Loon",
-                  "Vapor",
-                  "Predator",
-                  "Sportsman",
-                  "Heron",
-                  "Topwater",
-                  "Dirigo",
-                  "Next",
-                  "Sorrento",
-                  "Castine",
-                  "Camden",
-                  "Malibu",
-                  "Twister",
-                  "Otter"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Dagger",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Mamba",
-                  "Axiom",
-                  "Stratos",
-                  "Rewind",
-                  "Code",
-                  "Katana",
-                  "Crossfire",
-                  "Nomad",
-                  "Zydeco",
-                  "Roam",
-                  "Approach",
-                  "RPM",
-                  "Agent",
-                  "Torrent"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Jackson Kayak",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Zen",
-                  "Antix",
-                  "Coosa",
-                  "Bite",
-                  "Nirvana",
-                  "Rockstar",
-                  "Kilroy",
-                  "Liska",
-                  "Tripper",
-                  "Tupelo",
-                  "Karma",
-                  "Big Rig",
-                  "Cuda",
-                  "Riviera",
-                  "Fun",
-                  "All Star"
+                  "Seayak",
+                  "Kodiak",
+                  "Release",
+                  "Combi",
+                  "Curve"
                 ]
               }
             ]
@@ -4006,217 +4547,6 @@
             ]
           },
           {
-            "label": "Eddyline",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Caribbean",
-                  "Sitka",
-                  "Skylark",
-                  "Sandpiper",
-                  "Equinox",
-                  "Fathom",
-                  "Rio",
-                  "Denali",
-                  "Journey"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Hobie",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Mirage Outback",
-                  "Mirage Compass",
-                  "Mirage Revolution",
-                  "Mirage Passport",
-                  "Mirage Pro Angler",
-                  "Mirage Sport",
-                  "Eclipse",
-                  "Quest",
-                  "Lynx"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Pelican",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Argo",
-                  "Sentinel",
-                  "Sprint",
-                  "Catch",
-                  "Mustang",
-                  "Trailblazer",
-                  "Maxim",
-                  "Challenger",
-                  "Basscreek"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Ocean Kayak",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Frenzy",
-                  "Malibu",
-                  "Scrambler",
-                  "Caper",
-                  "Tetra",
-                  "Prowler",
-                  "Trident",
-                  "Venus",
-                  "Banzai"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Current Designs",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Kestrel",
-                  "Solara",
-                  "Breeze",
-                  "Squamish",
-                  "Willow",
-                  "Extreme",
-                  "Vision",
-                  "Sirocco",
-                  "Prana"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Delta",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "12s",
-                  "14",
-                  "15.5",
-                  "16",
-                  "17",
-                  "12.10",
-                  "10s"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Native Watercraft",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Slayer",
-                  "Titan",
-                  "Ultimate",
-                  "Manta Ray",
-                  "Falcon",
-                  "Stingray"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Liquidlogic",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Remix",
-                  "Braaap",
-                  "Party Braaap",
-                  "Stinger",
-                  "Marvel",
-                  "Inuit",
-                  "Saluda",
-                  "Deuce Coupe"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Necky",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Chatham",
-                  "Manitou",
-                  "Eliza",
-                  "Sky",
-                  "Looksha",
-                  "Zoar",
-                  "Rip",
-                  "Amaruk",
-                  "Nootka"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "P&H",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Cetus",
-                  "Scorpio",
-                  "Delphin",
-                  "Virgo",
-                  "Volan",
-                  "Aries"
-                ]
-              }
-            ]
-          },
-          {
             "label": "Riot",
             "attributes": [
               {
@@ -4230,26 +4560,6 @@
                   "Enduro",
                   "Escape",
                   "Mako"
-                ]
-              }
-            ]
-          },
-          "NRS",
-          {
-            "label": "Advanced Elements",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "AdvancedFrame",
-                  "StraitEdge",
-                  "AirFusion",
-                  "Lagoon",
-                  "PackLite",
-                  "Convertible"
                 ]
               }
             ]
@@ -4272,8 +4582,9 @@
               }
             ]
           },
+          "Seaward",
           {
-            "label": "Aquaglide",
+            "label": "Stellar",
             "attributes": [
               {
                 "label": "Model",
@@ -4281,33 +4592,18 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Chelan",
-                  "Navarro",
-                  "Deschutes",
-                  "Chinook",
-                  "Blackfoot"
+                  "S14",
+                  "S16",
+                  "S18",
+                  "SR",
+                  "SEI"
                 ]
               }
             ]
           },
-          {
-            "label": "Bonafide",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "SS127",
-                  "SS107",
-                  "EX123",
-                  "RVR119",
-                  "P127"
-                ]
-              }
-            ]
-          },
+          "Sun Dolphin",
+          "Tiderace",
+          "Valley",
           {
             "label": "Vibe",
             "attributes": [
@@ -4327,7 +4623,7 @@
             ]
           },
           {
-            "label": "Feelfree",
+            "label": "Wilderness Systems",
             "attributes": [
               {
                 "label": "Model",
@@ -4335,101 +4631,24 @@
                 "nameSlot": 20,
                 "allowFreeEntry": true,
                 "values": [
-                  "Lure",
-                  "Moken",
-                  "Move",
-                  "Aventura",
-                  "Roamer",
-                  "Corona"
+                  "Pungo",
+                  "Tarpon",
+                  "Aspire",
+                  "Tsunami",
+                  "Radar",
+                  "Recon",
+                  "Pamlico",
+                  "Focus",
+                  "Tempest",
+                  "ATAK",
+                  "Ride",
+                  "Zephyr",
+                  "Targa",
+                  "Commander"
                 ]
               }
             ]
           },
-          {
-            "label": "Hurricane",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Skimmer",
-                  "Santee",
-                  "Tampico",
-                  "Sojourn"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Prijon",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Seayak",
-                  "Kodiak",
-                  "Release",
-                  "Combi",
-                  "Curve"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "Stellar",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "S14",
-                  "S16",
-                  "S18",
-                  "SR",
-                  "SEI"
-                ]
-              }
-            ]
-          },
-          {
-            "label": "NuCanoe",
-            "attributes": [
-              {
-                "label": "Model",
-                "input": "SELECT",
-                "nameSlot": 20,
-                "allowFreeEntry": true,
-                "values": [
-                  "Frontier",
-                  "Pursuit",
-                  "Flint",
-                  "Unlimited"
-                ]
-              }
-            ]
-          },
-          "Bic Sport",
-          "Elie",
-          "Heritage",
-          "Emotion",
-          "Lifetime",
-          "Sun Dolphin",
-          "Field & Stream",
-          "Bending Branches",
-          "Point 65",
-          "Epic Kayaks",
-          "Seaward",
-          "Boreal Design",
-          "Valley",
-          "Nigel Dennis",
-          "Tiderace",
           "Zoar"
         ]
       },
