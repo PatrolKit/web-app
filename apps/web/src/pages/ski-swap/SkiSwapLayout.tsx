@@ -181,6 +181,16 @@ export default function SkiSwapLayout() {
           {/* Divider */}
           <span className="mx-2 text-gray-700 select-none">|</span>
 
+          {/* The bindings lookup, a group of its own: neither swap nor org
+              setup, and live even before a swap is picked. Staff only: the
+              indemnified lists aren't for sellers (Plan 44 D10). */}
+          {perms.has('ski_swap:report') && (
+            <>
+              <NavLink to="bindings" className={navClass}>Bindings</NavLink>
+              <span className="mx-2 text-gray-700 select-none">|</span>
+            </>
+          )}
+
           {/* Org-scoped group */}
           {tabsDisabled ? (
             <>
@@ -199,10 +209,6 @@ export default function SkiSwapLayout() {
           )}
           {perms.has('ski_swap:report') && (
             <NavLink to="check-in" className={navClass}>Check-in</NavLink>
-          )}
-          {/* Staff: the indemnified lists aren't for sellers (Plan 44 D10). */}
-          {perms.has('ski_swap:report') && (
-            <NavLink to="bindings" className={navClass}>Bindings</NavLink>
           )}
           {/* The route stays /printers: the page has held bridges as well as
               printers for a while, and now scanners too, so only the label was

@@ -189,7 +189,7 @@ export default function BindingsPage() {
       ) : !loaded ? (
         <p className="text-sm text-gray-500">No lists loaded yet.</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-[14rem_1fr] gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-[18rem_1fr] gap-6">
           <aside className="space-y-1">
             <p className="text-xs text-gray-500 px-2">Brands</p>
             <ul className="max-h-[70vh] overflow-y-auto">
