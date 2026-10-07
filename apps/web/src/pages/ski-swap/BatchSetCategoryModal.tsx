@@ -6,7 +6,7 @@ import { api, ApiError } from '../../lib/api';
 import type { CategorizeAnswer } from '../../lib/api.types';
 import { useScanner } from '../../contexts/ScannerContext';
 import ItemDescriber, { emptyDescriber, toAttributeInputs, type DescriberState } from '../../components/ItemDescriber';
-import { Banner, ScannerBanner, errorTone, skipTone, successTone } from './ScanSessionParts';
+import { Banner, ScannerBanner, errorTone, klaxonTone, skipTone, successTone } from './ScanSessionParts';
 import {
   bannerFor, counts, emptySession, failedBatch, landed, nextBatch, retryDelay, scanned, sending, toneFor, undone, undoRefused,
   type Pick, type Row, type RowOutcome, type Session,
@@ -29,6 +29,7 @@ const play = (t: ReturnType<typeof toneFor>) => {
   if (t === 'success') successTone();
   else if (t === 'skip') skipTone();
   else if (t === 'error') errorTone();
+  else if (t === 'klaxon') klaxonTone();
 };
 
 /** Picks only (D3): a typed value would have been refused by the picker already. */

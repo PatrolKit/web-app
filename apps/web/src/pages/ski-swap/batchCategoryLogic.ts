@@ -127,11 +127,12 @@ export function counts(s: Session): { set: number; skipped: number; notFound: nu
   return { set: n(['set']), skipped: n(['skipped']), notFound: n(['not_found']), failed: n(['failed']), waiting: n(['waiting', 'sending']) };
 }
 
-export type Tone = 'success' | 'skip' | 'error';
+export type Tone = 'success' | 'skip' | 'error' | 'klaxon';
 
-/** One sound for what landed together: the worst of it (D8). */
+/** One sound for what landed together: the worst of it (D8). A tag that matches no item is the klaxon. */
 export function toneFor(outcomes: RowOutcome[]): Tone | null {
-  if (outcomes.some((o) => o === 'not_found' || o === 'failed')) return 'error';
+  if (outcomes.some((o) => o === 'not_found')) return 'klaxon';
+  if (outcomes.some((o) => o === 'failed')) return 'error';
   if (outcomes.some((o) => o === 'skipped' || o === 'already')) return 'skip';
   if (outcomes.some((o) => o === 'set')) return 'success';
   return null;

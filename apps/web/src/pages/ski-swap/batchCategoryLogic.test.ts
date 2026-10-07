@@ -86,7 +86,9 @@ describe('Batch set category’s session (Plan 45)', () => {
   it('sounds the worst of what landed together', () => {
     expect(toneFor(['set', 'set'])).toBe('success');
     expect(toneFor(['set', 'skipped'])).toBe('skip');
-    expect(toneFor(['set', 'skipped', 'not_found'])).toBe('error');
+    expect(toneFor(['set', 'failed'])).toBe('error');
+    expect(toneFor(['set', 'skipped', 'not_found'])).toBe('klaxon');
+    expect(toneFor(['failed', 'not_found'])).toBe('klaxon');
     expect(toneFor([])).toBeNull();
   });
 

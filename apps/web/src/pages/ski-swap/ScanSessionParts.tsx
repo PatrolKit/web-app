@@ -37,6 +37,37 @@ export function errorTone() {
   beeps([[0, 220], [0.18, 220]]);
 }
 
+/**
+ * A klaxon: a harsh two-tone wail, about a second, for a tag that matches no
+ * item (Plan 45). Louder and longer than the error beep on purpose: that tag
+ * needs a person to look at it now, before the pile moves on.
+ */
+export function klaxonTone() {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    const t0 = ctx.currentTime;
+    // Three low-high swoops, the "aa-OO-gah" of a horn.
+    for (let i = 0; i < 3; i++) {
+      const at = t0 + i * 0.36;
+      osc.frequency.setValueAtTime(330, at);
+      osc.frequency.linearRampToValueAtTime(520, at + 0.28);
+    }
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.03);
+    gain.gain.setValueAtTime(0.22, t0 + 1.0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.1);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + 1.12);
+    setTimeout(() => void ctx.close(), 1500);
+  } catch { /* no audio: the red message still says it */ }
+}
+
 /** One short high beep: done (Plan 45). */
 export function successTone() {
   beeps([[0, 1320]], 0.08, 0.1);
