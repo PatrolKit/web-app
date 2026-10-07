@@ -9,6 +9,10 @@ import { Prisma, type TaxonomyNode } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { deriveName, renderAnswer, type NameAnswer, type NameAttribute } from './derive-name';
+import { dedupeKeyFor, normalizeLabel } from './dedupe';
+import { BINDING_MANUFACTURER_PATH, BINDING_MODEL_LABEL, findByPath } from './binding-tree';
+
+export { dedupeKeyFor, normalizeLabel } from './dedupe';
 import type { TaxonomyIconKey } from '../../contracts/taxonomy-icons';
 import type {
   OrgTaxonomyAdmin,
@@ -38,30 +42,18 @@ const DEFER_VALUES_ABOVE = 60;
 /** How deep `?depth=full` will expand before it stops. See `attributesUnder`. */
 const MAX_EXPANSION_DEPTH = 8;
 
-/** The scope half of a dedupe key. Global rows have no org to name. */
-function scopeKey(orgId: string | null): string {
-  return orgId ?? 'global';
-}
-
-/**
- * `<scope>:<parent>:<label>`, the one column that actually prevents duplicates.
- *
- * MySQL treats NULLs in a unique index as distinct, and both `orgId` and
- * `parentId` are nullable — a composite unique over them would let two global
- * categories called "Skis" through. Normalising the label here is also what
- * makes "Rossignol" and "rossignol  " the same pending value rather than two.
- */
-export function dedupeKeyFor(orgId: string | null, parentId: string | null, label: string): string {
-  const normalized = label.trim().toLowerCase().replace(/\s+/g, ' ');
-  return `${scopeKey(orgId)}:${parentId ?? 'root'}:${normalized}`;
-}
-
-/** The label half alone, for comparing two nodes that already share a parent. */
-export function normalizeLabel(label: string): string {
-  return label.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
 type NodeRow = TaxonomyNode;
+
+/** What every level of a resolve shares. */
+interface ResolveContext {
+  orgId: string;
+  base: string;
+  full: boolean;
+  /** Binding makers (values under Bindings › Type › Skis › Manufacturer). */
+  bindingMakers: Set<string>;
+  /** The category label a node sits under, for `sameDetailsAs`. */
+  categoryLabelOf: (id: string) => string | null;
+}
 
 /** One answer as a client sends it. Exactly one of the three value fields. */
 export interface ItemAttributeInput {
@@ -88,6 +80,12 @@ export interface ItemDescription {
     valueId: string | null;
     valueLabel: string;
     numberValue: number | null;
+    /**
+     * Set when the question belongs to another category's subtree, reached
+     * through a "same details as" pointer (Plan 44 D14): the label of that
+     * category ("Bindings"), so a screen can group the answers under it.
+     */
+    via?: string | null;
   }[];
 }
 
@@ -174,6 +172,14 @@ export class TaxonomyService {
       if (list) list.push(n);
       else byParent.set(key, [n]);
     }
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const ctx: ResolveContext = {
+      orgId,
+      base,
+      full: !!opts.full,
+      bindingMakers: this.bindingMakerIds(nodes),
+      categoryLabelOf: (id) => this.categoryLabelOf(id, byId),
+    };
 
     const categories = (byParent.get(null) ?? [])
       .filter((n) => n.kind === 'CATEGORY')
@@ -183,10 +189,34 @@ export class TaxonomyService {
         ...(iconOf(c, orgId, base) ? { icon: iconOf(c, orgId, base)! } : {}),
         scope: c.orgId ? 'org' : 'global',
         displayOrder: c.displayOrder,
-        attributes: this.attributesUnder(c.id, byParent, { eager: true, orgId, base, full: !!opts.full, depth: 0 }),
+        attributes: this.attributesUnder(c.id, byParent, ctx, { eager: true, depth: 0 }),
       }));
 
     return { version, categories };
+  }
+
+  /**
+   * The binding makers: every value under Bindings › Type › Skis ›
+   * Manufacturer. A Model question under one of them is where the indemnified
+   * lists live, and the resolved tree says so (`lookup`) so the item form
+   * knows to ask (Plan 44 D11).
+   */
+  private bindingMakerIds(nodes: NodeRow[]): Set<string> {
+    const attr = findByPath(nodes, BINDING_MANUFACTURER_PATH);
+    if (!attr) return new Set();
+    return new Set(nodes.filter((n) => n.parentId === attr.id && n.kind === 'VALUE').map((n) => n.id));
+  }
+
+  /** The category a node sits under, by label, walking parents in memory. */
+  private categoryLabelOf(id: string, byId: Map<string, NodeRow>): string | null {
+    let cursor = byId.get(id);
+    let guard = 0;
+    while (cursor && guard < 12) {
+      if (cursor.kind === 'CATEGORY') return cursor.label;
+      cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+      guard += 1;
+    }
+    return null;
   }
 
   /**
@@ -200,12 +230,15 @@ export class TaxonomyService {
   private attributesUnder(
     parentId: string,
     byParent: Map<string | null, NodeRow[]>,
-    opts: { eager: boolean; orgId: string; base: string; full: boolean; depth: number },
+    ctx: ResolveContext,
+    opts: { eager: boolean; depth: number },
   ): ResolvedAttribute[] {
     // The alternation gives a real tree, not a cycle, so this is a bound on
     // pathological curation rather than on recursion: four levels of question is
-    // already deeper than anything a form can usefully render.
+    // already deeper than anything a form can usefully render. It also bounds
+    // a "same details as" pointer that somehow points back up the tree.
     if (opts.depth > MAX_EXPANSION_DEPTH) return [];
+    const underBindingMaker = ctx.bindingMakers.has(parentId);
     return (byParent.get(parentId) ?? [])
       .filter((n) => n.kind === 'ATTRIBUTE')
       .map((a): ResolvedAttribute => {
@@ -213,11 +246,15 @@ export class TaxonomyService {
         const base: ResolvedAttribute = {
           id: a.id,
           label: a.label,
-          ...(iconOf(a, opts.orgId, opts.base) ? { icon: iconOf(a, opts.orgId, opts.base)! } : {}),
+          ...(iconOf(a, ctx.orgId, ctx.base) ? { icon: iconOf(a, ctx.orgId, ctx.base)! } : {}),
           scope: a.orgId ? 'org' : 'global',
           input,
           displayOrder: a.displayOrder,
           nameSlot: a.nameSlot,
+          // A binding maker's Model list: its answers can be looked up (Plan 44).
+          ...(underBindingMaker && input === 'select' && normalizeLabel(a.label) === BINDING_MODEL_LABEL.toLowerCase()
+            ? { lookup: 'indemnification' as const }
+            : {}),
         };
 
         if (input === 'number') {
@@ -233,45 +270,43 @@ export class TaxonomyService {
         const children = (byParent.get(a.id) ?? []).filter((n) => n.kind === 'VALUE');
         // `full` overrides both reasons to defer: the size threshold and the
         // rule that a value's attributes are never eager.
-        const defer = !opts.full && (!opts.eager || children.length > DEFER_VALUES_ABOVE);
+        const defer = !ctx.full && (!opts.eager || children.length > DEFER_VALUES_ABOVE);
         return {
           ...base,
           allowFreeEntry: a.allowFreeEntry,
           ...(defer
             ? { valuesDeferred: true }
-            : {
-                values: children.map((v) =>
-                  this.valueOf(v, byParent, opts.orgId, opts.base, opts.full, opts.depth),
-                ),
-              }),
+            : { values: children.map((v) => this.valueOf(v, byParent, ctx, opts.depth)) }),
         };
       });
   }
 
-  /** One value, with the questions that only its being chosen opens up. */
+  /**
+   * One value, with the questions that only its being chosen opens up.
+   *
+   * A value with `sameDetailsAsId` has no questions of its own: it answers with
+   * the target's, under the target's ids (Plan 44 D14). The client sees the
+   * same shape either way, plus `sameDetailsAs` so it can say whose they are.
+   */
   private valueOf(
     v: NodeRow,
     byParent: Map<string | null, NodeRow[]>,
-    orgId: string,
-    base: string,
-    full = false,
+    ctx: ResolveContext,
     depth = 0,
   ): ResolvedValue {
+    const detailsFrom = v.sameDetailsAsId ?? v.id;
     return {
       id: v.id,
       label: v.label,
-      ...(iconOf(v, orgId, base) ? { icon: iconOf(v, orgId, base)! } : {}),
+      ...(iconOf(v, ctx.orgId, ctx.base) ? { icon: iconOf(v, ctx.orgId, ctx.base)! } : {}),
       scope: v.orgId ? 'org' : 'global',
       displayOrder: v.displayOrder,
+      ...(v.sameDetailsAsId
+        ? { sameDetailsAs: { id: v.sameDetailsAsId, category: ctx.categoryLabelOf(v.sameDetailsAsId) ?? '' } }
+        : {}),
       // Never eager below a value — those are the model lists — unless the
       // caller asked for the whole thing.
-      attributes: this.attributesUnder(v.id, byParent, {
-        eager: full,
-        orgId,
-        base,
-        full,
-        depth: depth + 1,
-      }),
+      attributes: this.attributesUnder(detailsFrom, byParent, ctx, { eager: ctx.full, depth: depth + 1 }),
     };
   }
 
@@ -282,9 +317,12 @@ export class TaxonomyService {
     });
     if (!node) throw new NotFoundException('Node not found');
 
+    // A value that takes its details from another answers with that one's
+    // children (Plan 44 D14).
+    const from = node.kind === 'VALUE' && node.sameDetailsAsId ? node.sameDetailsAsId : nodeId;
     const rows = await this.prisma.taxonomyNode.findMany({
       where: {
-        parentId: nodeId,
+        parentId: from,
         status: 'APPROVED',
         retiredAt: null,
         OR: [{ orgId: null }, { orgId }],
@@ -294,25 +332,45 @@ export class TaxonomyService {
 
     // A second level down would need its own fetch; a value's attributes arrive
     // described but empty, exactly as in the eager document.
-    const base = this.publicBase;
-    const byParent = new Map<string | null, NodeRow[]>([[nodeId, rows]]);
+    const byParent = new Map<string | null, NodeRow[]>([[from, rows]]);
+    const bindingAttr = await this.bindingManufacturerAttribute();
+    const ctx: ResolveContext = {
+      orgId,
+      base: this.publicBase,
+      full: false,
+      // Only the one parent matters here: whether it is a binding maker.
+      bindingMakers: new Set(
+        bindingAttr && node.kind === 'VALUE' && node.parentId === bindingAttr.id ? [from] : [],
+      ),
+      categoryLabelOf: () => null,
+    };
 
     if (node.kind === 'ATTRIBUTE') {
       return {
         nodeId,
-        values: rows.filter((r) => r.kind === 'VALUE').map((v) => this.valueOf(v, byParent, orgId, base)),
+        values: rows.filter((r) => r.kind === 'VALUE').map((v) => this.valueOf(v, byParent, ctx)),
       };
     }
     return {
       nodeId,
-      attributes: this.attributesUnder(nodeId, byParent, {
-        eager: false,
-        orgId,
-        base,
-        full: false,
-        depth: 0,
-      }),
+      attributes: this.attributesUnder(from, byParent, ctx, { eager: false, depth: 0 }),
     };
+  }
+
+  /**
+   * Bindings › Type › Skis › Manufacturer, by path. Cached once found: ids never
+   * change. Null until the tree has it, which a fresh database might not.
+   */
+  private bindingAttrCache: { id: string } | null = null;
+  async bindingManufacturerAttribute(): Promise<{ id: string } | null> {
+    if (this.bindingAttrCache) return this.bindingAttrCache;
+    const nodes = await this.prisma.taxonomyNode.findMany({
+      where: { orgId: null, kind: { in: ['CATEGORY', 'ATTRIBUTE', 'VALUE'] } },
+      select: { id: true, parentId: true, label: true, kind: true, orgId: true },
+    });
+    const found = findByPath(nodes, BINDING_MANUFACTURER_PATH);
+    if (found) this.bindingAttrCache = { id: found.id };
+    return this.bindingAttrCache;
   }
 
   // ─── Versioning ────────────────────────────────────────────────────────────
@@ -381,6 +439,8 @@ export class TaxonomyService {
       step?: number | null;
       allowFreeEntry?: boolean;
       status?: 'APPROVED' | 'PENDING';
+      /** A VALUE whose details are another's (Plan 44 D14). Platform only. */
+      sameDetailsAsId?: string | null;
     },
     actorId?: string,
   ): Promise<NodeRow> {
@@ -392,6 +452,10 @@ export class TaxonomyService {
     }
     if (data.kind !== 'ATTRIBUTE' && data.input) {
       throw new BadRequestException('Only an attribute has an input kind');
+    }
+    if (data.sameDetailsAsId) {
+      if (data.kind !== 'VALUE') throw new BadRequestException('Only an answer can take its details from another');
+      await this.assertSameDetailsTarget(orgId, null, data.sameDetailsAsId);
     }
 
     const dedupeKey = dedupeKeyFor(orgId, parent?.id ?? null, data.label);
@@ -417,6 +481,7 @@ export class TaxonomyService {
         maxValue: data.maxValue ?? null,
         step: data.step ?? null,
         allowFreeEntry: data.allowFreeEntry ?? false,
+        sameDetailsAsId: data.sameDetailsAsId ?? null,
         dedupeKey,
         createdBy: actorId ?? null,
         ...(data.status === 'PENDING' ? {} : { approvedBy: actorId ?? null, approvedAt: new Date() }),
@@ -445,6 +510,9 @@ export class TaxonomyService {
       if (parent.kind !== 'CATEGORY' && parent.kind !== 'VALUE') {
         throw new BadRequestException('A question belongs under a category or a value');
       }
+      if (parent.kind === 'VALUE' && parent.sameDetailsAsId) {
+        throw new BadRequestException('This answer takes its details from another. Add the question there.');
+      }
       return;
     }
 
@@ -472,6 +540,41 @@ export class TaxonomyService {
   }
 
   /**
+   * The rules for a "same details as" pointer (Plan 44 D14): platform only,
+   * from a global VALUE with no questions of its own, to a global VALUE that
+   * doesn't itself point elsewhere, neither an ancestor of the other.
+   */
+  private async assertSameDetailsTarget(orgId: string | null, node: NodeRow | null, targetId: string): Promise<void> {
+    if (orgId !== null) throw new BadRequestException('Only the shared list can take details from another answer');
+    if (node && node.id === targetId) throw new BadRequestException('An answer cannot take its details from itself');
+    const target = await this.prisma.taxonomyNode.findUnique({ where: { id: targetId } });
+    if (!target || target.orgId !== null || target.kind !== 'VALUE') {
+      throw new BadRequestException('Details can only be taken from a shared answer');
+    }
+    if (target.sameDetailsAsId) {
+      throw new BadRequestException(`"${target.label}" takes its details from another answer already; point at that one`);
+    }
+    if (node) {
+      const own = await this.prisma.taxonomyNode.count({ where: { parentId: node.id, kind: 'ATTRIBUTE' } });
+      if (own > 0) throw new BadRequestException('This answer has questions of its own. Retire them first.');
+      // Neither may sit under the other: resolving would never end.
+      const related = async (from: NodeRow, to: string) => {
+        let cursor: NodeRow | null = from;
+        let guard = 0;
+        while (cursor?.parentId && guard < 12) {
+          if (cursor.parentId === to) return true;
+          cursor = await this.prisma.taxonomyNode.findUnique({ where: { id: cursor.parentId } });
+          guard += 1;
+        }
+        return false;
+      };
+      if ((await related(target, node.id)) || (await related(node, target.id))) {
+        throw new BadRequestException('Those two answers sit under one another');
+      }
+    }
+  }
+
+  /**
    * Edits one node.
    *
    * A rename recomputes `dedupeKey`, which is how a rename into an existing
@@ -492,6 +595,8 @@ export class TaxonomyService {
       allowFreeEntry?: boolean;
       approve?: true;
       retired?: boolean;
+      /** Null clears the pointer; a string sets it (Plan 44 D14). */
+      sameDetailsAsId?: string | null;
     },
     actorId?: string,
     ipAddress?: string,
@@ -503,6 +608,15 @@ export class TaxonomyService {
     }
 
     const patch: Prisma.TaxonomyNodeUpdateInput = {};
+    if (data.sameDetailsAsId !== undefined) {
+      if (node.kind !== 'VALUE') throw new BadRequestException('Only an answer can take its details from another');
+      if (data.sameDetailsAsId === null) {
+        patch.sameDetailsAs = { disconnect: true };
+      } else {
+        await this.assertSameDetailsTarget(orgId, node, data.sameDetailsAsId);
+        patch.sameDetailsAs = { connect: { id: data.sameDetailsAsId } };
+      }
+    }
     if (data.label !== undefined && normalizeLabel(data.label) !== normalizeLabel(node.label)) {
       const dedupeKey = dedupeKeyFor(node.orgId, node.parentId, data.label);
       const clash = await this.prisma.taxonomyNode.findUnique({ where: { dedupeKey } });
@@ -669,6 +783,20 @@ export class TaxonomyService {
       });
       // Children of a merged value follow it, so a model list is not orphaned.
       await tx.taxonomyNode.updateMany({ where: { parentId: nodeId }, data: { parentId: targetId } });
+      // So do its seasons on the indemnified lists (Plan 44 D9); a season the
+      // target already has keeps the target's.
+      const held = await tx.bindingIndemnification.findMany({
+        where: { nodeId: targetId },
+        select: { season: true },
+      });
+      if (held.length > 0) {
+        await tx.bindingIndemnification.deleteMany({
+          where: { nodeId, season: { in: held.map((h) => h.season) } },
+        });
+      }
+      await tx.bindingIndemnification.updateMany({ where: { nodeId }, data: { nodeId: targetId } });
+      // And anything taking its details from the merged value now takes the target's.
+      await tx.taxonomyNode.updateMany({ where: { sameDetailsAsId: nodeId }, data: { sameDetailsAsId: targetId } });
       await tx.taxonomyNode.delete({ where: { id: nodeId } });
       return result;
     });
@@ -721,6 +849,11 @@ export class TaxonomyService {
     const children = await this.prisma.taxonomyNode.count({ where: { parentId: nodeId } });
     if (children > 0) {
       throw new ConflictException('This value has its own follow-up questions. Retire it instead: it leaves the list, and nothing is lost.');
+    }
+    // A season on an indemnified list is a use too (Plan 44 D9).
+    const listed = await this.prisma.bindingIndemnification.count({ where: { nodeId } });
+    if (listed > 0) {
+      throw new ConflictException('This model is on an indemnified bindings list. Retire it instead.');
     }
     // Deleted items' answers still point at it, and the link restricts the
     // delete, so they go first.
@@ -784,7 +917,7 @@ export class TaxonomyService {
       }
       seen.add(attribute.id);
 
-      this.assertReachable(attribute, category.id, byId, inputs);
+      const { viaPointer } = this.assertReachable(attribute, category.id, byId, inputs);
 
       if (attribute.input === 'NUMBER') {
         if (input.numberValue === undefined) {
@@ -792,7 +925,7 @@ export class TaxonomyService {
         }
         this.assertInRange(attribute, input.numberValue);
         rows.push({ attributeId: attribute.id, valueId: null, numberValue: input.numberValue });
-        answers.push({ attribute: nameAttributeOf(attribute), numberValue: input.numberValue });
+        answers.push({ attribute: nameAttributeOf(attribute), numberValue: input.numberValue, viaPointer });
         continue;
       }
 
@@ -822,7 +955,7 @@ export class TaxonomyService {
       }
 
       rows.push({ attributeId: attribute.id, valueId: value.id, numberValue: null });
-      answers.push({ attribute: nameAttributeOf(attribute), valueLabel: value.label });
+      answers.push({ attribute: nameAttributeOf(attribute), valueLabel: value.label, viaPointer });
     }
 
     return {
@@ -846,31 +979,42 @@ export class TaxonomyService {
     categoryId: string,
     byId: Map<string, NodeRow>,
     inputs: ItemAttributeInput[],
-  ): void {
-    let cursor: NodeRow | undefined = attribute;
-    let guard = 0;
-    while (cursor && guard < 12) {
-      guard += 1;
-      const parent: NodeRow | undefined = cursor.parentId ? byId.get(cursor.parentId) : undefined;
-      if (!parent) break;
+  ): { viaPointer: boolean } {
+    const pickedIds = new Set(inputs.map((i) => i.valueId).filter((v): v is string => !!v));
+    // Values the item picked that take their details from elsewhere: each is a
+    // second way into the subtree it points at (Plan 44 D14).
+    const pointers = [...pickedIds]
+      .map((id) => byId.get(id))
+      .filter((v): v is NodeRow => !!v && !!v.sameDetailsAsId);
 
-      if (parent.kind === 'CATEGORY') {
-        if (parent.id !== categoryId) {
-          throw new BadRequestException(`"${attribute.label}" does not belong to that category`);
-        }
-        return;
-      }
+    let gate: NodeRow | null = null;
+    const climb = (node: NodeRow, viaPointer: boolean, depth: number): { viaPointer: boolean } | null => {
+      if (depth > 12) return null;
+      const parent: NodeRow | undefined = node.parentId ? byId.get(node.parentId) : undefined;
+      if (!parent) return null;
+      if (parent.kind === 'CATEGORY') return parent.id === categoryId ? { viaPointer } : null;
+      if (parent.kind === 'ATTRIBUTE') return climb(parent, viaPointer, depth + 1);
 
-      if (parent.kind === 'VALUE') {
-        // The gate: whoever answered the child must have picked the parent.
-        const picked = inputs.some((i) => i.valueId === parent.id);
-        if (!picked) {
-          throw new BadRequestException(
-            `"${attribute.label}" only applies once "${parent.label}" is chosen`,
-          );
-        }
+      // A VALUE: the gate. Whoever answered the child must have picked this
+      // value, or one that takes its details from it.
+      const ways: { from: NodeRow; via: boolean }[] = [];
+      if (pickedIds.has(parent.id)) ways.push({ from: parent, via: viaPointer });
+      for (const p of pointers) if (p.sameDetailsAsId === parent.id) ways.push({ from: p, via: true });
+      if (ways.length === 0) {
+        gate = gate ?? parent;
+        return null;
       }
-      cursor = parent;
+      for (const w of ways) {
+        const reached = climb(w.from, w.via, depth + 1);
+        if (reached) return reached;
+      }
+      return null;
+    };
+
+    const reached = climb(attribute, false, 0);
+    if (reached) return reached;
+    if (gate) {
+      throw new BadRequestException(`"${attribute.label}" only applies once "${(gate as NodeRow).label}" is chosen`);
     }
     throw new BadRequestException(`"${attribute.label}" does not belong to that category`);
   }
@@ -926,6 +1070,9 @@ export class TaxonomyService {
         })
       : [];
     const categoryById = new Map(categories.map((c) => [c.id, c]));
+    // Which category each answered question actually sits under. One that
+    // isn't the item's own was reached through a pointer (Plan 44 D14).
+    const homeOf = await this.categoryOfNodes([...new Set(rows.map((r) => r.attributeId))]);
 
     for (const item of items) {
       out.set(item.id, {
@@ -939,6 +1086,9 @@ export class TaxonomyService {
     for (const r of rows) {
       const entry = out.get(r.itemId);
       if (!entry) continue;
+      const item = items.find((i) => i.id === r.itemId);
+      const home = homeOf.get(r.attributeId);
+      const via = home && item?.categoryId && home.id !== item.categoryId ? home.label : null;
       entry.attributes.push({
         attributeId: r.attributeId,
         attributeLabel: r.attribute.label,
@@ -950,12 +1100,54 @@ export class TaxonomyService {
             numberValue: r.numberValue,
           }) ?? '',
         numberValue: r.numberValue,
+        via,
       });
     }
 
-    // Slot order, so a detail panel reads in the same order as the name.
+    // The item's own answers first, alphabetically, then the pointed-to ones.
     for (const entry of out.values()) {
-      entry.attributes.sort((a, b) => a.attributeLabel.localeCompare(b.attributeLabel));
+      entry.attributes.sort(
+        (a, b) => Number(!!a.via) - Number(!!b.via) || a.attributeLabel.localeCompare(b.attributeLabel),
+      );
+    }
+    return out;
+  }
+
+  /**
+   * The category each node sits under, walking parents a level at a time: one
+   * query per level rather than the whole tree per item list.
+   */
+  private async categoryOfNodes(ids: string[]): Promise<Map<string, { id: string; label: string }>> {
+    const out = new Map<string, { id: string; label: string }>();
+    if (ids.length === 0) return out;
+    const known = new Map<string, { parentId: string | null; kind: string; label: string }>();
+    let frontier = [...new Set(ids)];
+    let guard = 0;
+    while (frontier.length > 0 && guard < 12) {
+      const fetched = await this.prisma.taxonomyNode.findMany({
+        where: { id: { in: frontier } },
+        select: { id: true, parentId: true, kind: true, label: true },
+      });
+      for (const n of fetched) known.set(n.id, n);
+      frontier = fetched
+        .map((n) => n.parentId)
+        .filter((p): p is string => !!p && !known.has(p));
+      guard += 1;
+    }
+    for (const id of ids) {
+      let cursor = known.get(id);
+      let steps = 0;
+      let cursorId = id;
+      while (cursor && steps < 12) {
+        if (cursor.kind === 'CATEGORY') {
+          out.set(id, { id: cursorId, label: cursor.label });
+          break;
+        }
+        if (!cursor.parentId) break;
+        cursorId = cursor.parentId;
+        cursor = known.get(cursor.parentId);
+        steps += 1;
+      }
     }
     return out;
   }
@@ -1251,6 +1443,13 @@ export class TaxonomyService {
       maxValue: n.maxValue,
       step: n.step,
       allowFreeEntry: n.allowFreeEntry,
+      sameDetailsAsId: n.sameDetailsAsId,
+      sameDetailsAsPath: n.sameDetailsAsId
+        ? (() => {
+            const target = byId.get(n.sameDetailsAsId!);
+            return target ? [this.pathOf(target, byId), target.label].filter(Boolean).join(' › ') : null;
+          })()
+        : null,
       suggestedAt: n.suggestedAt?.toISOString() ?? null,
       createdAt: n.createdAt.toISOString(),
       itemCount: counts.get(n.id) ?? 0,

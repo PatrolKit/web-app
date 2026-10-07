@@ -1,4 +1,4 @@
-import type { ResolvedAttribute, ResolvedCategory, ResolvedTaxonomy } from '../contracts/taxonomy.contracts';
+import type { ResolvedAttribute, ResolvedCategory, ResolvedTaxonomy, ResolvedValue } from '../contracts/taxonomy.contracts';
 import type { ItemAttributeInput } from './taxonomy/taxonomy.service';
 
 /**
@@ -64,11 +64,27 @@ const singular = (s: string) => (s.endsWith('s') ? s.slice(0, -1) : s);
 
 const BASE = new Set<string>(Object.values(BASE_COLUMNS).flat());
 
+/**
+ * How a detail reached through a "same details as" pointer is headed (Plan 44
+ * D14): the pointed-to category, singular, in front. A ski's own Manufacturer
+ * column is `Manufacturer`; its binding's is `Binding Manufacturer`.
+ */
+export function pointedPrefix(v: ResolvedValue): string {
+  if (!v.sameDetailsAs?.category) return '';
+  const c = v.sameDetailsAs.category.trim();
+  return c.endsWith('s') ? c.slice(0, -1) : c;
+}
+/** The column label a detail is headed with, prefixed when it was pointed to. */
+export function columnLabel(a: ResolvedAttribute, prefix: string): string {
+  return prefix ? `${prefix} ${a.label}` : a.label;
+}
+const prefixUnder = (v: ResolvedValue, prefix: string) => pointedPrefix(v) || prefix;
+
 /** Every detail anywhere under these questions: what a header may name. */
-function detailLabels(attrs: ResolvedAttribute[], into: Set<string>): Set<string> {
+function detailLabels(attrs: ResolvedAttribute[], into: Set<string>, prefix = ''): Set<string> {
   for (const a of attrs) {
-    into.add(norm(a.label));
-    for (const v of a.values ?? []) detailLabels(v.attributes, into);
+    into.add(norm(columnLabel(a, prefix)));
+    for (const v of a.values ?? []) detailLabels(v.attributes, into, prefixUnder(v, prefix));
   }
   return into;
 }
@@ -78,10 +94,12 @@ function nestedDetails(
   attrs: ResolvedAttribute[],
   parent: ResolvedAttribute | null,
   into: Map<string, { label: string; parent: string }>,
+  prefix = '',
 ): Map<string, { label: string; parent: string }> {
   for (const a of attrs) {
-    if (parent && !into.has(norm(a.label))) into.set(norm(a.label), { label: a.label, parent: parent.label });
-    for (const v of a.values ?? []) nestedDetails(v.attributes, a, into);
+    const key = norm(columnLabel(a, prefix));
+    if (parent && !into.has(key)) into.set(key, { label: columnLabel(a, prefix), parent: parent.label });
+    for (const v of a.values ?? []) nestedDetails(v.attributes, a, into, prefixUnder(v, prefix));
   }
   return into;
 }
@@ -145,19 +163,20 @@ export function matchImportDetails(headers: string[], rows: string[][], taxonomy
     const unknown: ImportUnknown[] = [];
     const reached = new Set<string>();
     const answered = new Map<string, string>();
-    const miss = (a: ResolvedAttribute, value: string, reason: UnknownReason, under?: { parent: string; under: string }) =>
-      unknown.push({ column: a.label, value, reason, category: category.label, ...(under ?? {}) });
+    const miss = (column: string, value: string, reason: UnknownReason, under?: { parent: string; under: string }) =>
+      unknown.push({ column, value, reason, category: category.label, ...(under ?? {}) });
 
-    const answer = (attrs: ResolvedAttribute[], above: { parent: string; under: string } | null) => {
+    const answer = (attrs: ResolvedAttribute[], above: { parent: string; under: string } | null, prefix: string) => {
       for (const a of attrs) {
-        const key = norm(a.label);
+        const label = columnLabel(a, prefix);
+        const key = norm(label);
         reached.add(key);
         const raw = cell(columnOf.get(key));
         if (!raw) continue;
         if (a.input === 'number') {
           const read = readNumber(raw, a);
           if ('reason' in read) {
-            miss(a, raw, read.reason, above ?? undefined);
+            miss(label, raw, read.reason, above ?? undefined);
             if (read.reason === 'off_step') unknown[unknown.length - 1].step = a.step;
           }
           else attributes.push({ attributeId: a.id, numberValue: read.value });
@@ -165,15 +184,17 @@ export function matchImportDetails(headers: string[], rows: string[][], taxonomy
         }
         const value = (a.values ?? []).find((v) => norm(v.label) === norm(raw));
         if (!value) {
-          miss(a, raw, 'unknown_value', above ?? undefined);
+          miss(label, raw, 'unknown_value', above ?? undefined);
           continue;
         }
         attributes.push({ attributeId: a.id, valueId: value.id });
         answered.set(key, value.label);
-        answer(value.attributes, { parent: a.label, under: value.label });
+        // Through a pointer, the details below are headed with where they came
+        // from: "Binding Manufacturer", not a second "Manufacturer".
+        answer(value.attributes, { parent: label, under: value.label }, prefixUnder(value, prefix));
       }
     };
-    answer(category.attributes, null);
+    answer(category.attributes, null, '');
 
     // A nested detail the row never reached: its parent is blank, unknown,
     // or an answer without that detail ("Mantra 84" under Alpina).

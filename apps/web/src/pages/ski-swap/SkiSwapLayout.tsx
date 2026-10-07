@@ -73,7 +73,8 @@ export default function SkiSwapLayout() {
       // Anywhere under config counts as already there — Administration has
       // subtabs now, and matching only the exact path bounced a person off
       // Item details and back to Settings.
-      if (!/\/config(\/|$)/.test(location.pathname)) {
+      // The Bindings lookup needs no Square either (Plan 44): it reads lists, not sales.
+      if (!/\/config(\/|$)|\/bindings$/.test(location.pathname)) {
         navigate(`${base}/config`, { replace: true });
       }
     }
@@ -150,7 +151,7 @@ export default function SkiSwapLayout() {
   // already filtered by one, so the picker there would offer a choice that
   // changes nothing on the screen.
   const isSwapScopedTab = !location.pathname.match(
-    /\/(sellers|swaps|my-items|seller-profile)$|\/config(\/|$)|\/payouts\/[^/]+$/,
+    /\/(sellers|swaps|my-items|seller-profile|bindings)$|\/config(\/|$)|\/payouts\/[^/]+$/,
   );
 
   return (
@@ -199,6 +200,9 @@ export default function SkiSwapLayout() {
           {perms.has('ski_swap:report') && (
             <NavLink to="check-in" className={navClass}>Check-in</NavLink>
           )}
+          {/* Anyone in the patrol: the indemnified-bindings lookup is a glance at
+              check-in, and needs no permission beyond membership (Plan 44 D10). */}
+          <NavLink to="bindings" className={navClass}>Bindings</NavLink>
           {/* The route stays /printers: the page has held bridges as well as
               printers for a while, and now scanners too, so only the label was
               ever wrong. Renaming the path would break saved links for nothing. */}

@@ -382,6 +382,8 @@ export interface ItemResponse {
     /** Already rendered: a value's label, or a number with its unit. */
     valueLabel: string;
     numberValue: number | null;
+    /** The category this question really belongs to, when it isn't the item's own ("Bindings", Plan 44 D14). */
+    via?: string | null;
   }[];
   /**
    * When a staff member accepted this item onto the floor.
@@ -740,6 +742,10 @@ export interface SkiSwapSettings {
   barcodesPerTicket: 1 | 2;
   /** Ski boots marked Mens, Womens or Kids are named with their US size too. */
   showUsBootSizes: boolean;
+  /** Declared an NSSRA retail member (Plan 44 D5), by whom and when. */
+  nssraMember: boolean;
+  nssraMemberSetBy: string | null;
+  nssraMemberSetAt: string | null;
   /** The org's cut, as a percentage: "20%", "20.5%", "0%". */
   commissionPercent: string;
   /** The same number the server does the arithmetic with. */
@@ -1154,6 +1160,22 @@ export type {
   PendingValue,
   TaxonomySuggestion,
 } from '@patrolkit/contracts/taxonomy.contracts';
+
+// ─── Binding indemnification (Plan 44) ───────────────────────────────────────
+
+export type {
+  IndemnificationAnswer,
+  IndemnificationLine,
+  BindingLookup,
+  BindingLookupDetail,
+  BindingLookupEntry,
+  ManufacturerSummary,
+  ManufacturersResponse,
+  IndemnificationProgram,
+  IndemnificationImportPlan,
+  IndemnificationImportRecord,
+  NssraDeclaration,
+} from '@patrolkit/contracts/indemnification.contracts';
 
 /** One answered question, on the way to the server. */
 export interface ItemAttributeInput {

@@ -26,6 +26,12 @@ export interface NameAnswer {
   valueLabel?: string | null;
   /** The typed number, for a NUMBER. */
   numberValue?: number | null;
+  /**
+   * Reached through a "same details as" pointer (Plan 44 D14): a ski's binding
+   * answers. Captured, never named — the ski is "Völkl Mantra 170 Skis",
+   * whatever is screwed to it (D15).
+   */
+  viaPointer?: boolean;
 }
 
 /**
@@ -61,7 +67,7 @@ export function deriveName(categoryLabel: string, answers: NameAnswer[], opts: {
   // when the org shows them and the boot says who it's for.
   const gender = answers.find((a) => a.attribute.label.trim().toLowerCase() === 'gender')?.valueLabel ?? null;
   const parts = answers
-    .filter((a) => a.attribute.nameSlot !== null)
+    .filter((a) => a.attribute.nameSlot !== null && !a.viaPointer)
     .sort(
       (a, b) =>
         (a.attribute.nameSlot ?? 0) - (b.attribute.nameSlot ?? 0) ||

@@ -20,7 +20,17 @@ const tree: ResolvedTaxonomy = {
           value('stockli', 'Stöckli'),
         ]),
         number('skis-len', 'Length', { unit: 'cm', min: 70, max: 215 }),
-        select('skis-bind', 'Bindings included', [value('yes', 'Yes'), value('no', 'No')]),
+        select('skis-bind', 'Bindings included', [
+          // Yes takes its details from Bindings › Type › Skis (Plan 44 D14): the
+          // binding maker and model, headed "Binding Manufacturer" / "Binding Model".
+          {
+            ...value('yes', 'Yes', [
+              select('bind-make', 'Manufacturer', [value('marker', 'Marker', [select('marker-model', 'Model', [value('griffon', 'Griffon 13 ID')])])]),
+            ]),
+            sameDetailsAs: { id: 'type-skis', category: 'Bindings' },
+          },
+          value('no', 'No'),
+        ]),
       ],
     },
     {
@@ -49,6 +59,24 @@ describe('categories and details in an imported file (Plan 42)', () => {
       attributes: [{ attributeId: 'skis-make', valueId: 'volkl' }, { attributeId: 'skis-bind', valueId: 'yes' }],
       unknown: [],
     });
+  });
+
+  it('reads a ski\'s binding details from columns headed with where they came from (Plan 44 D14)', () => {
+    const { rows, ignoredColumns } = match(
+      ['category', 'Manufacturer', 'Bindings included', 'Binding Manufacturer', 'Binding Model'],
+      ['Skis', 'Volkl', 'Yes', 'Marker', 'griffon 13 id'],
+      ['Skis', 'Volkl', 'No', 'Marker', ''],
+    );
+    expect(ignoredColumns).toEqual([]);
+    expect(rows[0].attributes).toEqual([
+      { attributeId: 'skis-make', valueId: 'volkl' },
+      { attributeId: 'skis-bind', valueId: 'yes' },
+      { attributeId: 'bind-make', valueId: 'marker' },
+      { attributeId: 'marker-model', valueId: 'griffon' },
+    ]);
+    // Not Yes: the binding columns need their parent.
+    expect(rows[1].attributes).toEqual([{ attributeId: 'skis-make', valueId: 'volkl' }, { attributeId: 'skis-bind', valueId: 'no' }]);
+    expect(rows[1].unknown[0]).toMatchObject({ column: 'Binding Manufacturer', value: 'Marker', reason: 'needs_parent', parent: 'Bindings included' });
   });
 
   it('ignores accents and apostrophe styles, but not abbreviations', () => {

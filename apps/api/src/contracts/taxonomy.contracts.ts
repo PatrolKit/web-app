@@ -61,6 +61,12 @@ export interface ResolvedAttribute {
   /** Position in the derived name, ascending. Null ⇒ not named. */
   nameSlot: number | null;
   allowFreeEntry?: boolean;
+  /**
+   * A chosen answer here can be looked up somewhere: `indemnification` on a
+   * binding maker's Model question, where the item form shows the answer from
+   * the indemnified-bindings lists beside the pick (Plan 44 D11).
+   */
+  lookup?: 'indemnification';
   values?: ResolvedValue[];
   /** True ⇒ `values` is absent and must be fetched. */
   valuesDeferred?: boolean;
@@ -76,6 +82,13 @@ export interface ResolvedValue {
   icon?: z.infer<typeof ResolvedIconSchema>;
   scope: 'global' | 'org';
   displayOrder: number;
+  /**
+   * Set when `attributes` are another value's (Plan 44 D14): the value they
+   * belong to, and the category it sits under ("Bindings"), so a form can say
+   * whose questions these are. The attribute and value ids are the shared ones,
+   * and an answer stores those.
+   */
+  sameDetailsAs?: { id: string; category: string };
   /** Questions that appear only once this value is chosen. Empty for a leaf. */
   attributes: ResolvedAttribute[];
 }
@@ -87,6 +100,7 @@ export const ResolvedValueSchema: z.ZodType<ResolvedValue> = z.lazy(() =>
     icon: ResolvedIconSchema.optional(),
     scope: TaxonomyScopeSchema,
     displayOrder: z.number().int(),
+    sameDetailsAs: z.object({ id: z.string(), category: z.string() }).optional(),
     attributes: z.array(ResolvedAttributeSchema),
   }),
 );
@@ -101,6 +115,7 @@ export const ResolvedAttributeSchema: z.ZodType<ResolvedAttribute> = z.lazy(() =
     displayOrder: z.number().int(),
     nameSlot: z.number().int().nullable(),
     allowFreeEntry: z.boolean().optional(),
+    lookup: z.literal('indemnification').optional(),
     values: z.array(ResolvedValueSchema).optional(),
     valuesDeferred: z.boolean().optional(),
     unit: z.string().optional(),
@@ -173,6 +188,9 @@ export const CreateTaxonomyNodeSchema = z
     maxValue: z.number().nullable().optional(),
     step: z.number().positive().nullable().optional(),
     allowFreeEntry: z.boolean().optional(),
+
+    // VALUE only, platform only (Plan 44 D14)
+    sameDetailsAsId: z.string().min(1).nullable().optional(),
   })
   .strict();
 
@@ -196,6 +214,8 @@ export const PatchTaxonomyNodeSchema = z
     approve: z.literal(true).optional(),
     /** True retires, false un-retires. */
     retired: z.boolean().optional(),
+    /** A value's details are another value's; null clears it (Plan 44 D14). Platform only. */
+    sameDetailsAsId: z.string().min(1).nullable().optional(),
   })
   .strict();
 
@@ -259,6 +279,9 @@ export interface TaxonomyAdminNode {
   maxValue: number | null;
   step: number | null;
   allowFreeEntry: boolean;
+  /** A value whose details are another's (Plan 44 D14), and that value's path. */
+  sameDetailsAsId: string | null;
+  sameDetailsAsPath: string | null;
   suggestedAt: string | null;
   createdAt: string;
   /**
@@ -291,6 +314,8 @@ export const TaxonomyAdminNodeSchema: z.ZodType<TaxonomyAdminNode> = z.lazy(() =
   maxValue: z.number().nullable(),
   step: z.number().nullable(),
   allowFreeEntry: z.boolean(),
+  sameDetailsAsId: z.string().nullable(),
+  sameDetailsAsPath: z.string().nullable(),
   suggestedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   /**

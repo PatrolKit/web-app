@@ -17,6 +17,7 @@ import RosterPage from './pages/time-tracking/RosterPage';
 import TimeTrackingSettingsPage from './pages/time-tracking/SettingsPage';
 import DeviceSoftwareTab from './pages/admin/DeviceSoftwareTab';
 import ItemTaxonomyTab from './pages/admin/ItemTaxonomyTab';
+import BindingIndemnificationTab from './pages/admin/BindingIndemnificationTab';
 import ServerHealthTab from './pages/admin/ServerHealthTab';
 import ConfigurationTab from './pages/admin/ConfigurationTab';
 import TelemetryLayout from './pages/admin/telemetry/TelemetryLayout';
@@ -25,6 +26,7 @@ import SignageLayout, { SignagePlaceholder } from './pages/signage/SignageLayout
 import SignageDevicesPage from './pages/signage/DevicesPage';
 import SkiSwapDashboard from './pages/ski-swap/SkiSwapDashboard';
 import CheckinStationsPage from './pages/ski-swap/CheckinStationsPage';
+import BindingsPage from './pages/ski-swap/BindingsPage';
 import PrintersPage from './pages/ski-swap/PrintersPage';
 import TimeClockDevicesPage from './pages/time-tracking/DevicesPage';
 import SwapsPage from './pages/ski-swap/SwapsPage';
@@ -132,6 +134,7 @@ export default function App() {
             <Route path="users" element={<UsersTab />} />
             <Route path="device-software" element={<DeviceSoftwareTab />} />
             <Route path="item-taxonomy" element={<ItemTaxonomyTab />} />
+            <Route path="bindings" element={<BindingIndemnificationTab />} />
             <Route path="health" element={<ServerHealthTab />} />
             <Route path="telemetry" element={<TelemetryLayout />}>
               <Route index element={<Navigate to="bridges" replace />} />
@@ -154,6 +157,7 @@ export default function App() {
             <Route path="payouts" element={<PayoutsPage />} />
             <Route path="payouts/:runId" element={<PayoutRunPage />} />
             <Route path="check-in" element={<CheckinStationsPage />} />
+            <Route path="bindings" element={<BindingsPage />} />
             <Route path="printers" element={<PrintersPage />} />
             <Route path="config" element={<AdministrationLayout />}>
               <Route index element={<AdministrationPage />} />

@@ -12,6 +12,8 @@ import {
 import { api } from '../lib/api';
 import { taxonomyIcon } from '../lib/taxonomyIcons';
 import SearchableSelect from './SearchableSelect';
+import { AnswerBadge } from '../pages/ski-swap/BindingsPage';
+import { answerBadge } from '../pages/ski-swap/bindingsLogic';
 import { bootSizeText, composeName, isMondopoint, type NamePart } from '@patrolkit/contracts/item-name';
 import type {
   ItemAttributeInput,
@@ -109,6 +111,8 @@ export function nameParts(
   attributesById: Map<string, ResolvedAttribute>,
   valueLabelById: Map<string, string>,
   showUsBootSizes = false,
+  /** Questions reached through a "same details as" pointer: a ski's binding answers stay out of its name (Plan 44 D15). */
+  viaPointer: Set<string> = new Set(),
 ): NamePart[] {
   if (!category) return [];
   // A ski boot's size reads "MP 26.5" after the noun, as the server names it.
@@ -117,7 +121,7 @@ export function nameParts(
   return Object.entries(state.answers)
     .map(([attributeId, answer]) => ({ attribute: attributesById.get(attributeId), answer }))
     .filter((x): x is { attribute: ResolvedAttribute; answer: DescriberAnswer } => !!x.attribute)
-    .filter((x) => x.attribute.nameSlot !== null)
+    .filter((x) => x.attribute.nameSlot !== null && !viaPointer.has(x.attribute.id))
     .sort((a, b) => (a.attribute.nameSlot ?? 0) - (b.attribute.nameSlot ?? 0) || a.attribute.displayOrder - b.attribute.displayOrder)
     .map(({ attribute, answer }) => {
       const n = Number(answer.numberValue);
@@ -384,6 +388,34 @@ function ValueSheet({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * What the indemnified lists say about the chosen binding model (Plan 44 D11):
+ * the badge and one line, looked up when it's picked, nothing stored.
+ */
+function IndemnificationNote({ orgId, nodeId }: { orgId: string; nodeId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['indemnification/model', orgId, nodeId],
+    queryFn: () => api.skiSwap.indemnification.model(orgId, nodeId),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  if (isLoading) return <p className="text-xs text-gray-500">Checking the indemnified lists…</p>;
+  if (!data) return null;
+  const b = answerBadge(data);
+  return (
+    <div className="space-y-0.5">
+      <p className="flex items-center gap-2 text-xs text-gray-300">
+        <AnswerBadge lookup={data} size="xs" />
+        <span>{b.line}</span>
+      </p>
+      {data.note && <p className="text-xs text-amber-300">{data.note}</p>}
+      <p className="text-[11px] text-gray-600">
+        From the makers' indemnified lists. Covers authorized dealers who follow their procedures, not the swap.
+      </p>
     </div>
   );
 }
@@ -765,8 +797,25 @@ function AttributeField({
         />
       )}
 
+      {/* A binding maker's model, once picked, says what the indemnified lists
+          say about it (Plan 44 D11). A model typed fresh isn't on any yet. */}
+      {attribute.lookup === 'indemnification' && chosen && (
+        <IndemnificationNote orgId={orgId} nodeId={chosen.id} />
+      )}
+      {attribute.lookup === 'indemnification' && !chosen && pendingLabel && (
+        <p className="text-xs text-gray-500">Not on any indemnified list we hold.</p>
+      )}
+
       {/* The branch: questions that only this answer opens. Indented one level
-          and no more — a phone has no room for a third rail (§4.2). */}
+          and no more — a phone has no room for a third rail (§4.2). Questions
+          borrowed from another category ("Bindings included: Yes" asks the
+          binding questions, Plan 44 D14) say whose they are. */}
+      {chosen?.sameDetailsAs && chosen.attributes.length > 0 && (
+        <p className="pl-3 pt-1 text-xs font-medium text-gray-400">
+          {chosen.sameDetailsAs.category}
+          <span className="font-normal text-gray-600"> · optional, kept off the tag</span>
+        </p>
+      )}
       {chosen?.attributes.map((child) => (
         <AttributeField
           key={child.id}
@@ -840,20 +889,24 @@ export default function ItemDescriber({
    * Not what gets rendered — what the name preview looks answers up in, which
    * has to include the nested ones because they carry name slots too.
    */
-  const reachable = useMemo(() => {
-    if (!category) return [] as ResolvedAttribute[];
+  const { reachable, viaPointer } = useMemo(() => {
     const out: ResolvedAttribute[] = [];
-    const walk = (attributes: ResolvedAttribute[]) => {
+    // Questions borrowed through "same details as" (Plan 44 D14): answered like
+    // any other, named by none (D15).
+    const via = new Set<string>();
+    if (!category) return { reachable: out, viaPointer: via };
+    const walk = (attributes: ResolvedAttribute[], borrowed: boolean) => {
       for (const a of attributes) {
         out.push(a);
+        if (borrowed) via.add(a.id);
         const picked = value.answers[a.id]?.valueId;
         if (!picked) continue;
         const v = (a.values ?? []).find((x) => x.id === picked);
-        if (v) walk(v.attributes);
+        if (v) walk(v.attributes, borrowed || !!v.sameDetailsAs);
       }
     };
-    walk(category.attributes);
-    return out;
+    walk(category.attributes, false);
+    return { reachable: out, viaPointer: via };
   }, [category, value.answers]);
 
   const attributesById = useMemo(() => new Map(reachable.map((a) => [a.id, a])), [reachable]);
@@ -910,7 +963,7 @@ export default function ItemDescriber({
     setSheetId(null);
   };
 
-  const parts = nameParts(value, category, attributesById, labelIndex);
+  const parts = nameParts(value, category, attributesById, labelIndex, false, viaPointer);
   const preview = category ? composeName(parts, category.label) : '';
 
   if (isLoading) return <p className="text-sm text-gray-500">Loading…</p>;

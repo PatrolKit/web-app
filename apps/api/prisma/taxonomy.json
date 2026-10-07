@@ -703,7 +703,14 @@
         "label": "Bindings included",
         "input": "SELECT",
         "values": [
-          "Yes",
+          {
+            "label": "Yes",
+            "sameDetailsAs": [
+              "Bindings",
+              "Type",
+              "Skis"
+            ]
+          },
           "No"
         ]
       },
@@ -1208,7 +1215,14 @@
         "label": "Bindings included",
         "input": "SELECT",
         "values": [
-          "Yes",
+          {
+            "label": "Yes",
+            "sameDetailsAs": [
+              "Bindings",
+              "Type",
+              "Snowboard"
+            ]
+          },
           "No"
         ]
       },

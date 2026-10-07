@@ -36,6 +36,7 @@ export default function AdminLayout() {
         <NavLink to="/dashboard/admin/users" className={navClass}>Users</NavLink>
         <NavLink to="/dashboard/admin/device-software" className={navClass}>Device Software</NavLink>
         <NavLink to="/dashboard/admin/item-taxonomy" className={navClass}>Item Details</NavLink>
+        <NavLink to="/dashboard/admin/bindings" className={navClass}>Bindings</NavLink>
         <NavLink to="/dashboard/admin/health" className={navClass}>Server health</NavLink>
         <NavLink to="/dashboard/admin/telemetry" className={navClass}>Device Telemetry</NavLink>
         <NavLink to="/dashboard/admin/configuration" className={navClass}>Configuration</NavLink>

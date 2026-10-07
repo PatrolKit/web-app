@@ -1,5 +1,5 @@
 import type { ResolvedAttribute, ResolvedTaxonomy } from '../contracts/taxonomy.contracts';
-import { matchImportDetails } from './import-details';
+import { columnLabel, matchImportDetails, pointedPrefix } from './import-details';
 
 /**
  * The three downloads beside an item upload (Plan 42 D12), built from the
@@ -16,10 +16,23 @@ function cell(value: string): string {
 
 const csv = (rows: string[][]) => `${rows.map((r) => r.map(cell).join(',')).join('\n')}\n`;
 
-function walk(attrs: ResolvedAttribute[], visit: (a: ResolvedAttribute, onlyWhen: string[]) => void, onlyWhen: string[] = []) {
+/**
+ * Every detail under these questions, with what it hangs under and the label
+ * its column is headed with: a detail reached through a "same details as"
+ * pointer is headed with where it came from ("Binding Manufacturer").
+ */
+function walk(
+  attrs: ResolvedAttribute[],
+  visit: (a: ResolvedAttribute, onlyWhen: string[], label: string) => void,
+  onlyWhen: string[] = [],
+  prefix = '',
+) {
   for (const a of attrs) {
-    visit(a, onlyWhen);
-    for (const v of a.values ?? []) walk(v.attributes, visit, [...onlyWhen, `${a.label} = ${v.label}`]);
+    const label = columnLabel(a, prefix);
+    visit(a, onlyWhen, label);
+    for (const v of a.values ?? []) {
+      walk(v.attributes, visit, [...onlyWhen, `${label} = ${v.label}`], pointedPrefix(v) || prefix);
+    }
   }
 }
 
@@ -31,9 +44,9 @@ function walk(attrs: ResolvedAttribute[], visit: (a: ResolvedAttribute, onlyWhen
 export function templateCsv(taxonomy: ResolvedTaxonomy): string {
   const counts = new Map<string, { label: string; categories: Set<string>; first: number }>();
   for (const c of taxonomy.categories) {
-    walk(c.attributes, (a) => {
-      const key = a.label.trim().toLowerCase();
-      const seen = counts.get(key) ?? { label: a.label, categories: new Set<string>(), first: counts.size };
+    walk(c.attributes, (_a, _onlyWhen, label) => {
+      const key = label.trim().toLowerCase();
+      const seen = counts.get(key) ?? { label, categories: new Set<string>(), first: counts.size };
       seen.categories.add(c.id);
       counts.set(key, seen);
     });
@@ -81,14 +94,14 @@ export function exampleCsv(taxonomy: ResolvedTaxonomy): string {
 export function detailsCsv(taxonomy: ResolvedTaxonomy): string {
   const rows: string[][] = [['category', 'detail', 'only when', 'kind', 'values']];
   for (const c of taxonomy.categories) {
-    walk(c.attributes, (a, onlyWhen) => {
+    walk(c.attributes, (a, onlyWhen, label) => {
       const range = a.min !== undefined && a.max !== undefined
         ? `${a.min}–${a.max}`
         : a.min !== undefined ? `${a.min} or more` : a.max !== undefined ? `up to ${a.max}` : 'any number';
       const values = a.input === 'number'
         ? [range, a.unit].filter(Boolean).join(' ')
         : (a.values ?? []).map((v) => v.label).join(' | ');
-      rows.push([c.label, a.label, onlyWhen.join('; '), a.input === 'number' ? 'number' : 'list', values]);
+      rows.push([c.label, label, onlyWhen.join('; '), a.input === 'number' ? 'number' : 'list', values]);
     });
   }
   return csv(rows);

@@ -40,6 +40,16 @@ describe('deriveName', () => {
     expect(deriveName('Skis', [])).toBe('Skis');
   });
 
+  it('omits an answer reached through a "same details as" pointer (Plan 44 D15)', () => {
+    const answers: NameAnswer[] = [
+      { attribute: attr('Manufacturer', 10), valueLabel: 'Völkl' },
+      { attribute: attr('Length', 30, { unit: 'cm' }), numberValue: 170 },
+      { attribute: attr('Manufacturer', 10), valueLabel: 'Marker', viaPointer: true },
+      { attribute: attr('Model', 15), valueLabel: 'Griffon 13 ID', viaPointer: true },
+    ];
+    expect(deriveName('Skis', answers)).toBe('Völkl 170cm Skis');
+  });
+
   it('omits an answer whose attribute has no slot', () => {
     const answers: NameAnswer[] = [
       { attribute: attr('Manufacturer', 10), valueLabel: 'Head' },

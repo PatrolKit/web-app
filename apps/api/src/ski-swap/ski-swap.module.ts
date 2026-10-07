@@ -75,6 +75,10 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { IdentityModule } from '../common/identity/identity.module';
 import { SwapDiagnosticsController } from './diagnostics/swap-diagnostics.controller';
 import { SwapDiagnosticsService } from './diagnostics/swap-diagnostics.service';
+import { IndemnificationController } from './indemnification/indemnification.controller';
+import { IndemnificationAdminController } from './indemnification/indemnification-admin.controller';
+import { IndemnificationLookupService } from './indemnification/indemnification-lookup.service';
+import { IndemnificationImportService } from './indemnification/indemnification-import.service';
 
 @Module({
   imports: [AuthModule, PermissionsModule, IdentityModule],
@@ -108,6 +112,8 @@ import { SwapDiagnosticsService } from './diagnostics/swap-diagnostics.service';
     SellerReceiptController,
     PublicReceiptController,
     SwapDiagnosticsController,
+    IndemnificationController,
+    IndemnificationAdminController,
   ],
   providers: [
     ReceiptService,
@@ -155,6 +161,8 @@ import { SwapDiagnosticsService } from './diagnostics/swap-diagnostics.service';
     SwapDiagnosticsService,
     TaxonomyService,
     TaxonomyIconService,
+    IndemnificationLookupService,
+    IndemnificationImportService,
   ],
   exports: [CredentialCryptoService, SquareClientService],
 })

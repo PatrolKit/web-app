@@ -5,7 +5,7 @@ import { TaxonomyService } from './taxonomy.service';
  * follow-up questions, it's refused with retiring as the way out, because a
  * node any item points at is retired, never deleted (Plan 19).
  */
-function harness(node: Record<string, unknown>, opts: { items?: number; children?: number } = {}) {
+function harness(node: Record<string, unknown>, opts: { items?: number; children?: number; listed?: number } = {}) {
   const deleted: string[] = [];
   const cleared: unknown[] = [];
   const prisma = {
@@ -20,6 +20,8 @@ function harness(node: Record<string, unknown>, opts: { items?: number; children
         where.item?.deletedAt === null ? opts.items ?? 0 : 99,
       deleteMany: async ({ where }: { where: unknown }) => { cleared.push(where); return { count: 1 }; },
     },
+    // Seasons on an indemnified bindings list are a use too (Plan 44 D9).
+    bindingIndemnification: { count: async () => opts.listed ?? 0 },
     $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
     skiSwapSettings: { upsert: async () => ({}) },
   };
@@ -57,6 +59,12 @@ describe('deleting a patrol’s own value', () => {
   it('refuses one with follow-up questions under it', async () => {
     const { service } = harness(value(), { children: 1 });
     await expect(service.discard('org-1', 'v1')).rejects.toThrow(/follow-up questions/);
+  });
+
+  it('refuses a binding model that is on an indemnified list (Plan 44 D9)', async () => {
+    const { service, deleted } = harness(value(), { listed: 2 });
+    await expect(service.discard('org-1', 'v1')).rejects.toThrow(/indemnified bindings list/);
+    expect(deleted).toEqual([]);
   });
 
   it('refuses the shared list, and anything not a value', async () => {

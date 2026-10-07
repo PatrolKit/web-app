@@ -846,6 +846,15 @@ model SkiSwapSettings {
   /// Read when the name is composed, so it changes new names, not old ones.
   showUsBootSizes Boolean @default(false)
 
+  /// The patrol has declared itself a retail member of the National Ski &
+  /// Snowboard Retailers Association (Plan 44 D5). NSSRA publishes its
+  /// combined indemnified-bindings list for members only, so entries sourced
+  /// from it are shown to this org only while this is on. Who turned it on,
+  /// and when, is kept: it is a declaration, and a declaration has an author.
+  nssraMember      Boolean   @default(false)
+  nssraMemberSetBy String?   @db.VarChar(191)
+  nssraMemberSetAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -947,18 +956,33 @@ model TaxonomyNode {
   /// Set when an org asks for this value to become global. Null otherwise.
   suggestedAt DateTime?
 
+  // ── VALUE only (Plan 44 D14) ──────────────────────────────────────────────
+  /// "My details are that value's details." Set on a VALUE that has no
+  /// questions of its own: resolving it inlines the target's attributes, and
+  /// an item answering them stores the shared attribute and value ids. How
+  /// Skis › Bindings included › Yes asks the binding questions without a
+  /// second copy of every binding model. Global values only, pointing at
+  /// global values only; never a cycle.
+  sameDetailsAsId String?
+
   org      Organization?  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   parent   TaxonomyNode?  @relation("TaxonomyTree", fields: [parentId], references: [id], onDelete: Cascade)
   children TaxonomyNode[] @relation("TaxonomyTree")
 
+  sameDetailsAs  TaxonomyNode?  @relation("TaxonomySameDetails", fields: [sameDetailsAsId], references: [id], onDelete: SetNull)
+  sameDetailsFor TaxonomyNode[] @relation("TaxonomySameDetails")
+
   itemCategories    SwapItem[]          @relation("ItemCategory")
   itemAttributeUses SwapItemAttribute[] @relation("AttributeNode")
   itemValueUses     SwapItemAttribute[] @relation("ValueNode")
+  /// The seasons this binding model was on an indemnified list (Plan 44).
+  indemnifications  BindingIndemnification[]
 
   @@index([orgId, kind])
   @@index([parentId, displayOrder])
   /// The org approval queue, which is the only query that wants status alone.
   @@index([orgId, status])
+  @@index([sameDetailsAsId])
 }
 
 /// One answered question on one item. Pointers only (D3); labels are read back
@@ -1692,4 +1716,92 @@ model SwapDiagnosticHidden {
   swap SkiSwap @relation(fields: [swapId], references: [id], onDelete: Cascade)
 
   @@unique([swapId, sku, kind, field, fingerprint])
+}
+
+// ─── Binding indemnification (Plan 44) ───────────────────────────────────────
+
+/// A maker's indemnification program: who stands behind a list of bindings,
+/// and on what terms. Eight today: amer, elan, elevate, fischer, head_tyrolia,
+/// kneebinding, rossignol, vtec. Seeded by the migration; the notes are edited
+/// in Platform Admin → Bindings, and `latestSeason` is set by each import.
+model BindingIndemnificationProgram {
+  key          String   @id @db.VarChar(40)
+  name         String   @db.VarChar(120)
+  /// The terms in a few paragraphs: dealer agreement needed, exclusions,
+  /// deadlines. Shown with every answer from this program.
+  notes        String   @db.Text
+  /// The newest season this program has entries for ("2025-26"). A model with
+  /// no entry for it reads as lapsed (D4). Per program rather than platform-
+  /// wide, so a brand whose sheet arrives late doesn't look lapsed.
+  latestSeason String?  @db.VarChar(7)
+  updatedAt    DateTime @updatedAt
+  updatedById  String?
+
+  entries BindingIndemnification[]
+}
+
+/// One run of the seasonal import: what file, which season, what it did.
+model BindingIndemnificationImport {
+  id          String   @id @default(cuid())
+  season      String   @db.VarChar(7)
+  fileName    String?  @db.VarChar(191)
+  /// The D8 counts: minted, new, changed, unchanged, lapsing.
+  counts      Json
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  entries BindingIndemnification[]
+}
+
+enum BindingIndemnificationStatus {
+  /// On the list for this season.
+  LISTED
+  /// On the list, and the maker says this is the last season it will be.
+  FINAL_SEASON
+}
+
+enum BindingIndemnificationSource {
+  /// From the NSSRA combined list, published for its members only (D5).
+  NSSRA
+  /// From a sheet the manufacturer published itself. Shown to every org.
+  MANUFACTURER
+}
+
+/// One season's entry for one binding model (D2). The model is a VALUE node
+/// under Bindings › Type › Skis › Manufacturer › Model; the entry says it was
+/// on its program's list that season, in which lines, and where that was read.
+/// Seasons accumulate: nothing is overwritten by the next import, so "last
+/// listed 2023-24" is answerable and an answer can be traced to a page.
+model BindingIndemnification {
+  id         String                       @id @default(cuid())
+  nodeId     String
+  programKey String                       @db.VarChar(40)
+  /// "2025-26". Sorts as text.
+  season     String                       @db.VarChar(7)
+  status     BindingIndemnificationStatus @default(LISTED)
+  /// Which of the maker's lines listed it. All false when the list didn't say.
+  retail     Boolean                      @default(false)
+  rental     Boolean                      @default(false)
+  demo       Boolean                      @default(false)
+  /// Still in the maker's current line, or an older model still covered.
+  /// Null when the list didn't distinguish.
+  currentLine Boolean?
+  /// Marker's "Non ISO Certified" column: touring bindings, still indemnified.
+  nonIso     Boolean                      @default(false)
+  source     BindingIndemnificationSource
+  /// "Combined list p.35", "Marker retail sheet".
+  sourceRef  String?                      @db.VarChar(191)
+  note       String?                      @db.VarChar(500)
+  importId   String?
+  createdAt  DateTime                     @default(now())
+  updatedAt  DateTime                     @updatedAt
+
+  /// Restrict: an entry is a use of the node, as an item's answer is (D9).
+  node    TaxonomyNode                  @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  program BindingIndemnificationProgram @relation(fields: [programKey], references: [key])
+  import  BindingIndemnificationImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
+
+  @@unique([nodeId, season])
+  @@index([programKey, season])
+  @@index([importId])
 }

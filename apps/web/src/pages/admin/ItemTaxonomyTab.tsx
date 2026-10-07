@@ -10,11 +10,13 @@ import {
   faChevronRight as faChevronRightDuo,
   faEyeSlash as faRetireDuo,
   faImage as faImageDuo,
+  faLink as faLinkDuo,
   faPlus as faPlusDuo,
   faXmark as faXmarkDuo,
 } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import { TAXONOMY_ICON_KEYS, taxonomyIcon } from '../../lib/taxonomyIcons';
+import SearchableSelect from '../../components/SearchableSelect';
 import type { TaxonomyAdminNode, TaxonomySuggestion } from '../../lib/api.types';
 
 /**
@@ -164,6 +166,75 @@ function IconPicker({
         >
           No icon
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Same details as ─────────────────────────────────────────────────────────
+
+/** Every shared answer with its path, for the picker. */
+function flattenValues(nodes: TaxonomyAdminNode[]): { value: string; label: string; keywords: string }[] {
+  const out: { value: string; label: string; keywords: string }[] = [];
+  const walk = (list: TaxonomyAdminNode[]) => {
+    for (const n of list) {
+      if (n.kind === 'VALUE' && n.orgId === null && !n.sameDetailsAsId) {
+        out.push({ value: n.id, label: `${n.path} › ${n.label}`, keywords: n.label });
+      }
+      if (n.children) walk(n.children);
+    }
+  };
+  walk(nodes);
+  return out;
+}
+
+/**
+ * "This answer's details are that answer's" (Plan 44 D14): how Skis › Bindings
+ * included › Yes asks the binding questions without a second copy of every
+ * binding model. Platform only; the server holds the rules (a shared answer,
+ * with no questions of its own, not under or over the target).
+ */
+function SameDetailsPicker({
+  node, tree, onClose, onChanged,
+}: {
+  node: TaxonomyAdminNode;
+  tree: TaxonomyAdminNode[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [targetId, setTargetId] = useState(node.sameDetailsAsId ?? '');
+  const [error, setError] = useState('');
+  const options = useMemo(() => flattenValues(tree).filter((o) => o.value !== node.id), [tree, node.id]);
+  const save = useMutation({
+    mutationFn: () => api.taxonomyAdmin.patch(node.id, { sameDetailsAsId: targetId || null }),
+    onSuccess: () => { onChanged(); onClose(); },
+    onError: (err: unknown) => setError(err instanceof ApiError ? err.message : 'That did not work'),
+  });
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-surface-200 rounded-lg p-5 w-full max-w-lg space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-white font-semibold">Same details as… for “{node.label}”</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-200"><FontAwesomeIcon icon={faXmarkDuo} /></button>
+        </div>
+        <p className="text-sm text-gray-400">
+          Choosing this answer asks the chosen answer’s questions, under the same ids, so one set of
+          values serves both places. Those answers stay out of the item’s name. Clear it to make this a
+          plain answer again.
+        </p>
+        <SearchableSelect
+          value={targetId}
+          onChange={setTargetId}
+          options={options}
+          placeholder="Pick an answer, like Bindings › Type › Skis"
+          clearLabel="None: a plain answer"
+          ariaLabel="Same details as"
+        />
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-1.5 rounded text-sm text-gray-300 hover:text-white">Cancel</button>
+          <button disabled={save.isPending} onClick={() => save.mutate()} className="px-3 py-1.5 rounded text-sm bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-40">Save</button>
+        </div>
       </div>
     </div>
   );
@@ -396,12 +467,13 @@ function alphabetically(nodes: TaxonomyAdminNode[]): TaxonomyAdminNode[] {
  * the sibling array, so it owns the move.
  */
 function NodeList({
-  nodes, depth, onEditIcon, onAddUnder, onChanged, onError,
+  nodes, depth, onEditIcon, onAddUnder, onSameDetails, onChanged, onError,
 }: {
   nodes: TaxonomyAdminNode[];
   depth: number;
   onEditIcon: (node: TaxonomyAdminNode) => void;
   onAddUnder: (node: TaxonomyAdminNode) => void;
+  onSameDetails: (node: TaxonomyAdminNode) => void;
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
@@ -433,6 +505,7 @@ function NodeList({
           onMove={(dir) => void move(i, dir === 'up' ? i - 1 : i + 1)}
           onEditIcon={onEditIcon}
           onAddUnder={onAddUnder}
+          onSameDetails={onSameDetails}
           onChanged={onChanged}
           onError={onError}
         />
@@ -444,7 +517,7 @@ function NodeList({
 // ─── One row of the tree ─────────────────────────────────────────────────────
 
 function NodeRow({
-  node, depth, index, count, busy, onMove, onEditIcon, onAddUnder, onChanged, onError,
+  node, depth, index, count, busy, onMove, onEditIcon, onAddUnder, onSameDetails, onChanged, onError,
 }: {
   node: TaxonomyAdminNode;
   depth: number;
@@ -455,6 +528,7 @@ function NodeRow({
   onMove: (direction: 'up' | 'down') => void;
   onEditIcon: (node: TaxonomyAdminNode) => void;
   onAddUnder: (node: TaxonomyAdminNode) => void;
+  onSameDetails: (node: TaxonomyAdminNode) => void;
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
@@ -527,6 +601,9 @@ function NodeRow({
             : node.itemCount > 0
               ? `${node.itemCount} item${node.itemCount === 1 ? '' : 's'}`
               : ''}
+          {node.sameDetailsAsPath && (
+            <span className="text-brand-400"> · same details as {node.sameDetailsAsPath}</span>
+          )}
         </span>
 
         <span className="flex-1" />
@@ -583,7 +660,17 @@ function NodeRow({
           >
             <FontAwesomeIcon icon={faImageDuo} />
           </button>
-          {node.kind !== 'VALUE' || node.input === null ? (
+          {node.kind === 'VALUE' && node.orgId === null && (
+            <button
+              title="Same details as…"
+              onClick={() => onSameDetails(node)}
+              className={`text-xs hover:text-gray-200 px-1.5 py-0.5 ${node.sameDetailsAsId ? 'text-brand-400' : 'text-gray-400'}`}
+            >
+              <FontAwesomeIcon icon={faLinkDuo} />
+            </button>
+          )}
+          {/* A value that borrows its questions can't also have its own (Plan 44 D14). */}
+          {(node.kind !== 'VALUE' || node.input === null) && !node.sameDetailsAsId ? (
             <button
               title="Add under this"
               onClick={() => onAddUnder(node)}
@@ -610,6 +697,7 @@ function NodeRow({
           depth={depth + 1}
           onEditIcon={onEditIcon}
           onAddUnder={onAddUnder}
+          onSameDetails={onSameDetails}
           onChanged={onChanged}
           onError={onError}
         />
@@ -623,6 +711,7 @@ function NodeRow({
 export default function ItemTaxonomyTab() {
   const qc = useQueryClient();
   const [iconFor, setIconFor] = useState<TaxonomyAdminNode | null>(null);
+  const [sameDetailsFor, setSameDetailsFor] = useState<TaxonomyAdminNode | null>(null);
   const [addUnder, setAddUnder] = useState<TaxonomyAdminNode | null | undefined>(undefined);
   const [error, setError] = useState('');
 
@@ -730,6 +819,7 @@ export default function ItemTaxonomyTab() {
             depth={0}
             onEditIcon={setIconFor}
             onAddUnder={setAddUnder}
+            onSameDetails={setSameDetailsFor}
             onChanged={changed}
             onError={setError}
           />
@@ -738,6 +828,9 @@ export default function ItemTaxonomyTab() {
 
       {iconFor && (
         <IconPicker node={iconFor} onClose={() => setIconFor(null)} onChanged={changed} />
+      )}
+      {sameDetailsFor && (
+        <SameDetailsPicker node={sameDetailsFor} tree={tree ?? []} onClose={() => setSameDetailsFor(null)} onChanged={changed} />
       )}
       {addUnder !== undefined && (
         <AddNodeForm parent={addUnder} onClose={() => setAddUnder(undefined)} onAdded={changed} />

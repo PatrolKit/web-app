@@ -51,10 +51,15 @@ import { join } from 'path';
  * it is a deliberate environment variable and not a default.
  */
 
-/** An answer. A string is a plain value; the object form carries a branch. */
+/**
+ * An answer. A string is a plain value; the object form carries a branch, or
+ * `sameDetailsAs`: the label path (root first) of the value whose details this
+ * one takes (Plan 44 D14), e.g. ["Bindings", "Type", "Skis"]. Resolved after
+ * every node exists, since the target may be seeded later in the file.
+ */
 export type ValueSpec =
   | string
-  | { label: string; icon?: string; retired?: boolean; attributes?: AttributeSpec[] };
+  | { label: string; icon?: string; retired?: boolean; attributes?: AttributeSpec[]; sameDetailsAs?: string[] };
 
 export interface AttributeSpec {
   label: string;
@@ -101,6 +106,8 @@ function dedupeKey(parentId: string | null, label: string): string {
 const seen = new Set<string>();
 /** How many rows this run actually inserted. Zero is the healthy steady state. */
 let inserted = 0;
+/** Pointers to set once every node exists: the value, and the target's label path. */
+const pointers: { valueId: string; path: string[] }[] = [];
 
 async function upsertNode(
   prisma: PrismaClient,
@@ -211,6 +218,9 @@ async function seedAttributes(
       if (typeof value !== 'string' && value.attributes?.length) {
         written += await seedAttributes(prisma, valueId, value.attributes);
       }
+      if (typeof value !== 'string' && value.sameDetailsAs?.length) {
+        pointers.push({ valueId, path: value.sameDetailsAs });
+      }
     }
   }
   return written;
@@ -271,6 +281,7 @@ export async function seedTaxonomy(prisma: PrismaClient): Promise<void> {
 
   seen.clear();
   inserted = 0;
+  pointers.length = 0;
   let written = 0;
   let order = 10;
 
@@ -288,9 +299,37 @@ export async function seedTaxonomy(prisma: PrismaClient): Promise<void> {
     written += await seedAttributes(prisma, categoryId, category.attributes);
   }
 
+  await linkPointers(prisma);
+
   const total = await prisma.taxonomyNode.count({ where: { orgId: null } });
   console.log(
     `✓ Item taxonomy seeded (${written} checked, ${inserted} added, ${total} shared nodes)`,
   );
   await reportUnknown(prisma);
+}
+
+/**
+ * Sets each `sameDetailsAs` pointer by walking its label path through the
+ * dedupe keys. A path that leads nowhere is reported and skipped: the seed
+ * never guesses.
+ */
+async function linkPointers(prisma: PrismaClient): Promise<void> {
+  for (const { valueId, path } of pointers) {
+    let parentId: string | null = null;
+    let targetId: string | null = null;
+    for (const label of path) {
+      const hit: { id: string } | null = await prisma.taxonomyNode.findUnique({
+        where: { dedupeKey: dedupeKey(parentId, label) },
+        select: { id: true },
+      });
+      if (!hit) { targetId = null; break; }
+      parentId = hit.id;
+      targetId = hit.id;
+    }
+    if (!targetId) {
+      console.warn(`⚠ sameDetailsAs path not found: ${path.join(' › ')}`);
+      continue;
+    }
+    await prisma.taxonomyNode.update({ where: { id: valueId }, data: { sameDetailsAsId: targetId } });
+  }
 }

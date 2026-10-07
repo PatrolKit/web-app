@@ -4,6 +4,7 @@ import type { SkiSwapSettingsResponse } from '../contracts/ski-swap.contracts';
 import type { DevicePinResponse } from '../contracts/devices.contracts';
 import { PlatformSettingsService } from '../platform/platform-settings.service';
 import { basisPointsToPercent, percentToBasisPoints } from './payouts/money';
+import { displayName } from '../common/util/person';
 
 const DEFAULT_LABELS_PER_ITEM = 1;
 
@@ -28,6 +29,7 @@ export class SkiSwapSettingsService {
       requireConsignmentScan: row?.requireConsignmentScan ?? false,
       barcodesPerTicket: barcodesOf(row),
       showUsBootSizes: row?.showUsBootSizes ?? false,
+      ...(await this.nssraOf(row)),
       // 1 for an org with no row, matching what the taxonomy service reports —
       // a client that has cached nothing compares against it and fetches.
       taxonomyVersion: row?.taxonomyVersion ?? 1,
@@ -63,6 +65,23 @@ export class SkiSwapSettingsService {
     return swap?.labelsPerItem ?? DEFAULT_LABELS_PER_ITEM;
   }
 
+  /** The declaration and its author, by name (Plan 44 D5). */
+  private async nssraOf(
+    row: { nssraMember: boolean; nssraMemberSetBy: string | null; nssraMemberSetAt: Date | null } | null,
+  ): Promise<Pick<SkiSwapSettingsResponse, 'nssraMember' | 'nssraMemberSetBy' | 'nssraMemberSetAt'>> {
+    const by = row?.nssraMemberSetBy
+      ? await this.prisma.user.findUnique({
+          where: { id: row.nssraMemberSetBy },
+          select: { firstName: true, lastName: true, email: true, phone: true },
+        })
+      : null;
+    return {
+      nssraMember: row?.nssraMember ?? false,
+      nssraMemberSetBy: by ? displayName(by) : null,
+      nssraMemberSetAt: row?.nssraMemberSetAt?.toISOString() ?? null,
+    };
+  }
+
   async upsert(
     orgId: string,
     data: {
@@ -70,6 +89,7 @@ export class SkiSwapSettingsService {
       commissionPercent?: string | number;
       barcodesPerTicket?: 1 | 2;
       showUsBootSizes?: boolean;
+      nssraMember?: boolean;
     },
     actorId?: string,
   ): Promise<SkiSwapSettingsResponse> {
@@ -87,6 +107,16 @@ export class SkiSwapSettingsService {
 
     const before = await this.prisma.skiSwapSettings.findUnique({ where: { orgId } });
 
+    // A declaration carries its author and date (Plan 44 D5); clearing it clears them.
+    const nssra =
+      data.nssraMember !== undefined && data.nssraMember !== (before?.nssraMember ?? false)
+        ? {
+            nssraMember: data.nssraMember,
+            nssraMemberSetBy: data.nssraMember ? actorId ?? null : null,
+            nssraMemberSetAt: data.nssraMember ? new Date() : null,
+          }
+        : {};
+
     const row = await this.prisma.skiSwapSettings.upsert({
       where: { orgId },
       update: {
@@ -96,6 +126,7 @@ export class SkiSwapSettingsService {
         ...(commissionBasisPoints !== undefined ? { commissionBasisPoints } : {}),
         ...(data.barcodesPerTicket !== undefined ? { barcodesPerTicket: data.barcodesPerTicket } : {}),
         ...(data.showUsBootSizes !== undefined ? { showUsBootSizes: data.showUsBootSizes } : {}),
+        ...nssra,
       },
       create: {
         orgId,
@@ -103,8 +134,21 @@ export class SkiSwapSettingsService {
         commissionBasisPoints: commissionBasisPoints ?? 0,
         barcodesPerTicket: data.barcodesPerTicket ?? 1,
         showUsBootSizes: data.showUsBootSizes ?? false,
+        ...nssra,
       },
     });
+
+    if ('nssraMember' in nssra) {
+      await this.prisma.auditLog.create({
+        data: {
+          actorType: 'user',
+          actorId: actorId ?? null,
+          orgId,
+          action: 'ski_swap.settings.nssra_member',
+          metadata: { to: nssra.nssraMember },
+        },
+      });
+    }
 
     // Audited with both sides of the change. What the patrol's cut was on the
     // day of a swap is the sort of question that gets asked a year later, by
@@ -129,6 +173,7 @@ export class SkiSwapSettingsService {
       requireConsignmentScan: row.requireConsignmentScan,
       barcodesPerTicket: barcodesOf(row),
       showUsBootSizes: row.showUsBootSizes,
+      ...(await this.nssraOf(row)),
       taxonomyVersion: row.taxonomyVersion,
       smsEnabled: await this.platform.smsEnabled(),
       commissionPercent: basisPointsToPercent(row.commissionBasisPoints),

@@ -41,18 +41,33 @@ function childrenOf(all: TaxonomyNode[], parentId: string | null): TaxonomyNode[
  * four-line objects, which is the difference between a file someone will read in
  * a pull request and one they will not.
  */
+/** Root-first labels down to a node: how a pointer names its target without an id. */
+function labelPath(all: TaxonomyNode[], id: string): string[] {
+  const byId = new Map(all.map((n) => [n.id, n]));
+  const out: string[] = [];
+  let cursor = byId.get(id);
+  let guard = 0;
+  while (cursor && guard < 12) {
+    out.unshift(cursor.label);
+    cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+    guard += 1;
+  }
+  return out;
+}
+
 function valueSpecOf(all: TaxonomyNode[], node: TaxonomyNode): ValueSpec {
   const attributes = childrenOf(all, node.id)
     .filter((n) => n.kind === 'ATTRIBUTE')
     .map((a) => attributeSpecOf(all, a));
 
-  if (!node.iconKey && attributes.length === 0 && !node.retiredAt) return node.label;
+  if (!node.iconKey && attributes.length === 0 && !node.retiredAt && !node.sameDetailsAsId) return node.label;
 
   return {
     label: node.label,
     ...(node.iconKey ? { icon: node.iconKey } : {}),
     ...(node.retiredAt ? { retired: true } : {}),
     ...(attributes.length ? { attributes } : {}),
+    ...(node.sameDetailsAsId ? { sameDetailsAs: labelPath(all, node.sameDetailsAsId) } : {}),
   };
 }
 

@@ -477,6 +477,8 @@ export const api = {
         nameSlot?: number | null; unit?: string | null; minValue?: number | null;
         maxValue?: number | null; step?: number | null; allowFreeEntry?: boolean;
         retired?: boolean;
+        /** A value's details are another value's; null clears it (Plan 44 D14). */
+        sameDetailsAsId?: string | null;
       },
     ) =>
       request<import('./api.types').TaxonomyAdminNode>(`/admin/taxonomy/nodes/${nodeId}`, {
@@ -504,6 +506,38 @@ export const api = {
     },
     deleteIcon: (nodeId: string) =>
       request<void>(`/admin/taxonomy/nodes/${nodeId}/icon`, { method: 'DELETE' }),
+  },
+
+  /** The indemnified-bindings registry's maintenance (Plan 44). Super-admin only. */
+  indemnificationAdmin: {
+    programs: () => request<import('./api.types').IndemnificationProgram[]>('/admin/bindings/indemnification/programs'),
+    patchProgram: (key: string, data: { name?: string; notes?: string }) =>
+      request<import('./api.types').IndemnificationProgram>(`/admin/bindings/indemnification/programs/${key}`, {
+        method: 'PATCH', body: JSON.stringify(data),
+      }),
+    imports: () => request<import('./api.types').IndemnificationImportRecord[]>('/admin/bindings/indemnification/imports'),
+    orgs: () => request<import('./api.types').NssraDeclaration[]>('/admin/bindings/indemnification/orgs'),
+    /** Multipart, like the icon upload: the JSON content-type would break it. */
+    import: async (file: File, season: string, dryRun: boolean) => {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('season', season);
+      form.append('dryRun', dryRun ? 'true' : 'false');
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      const res = await fetch('/api/v1/admin/bindings/indemnification/import', {
+        method: 'POST', credentials: 'include', headers, body: form,
+      });
+      const body = (await res.json().catch(() => null)) as
+        | { success: true; data: import('./api.types').IndemnificationImportPlan }
+        | { success: false; error: string; code?: string; details?: unknown }
+        | null;
+      if (!res.ok || !body || !body.success) {
+        const err = body && !body.success ? body : null;
+        throw new ApiError(res.status, err?.error ?? 'Could not import that file', err?.code, err?.details);
+      }
+      return body.data;
+    },
   },
 
   /**
@@ -1202,11 +1236,26 @@ export const api = {
         commissionPercent?: string;
         barcodesPerTicket?: 1 | 2;
         showUsBootSizes?: boolean;
+        /** The NSSRA membership declaration (Plan 44 D5). */
+        nssraMember?: boolean;
       },
     ) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
+
+    // ─── Binding indemnification lookup (Plan 44) ────────────────────────────
+
+    indemnification: {
+      manufacturers: (orgId: string) =>
+        request<import('./api.types').ManufacturersResponse>(`/orgs/${orgId}/ski-swap/bindings/indemnification/manufacturers`),
+      models: (orgId: string, manufacturerId: string) =>
+        request<import('./api.types').BindingLookup[]>(`/orgs/${orgId}/ski-swap/bindings/indemnification/manufacturers/${manufacturerId}/models`),
+      search: (orgId: string, q: string) =>
+        request<import('./api.types').BindingLookup[]>(`/orgs/${orgId}/ski-swap/bindings/indemnification/search?q=${encodeURIComponent(q)}`),
+      model: (orgId: string, nodeId: string) =>
+        request<import('./api.types').BindingLookupDetail>(`/orgs/${orgId}/ski-swap/bindings/indemnification/models/${nodeId}`),
+    },
 
     // Device PIN — its own route, because settings is readable at `:report`
     // level and this is not.

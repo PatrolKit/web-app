@@ -529,6 +529,12 @@ export const ItemResponseSchema = z.object({
       valueId: z.string().nullable(),
       valueLabel: z.string(),
       numberValue: z.number().nullable(),
+      /**
+       * The category this question really belongs to, when it isn't the
+       * item's own: a ski's binding answers say "Bindings" (Plan 44 D14), so a
+       * screen groups them under it. Absent or null for the item's own.
+       */
+      via: z.string().nullable().optional(),
     }),
   ),
   /**
@@ -938,6 +944,11 @@ export const UpdateSkiSwapSettingsSchema = z
     barcodesPerTicket: z.union([z.literal(1), z.literal(2)]).optional(),
     /** Name ski boots with their US size beside the Mondopoint. */
     showUsBootSizes: z.boolean().optional(),
+    /**
+     * The patrol declares itself an NSSRA retail member (Plan 44 D5), which
+     * is what shows it entries from NSSRA's members-only combined list.
+     */
+    nssraMember: z.boolean().optional(),
   })
   .strict();
 
@@ -960,6 +971,13 @@ export const SkiSwapSettingsResponseSchema = z.object({
    * it adds the same way, so it reads this every sync.
    */
   showUsBootSizes: z.boolean(),
+  /**
+   * Declared an NSSRA retail member (Plan 44 D5), by whom and when. Decides
+   * which indemnification entries the patrol's lookups show.
+   */
+  nssraMember: z.boolean(),
+  nssraMemberSetBy: z.string().nullable(),
+  nssraMemberSetAt: z.string().nullable(),
   /** "20%", "20.5%". The form this is edited and displayed in, everywhere. */
   commissionPercent: z.string(),
   /**
