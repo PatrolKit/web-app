@@ -21,7 +21,7 @@ const KINDS: Omit<ItemSegment, 'count' | 'width'>[] = [
   { key: 'returned', label: 'Returned', dot: 'bg-violet-400' },
   { key: 'forSale', label: 'For sale', dot: 'bg-sky-500' },
   { key: 'noPrice', label: 'No price', dot: 'bg-amber-400' },
-  { key: 'noDescription', label: 'No description', dot: 'bg-orange-300' },
+  { key: 'noDescription', label: 'No description', dot: 'bg-pink-400' },
   { key: 'notOnSale', label: 'Not on sale', dot: 'bg-gray-500' },
 ];
 
