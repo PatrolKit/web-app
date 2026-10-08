@@ -70,7 +70,7 @@ To smoke production, copy the script and `_fixture.mjs` to `/home/ec2-user/patro
 
 ## Production
 
-- **Server:** one EC2 instance at `patrolkit.io`. The app lives in `/home/ec2-user/patrolkit`, runs under pm2 as `patrolkit`, and reads `/home/ec2-user/patrolkit/.env`.
+- **Server:** one EC2 instance at `patrolkit.io`, with Caddy in front (`/etc/caddy/Caddyfile`). The app lives in `/home/ec2-user/patrolkit`, runs under pm2 as `patrolkit`, and reads `/home/ec2-user/patrolkit/.env`.
 - **Data:** production holds real data, and there is no staging copy.
   - Migrations are additive only: new tables and nullable or defaulted columns, never a drop or a rewrite.
   - Never wipe or reset the database.
@@ -124,4 +124,4 @@ It warns when `SELLER_SITE_URL` is unset, or when `OUTBOUND_NOTIFICATIONS` isn't
 | SMS | Amazon SNS, from a toll-free number, to US and Canadian numbers |
 | Payments | Square for the swap's catalog, inventory and sales (each org connects its own; sandbox or live). PayPal for seller payouts. |
 | Photos | Amazon S3 (`PHOTO_BUCKET`) |
-| Hosting | EC2, pm2; the seller site at `skiswap.patrolkit.io` |
+| Hosting | EC2, with Caddy in front for TLS and pm2 running the app; the seller site at `skiswap.patrolkit.io` |
