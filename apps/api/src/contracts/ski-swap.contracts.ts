@@ -1429,3 +1429,38 @@ export interface SoldByCategory {
   asOf: string;
   error: string | null;
 }
+
+// ─── Sellers and checkouts, for the dashboard's histograms ──────────────────
+
+/** One seller's totals: no name or id, only what the histogram counts. */
+export interface SellerTotal {
+  /** Has a business name. */
+  business: boolean;
+  /** Priced items, not withdrawn. */
+  items: number;
+  /** Their asking prices, summed. */
+  listedCents: number;
+  /** What the register took for them, less refunds; null when Square couldn't be read. */
+  soldCents: number | null;
+}
+
+export interface SellerTotals {
+  sellers: SellerTotal[];
+  /** When Square's sales were read. */
+  asOf: string;
+  /** Square couldn't be read: items and listed still count, sold doesn't. */
+  error: string | null;
+}
+
+/** One Square checkout of this swap's items, after refunds. */
+export interface CheckoutTotal {
+  units: number;
+  cents: number;
+}
+
+export interface CheckoutTotals {
+  checkouts: CheckoutTotal[];
+  asOf: string;
+  /** Square couldn't be read; there are no checkouts. */
+  error: string | null;
+}

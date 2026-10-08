@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PosAdapterFactory, type PosSaleLine } from './pos/pos.adapter';
 import { uncategorisedName } from './sku.util';
 import { salesHeatmap, soldByCategory, type SalesHeatmapData } from './sales-heatmap';
+import { checkoutTotals, sellerTotals } from './seller-checkout-totals';
+import type { CheckoutTotals, SellerTotals } from '../contracts/ski-swap.contracts';
 
 /**
  * The dashboard's pie: every live item in exactly one slice.
@@ -152,6 +154,53 @@ export class ItemBreakdownService {
       asOf: new Date(read.at).toISOString(),
       error: null,
     };
+  }
+
+  /**
+   * Each seller's items, listed and sold dollars, for the dashboard's seller
+   * histogram. Our rows count without Square; sold waits on it.
+   */
+  async sellerTotals(orgId: string, swapId: string): Promise<SellerTotals> {
+    const swap = await this.swapOf(orgId, swapId);
+    let read: SalesRead | null = null;
+    let error: string | null = null;
+    try {
+      read = await this.sales(orgId, swap);
+    } catch (err) {
+      this.logger.warn({ err, orgId, swapId }, 'Could not read Square sales for the dashboard');
+      error = err instanceof Error ? err.message : 'Square couldn’t be read.';
+    }
+    const items = await this.prisma.swapItem.findMany({
+      where: { swapId, orgId, sellerId: { not: null } },
+      select: { sellerId: true, priceCents: true, squareVariationId: true, deletedAt: true, seller: { select: { businessName: true } } },
+    });
+    const rows = items.map((i) => ({
+      sellerId: i.sellerId!,
+      business: !!i.seller?.businessName,
+      priceCents: i.priceCents,
+      squareVariationId: i.squareVariationId,
+      deleted: i.deletedAt !== null,
+    }));
+    return {
+      sellers: sellerTotals(rows, read?.lines ?? null),
+      asOf: new Date(read?.at ?? Date.now()).toISOString(),
+      error,
+    };
+  }
+
+  /** Each Square checkout of this swap's items, for the dashboard's buyer histogram. */
+  async checkoutTotals(orgId: string, swapId: string): Promise<CheckoutTotals> {
+    const swap = await this.swapOf(orgId, swapId);
+    let read: SalesRead;
+    try {
+      read = await this.sales(orgId, swap);
+    } catch (err) {
+      this.logger.warn({ err, orgId, swapId }, 'Could not read Square sales for the dashboard');
+      return { checkouts: [], asOf: new Date().toISOString(), error: err instanceof Error ? err.message : 'Square couldn’t be read.' };
+    }
+    const items = await this.soldItems(swapId, orgId);
+    const variations = new Set(items.map((i) => i.squareVariationId!));
+    return { checkouts: checkoutTotals(read.lines, variations), asOf: new Date(read.at).toISOString(), error: null };
   }
 
   private async swapOf(orgId: string, swapId: string) {

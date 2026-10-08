@@ -8,6 +8,8 @@ import ItemsTile from './ItemsTile';
 import CheckinsHeatmapCard from './CheckinsHeatmapCard';
 import SalesHeatmapCard from './SalesHeatmapCard';
 import CategoriesChartCard from './CategoriesChartCard';
+import SellersHistogramCard from './SellersHistogramCard';
+import BuyersHistogramCard from './BuyersHistogramCard';
 
 /** How many unpayable sellers the card names before linking to the rest. */
 const NAMED_SELLERS = 5;
@@ -132,6 +134,11 @@ export default function SkiSwapDashboard() {
       </div>
 
       <CategoriesChartCard orgId={orgId} swapId={selectedSwap.id} />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SellersHistogramCard orgId={orgId} swapId={selectedSwap.id} />
+        <BuyersHistogramCard orgId={orgId} swapId={selectedSwap.id} />
+      </div>
 
       {/* Each card says what's wrong and what to do, and goes where it's
           done. Shown only when there is something to act on: a zero here is

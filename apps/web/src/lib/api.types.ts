@@ -1411,6 +1411,8 @@ export interface PublicSkuStatus {
 export type { UnpricedTicket } from '@patrolkit/contracts/ski-swap.contracts';
 // Sales by hour, and sold by category (Plan 46).
 export type { SalesCell, SalesHeatmap, SoldByCategory } from '@patrolkit/contracts/ski-swap.contracts';
+// The dashboard's seller and buyer histograms.
+export type { SellerTotal, SellerTotals, CheckoutTotal, CheckoutTotals } from '@patrolkit/contracts/ski-swap.contracts';
 // Batch set category (Plan 45).
 export type {
   CategorizeAnswer,

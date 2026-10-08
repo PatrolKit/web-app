@@ -57,4 +57,18 @@ export class StatsController {
   soldByCategory(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
     return this.breakdown.soldByCategory(orgId, swapId);
   }
+
+  /** Each seller's items, listed and sold dollars, with no names: the seller histogram. */
+  @Get('seller-totals')
+  @RequirePermissions('ski_swap:report')
+  sellerTotals(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    return this.breakdown.sellerTotals(orgId, swapId);
+  }
+
+  /** Each Square checkout's items and dollars: the buyer histogram. */
+  @Get('checkout-totals')
+  @RequirePermissions('ski_swap:report')
+  checkoutTotals(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    return this.breakdown.checkoutTotals(orgId, swapId);
+  }
 }

@@ -656,6 +656,12 @@ export const api = {
     /** Units sold per category (Plan 46). */
     getSoldByCategory: (orgId: string, swapId: string) =>
       request<import('./api.types').SoldByCategory>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/sold-by-category`),
+    /** Each seller's items, listed and sold dollars, for the seller histogram. */
+    getSellerTotals: (orgId: string, swapId: string) =>
+      request<import('./api.types').SellerTotals>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/seller-totals`),
+    /** Each Square checkout's items and dollars, for the buyer histogram. */
+    getCheckoutTotals: (orgId: string, swapId: string) =>
+      request<import('./api.types').CheckoutTotals>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/checkout-totals`),
     getItemBreakdown: (orgId: string, swapId: string) =>
       request<import('./api.types').ItemBreakdown>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/breakdown`),
 
