@@ -1409,6 +1409,8 @@ export interface PublicSkuStatus {
 
 /** A ticket still waiting for its price, for the fast edit (Plan 37). */
 export type { UnpricedTicket } from '@patrolkit/contracts/ski-swap.contracts';
+// Sales by hour, and sold by category (Plan 46).
+export type { SalesCell, SalesHeatmap, SoldByCategory } from '@patrolkit/contracts/ski-swap.contracts';
 // Batch set category (Plan 45).
 export type {
   CategorizeAnswer,

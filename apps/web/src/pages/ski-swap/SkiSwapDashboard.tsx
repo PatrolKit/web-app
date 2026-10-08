@@ -4,8 +4,9 @@ import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { payoutGaps } from '@patrolkit/contracts/payout-gaps';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import ItemsPieCard from './ItemsPieCard';
+import ItemsTile from './ItemsTile';
 import CheckinsHeatmapCard from './CheckinsHeatmapCard';
+import SalesHeatmapCard from './SalesHeatmapCard';
 import CategoriesChartCard from './CategoriesChartCard';
 
 /** How many unpayable sellers the card names before linking to the rest. */
@@ -105,9 +106,10 @@ export default function SkiSwapDashboard() {
 
   return (
     <div className="space-y-4">
-      {/* The tiles are our own rows (Plan 39 D6); the pie reads Square's
-          sales, at most every two minutes, in its own request. */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* The first two tiles are our own rows (Plan 39 D6); Items, Sales by
+          hour and the sold layer read Square's sales, at most every two
+          minutes, each in its own request (Plan 46). */}
+      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
         {/* Returning: a seller before this swap's first check-in; everyone else is new. */}
         <SellersTile total={stats?.totalSellers} fresh={stats?.newSellers} returning={stats?.returningSellers} />
         {/* What's on the floor: it climbs through check-in. */}
@@ -119,12 +121,14 @@ export default function SkiSwapDashboard() {
               + (consignedUnpriced > 0 ? ` · ${consignedUnpriced.toLocaleString('en-US')} not priced yet` : '')
             : undefined}
         />
+        {/* Every item, by where it stands: Square's sales, at most every two minutes (Plan 46). */}
+        <ItemsTile orgId={orgId} swapId={selectedSwap.id} />
       </div>
 
       {/* Side by side where there's room, stacked where there isn't. */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <ItemsPieCard orgId={orgId} swapId={selectedSwap.id} />
         <CheckinsHeatmapCard orgId={orgId} swapId={selectedSwap.id} />
+        <SalesHeatmapCard orgId={orgId} swapId={selectedSwap.id} />
       </div>
 
       <CategoriesChartCard orgId={orgId} swapId={selectedSwap.id} />

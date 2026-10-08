@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CheckinsHeatmap } from '../../lib/api.types';
-import { dayLabel, heatView, hourLabel, opacity } from './checkinsHeatmap';
+import { heatView } from './checkinsHeatmap';
+import { dayLabel, hourLabel, opacity } from './heatmapParts';
 
 // Two individuals (0, 1) and a shop (2). Ann (0) checks in at 2 pm and 3 pm.
 const map: CheckinsHeatmap = {

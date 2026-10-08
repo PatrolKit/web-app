@@ -1397,3 +1397,35 @@ export const StationPrintRequestSchema = z
 
 export class StationPrintRequestDto extends createZodDto(StationPrintRequestSchema) {}
 export type StationPrintRequest = z.infer<typeof StationPrintRequestSchema>;
+
+// ─── Sales by hour, and sold by category (Plan 46) ──────────────────────────
+
+export interface SalesCell {
+  /** YYYY-MM-DD in the swap's time zone. */
+  date: string;
+  /** 0–23 in the swap's time zone. */
+  hour: number;
+  /** Units sold, less refunds. */
+  units: number;
+  /** What the register took, after discounts, less the refunded share. */
+  cents: number;
+}
+
+export interface SalesHeatmap {
+  days: string[];
+  hours: number[];
+  cells: SalesCell[];
+  totals: { units: number; cents: number };
+  timeZone: string;
+  /** When Square's sales were read. */
+  asOf: string;
+  /** Square couldn't be read; the cells are empty. */
+  error: string | null;
+}
+
+export interface SoldByCategory {
+  /** Units sold per category; null is items with no category. */
+  categories: { categoryId: string | null; units: number }[];
+  asOf: string;
+  error: string | null;
+}

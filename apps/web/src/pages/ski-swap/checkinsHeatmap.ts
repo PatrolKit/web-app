@@ -56,20 +56,3 @@ export function heatView(map: CheckinsHeatmap, kind: HeatKind, shown: Shown): He
       : { individual: sellersIn(map.cells, false), business: sellersIn(map.cells, true) },
   };
 }
-
-/** Faint for few, solid for many. Square root, so one huge hour doesn't wash out the rest. */
-export function opacity(v: number, max: number): number {
-  if (!v || !max) return 0;
-  return Math.round((0.12 + 0.88 * Math.sqrt(v / max)) * 100) / 100;
-}
-
-export function hourLabel(h: number): string {
-  if (h === 0) return '12 am';
-  if (h < 12) return `${h} am`;
-  if (h === 12) return '12 pm';
-  return `${h - 12} pm`;
-}
-
-export function dayLabel(date: string): string {
-  return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-}

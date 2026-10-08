@@ -88,9 +88,12 @@ export class StatsService {
       this.prisma.swapItem.groupBy({
         by: ['categoryId'],
         where: { swapId, orgId, deletedAt: null, categoryId: { not: null } },
-        _count: { _all: true },
+        // Units, not rows (Plan 46 D6): the sold layer counts units, and a
+        // quantity-3 item is three of them. The same while every quantity is 1.
+        _sum: { originalQuantity: true },
       }),
-      this.prisma.swapItem.count({ where: { swapId, orgId, deletedAt: null, categoryId: null } }),
+      this.prisma.swapItem.aggregate({ where: { swapId, orgId, deletedAt: null, categoryId: null }, _sum: { originalQuantity: true } })
+        .then((r) => r._sum.originalQuantity ?? 0),
     ]);
     const nodes = await this.prisma.taxonomyNode.findMany({
       where: { id: { in: groups.map((g) => g.categoryId!) } },
@@ -98,7 +101,7 @@ export class StatsService {
     });
     const labels = new Map(nodes.map((n) => [n.id, n.label]));
     const categories = groups
-      .map((g) => ({ categoryId: g.categoryId!, label: labels.get(g.categoryId!) ?? 'Unknown', count: g._count._all }))
+      .map((g) => ({ categoryId: g.categoryId!, label: labels.get(g.categoryId!) ?? 'Unknown', count: g._sum.originalQuantity ?? 0 }))
       .filter((c) => !isCatchAllCategory(c.label))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
     return { categories, uncategorised };

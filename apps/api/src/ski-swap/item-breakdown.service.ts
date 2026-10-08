@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PosAdapterFactory, type PosSaleLine } from './pos/pos.adapter';
 import { uncategorisedName } from './sku.util';
+import { salesHeatmap, soldByCategory, type SalesHeatmapData } from './sales-heatmap';
 
 /**
  * The dashboard's pie: every live item in exactly one slice.
@@ -65,13 +66,23 @@ export function breakdown(items: BreakdownItem[], sold: Map<string, number>): Om
   return out;
 }
 
+interface SalesRead {
+  at: number;
+  lines: PosSaleLine[];
+}
+
 /** How long a read of Square's sales is reused: the dashboard polls, Square shouldn't be. */
 const CACHE_MS = 2 * 60 * 1000;
 
 @Injectable()
 export class ItemBreakdownService {
   private readonly logger = new Logger(ItemBreakdownService.name);
-  private readonly salesCache = new Map<string, { at: number; sold: Map<string, number> }>();
+  /**
+   * Square's sale lines per swap (Plan 46 D1): the Items tile, Sales by hour
+   * and sold by category all read from one fetch. The read in flight is shared
+   * too, so three cards asking at once still make one call.
+   */
+  private readonly salesCache = new Map<string, { at: number; read: Promise<SalesRead> }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -85,7 +96,7 @@ export class ItemBreakdownService {
     });
     if (!swap) throw new NotFoundException('Swap not found');
 
-    let read: { at: number; sold: Map<string, number> };
+    let read: SalesRead;
     try {
       read = await this.sales(orgId, swap);
     } catch (err) {
@@ -104,20 +115,79 @@ export class ItemBreakdownService {
       },
     });
     const items = rows.map((r) => ({ ...r, consigned: r.consignedAt !== null, returned: r.returnedAt !== null }));
-    return { ...breakdown(items, read.sold), asOf: new Date(read.at).toISOString(), error: null };
+    return { ...breakdown(items, soldByVariation(read.lines)), asOf: new Date(read.at).toISOString(), error: null };
+  }
+
+  /** Sales by hour (Plan 46 D4), in the swap's time zone. */
+  async salesHeatmap(orgId: string, swapId: string): Promise<SalesHeatmapData & { timeZone: string; asOf: string; error: string | null }> {
+    const swap = await this.swapOf(orgId, swapId);
+    const empty = { days: [], hours: [], cells: [], totals: { units: 0, cents: 0 }, timeZone: swap.timeZone };
+    let read: SalesRead;
+    try {
+      read = await this.sales(orgId, swap);
+    } catch (err) {
+      this.logger.warn({ err, orgId, swapId }, 'Could not read Square sales for the dashboard');
+      return { ...empty, asOf: new Date().toISOString(), error: err instanceof Error ? err.message : 'Square couldn’t be read.' };
+    }
+    const items = await this.soldItems(swapId, orgId);
+    const variations = new Set(items.map((i) => i.squareVariationId!));
+    return { ...salesHeatmap(read.lines, variations, swap.timeZone), timeZone: swap.timeZone, asOf: new Date(read.at).toISOString(), error: null };
+  }
+
+  /** Units sold per category (Plan 46 D6): each sale to its item's current category. */
+  async soldByCategory(orgId: string, swapId: string): Promise<{ categories: { categoryId: string | null; units: number }[]; asOf: string; error: string | null }> {
+    const swap = await this.swapOf(orgId, swapId);
+    let read: SalesRead;
+    try {
+      read = await this.sales(orgId, swap);
+    } catch (err) {
+      this.logger.warn({ err, orgId, swapId }, 'Could not read Square sales for the dashboard');
+      return { categories: [], asOf: new Date().toISOString(), error: err instanceof Error ? err.message : 'Square couldn’t be read.' };
+    }
+    const items = await this.soldItems(swapId, orgId);
+    const byVariation = new Map(items.map((i) => [i.squareVariationId!, i.categoryId]));
+    const sold = soldByCategory(read.lines, byVariation);
+    return {
+      categories: [...sold].map(([categoryId, units]) => ({ categoryId, units })),
+      asOf: new Date(read.at).toISOString(),
+      error: null,
+    };
+  }
+
+  private async swapOf(orgId: string, swapId: string) {
+    const swap = await this.prisma.skiSwap.findFirst({
+      where: { id: swapId, orgId },
+      select: { id: true, createdAt: true, locationId: true, timeZone: true },
+    });
+    if (!swap) throw new NotFoundException('Swap not found');
+    return swap;
+  }
+
+  /**
+   * Every item of the swap that Square knows, deleted ones too (D2): a sale
+   * stays a sale after its item is withdrawn, and its category with it.
+   */
+  private soldItems(swapId: string, orgId: string) {
+    return this.prisma.swapItem.findMany({
+      where: { swapId, orgId, squareVariationId: { not: null } },
+      select: { squareVariationId: true, categoryId: true },
+    });
   }
 
   /** Square's sales for the swap's whole life, reused for two minutes. */
-  private async sales(orgId: string, swap: { id: string; createdAt: Date; locationId: string }) {
+  private sales(orgId: string, swap: { id: string; createdAt: Date; locationId: string }): Promise<SalesRead> {
     const cached = this.salesCache.get(swap.id);
-    if (cached && Date.now() - cached.at < CACHE_MS) return cached;
-    if (!swap.locationId) throw new Error('This swap has no Square location, so its sales can’t be read.');
-    const pos = await this.pos.forOrg(orgId);
-    if (!pos) throw new Error('Square isn’t connected, so sales can’t be read.');
+    if (cached && Date.now() - cached.at < CACHE_MS) return cached.read;
     const at = Date.now();
-    const sold = soldByVariation(await pos.listSales(swap.locationId, swap.createdAt, new Date(at)));
-    const read = { at, sold };
-    this.salesCache.set(swap.id, read);
+    const read = (async (): Promise<SalesRead> => {
+      if (!swap.locationId) throw new Error('This swap has no Square location, so its sales can’t be read.');
+      const pos = await this.pos.forOrg(orgId);
+      if (!pos) throw new Error('Square isn’t connected, so sales can’t be read.');
+      return { at, lines: await pos.listSales(swap.locationId, swap.createdAt, new Date(at)) };
+    })();
+    this.salesCache.set(swap.id, { at, read });
+    // A failed read isn't kept: the next card asks again.
+    read.catch(() => { if (this.salesCache.get(swap.id)?.read === read) this.salesCache.delete(swap.id); });
     return read;
   }
 }

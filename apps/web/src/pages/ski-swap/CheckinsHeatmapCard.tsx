@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import { dayLabel, heatView, hourLabel, opacity, type HeatKind, type Shown } from './checkinsHeatmap';
+import { heatView, type HeatKind, type Shown } from './checkinsHeatmap';
+import { HeatmapGrid, dayLabel, hourLabel } from './heatmapParts';
 
 /** The cells' color; opacity carries the count. */
 const RGB = '56, 138, 221';
@@ -59,63 +60,21 @@ export default function CheckinsHeatmapCard({ orgId, swapId }: { orgId: string; 
       {data && data.days.length === 0 && <p className="text-sm text-gray-500">No check-ins yet.</p>}
 
       {data && view && data.days.length > 0 && (
-        <>
-          <div className="overflow-x-auto">
-            <div
-              className="grid gap-[3px] items-center text-xs min-w-max"
-              style={{ gridTemplateColumns: `3.25rem repeat(${data.days.length}, minmax(2.75rem, 1fr)) 2.75rem` }}
-            >
-              <div />
-              {data.days.map((d) => (
-                <div key={d} className="text-center text-[11px] text-gray-500 tabular-nums">{fmt(view.dayTotal(d))}</div>
-              ))}
-              <div className="text-center text-[11px] text-gray-500">all</div>
-
-              {data.hours.map((h) => (
-                <Row key={h}>
-                  <div className="text-right pr-2 text-[11px] text-gray-500 whitespace-nowrap">{hourLabel(h)}</div>
-                  {data.days.map((d) => {
-                    const v = view.value(d, h);
-                    const a = opacity(v, view.max);
-                    return (
-                      <div key={d} title={`${dayLabel(d)}, ${hourLabel(h)}: ${fmt(v)} ${kind}`}
-                        className={`h-7 rounded flex items-center justify-center tabular-nums ${v ? '' : 'bg-surface-100'} ${a > 0.55 ? 'text-white' : 'text-gray-300'}`}
-                        style={v ? { backgroundColor: `rgba(${RGB}, ${a})` } : undefined}>
-                        {v ? fmt(v) : ''}
-                      </div>
-                    );
-                  })}
-                  <div className="text-center text-[11px] text-gray-500 tabular-nums">{fmt(view.hourTotal(h))}</div>
-                </Row>
-              ))}
-
-              <div />
-              {data.days.map((d) => (
-                <div key={d} className="text-center text-[11px] text-gray-500 pt-1 whitespace-nowrap">{dayLabel(d)}</div>
-              ))}
-              <div className="text-center text-[11px] text-gray-300 pt-1 tabular-nums">{fmt(view.total)}</div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 mt-3 text-[11px] text-gray-500">
-            <span>Fewer</span>
-            <span className="flex gap-0.5" aria-hidden="true">
-              {[0.12, 0.35, 0.6, 0.85, 1].map((o) => (
-                <span key={o} className="w-4 h-2.5 rounded-sm" style={{ backgroundColor: `rgba(${RGB}, ${o})` }} />
-              ))}
-            </span>
-            <span>More</span>
-            <span className="ml-auto">
-              {kind === 'items' ? 'Items checked in each hour' : 'Different sellers who checked in each hour'}
-            </span>
-          </div>
-        </>
+        <HeatmapGrid
+          days={data.days}
+          hours={data.hours}
+          rgb={RGB}
+          value={view.value}
+          dayTotal={view.dayTotal}
+          hourTotal={view.hourTotal}
+          total={view.total}
+          max={view.max}
+          format={fmt}
+          tip={(d, h, v) => `${dayLabel(d)}, ${hourLabel(h)}: ${fmt(v)} ${kind}`}
+          caption={kind === 'items' ? 'Items checked in each hour' : 'Different sellers who checked in each hour'}
+        />
       )}
     </div>
   );
 }
 
-/** A grid row is just its cells: the grid lays them out. */
-function Row({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
-}

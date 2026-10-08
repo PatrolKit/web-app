@@ -650,6 +650,12 @@ export const api = {
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/categories`,
       ),
     /** The dashboard pie. Reads Square's sales, which the server reuses for two minutes. */
+    /** Sales by hour (Plan 46): from the same Square read as the breakdown. */
+    getSalesHeatmap: (orgId: string, swapId: string) =>
+      request<import('./api.types').SalesHeatmap>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/sales-heatmap`),
+    /** Units sold per category (Plan 46). */
+    getSoldByCategory: (orgId: string, swapId: string) =>
+      request<import('./api.types').SoldByCategory>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/sold-by-category`),
     getItemBreakdown: (orgId: string, swapId: string) =>
       request<import('./api.types').ItemBreakdown>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/stats/breakdown`),
 

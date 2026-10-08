@@ -54,12 +54,12 @@ describe('items per category', () => {
       skiSwap: { findFirst: async () => ({ id: 'swap' }) },
       swapItem: {
         groupBy: async () => [
-          { categoryId: 'skis', _count: { _all: 20 } },
-          { categoryId: 'boots', _count: { _all: 28 } },
-          { categoryId: 'other', _count: { _all: 6 } },
-          { categoryId: 'poles', _count: { _all: 20 } },
+          { categoryId: 'skis', _sum: { originalQuantity: 20 } },
+          { categoryId: 'boots', _sum: { originalQuantity: 28 } },
+          { categoryId: 'other', _sum: { originalQuantity: 6 } },
+          { categoryId: 'poles', _sum: { originalQuantity: 20 } },
         ],
-        count: async () => 884,
+        aggregate: async () => ({ _sum: { originalQuantity: 884 } }),
       },
       taxonomyNode: {
         findMany: async () => [

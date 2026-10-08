@@ -37,6 +37,12 @@ describe('item tombstone coverage', () => {
         'tombstones — it is how a cache learns an item went. Its findMany and ' +
         'count share one `where`, which carries the condition.',
     },
+    'ski-swap/item-breakdown.service.ts': {
+      count: 1,
+      because:
+        'Sales by hour and sold by category (Plan 46 D2): a sale stays a sale ' +
+        'after its item is deleted, and so does its category.',
+    },
     'ski-swap/payouts/payout-run.service.ts': {
       count: 1,
       because:

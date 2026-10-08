@@ -43,4 +43,18 @@ export class StatsController {
   breakdownOf(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
     return this.breakdown.get(orgId, swapId);
   }
+
+  /** Sales by hour (Plan 46): units and dollars, from the same Square read as the breakdown. */
+  @Get('sales-heatmap')
+  @RequirePermissions('ski_swap:report')
+  salesHeatmap(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    return this.breakdown.salesHeatmap(orgId, swapId);
+  }
+
+  /** Units sold per category (Plan 46), from the same Square read as the breakdown. */
+  @Get('sold-by-category')
+  @RequirePermissions('ski_swap:report')
+  soldByCategory(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    return this.breakdown.soldByCategory(orgId, swapId);
+  }
 }
