@@ -1556,7 +1556,9 @@
               }
             ]
           },
-          "Alpina"
+          "Alpina",
+          "Axis",
+          "Elan"
         ]
       },
       {
@@ -1827,7 +1829,8 @@
             ]
           },
           "Head",
-          "5th Element"
+          "5th Element",
+          "Morrow"
         ]
       },
       {
@@ -4128,7 +4131,8 @@
           "Salomon",
           "Scott",
           "Swix",
-          "Volkl"
+          "Volkl",
+          "Axis"
         ]
       },
       {
@@ -4392,7 +4396,16 @@
           "Sunice",
           "Roxy",
           "DC",
-          "Nils"
+          "Nils",
+          "Boulder Gear",
+          "Karbon",
+          "FW",
+          "Turbine",
+          "Kari Traa",
+          "Killtec",
+          "Orage",
+          "Pendleton",
+          "Under Armour"
         ]
       },
       {
@@ -4531,7 +4544,14 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom"
+          "Volcom",
+          "Boulder Gear",
+          "Karbon",
+          "Sunice",
+          "Turbine",
+          "Kari Traa",
+          "Roxy",
+          "ThirtyTwo"
         ]
       },
       {
@@ -4609,7 +4629,8 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom"
+          "Volcom",
+          "Boulder Gear"
         ]
       },
       {
@@ -4715,7 +4736,10 @@
           "Trew",
           "Volcom",
           "Terramar",
-          "Under Armour"
+          "Under Armour",
+          "Eivy",
+          "Sunice",
+          "Treviso"
         ]
       },
       {
@@ -4807,7 +4831,13 @@
           "Spyder",
           "The North Face",
           "Trew",
-          "Volcom"
+          "Volcom",
+          "Boulder Gear",
+          "Eivy",
+          "Karbon",
+          "Sunice",
+          "FW",
+          "Oakley"
         ]
       },
       {
