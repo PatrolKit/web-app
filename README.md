@@ -1,26 +1,33 @@
 # PatrolKit — Server
 
-The PatrolKit API and web app: multi-organization patrol management. It covers members and permissions, the ski swap (check-in, tags and printing, Square sales, seller payouts), the time clock, and provisioned devices (check-in iPads, print and scanner bridges). Sign-in is passwordless.
+PatrolKit runs a ski patrol's organization:
+- members and permissions;
+- a ski swap: seller check-in, tags and printing, sales through Square, payouts to sellers through PayPal;
+- a time clock;
+- provisioned devices: check-in iPads, plus print and scanner bridges.
 
-## Layout
+One installation hosts many organizations. Each one connects its own Square and PayPal accounts from inside the app.
+
+This repository holds the API and the web app. This README covers running it locally and deploying it on your own AWS account.
+
+## How it fits together
 
 ```
-server/
-├─ apps/
-│  ├─ api/            # NestJS API; serves the built web app in production
-│  │  ├─ prisma/      # schema, migrations, seed, taxonomy, indemnification lists
-│  │  └─ scripts/     # smoke scripts and one-off tools
-│  └─ web/            # React + Vite SPA (staff site at /app, seller site at /)
-├─ docs/plan/         # one folder per feature: IMPLEMENTATION_PLAN.md, iPad handoffs
-├─ scripts/           # dev-setup.mjs, release.mjs, gen-keys.mjs
-├─ docker-compose.yml # MySQL 8 + Mailpit for local development
-├─ .env.example       # every variable the API reads, with placeholders
-└─ TESTING.md         # the seeded demo users and how to sign in locally
+                        ┌──────────────── EC2 instance ────────────────┐
+  app.example.org  ──▶  │  Caddy (TLS)  ──▶  Node.js app on :4000 (pm2) │ ──▶  RDS MySQL 8
+  swap.example.org ──▶  │                    API + staff and seller web │ ──▶  S3, SES, SNS
+                        └───────────────────────────────────────────────┘
+                                                    ▲
+                     Square and PayPal (per org) ───┘  Square API calls; PayPal payout webhooks
 ```
 
-## Local development
+- **One Node.js process serves everything:** the API under `/api/v1`, the staff app under `/app`, and the seller-facing site at the root.
+- **Two hostnames point at it:** one for staff, one for sellers. They can be the same host.
+- **The app holds no AWS keys.** It uses the EC2 instance role for S3, SES and SNS.
 
-**Needs:** Node.js 20 or later, pnpm 9 or later, and Docker Desktop.
+## Run it locally
+
+**Needs:** Node.js 22 (20 or later works), pnpm 9 or later, and Docker.
 
 ```bash
 node scripts/dev-setup.mjs
@@ -31,87 +38,135 @@ pnpm dev
 ```
 
 `dev-setup.mjs` is safe to rerun. It:
-1. starts MySQL and Mailpit;
-2. copies `.env.example` to `apps/api/.env`;
-3. generates JWT keys;
-4. installs dependencies;
-5. migrates and seeds the database.
+1. starts MySQL and Mailpit (`docker-compose.yml`);
+2. writes `apps/api/.env` from `.env.example`, with fresh JWT keys;
+3. installs dependencies;
+4. migrates and seeds the database.
 
 Once `pnpm dev` is running:
 - **Web:** http://localhost:3000. It proxies `/api` to the API.
-- **API:** http://localhost:4000. `GET /healthz` checks the app; `GET /readyz` checks the app and its database.
-- **Mailpit:** http://localhost:8025, for email when delivery is on.
+- **API:** http://localhost:4000. `GET /readyz` checks the app and its database.
+- **Mailpit:** http://localhost:8025.
 
-**Signing in locally:** go to `/app/auth/login` with an email or phone number. Outbound mail and SMS are off by default, so the page shows the code itself. [`TESTING.md`](TESTING.md) lists the seeded demo users.
-
-## Scripts
+To sign in, go to `/app/auth/login` with any seeded user from [`TESTING.md`](TESTING.md). Outbound email and SMS are off by default, so the page shows the sign-in code itself.
 
 | Command | What it does |
 |---|---|
 | `pnpm dev` | API and web in watch mode |
-| `pnpm build` | Builds every app |
-| `pnpm lint` | Lints every app |
-| `pnpm test` | Unit tests: Jest for the API, Vitest for the web |
-| `pnpm db:migrate` | `prisma migrate dev` |
-| `pnpm db:seed` | The seed: permissions, modules, the super admin, demo data in development |
-| `pnpm release` | Deploys to production (below) |
+| `pnpm build` · `pnpm lint` · `pnpm test` | Build, lint, unit tests (Jest for the API, Vitest for the web) |
+| `pnpm db:migrate` · `pnpm db:seed` | `prisma migrate dev`, and the seed (permissions, modules, the super admin, demo data in development) |
+| `pnpm release` | Deploy to your server (below) |
 
-## Smoke scripts
+## Deploy on AWS
 
-`apps/api/scripts/smoke-*.mjs` check a feature end to end against a running API and a real database. Each comment header says how to run it.
+### 1. Create the AWS resources
 
-Every script works only in the test organization, `patrolkit-smoke`. It creates that org, and the empty `patrolkit-smoke-other` that a few scripts use to test what one org can't see of another. Each script clears out what it made on its last run before starting, and most remove it again when done.
+| Resource | Notes |
+|---|---|
+| **EC2 instance** | Amazon Linux 2023. Give it an Elastic IP. Its security group allows 80 and 443 from anywhere, and SSH only from you (or use EC2 Instance Connect). |
+| **RDS MySQL 8** | A database named, say, `patrolkit`. Its security group allows 3306 only from the instance's. |
+| **DNS** | A records for your staff and seller hostnames, pointing at the Elastic IP. |
+| **SES** | Verify your sending domain (DKIM). Request production access, or SES will only send to verified addresses. Sign-in links, invites and receipts all go by email. |
+| **S3 bucket** (optional) | Item photos and org logos, read publicly from `PHOTO_BASE_URL`, so allow public `s3:GetObject`. Without it, logos live in the database and photos go only to Square. |
+| **SNS** (optional) | Texted sign-in codes, US and Canadian numbers only. Needs an origination number: a toll-free number registered through AWS End User Messaging. Without it, everyone signs in by email. |
+| **IAM role** for the instance | The policy below. |
 
-Some run against stand-ins rather than the real services:
-- **Square:** `PAYOUTS_STUB=1` with `SMOKE_CATALOG_FILE`, `SMOKE_INVENTORY_FILE` or `SMOKE_SALES_FILE`;
-- **PayPal:** `PAYPAL_STUB_LOG`.
-
-To smoke production, copy the script and `_fixture.mjs` to `/home/ec2-user/patrolkit/.smoke/` and run it there with the server's `.env` loaded (`set -a && . ./.env && set +a`).
-
-## Production
-
-- **Server:** one EC2 instance at `patrolkit.io`, with Caddy in front (`/etc/caddy/Caddyfile`). The app lives in `/home/ec2-user/patrolkit`, runs under pm2 as `patrolkit`, and reads `/home/ec2-user/patrolkit/.env`.
-- **Data:** production holds real data, and there is no staging copy.
-  - Migrations are additive only: new tables and nullable or defaulted columns, never a drop or a rewrite.
-  - Never wipe or reset the database.
-  - Test a change locally against a copy of the database before it ships.
-
-### Access
-
-SSH goes through an EC2 Instance Connect tunnel. It needs the key at `~/.ssh/patrolkit.pem`, a current `aws login`, and this entry in `~/.ssh/config`:
-
-```
-Host patrolkit.io
-  HostName i-09990cdbf7eba8daa
-  User ec2-user
-  IdentityFile ~/.ssh/patrolkit.pem
-  ProxyCommand aws ec2-instance-connect open-tunnel --instance-id i-09990cdbf7eba8daa --region us-east-2
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": ["ses:SendEmail"], "Resource": "*" },
+    { "Effect": "Allow", "Action": ["sns:Publish"], "Resource": "*" },
+    { "Effect": "Allow", "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"], "Resource": "arn:aws:s3:::YOUR-PHOTO-BUCKET/*" }
+  ]
+}
 ```
 
-### Deploy
+If you use `DEVICE_IMAGE_BUCKET` for bridge firmware, add `s3:GetObject` on that bucket too.
+
+### 2. Prepare the instance
+
+1. **Software:** install Node.js 22, pm2 (`npm install -g pm2`) and Caddy. Run `pm2 startup` once, so the app comes back after a reboot.
+2. **App folder:** create `/home/ec2-user/patrolkit`. The release script deploys there.
+3. **Caddy:** add the site to `/etc/caddy/Caddyfile`, then `sudo systemctl enable --now caddy`. Caddy gets and renews the TLS certificates itself.
+
+```
+app.example.org, swap.example.org {
+    reverse_proxy localhost:4000
+}
+```
+
+### 3. Configure
+
+Create `/home/ec2-user/patrolkit/.env` from [`.env.example`](.env.example). These matter in production:
+
+| Variable | Set it to |
+|---|---|
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | Your RDS connection string |
+| `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | A pair from `node scripts/gen-keys.mjs` |
+| `SQUARE_ENCRYPTION_KEY` | `openssl rand -hex 32`. Keep it: changing it orphans every org's stored Square token. |
+| `APP_URL` | `https://app.example.org` |
+| `SELLER_SITE_URL` | `https://swap.example.org` |
+| `COOKIE_DOMAIN` | `example.org` |
+| `OUTBOUND_NOTIFICATIONS` | `on`. Anything else sends no email or SMS at all. |
+| `MAIL_TRANSPORT`, `EMAIL_FROM`, `SES_REGION`, `AWS_REGION` | `ses`, a verified sender, and your regions |
+| `SEED_SUPERADMIN_EMAIL` | Your email: the platform's first super admin |
+| `PHOTO_BUCKET`, `PHOTO_BASE_URL`, `AWS_SNS_ORIGINATION_NUMBER` | If you set up S3 and SNS |
+
+### 4. Point the release script at your server
+
+`scripts/release.mjs` deploys over SSH. At the top of the script, set `SERVER` (e.g. `ec2-user@app.example.org`) and `KEY` (your SSH key). When you deploy, set `VITE_SELLER_SITE_URL` to your seller URL, since it's built into the web bundle.
+
+### 5. Deploy
 
 ```bash
-pnpm release
+VITE_SELLER_SITE_URL=https://swap.example.org pnpm release
 ```
 
 The release:
 1. builds the API and web, and fails if the API build emits nothing;
-2. rsyncs `dist/`, `prisma/` and `web/dist/` to the server;
-3. installs dependencies, regenerates the Prisma client, runs `prisma migrate deploy` and the seed;
-4. restarts pm2;
-5. waits for `https://patrolkit.io/readyz`.
+2. rsyncs the build and `prisma/` to the server;
+3. installs dependencies there and runs `prisma migrate deploy` and the seed;
+4. restarts the app under pm2;
+5. waits for `/readyz` to answer.
 
-It warns when `SELLER_SITE_URL` is unset, or when `OUTBOUND_NOTIFICATIONS` isn't `on`. With notifications off, no email or SMS is ever delivered.
+It warns if `SELLER_SITE_URL` is unset or `OUTBOUND_NOTIFICATIONS` isn't `on`. Run the same command for every later deploy.
 
-**Rollback:** check out an earlier commit and run `pnpm release` again. Migrations aren't undone. Since they're additive, older code runs fine against the newer schema.
+### 6. First sign-in
 
-### First-time setup
+1. Sign in at `https://app.example.org/app/auth/login` with `SEED_SUPERADMIN_EMAIL`.
+2. Under **Platform Admin → Organizations**, create an organization. Its owner needs no account yet: one is made and an invite emailed.
+3. That org's admin connects its accounts under **Ski Swap → Administration → Settings**:
+   - **Square API Configuration:** paste an access token, sandbox or live, from a Square developer application. A swap can't be created until Square is connected.
+   - **PayPal Payouts:** to pay sellers. PayPal reports payouts back to `https://app.example.org/api/v1/webhooks/paypal`; register that URL in your PayPal application.
 
-1. Install Node.js, pnpm and pm2 on the instance.
-2. Create the server's `.env` from `.env.example`. Use `node scripts/gen-keys.mjs` for `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY`.
-3. Set `SEED_SUPERADMIN_EMAIL`, `OUTBOUND_NOTIFICATIONS=on` and `SELLER_SITE_URL=https://skiswap.patrolkit.io`.
-4. Run `pnpm release`.
-5. Sign in at `https://patrolkit.io/app/auth/login` with the super admin's email.
+## Operating it
+
+- **Updates:** pull, then `pnpm release`.
+- **Migrations are additive only:** new tables and nullable or defaulted columns, never a drop or a rewrite. A deploy can't destroy data, and older code still runs against a newer schema.
+- **Rollback:** check out the earlier commit and `pnpm release` it. The migrations stay, and the older code ignores what it doesn't know.
+- **Health:** `GET /readyz` checks the app and its database. Point an uptime check or a load balancer at it.
+- **Backups:** RDS automated backups cover the data. The instance itself holds only the build and `.env`, so keep a copy of `.env` somewhere safe.
+- **Smoke tests:** `apps/api/scripts/smoke-*.mjs` exercise a feature end to end against a running API. Each one's header says how to run it.
+  - They work only in a test organization they create, `patrolkit-smoke`, plus an empty `patrolkit-smoke-other` that checks one org can't see another's data.
+  - Some stand in for Square or PayPal (`PAYOUTS_STUB=1` and the `SMOKE_*_FILE` variables).
+  - To run one against production, copy it and `_fixture.mjs` to the server and run it there with the `.env` loaded (`set -a && . ./.env && set +a`).
+
+## Repository layout
+
+```
+server/
+├─ apps/
+│  ├─ api/            # NestJS API; serves the built web app in production
+│  │  ├─ prisma/      # schema, migrations, seed, item taxonomy, indemnification lists
+│  │  └─ scripts/     # smoke scripts and one-off tools
+│  └─ web/            # React + Vite: the staff app (/app) and the seller site (/)
+├─ docs/plan/         # one folder per feature: its implementation plan and iPad handoff
+├─ scripts/           # dev-setup.mjs, release.mjs, gen-keys.mjs
+├─ docker-compose.yml # MySQL 8 + Mailpit, for local development
+└─ .env.example       # every variable the API reads
+```
 
 ## Stack
 
@@ -119,9 +174,7 @@ It warns when `SELLER_SITE_URL` is unset, or when `OUTBOUND_NOTIFICATIONS` isn't
 |---|---|
 | API | NestJS, TypeScript, Prisma on MySQL 8 |
 | Web | React, Vite, TypeScript, Tailwind, TanStack Query, React Router |
-| Sign-in | Emailed sign-in links and texted codes; EdDSA JWTs; device tokens for provisioned devices |
-| Email | Amazon SES outbound; Mailpit locally. Addresses at `patrolkit.io` receive through ImprovMX. |
-| SMS | Amazon SNS, from a toll-free number, to US and Canadian numbers |
-| Payments | Square for the swap's catalog, inventory and sales (each org connects its own; sandbox or live). PayPal for seller payouts. |
-| Photos | Amazon S3 (`PHOTO_BUCKET`) |
-| Hosting | EC2, with Caddy in front for TLS and pm2 running the app; the seller site at `skiswap.patrolkit.io` |
+| Sign-in | Passwordless: emailed sign-in links and texted codes; EdDSA JWTs; device tokens for provisioned devices |
+| Email, SMS | Amazon SES; Amazon SNS. Locally, Mailpit. |
+| Payments | Square (catalog, inventory, sales) and PayPal (payouts), connected per organization |
+| Hosting | EC2, Caddy, pm2; RDS; S3 |
