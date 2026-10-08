@@ -25,7 +25,8 @@ export default function SalesHeatmapCard({ orgId, swapId }: { orgId: string; swa
   const format = kind === 'items' ? units : (n: number) => money(n);
 
   return (
-    <div className="bg-surface-50 border border-gray-800 rounded-lg p-4">
+    // A column, so an empty state can take the height the row gives it.
+    <div className="bg-surface-50 border border-gray-800 rounded-lg p-4 flex flex-col">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <p className="text-gray-400 text-xs uppercase tracking-wide">Sales by hour</p>
         <div className="flex rounded border border-gray-700 overflow-hidden text-xs" role="tablist" aria-label="Count">
@@ -47,7 +48,12 @@ export default function SalesHeatmapCard({ orgId, swapId }: { orgId: string; swa
 
       {isLoading && <p className="text-sm text-gray-500">Reading sales from Square…</p>}
       {failed && <p className="text-sm text-amber-400">Couldn’t read sales from Square: {failed}</p>}
-      {data && !data.error && data.days.length === 0 && <p className="text-sm text-gray-500">No sales yet.</p>}
+      {/* Centered in what's left of the card: beside Check-ins by hour it's as tall as that. */}
+      {data && !data.error && data.days.length === 0 && (
+        <div className="flex-1 min-h-24 flex items-center justify-center">
+          <p className="text-sm text-gray-500">No sales yet.</p>
+        </div>
+      )}
 
       {data && view && data.days.length > 0 && (
         <HeatmapGrid
