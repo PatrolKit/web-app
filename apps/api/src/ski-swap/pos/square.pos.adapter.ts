@@ -374,19 +374,25 @@ class SquarePosAdapter implements IPosAdapter {
     }
   }
 
+  /**
+   * In-stock units per variation, 1,000 ids to a call (Square's limit): a
+   * shop with more items than that was refused outright, and every caller
+   * read its stock as unknown.
+   */
   async getInventoryCounts(variationIds: string[], locationId: string): Promise<Map<string, number>> {
-    if (variationIds.length === 0) return new Map();
-    const page = await this.client.inventory.batchGetCounts({
-      catalogObjectIds: variationIds,
-      locationIds: [locationId],
-    });
     const map = new Map<string, number>();
-    // Every page. `page.data` is the first one only, and anything past it read
-    // as "no count" — which the caller turns into "sold" — on a swap large
-    // enough to need a second page.
-    for await (const count of page) {
-      if (count.state === 'IN_STOCK' && count.catalogObjectId && count.quantity) {
-        map.set(count.catalogObjectId, Math.floor(parseFloat(count.quantity)));
+    for (let at = 0; at < variationIds.length; at += 1000) {
+      const page = await this.client.inventory.batchGetCounts({
+        catalogObjectIds: variationIds.slice(at, at + 1000),
+        locationIds: [locationId],
+      });
+      // Every page. `page.data` is the first one only, and anything past it read
+      // as "no count" — which the caller turns into "sold" — on a swap large
+      // enough to need a second page.
+      for await (const count of page) {
+        if (count.state === 'IN_STOCK' && count.catalogObjectId && count.quantity) {
+          map.set(count.catalogObjectId, Math.floor(parseFloat(count.quantity)));
+        }
       }
     }
     return map;
