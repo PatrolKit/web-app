@@ -153,13 +153,19 @@ It warns if `SELLER_SITE_URL` is unset or `OUTBOUND_NOTIFICATIONS` isn't `on`. R
   - Some stand in for Square or PayPal (`PAYOUTS_STUB=1` and the `SMOKE_*_FILE` variables).
   - To run one against production, copy it and `_fixture.mjs` to the server and run it there with the `.env` loaded (`set -a && . ./.env && set +a`).
 
+## Binding indemnification lists
+
+The Bindings lookup says whether a binding model is on its maker's indemnified list. The models themselves are public, and ship in the item taxonomy. Which ones are indemnified, season by season, comes from licensed lists (NSSRA's combined list is for its members only), so this repository doesn't include it.
+
+To use the lookup, get each season's lists yourself and convert them to the CSV format in [`docs/plan/44_binding_indemnification`](docs/plan/44_binding_indemnification/IMPLEMENTATION_PLAN.md). Then load them through **Platform Admin → Bindings**, or with `pnpm --filter api db:import-indemnification -- <season folder>`. `pnpm --filter api db:export-indemnification -- <folder>` writes a database's lists back out in the same format, for a private backup. Keep these files out of any public repository.
+
 ## Repository layout
 
 ```
 server/
 ├─ apps/
 │  ├─ api/            # NestJS API; serves the built web app in production
-│  │  ├─ prisma/      # schema, migrations, seed, item taxonomy, indemnification lists
+│  │  ├─ prisma/      # schema, migrations, seed, item taxonomy
 │  │  └─ scripts/     # smoke scripts and one-off tools
 │  └─ web/            # React + Vite: the staff app (/app) and the seller site (/)
 ├─ docs/plan/         # one folder per feature: its implementation plan and iPad handoff
@@ -178,3 +184,7 @@ server/
 | Email, SMS | Amazon SES; Amazon SNS. Locally, Mailpit. |
 | Payments | Square (catalog, inventory, sales) and PayPal (payouts), connected per organization |
 | Hosting | EC2, Caddy, pm2; RDS; S3 |
+
+## License
+
+[MIT](LICENSE), © 2026 ovrEngineered, LLC.

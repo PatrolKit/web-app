@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { basename, join, resolve } from 'path';
 import {
   applyImport,
   liveFirst,
@@ -13,15 +13,15 @@ import {
 import { BINDING_MANUFACTURER_PATH, BINDING_MODEL_LABEL, findByPath } from '../src/ski-swap/taxonomy/binding-tree';
 
 /**
- * Loads one season's indemnified-bindings lists into a database from the
- * committed files (Plan 44 D7):
+ * Loads one season's indemnified-bindings lists into a database (Plan 44 D7):
  *
- *   pnpm --filter api db:import-indemnification -- 2025-26
+ *   pnpm --filter api db:import-indemnification -- "/path/to/2026-27"
  *
- * Reads `prisma/indemnification/<season>/entries.csv` and `programs.json`
- * beside it, and runs the same planner and applier the admin import runs. For
- * a fresh database, or to re-run a season; production takes the file through
- * Platform Admin → Bindings, where the dry run shows what would lapse first.
+ * The lists are licensed, so they're kept outside Git. The folder is named for
+ * the season and holds `entries.csv` and, optionally, `programs.json`. It runs
+ * the same planner and applier as the admin import. For a fresh database, or
+ * to re-run a season; production takes the file through Platform Admin →
+ * Bindings, where the dry run shows what would lapse first.
  */
 
 const prisma = new PrismaClient();
@@ -49,13 +49,16 @@ async function snapshot(): Promise<TreeSnapshot> {
 }
 
 async function main() {
-  // pnpm hands the `--` through, so the season is the first argument that looks like one.
-  const season = process.argv.slice(2).find((a) => /^\d{4}-\d{2}$/.test(a));
-  if (!season) {
-    console.error('Usage: db:import-indemnification -- <season>, like 2025-26');
+  // The lists are licensed and live outside Git (Plan 44): this takes the path
+  // to one season's folder, named for the season, holding entries.csv and,
+  // optionally, programs.json. pnpm hands the `--` through, so skip it.
+  const arg = process.argv.slice(2).find((a) => a !== '--');
+  const dir = arg ? resolve(arg) : '';
+  const season = basename(dir);
+  if (!arg || !/^\d{4}-\d{2}$/.test(season)) {
+    console.error('Usage: db:import-indemnification -- <path to a season folder, named like 2026-27>');
     process.exit(1);
   }
-  const dir = join(__dirname, 'indemnification', season);
   const entriesPath = join(dir, 'entries.csv');
   const programsPath = join(dir, 'programs.json');
   if (!existsSync(entriesPath)) throw new Error(`No ${entriesPath}`);
@@ -97,7 +100,7 @@ async function main() {
   }
   const result = await prisma.$transaction(
     async (tx) => {
-      const applied = await applyImport(tx, plan, tree, { actorId: null, fileName: `prisma/indemnification/${season}/entries.csv` });
+      const applied = await applyImport(tx, plan, tree, { actorId: null, fileName: `${season}/entries.csv` });
       // Only a changed tree makes every org's iPads and browsers refetch it.
       if (applied.treeChanged) await tx.skiSwapSettings.updateMany({ data: { taxonomyVersion: { increment: 1 } } });
       return applied;

@@ -41,3 +41,6 @@ infra/cdk.out/
 
 # Test coverage
 coverage/
+
+# Licensed binding-indemnification lists (Plan 44): kept privately, never in Git.
+apps/api/prisma/indemnification/
