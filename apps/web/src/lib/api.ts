@@ -390,7 +390,7 @@ export const api = {
   admin: {
     listOrgs: () => request<import('./api.types').PlatformOrg[]>('/admin/organizations'),
     createOrg: (data: { name: string; slug: string; ownerEmail: string }) =>
-      request<import('./api.types').PlatformOrg>('/admin/organizations', {
+      request<import('./api.types').PlatformOrg & { owner: { email: string; created: boolean; invite: 'sent' | 'not_sent' } }>('/admin/organizations', {
         method: 'POST',
         body: JSON.stringify(data),
       }),

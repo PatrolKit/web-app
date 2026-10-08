@@ -165,4 +165,15 @@ export type UpdateMemberRequest = z.infer<typeof UpdateMemberSchema>;
 export type ImportOutcome = z.infer<typeof ImportOutcomeSchema>;
 export type CreateOrgRequest = z.infer<typeof CreateOrgSchema>;
 export type PlatformOrgResponse = z.infer<typeof PlatformOrgResponseSchema>;
+
+/** A new org, and what happened to its owner: invited like any member (see `inviteMember`). */
+export interface CreateOrgResponse extends PlatformOrgResponse {
+  owner: {
+    email: string;
+    /** No PatrolKit account had this email; one was made for them. */
+    created: boolean;
+    /** Whether the invite email went. Not when outbound mail is off or the provider refused it. */
+    invite: 'sent' | 'not_sent';
+  };
+}
 export type PlatformPatchOrgRequest = z.infer<typeof PlatformPatchOrgSchema>;

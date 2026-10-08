@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { MutationError } from '../devices/DeviceCredentials';
 import type { PlatformOrg } from '../../lib/api.types';
+import { slugFrom } from './orgSlug';
 
 /** Every organization on the platform, and the form that adds one. */
 export default function OrganizationsTab() {
@@ -11,6 +12,10 @@ export default function OrganizationsTab() {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
+  /** The slug follows the name until someone types in it. */
+  const [slugEdited, setSlugEdited] = useState(false);
+  /** What happened to the last org's owner, said once the form closes. */
+  const [created, setCreated] = useState<string | null>(null);
 
   const { data: orgs = [], isLoading } = useQuery({
     queryKey: ['admin-orgs'],
@@ -19,9 +24,13 @@ export default function OrganizationsTab() {
 
   const createMutation = useMutation({
     mutationFn: () => api.admin.createOrg({ name, slug, ownerEmail }),
-    onSuccess: () => {
+    onSuccess: (org) => {
       qc.invalidateQueries({ queryKey: ['admin-orgs'] });
-      setName(''); setSlug(''); setOwnerEmail('');
+      const who = org.owner.created ? `A PatrolKit account was made for ${org.owner.email}` : `${org.owner.email} already had a PatrolKit account`;
+      setCreated(`${org.name} created. ${who}, and they're its owner. ${org.owner.invite === 'sent'
+        ? 'The invite email went to them.'
+        : 'No invite email went (outbound mail is off, or it failed): tell them to sign in with that email.'}`);
+      setName(''); setSlug(''); setOwnerEmail(''); setSlugEdited(false);
       setShowForm(false);
     },
   });
@@ -40,12 +49,16 @@ export default function OrganizationsTab() {
 
       <div className="flex justify-end">
         <button
-          onClick={() => { setShowForm(true); createMutation.reset(); }}
+          onClick={() => { setShowForm(true); setCreated(null); createMutation.reset(); }}
           className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
         >
           + Add organization
         </button>
       </div>
+
+      {created && !showForm && (
+        <p className="text-sm text-green-300 bg-green-900/20 border border-green-800 rounded px-3 py-2">{created}</p>
+      )}
 
       {showForm && (
         <form
@@ -58,8 +71,8 @@ export default function OrganizationsTab() {
             <input
               autoFocus
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. BMBWAV Ski Patrol"
+              onChange={(e) => { setName(e.target.value); if (!slugEdited) setSlug(slugFrom(e.target.value)); }}
+              placeholder="e.g. Mountain Ski Patrol"
               required
               className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm"
             />
@@ -68,18 +81,19 @@ export default function OrganizationsTab() {
             <span className="block text-xs text-gray-400 mb-1">Slug</span>
             <input
               value={slug}
-              onChange={(e) => setSlug(e.target.value.toLowerCase())}
-              placeholder="bmbwavsp"
+              onChange={(e) => { setSlug(e.target.value.toLowerCase()); setSlugEdited(e.target.value !== ''); }}
+              placeholder="mountain-ski-patrol"
               pattern="[a-z0-9-]+"
               required
               className="w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm font-mono"
             />
             <span className="block text-xs text-gray-500 mt-1">
-              Appears in seller links. Lowercase letters, numbers and hyphens.
+              Appears in seller links. Lowercase letters, numbers and hyphens. Filled in from the name until you change it.
             </span>
           </label>
           <label className="block">
             <span className="block text-xs text-gray-400 mb-1">Owner email</span>
+            <span className="block text-xs text-gray-500 mb-1">They needn't have a PatrolKit account: one is made, and they're emailed an invite.</span>
             <input
               value={ownerEmail}
               onChange={(e) => setOwnerEmail(e.target.value)}
@@ -93,7 +107,7 @@ export default function OrganizationsTab() {
           <div className="flex gap-2 justify-end">
             <button
               type="button"
-              onClick={() => { setShowForm(false); createMutation.reset(); }}
+              onClick={() => { setShowForm(false); setSlugEdited(false); createMutation.reset(); }}
               className="text-sm text-gray-400 hover:text-white px-3 py-2"
             >
               Cancel

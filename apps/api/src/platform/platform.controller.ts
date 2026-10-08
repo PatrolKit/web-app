@@ -9,7 +9,8 @@ import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import {
   AddMembershipDto, CreateOrgDto, PlatformPatchOrgDto, PlatformUserQueryDto,
 } from '../contracts/members.contracts';
-import type { PlatformOrgResponse, PlatformUserPage } from '../contracts/members.contracts';
+import type { CreateOrgResponse,
+  PlatformOrgResponse, PlatformUserPage } from '../contracts/members.contracts';
 
 @Controller('admin/organizations')
 @UseGuards(JwtAuthGuard, SuperAdminGuard)
@@ -23,7 +24,7 @@ export class PlatformController {
 
   @Post()
   @HttpCode(201)
-  createOrg(@Body() body: CreateOrgDto): Promise<PlatformOrgResponse> {
+  createOrg(@Body() body: CreateOrgDto): Promise<CreateOrgResponse> {
     return this.platformService.createOrg(body);
   }
 

@@ -1,9 +1,12 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PersonService } from '../common/identity/person.service';
+import { MailService } from '../mail/mail.service';
 import { createId } from '@paralleldrive/cuid2';
 import type {
   CreateOrgRequest,
+  CreateOrgResponse,
   PlatformOrgResponse,
   PlatformPatchOrgRequest,
   PlatformUserPage,
@@ -13,7 +16,11 @@ import { ALL_PERMISSION_KEYS } from '../contracts/org.contracts';
 
 @Injectable()
 export class PlatformService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly people: PersonService,
+    private readonly mail: MailService,
+  ) {}
 
   async listOrgs(): Promise<PlatformOrgResponse[]> {
     const orgs = await this.prisma.organization.findMany({ orderBy: { createdAt: 'desc' } });
@@ -22,21 +29,28 @@ export class PlatformService {
     }));
   }
 
-  async createOrg(data: CreateOrgRequest): Promise<PlatformOrgResponse> {
+  /**
+   * A new organization and its first owner, with every permission.
+   *
+   * The owner is invited the way any member is (`MembersService.inviteMember`):
+   * found by their email, or, as is usual for a new patrol, given an account,
+   * and emailed to say they've been added. They sign in with a code sent to
+   * that address, which proves it's theirs.
+   */
+  async createOrg(data: CreateOrgRequest): Promise<CreateOrgResponse> {
     const existing = await this.prisma.organization.findUnique({ where: { slug: data.slug } });
     if (existing) throw new ConflictException('Slug already in use');
 
-    const owner = await this.prisma.user.findFirst({ where: { email: data.ownerEmail } });
-    if (!owner) throw new NotFoundException(`User not found: ${data.ownerEmail}`);
+    // Before the org exists: an email that's someone else's verified address
+    // is refused here, with nothing left half-made.
+    const { user: owner, created } = await this.people.resolveOrCreate({ email: data.ownerEmail });
 
     const org = await this.prisma.organization.create({
       data: { id: createId(), name: data.name, slug: data.slug },
     });
 
     // Seed owner membership with all permissions
-    const membership = await this.prisma.membership.create({
-      data: { id: createId(), userId: owner.id, orgId: org.id, updatedAt: new Date() },
-    });
+    const membership = await this.people.upsertMembership(owner.id, org.id);
     const allPerms = await this.prisma.permission.findMany({
       where: { key: { in: ALL_PERMISSION_KEYS } },
     });
@@ -52,7 +66,18 @@ export class PlatformService {
       },
     });
 
-    return { id: org.id, name: org.name, slug: org.slug, status: org.status, createdAt: org.createdAt };
+    // The invite email, as Members sends it. Suppressed while outbound mail
+    // is off; a failure to send never undoes the org.
+    const email = owner.email ?? data.ownerEmail;
+    const sent = await this.mail.sendMemberInvite(email, org.name).catch(() => ({ status: 'failed' as const }));
+    if (sent.status === 'sent') {
+      await this.prisma.membership.update({ where: { id: membership.id }, data: { inviteSentAt: new Date() } });
+    }
+
+    return {
+      id: org.id, name: org.name, slug: org.slug, status: org.status, createdAt: org.createdAt,
+      owner: { email, created, invite: sent.status === 'sent' ? 'sent' : 'not_sent' },
+    };
   }
 
   async getOrg(id: string): Promise<PlatformOrgResponse> {
