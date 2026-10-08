@@ -27,7 +27,15 @@ This repository holds the API and the web app. This README covers running it loc
 
 ## Run it locally
 
-**Needs:** Node.js 22 (20 or later works), pnpm 9 or later, and Docker.
+**Needs:**
+- Node.js 22 (20 or later works), pnpm 9 or later, and Docker.
+- A [Font Awesome Pro](https://fontawesome.com/plans) license. The web app uses its Pro icons, installed from Font Awesome's private registry. Set your package token once, in your user-level config (never the repository's `.npmrc`):
+
+```bash
+pnpm config set "//npm.fontawesome.com/:_authToken" <your Font Awesome package token>
+```
+
+Then:
 
 ```bash
 node scripts/dev-setup.mjs
@@ -179,7 +187,7 @@ server/
 | Concern | What it uses |
 |---|---|
 | API | NestJS, TypeScript, Prisma on MySQL 8 |
-| Web | React, Vite, TypeScript, Tailwind, TanStack Query, React Router |
+| Web | React, Vite, TypeScript, Tailwind, TanStack Query, React Router, Font Awesome Pro |
 | Sign-in | Passwordless: emailed sign-in links and texted codes; EdDSA JWTs; device tokens for provisioned devices |
 | Email, SMS | Amazon SES; Amazon SNS. Locally, Mailpit. |
 | Payments | Square (catalog, inventory, sales) and PayPal (payouts), connected per organization |
@@ -187,4 +195,4 @@ server/
 
 ## License
 
-[MIT](LICENSE), © 2026 ovrEngineered, LLC.
+[MIT](LICENSE), © 2026 ovrEngineered, LLC. Font Awesome Pro is licensed separately, by Fonticons, Inc.
