@@ -599,7 +599,10 @@ function itemObject(
           type: 'ITEM_VARIATION',
           id: variationId,
           itemVariationData: {
-            name: 'Regular',
+            // The SKU, not "Regular": Square prints the variation's name on
+            // the receipt line ("K2 Skis (73789)"), so a buyer's receipt says
+            // which ticket each line was.
+            name: item.sku,
             sku: item.sku,
             ...variationPricing(item.priceCents),
             stockable: true,

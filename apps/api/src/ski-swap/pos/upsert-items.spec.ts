@@ -66,3 +66,23 @@ describe('writing many items to Square at once', () => {
     expect(results.slice(500).every((r) => 'posItemId' in r)).toBe(true);
   });
 });
+
+describe('the variation Square prints on the receipt', () => {
+  it('is named for the SKU, not "Regular"', async () => {
+    const seen: unknown[] = [];
+    const client = {
+      catalog: {
+        batchGet: async () => ({ objects: [] }),
+        batchUpsert: async ({ batches }: { batches: { objects: unknown[] }[] }) => {
+          seen.push(...batches[0].objects);
+          return { idMappings: [{ clientObjectId: '#item0', objectId: 'i' }, { clientObjectId: '#variation0', objectId: 'v' }] };
+        },
+      },
+      inventory: { batchCreateChanges: async () => ({}) },
+    };
+    const adapter = await new SquarePosAdapterFactory({ forOrg: async () => client } as never).forOrg('org');
+    await adapter!.upsertItems([item('73789')], 'loc', 1);
+    const variation = (seen[0] as { itemData: { variations: { itemVariationData: { name: string; sku: string } }[] } }).itemData.variations[0];
+    expect(variation.itemVariationData).toMatchObject({ name: '73789', sku: '73789' });
+  });
+});
