@@ -19,11 +19,13 @@ export function HistogramBars({ bins, barClass, noun }: {
   const fmt = (n: number) => n.toLocaleString('en-US');
   return (
     <div className="overflow-x-auto">
-      <div className="flex items-end gap-1 min-w-max sm:min-w-0">
+      {/* Bars side by side, centered: spare width goes to the edges, not
+          between the bars. Too wide for the card, it scrolls instead. */}
+      <div className="flex items-end gap-1.5 w-max mx-auto">
         {bins.map((b) => (
-          <div key={b.label} className="flex-1 min-w-[2.75rem] flex flex-col items-center" title={`${fmt(b.count)} ${noun}: ${b.label}`}>
+          <div key={b.label} className="w-12 shrink-0 flex flex-col items-center" title={`${fmt(b.count)} ${noun}: ${b.label}`}>
             <span className={`text-[11px] tabular-nums ${b.count ? 'text-gray-200' : 'text-gray-600'}`}>{fmt(b.count)}</span>
-            <div className={`w-full max-w-[2.75rem] mt-1 rounded-t ${b.count ? barClass : 'bg-surface-100'}`}
+            <div className={`w-full mt-1 rounded-t ${b.count ? barClass : 'bg-surface-100'}`}
               style={{ height: `${b.count ? Math.max(3, Math.round((b.count / max) * BAR_MAX)) : 2}px` }} />
             <span className="text-[10px] text-gray-400 text-center leading-tight mt-1.5 whitespace-nowrap">{b.label}</span>
           </div>
