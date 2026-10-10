@@ -7,7 +7,7 @@ import type {
   DiagnosticChoice, DiagnosticIssueResponse, DiagnosticRunResponse, SellerResponse,
 } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { FoldHeader, SidePanel, Tombstone, useFolds } from './ReportCard';
+import { FoldHeader, SidePanel, Tombstone, useFolds, useJustDecided } from './ReportCard';
 import {
   CHOICE_LABEL, canUseSquarePrice, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
   rowChoices, shown, squareCopies, squareSide, stockText, tookText, yearOf,
@@ -248,11 +248,11 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
           {group.issues.slice(0, shownRows).map((i) => <PriceCard key={i.id} issue={i} orgId={orgId} swapId={swapId} onDecided={onDecided} />)}
         </div>
       ) : (
-        <ul className="divide-y divide-gray-800">
+        <div className="p-3 space-y-3">
           {group.issues.slice(0, shownRows).map((i) => (
             <IssueRow key={i.id} issue={i} orgId={orgId} swapId={swapId} sellers={sellers} onDecided={onDecided} />
           ))}
-        </ul>
+        </div>
       )}
       {group.issues.length > shownRows && (
         <button type="button" onClick={() => setShownRows((n) => n + PAGE)}
@@ -274,6 +274,7 @@ function PriceCard({ issue, orgId, swapId, onDecided }: {
 }) {
   /** Decided here: settles in, and a new price is remembered for the tombstone. */
   const [done, setDone] = useState<{ cents?: number } | null>(null);
+  const justDecided = useJustDecided(isOpen(issue));
   const apply = useMutation({
     mutationFn: (body: { choice: DiagnosticChoice; priceCents?: number }) => api.skiSwap.applyDiagnosticChoice(orgId, swapId, issue.id, body),
     onSuccess: (updated, body) => {
@@ -285,7 +286,7 @@ function PriceCard({ issue, orgId, swapId, onDecided }: {
   const sides = priceSides(issue);
   const busy = apply.isPending;
 
-  if (!isOpen(issue)) return <Tombstone text={priceDecidedText(issue, done?.cents)} hint="" settle={!!done} />;
+  if (!isOpen(issue)) return <Tombstone text={`${issue.sku}: ${priceDecidedText(issue, done?.cents)}`} hint="" settle={!!done || justDecided} />;
 
   /** Asks for the price, again until it's one, or until cancelled. */
   function setDifferent() {
@@ -344,17 +345,22 @@ function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
   const held = isHeld(issue);
   // A held row shows what it is, and no choices (Plan 48): its sale comes first.
   const open = isOpen(issue) && !held;
+  const justDecided = useJustDecided(isOpen(issue));
   const sq = squareSide(issue);
   const ours = issue.ours && !issue.ours.deleted ? issue.ours : null;
   const deleted = issue.ours?.deleted ? issue.ours : null;
   const compareField = issue.kind === 'differs' ? issue.field : null;
+  const name = ours?.name ?? sq?.name ?? squareCopies(issue)[0]?.name ?? '';
+
+  // Dealt with: a green tombstone, as Sales check's, that settles in when it happens on screen.
+  if (!isOpen(issue)) return <Tombstone text={`${issue.sku}${name ? ` ${name}` : ''}: ${decidedText(issue)}`} hint="" settle={justDecided} />;
 
   return (
-    <li className={`p-3 text-sm space-y-2 ${open || held ? '' : 'opacity-50'}`}>
+    <div className="border border-gray-800 rounded-lg bg-surface-50 p-3 text-sm space-y-2">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <Link to={`/dashboard/ski-swap/items?q=${encodeURIComponent(issue.sku)}`} target="_blank"
           className="font-mono text-brand-400 hover:underline">{issue.sku}</Link>
-        <span className="text-gray-200">{ours?.name ?? sq?.name ?? squareCopies(issue)[0]?.name ?? ''}</span>
+        <span className="text-gray-200">{name}</span>
         {ours?.sellerName && <span className="text-xs text-gray-500">{ours.sellerName}</span>}
       </div>
 
@@ -400,7 +406,6 @@ function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
           <Link to="/dashboard/ski-swap/reports" className="underline hover:text-amber-200">Open Sales check</Link>
         </p>
       )}
-      {!open && !held && <p className="text-xs text-gray-400">{decidedText(issue)}</p>}
       {issue.state === 'failed' && issue.error && <p className="text-xs text-red-400">{issue.error}</p>}
       {apply.error && <p className="text-xs text-red-400">{errorText(apply.error)}</p>}
 
@@ -460,6 +465,6 @@ function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
           {apply.isPending && <span className="text-xs text-gray-400">Working…</span>}
         </div>
       )}
-    </li>
+    </div>
   );
 }

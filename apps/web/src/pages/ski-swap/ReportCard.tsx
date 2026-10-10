@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Side } from './salesCheckView';
 
@@ -34,6 +34,21 @@ export function useFolds(storageKey: string) {
     toggleAll: (keys: string[]) => change((prev) => (keys.every((k) => prev.has(k)) ? [] : keys)),
     allFolded: (keys: string[]) => keys.length > 0 && keys.every((k) => folded.has(k)),
   };
+}
+
+/**
+ * Whether a card was open on screen and has just been decided, by its own
+ * button or a whole group's: its tombstone settles in green, where one
+ * decided before the page loaded just sits there.
+ */
+export function useJustDecided(open: boolean): boolean {
+  const wasOpen = useRef(open);
+  const [just, setJust] = useState(false);
+  useEffect(() => {
+    if (wasOpen.current && !open) setJust(true);
+    wasOpen.current = open;
+  }, [open]);
+  return just;
 }
 
 /** A section's header that folds it: ▾ open, ▸ folded. */
