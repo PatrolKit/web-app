@@ -237,7 +237,8 @@ export class SalesCheckService {
   }
 
   /**
-   * D9: a ticket no item has. Issued to the seller, put in Square (awaited),
+   * D9: a ticket no item has. Issued to the seller, priced at what Square
+   * sold it for (one unit's worth), put in Square with that price (awaited),
    * then the sale is credited to it. A push that fails credits nothing; the
    * ticket stays issued for a retry.
    */
@@ -249,6 +250,11 @@ export class SalesCheckService {
       await this.issued.batchAdd(orgId, swapId, body.sellerId, [body.ticket], userId);
       const created = await this.prisma.swapItem.findFirst({ where: { swapId, sku: body.ticket, deletedAt: null }, select: { id: true } });
       if (!created) throw new ConflictException('The ticket wasn’t issued.');
+      // Before it goes to Square, so Square's item has the price too.
+      const priceCents = squarePriceOf(line);
+      if (priceCents !== null) {
+        await this.prisma.swapItem.updateMany({ where: { id: created.id, priceCents: null }, data: { priceCents } });
+      }
       await this.issued.push(orgId, swapId, [created.id]);
       const fresh = await this.context(orgId, swapId);
       const item = fresh.items.find((i) => i.id === created.id);
@@ -257,8 +263,8 @@ export class SalesCheckService {
       }
       const outcome = await this.creditOne(fresh, { ...body, itemId: created.id }, true, userId);
       if (!outcome.ok) throw new ConflictException(outcome.error);
-      await this.audit(orgId, userId, 'ski_swap.sales_check.issued_and_credited', { swapId, ticket: body.ticket, sellerId: body.sellerId, itemId: created.id, orderId: body.orderId, lineUid: body.lineUid });
-      return outcome;
+      await this.audit(orgId, userId, 'ski_swap.sales_check.issued_and_credited', { swapId, ticket: body.ticket, sellerId: body.sellerId, itemId: created.id, orderId: body.orderId, lineUid: body.lineUid, priceCents });
+      return priceCents !== null ? { ...outcome, pricedCents: priceCents } : outcome;
     });
   }
 
@@ -421,3 +427,10 @@ function toRef(d: { orderId: string; lineUid: string; decision: string; itemId: 
 function ignoredOf(json: Prisma.JsonValue | null): string[] {
   return Array.isArray(json) ? json.filter((x): x is string => typeof x === 'string') : [];
 }
+
+/** What Square sold a line for, one unit's worth: an issued ticket's price. Null when it says nothing usable. */
+export function squarePriceOf(line: { unitPriceCents: number | null; collectedCents: number; quantity: number }): number | null {
+  const cents = line.unitPriceCents ?? (line.quantity > 0 ? Math.round(line.collectedCents / line.quantity) : null);
+  return cents && cents > 0 ? cents : null;
+}
+

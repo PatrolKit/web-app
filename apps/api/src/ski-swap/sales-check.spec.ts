@@ -166,6 +166,11 @@ function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Recor
         const i = opts.items.find((x) => x.sku === where.sku && !x.deleted);
         return i ? { id: i.id } : null;
       },
+      updateMany: async ({ where, data }: { where: { id: string; priceCents?: null }; data: { priceCents: number } }) => {
+        const i = opts.items.find((x) => x.id === where.id && (where.priceCents !== null || x.priceCents === null));
+        if (i) i.priceCents = data.priceCents;
+        return { count: i ? 1 : 0 };
+      },
     },
     swapSaleDecision: {
       findMany: async () => decisions.filter((d) => d.liveKey),
@@ -193,13 +198,15 @@ function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Recor
     rawSales: async () => ({ at: at.getTime(), lines: opts.lines, fees: opts.fees, swap }),
     forgetSales: () => { forgotten++; },
   };
+  /** Each item's price as it went to Square. */
+  const pushedPrices: (number | null)[] = [];
   const issued = {
     batchAdd: async (_o: string, _s: string, _seller: string, tickets: string[]) => {
       opts.items.push(item(tickets[0], { squareVariationId: null, sellerName: 'New Seller' }));
       return { created: 1 };
     },
     push: async (_o: string, _s: string, ids: string[]) => {
-      for (const i of opts.items) if (ids.includes(i.id)) i.squareVariationId = `v-${i.sku}`;
+      for (const i of opts.items) if (ids.includes(i.id)) { i.squareVariationId = `v-${i.sku}`; pushedPrices.push(i.priceCents); }
     },
   };
   const idempotency = { getCached: async () => null, save: async () => undefined };
@@ -218,7 +225,7 @@ function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Recor
   return {
     service: make(prisma, pos),
     readOnlyService: make(readOnly(prisma), readOnly(pos)),
-    decisions, audits, stockSet, forgotten: () => forgotten, swap, patches,
+    decisions, audits, stockSet, forgotten: () => forgotten, swap, patches, pushedPrices,
   };
 }
 
@@ -271,11 +278,12 @@ describe('crediting a sale to an item (D5, D6)', () => {
     expect((await h.service.list('org', 'swap')).issues).toHaveLength(1);
   });
 
-  it('issues an unknown ticket to a seller, puts it in Square, then credits the sale (D9)', async () => {
-    const h = harness({ items: [], lines: [line('u', 'old-59443')] });
+  it('issues an unknown ticket to a seller at Square’s price, puts it in Square priced, then credits the sale (D9)', async () => {
+    const h = harness({ items: [], lines: [line('u', 'old-59443', { collectedCents: 1000, unitPriceCents: 1000 })] });
     await expect(h.service.issueAndCredit('org', 'swap', { orderId: 'u', lineUid: 'u-u', sellerId: 'seller', ticket: '59443' }, 'staff'))
-      .resolves.toMatchObject({ ok: true });
+      .resolves.toMatchObject({ ok: true, pricedCents: 1000 });
     expect(h.decisions[0]).toMatchObject({ itemId: 'it-59443' });
+    expect(h.pushedPrices).toEqual([1000]);
     expect(h.audits).toEqual(['ski_swap.sales_check.credited', 'ski_swap.sales_check.issued_and_credited']);
   });
 

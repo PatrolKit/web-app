@@ -45,7 +45,7 @@ const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
   },
   {
     kind: 'unknown_ticket', title: 'A ticket PatrolKit doesn’t have',
-    explain: 'The number isn’t one of this swap’s tickets. Find its seller from the stub, then issue it to them.',
+    explain: 'The number isn’t one of this swap’s tickets. Find its seller from the stub, then issue it to them: the new item is priced at what Square sold it for, in PatrolKit and Square, and the sale goes on it.',
   },
   {
     kind: 'custom_amount', title: 'Custom amounts',

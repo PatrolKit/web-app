@@ -302,7 +302,8 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
   const issue_ = useMutation({
     mutationFn: () => api.skiSwap.issueAndCreditSale(orgId, swapId, { ...line, sellerId: seller, ticket: issue.ticket! }),
     onMutate: () => setRefused(null),
-    onSuccess: (r) => settle(r, `Issued ${issue.ticket} to ${sellers.find((s) => s.id === seller)?.displayName ?? 'the seller'}, and put the ${money(issue.collectedCents)} sale on it.`),
+    onSuccess: (r) => settle(r, `Issued ${issue.ticket} to ${sellers.find((s) => s.id === seller)?.displayName ?? 'the seller'}${
+      r.pricedCents ? ` at ${money(r.pricedCents)}` : ''}, and put the ${money(issue.collectedCents)} sale on it.`),
   });
   const feeHandled = useMutation({
     mutationFn: () => api.skiSwap.feeHandled(orgId, swapId, { orderId: issue.orderId }),
@@ -371,8 +372,11 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
               options={sellers.map((s) => ({ value: s.id, label: s.displayName, sublabel: s.phone ?? undefined, keywords: s.email ?? undefined }))} />
           </div>
           <button type="button" className={primary} disabled={!seller || busy}
-            onClick={() => { if (window.confirm(`Issue ticket ${issue.ticket} to this seller, put it in Square, and put this sale on it?`)) issue_.mutate(); }}>
-            Issue {issue.ticket} and use it
+            onClick={() => {
+              const at = squarePrice !== null ? ` at ${money(squarePrice)}, the price Square sold it for,` : '';
+              if (window.confirm(`Issue ticket ${issue.ticket} to this seller${at} put it in Square, and put this sale on it?`)) issue_.mutate();
+            }}>
+            {squarePrice !== null ? `Issue ${issue.ticket} at ${money(squarePrice)} and use it` : `Issue ${issue.ticket} and use it`}
           </button>
         </div>
       )}
