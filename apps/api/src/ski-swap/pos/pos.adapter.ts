@@ -48,6 +48,31 @@ export interface PosSaleLine {
 }
 
 /**
+ * One order's fees (Plan 48 fee check): its service charges, Square's card
+ * surcharge among them, with what has been refunded of each, and how it was
+ * paid.
+ */
+export interface PosOrderFees {
+  orderId: string;
+  paymentId: string | null;
+  soldAt: Date;
+  /** It sold something (a refund-only order doesn't). */
+  hasLines: boolean;
+  cardCents: number;
+  cashCents: number;
+  charges: {
+    uid: string;
+    name: string;
+    /** Square's own credit card surcharge (its convenience fee). */
+    surcharge: boolean;
+    /** "2.6" for a percentage charge, else null. */
+    percentage: string | null;
+    cents: number;
+    refundedCents: number;
+  }[];
+}
+
+/**
  * One catalog item as Square holds it, flattened to what the swap diagnostics
  * compare (Plan 41): one entry per variation, keyed by its SKU.
  */
@@ -114,6 +139,8 @@ export interface IPosAdapter {
    * off the last page.
    */
   listSales(locationId: string, from: Date, to: Date): Promise<PosSaleLine[]>;
+  /** The same read, with each order's fees as well (Plan 48 fee check). Absent: fees aren't known. */
+  readSales?(locationId: string, from: Date, to: Date): Promise<{ lines: PosSaleLine[]; fees: PosOrderFees[] }>;
   /**
    * Every item in a category (Plan 41), paged to the end. `onPage` hears the
    * running count, for a progress line.

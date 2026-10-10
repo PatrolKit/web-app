@@ -28,6 +28,14 @@ const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
     explain: 'Someone made a new item at the register, named for a ticket. Accept the suggestion so that ticket’s seller is paid.',
   },
   {
+    kind: 'double_fee', title: 'Charged both fees',
+    explain: 'Square’s credit card surcharge and the Shop Fee were both charged on this sale. In Square, open the sale, choose Issue refund, and refund the Shop Fee only. It leaves this list once Square shows the refund.',
+  },
+  {
+    kind: 'cash_fee', title: 'Shop Fee on a cash sale',
+    explain: 'The Shop Fee is for card payments, but this sale was paid all in cash. In Square, refund the Shop Fee only. It leaves this list once Square shows the refund.',
+  },
+  {
     kind: 'oversold', title: 'Counted as sold more than once',
     explain: 'An item is counted as sold more times than it has. If an accepted suggestion caused it, undo that below. Otherwise open the sale in Square: the ticket may have been scanned twice (refund the extra), or scanned in place of another ticket.',
   },
@@ -99,6 +107,18 @@ export interface Side {
 
 /** The left of the card: the sale as Square has it. */
 export function squareSide(i: SalesCheckIssue): Side {
+  if (i.fee) {
+    const paid = [i.fee.cardCents ? `${money(i.fee.cardCents)} by card` : null, i.fee.cashCents ? `${money(i.fee.cashCents)} in cash` : null].filter(Boolean).join(', ');
+    return {
+      title: 'Sale in Square',
+      fields: [
+        { label: 'Paid', value: paid || '—' },
+        { label: i.fee.shopFeeName, value: money(i.fee.shopFeeCents) },
+        ...(i.fee.surchargeCents !== null ? [{ label: 'Surcharge', value: money(i.fee.surchargeCents) }] : []),
+      ],
+      links: i.links.sale ? [{ label: 'Sale', href: i.links.sale }] : [],
+    };
+  }
   const links: SideLink[] = [];
   if (i.links.sale) links.push({ label: 'Sale', href: i.links.sale });
   if (i.links.item) links.push({ label: 'Item', href: i.links.item });
@@ -134,6 +154,13 @@ const itemLink = (sku: string): SideLink => ({ label: 'Item', to: `/dashboard/sk
 
 /** The right of the card: PatrolKit's item for the sale, if there is one. */
 export function patrolKitSide(i: SalesCheckIssue): Side {
+  if (i.fee) {
+    return {
+      title: 'To refund',
+      fields: [{ label: 'Refund', value: `${money(i.fee.refundCents)} (the ${i.fee.shopFeeName})`, warn: true }],
+      links: i.links.sale ? [{ label: 'Refund in Square', href: i.links.sale }] : [],
+    };
+  }
   if (i.kind === 'oversold' && i.oversold) {
     return {
       title: 'PatrolKit item',
@@ -202,3 +229,11 @@ export function suggestedLines(issues: SalesCheckIssue[]): { orderId: string; li
     .filter((i) => (i.kind === 'other_copy' || i.kind === 'register_item') && i.suggestion)
     .map((i) => ({ orderId: i.orderId, lineUid: i.lineUid, itemId: i.suggestion!.itemId, label: `${money(i.collectedCents)} sale → ${i.suggestion!.sku}` }));
 }
+
+/** "97 card sales were charged no fee (about $497.97 at 2.6%)." Null when there are none, or fees weren't read. */
+export function missedFeesText(m: { orders: number; cardCents: number; feeCents: number | null; percentage: string | null } | null): string | null {
+  if (!m || m.orders === 0) return null;
+  const about = m.feeCents !== null && m.percentage ? ` (about ${money(m.feeCents)} at ${m.percentage}%)` : '';
+  return `${m.orders.toLocaleString('en-US')} card sale${m.orders === 1 ? ' was' : 's were'} charged no fee${about}. Counted here, not flagged.`;
+}
+

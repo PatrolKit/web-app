@@ -7,7 +7,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
-  CreditSaleDto, CreditSuggestedDto, IgnoreCategoryDto, IssueAndCreditDto, NotSwapSaleDto,
+  CreditSaleDto, CreditSuggestedDto, FeeHandledDto, IgnoreCategoryDto, IssueAndCreditDto, NotSwapSaleDto,
 } from '../contracts/sales-check.contracts';
 import { SalesCheckService } from './sales-check.service';
 
@@ -59,6 +59,16 @@ export class SalesCheckController {
     @CurrentUser() user: AuthenticatedUser, @Headers('idempotency-key') key?: string,
   ) {
     return this.salesCheck.notSwapSale(orgId, swapId, body, user.userId, key);
+  }
+
+  /** A fee refunded some way Square doesn't show: marked handled. */
+  @Post('fee-handled')
+  @RequirePermissions('ski_swap:admin')
+  feeHandled(
+    @Param('orgId') orgId: string, @Param('swapId') swapId: string, @Body() body: FeeHandledDto,
+    @CurrentUser() user: AuthenticatedUser, @Headers('idempotency-key') key?: string,
+  ) {
+    return this.salesCheck.feeHandled(orgId, swapId, body, user.userId, key);
   }
 
   @Post('undo/:decisionId')

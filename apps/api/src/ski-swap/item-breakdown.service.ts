@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { PosAdapterFactory, type PosSaleLine } from './pos/pos.adapter';
+import { PosAdapterFactory, type PosOrderFees, type PosSaleLine } from './pos/pos.adapter';
 import { uncategorisedName } from './sku.util';
 import { salesHeatmap, soldByCategory, type SalesHeatmapData } from './sales-heatmap';
 import { checkoutTotals, sellerTotals } from './seller-checkout-totals';
@@ -72,6 +72,8 @@ export function breakdown(items: BreakdownItem[], sold: Map<string, number>): Om
 interface SalesRead {
   at: number;
   lines: PosSaleLine[];
+  /** Each order's fees (Plan 48 fee check), when the adapter reads them. */
+  fees?: PosOrderFees[];
 }
 
 /** How long a read of Square's sales is reused: the dashboard polls, Square shouldn't be. */
@@ -250,7 +252,7 @@ export class ItemBreakdownService {
   }
 
   /** Sales check's read (Plan 48): Square's lines as they are, from the same cache. */
-  async rawSales(orgId: string, swapId: string): Promise<{ at: number; lines: PosSaleLine[]; swap: Awaited<ReturnType<ItemBreakdownService['swapOf']>> }> {
+  async rawSales(orgId: string, swapId: string): Promise<{ at: number; lines: PosSaleLine[]; fees?: PosOrderFees[]; swap: Awaited<ReturnType<ItemBreakdownService['swapOf']>> }> {
     const swap = await this.swapOf(orgId, swapId);
     const read = await this.rawRead(orgId, swap);
     return { ...read, swap };
@@ -281,6 +283,7 @@ export class ItemBreakdownService {
       if (!swap.locationId) throw new Error('This swap has no Square location, so its sales can’t be read.');
       const pos = await this.pos.forOrg(orgId);
       if (!pos) throw new Error('Square isn’t connected, so sales can’t be read.');
+      if (pos.readSales) return { at, ...(await pos.readSales(swap.locationId, swap.createdAt, new Date(at))) };
       return { at, lines: await pos.listSales(swap.locationId, swap.createdAt, new Date(at)) };
     })();
     this.salesCache.set(swap.id, { at, read });

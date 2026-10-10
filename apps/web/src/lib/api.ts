@@ -887,6 +887,11 @@ export const api = {
       request<import('./api.types').SalesCheckResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check`),
     salesCheckCount: (orgId: string, swapId: string) =>
       request<import('./api.types').SalesCheckCount>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/count`),
+    /** A fee refunded some way Square doesn't show: marked handled (Plan 48 fee check). */
+    feeHandled: (orgId: string, swapId: string, body: { orderId: string }) =>
+      request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/fee-handled`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
+      }),
     creditSale: (orgId: string, swapId: string, body: { orderId: string; lineUid: string; itemId: string; markSold: boolean }) =>
       request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/credit`, {
         method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },

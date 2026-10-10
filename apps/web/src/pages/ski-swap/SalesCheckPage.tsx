@@ -7,7 +7,7 @@ import type { ItemResponse, SalesCheckDecided, SalesCheckIssue, SalesCheckOutcom
 import type { SkiSwapContext } from './SkiSwapLayout';
 import { SidePanel, Tombstone } from './ReportCard';
 import {
-  acceptedText, byCategory, groupsOf, money, patrolKitSide, squareSide, suggestedLines, withDecided, type CategoryGroup, type SalesCheckGroup,
+  acceptedText, byCategory, groupsOf, missedFeesText, money, patrolKitSide, squareSide, suggestedLines, withDecided, type CategoryGroup, type SalesCheckGroup,
 } from './salesCheckView';
 
 const key = (orgId: string, swapId: string) => ['ski-swap/sales-check', orgId, swapId];
@@ -112,8 +112,9 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
               {open === 0 ? '✓ Every sale is on one of this swap’s items' : `${open.toLocaleString('en-US')} sale${open === 1 ? '' : 's'} to check`}
             </p>
             <p className="text-xs text-gray-500">
-              Sales at the swap’s location that PatrolKit can’t put on one of its items · from Square as of {asOf}
+              Sales at the swap’s location that PatrolKit can’t put on one of its items, and fees to refund · from Square as of {asOf}
             </p>
+            {missedFeesText(data.missedFees) && <p className="text-xs text-gray-500">{missedFeesText(data.missedFees)}</p>}
           </div>
           {canFix && suggested.length > 0 && (
             <div className="flex flex-wrap items-center gap-3">
@@ -277,8 +278,14 @@ function Issue({ issue, orgId, swapId, canFix, sellers, markSold, onDone }: {
     onMutate: () => setRefused(null),
     onSuccess: (r) => settle(r, `Issued ${issue.ticket} to ${sellers.find((s) => s.id === seller)?.displayName ?? 'the seller'}, and put the ${money(issue.collectedCents)} sale on it.`),
   });
-  const busy = credit.isPending || notSwap.isPending || issue_.isPending;
-  const err = refused ?? (credit.error ?? notSwap.error ?? issue_.error ? errorText(credit.error ?? notSwap.error ?? issue_.error) : null);
+  const feeHandled = useMutation({
+    mutationFn: () => api.skiSwap.feeHandled(orgId, swapId, { orderId: issue.orderId }),
+    onMutate: () => setRefused(null),
+    onSuccess: (r) => settle(r, `Marked refunded: ${money(issue.fee?.refundCents ?? issue.collectedCents)} ${issue.fee?.shopFeeName ?? 'fee'}.`),
+  });
+  const busy = credit.isPending || notSwap.isPending || issue_.isPending || feeHandled.isPending;
+  const failed = credit.error ?? notSwap.error ?? issue_.error ?? feeHandled.error;
+  const err = refused ?? (failed ? errorText(failed) : null);
   const when = new Date(issue.soldAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   return (
@@ -291,7 +298,13 @@ function Issue({ issue, orgId, swapId, canFix, sellers, markSold, onDone }: {
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40">
         <span className="text-xs text-gray-500 mr-auto">{when}</span>
         {err && <span className="text-xs text-red-400">{err}</span>}
-        {canFix && issue.kind !== 'oversold' && (
+        {canFix && issue.fee && (
+          <button type="button" className={btn} disabled={busy}
+            onClick={() => { if (window.confirm(`Mark this ${issue.fee!.shopFeeName} refunded? Only when it was refunded some way Square doesn’t show; a refund in Square clears it by itself.`)) feeHandled.mutate(); }}>
+            Mark refunded…
+          </button>
+        )}
+        {canFix && issue.kind !== 'oversold' && !issue.fee && (
           <>
             <button type="button" className={btn} disabled={busy}
               onClick={() => { const note = window.prompt('Not a swap sale. A note, if you like (e.g. “swag”):', ''); if (note !== null) notSwap.mutate(note.trim() || undefined); }}>
@@ -363,7 +376,9 @@ function Decided({ d, orgId, swapId, canFix, onUndone }: {
   return (
     <li className="px-4 py-2 text-xs text-gray-400 flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="text-gray-200">
-        {d.decision === 'CREDIT' ? `${money(d.collectedCents)} sale put on ${d.item ? `${d.item.sku} ${d.item.name}` : 'an item'}` : `Not a swap sale (${money(d.collectedCents)})`}
+        {d.decision === 'CREDIT' ? `${money(d.collectedCents)} sale put on ${d.item ? `${d.item.sku} ${d.item.name}` : 'an item'}`
+          : d.decision === 'FEE_HANDLED' ? `${money(d.collectedCents)} fee marked refunded`
+            : `Not a swap sale (${money(d.collectedCents)})`}
       </span>
       {d.note && <span>“{d.note}”</span>}
       {d.markedSold && <span>marked sold in Square</span>}

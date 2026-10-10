@@ -81,3 +81,27 @@ describe('Square refunds against the sales they refund', () => {
     expect(await read([own as Order])).toEqual([['s1', 'v-1', 1, 1]]);
   });
 });
+
+describe('fees, and refunds of them', () => {
+  it('reads each order’s fees and how it was paid, with what return orders refunded of each', async () => {
+    const charged = {
+      id: 's1', state: 'COMPLETED', closedAt: '2026-10-09T18:00:00Z',
+      lineItems: [{ uid: 'a', catalogObjectId: 'v-1', quantity: '1', totalMoney: money(29500) }],
+      serviceCharges: [
+        { uid: 'shop', name: 'Shop Fee', type: 'CUSTOM', percentage: '2.6', totalMoney: money(767) },
+        { uid: 'sur', name: 'Credit card surcharge', type: 'CARD_SURCHARGE', percentage: '2.6', totalMoney: money(787) },
+      ],
+      tenders: [{ type: 'CARD', amountMoney: money(31054), paymentId: 'pay-1' }],
+    };
+    const feeRefund = {
+      id: 'r1', state: 'COMPLETED', closedAt: '2026-10-09T19:00:00Z', lineItems: [],
+      returns: [{ sourceOrderId: 's1', returnServiceCharges: [{ sourceServiceChargeUid: 'shop', totalMoney: money(767) }] }],
+    };
+    const { adapter } = harness([charged as never, feeRefund as never]);
+    const { fees } = await (await adapter)!.readSales!('loc', FROM, TO);
+    expect(fees.map((f) => [f.orderId, f.cardCents, f.cashCents, f.hasLines, f.charges.map((c) => [c.name, c.surcharge, c.cents, c.refundedCents])])).toEqual([
+      ['s1', 31054, 0, true, [['Shop Fee', false, 767, 767], ['Credit card surcharge', true, 787, 0]]],
+    ]);
+  });
+});
+

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedText, byCategory, groupsOf, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
+import { acceptedText, byCategory, groupsOf, missedFeesText, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
 import type { SalesCheckIssue } from '../../lib/api.types';
 
 const issue = (over: Partial<SalesCheckIssue>): SalesCheckIssue => ({
@@ -98,3 +98,29 @@ describe('sales decided on the page', () => {
       .toBe('$10.00 sale put on 73308 Item #73308 · Karen Beckwith · marked sold in Square');
   });
 });
+
+describe('the fee check', () => {
+  const both = issue({
+    key: 'f1:#fee', kind: 'double_fee', orderId: 'f1', lineUid: '#fee', collectedCents: 767, links: { sale: 'https://sq/sale', item: null },
+    fee: { shopFeeName: 'Shop Fee', shopFeeCents: 767, surchargeCents: 787, cardCents: 31054, cashCents: 0, refundCents: 767 },
+  });
+
+  it('shows the sale’s fees, and the Shop Fee to refund', () => {
+    expect(squareSide(both).fields.map((f) => [f.label, f.value])).toEqual([['Paid', '$310.54 by card'], ['Shop Fee', '$7.67'], ['Surcharge', '$7.87']]);
+    expect(patrolKitSide(both)).toEqual({
+      title: 'To refund', fields: [{ label: 'Refund', value: '$7.67 (the Shop Fee)', warn: true }], links: [{ label: 'Refund in Square', href: 'https://sq/sale' }],
+    });
+  });
+
+  it('groups fees after the sales to credit, and leaves them out of Accept all', () => {
+    const groups = groupsOf([issue({ kind: 'other_copy', suggestion: { itemId: 'i', sku: '1', name: 'x', priceCents: null, sellerName: null, sellerId: null } }), both]);
+    expect(groups.map((g) => [g.kind, g.title])).toEqual([['other_copy', 'Sold on another copy of a ticket'], ['double_fee', 'Charged both fees']]);
+    expect(suggestedLines([both])).toEqual([]);
+  });
+
+  it('counts card sales charged no fee', () => {
+    expect(missedFeesText({ orders: 97, cardCents: 1915250, feeCents: 49797, percentage: '2.6' })).toBe('97 card sales were charged no fee (about $497.97 at 2.6%). Counted here, not flagged.');
+    expect([missedFeesText({ orders: 0, cardCents: 0, feeCents: null, percentage: null }), missedFeesText(null)]).toEqual([null, null]);
+  });
+});
+

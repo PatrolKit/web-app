@@ -7,7 +7,7 @@ import { createZodDto } from 'nestjs-zod';
  * decision below is a person's choice, made by an admin.
  */
 
-export const SALES_CHECK_KINDS = ['other_copy', 'register_item', 'unknown_ticket', 'custom_amount', 'other_item', 'oversold'] as const;
+export const SALES_CHECK_KINDS = ['other_copy', 'register_item', 'unknown_ticket', 'custom_amount', 'other_item', 'oversold', 'double_fee', 'cash_fee'] as const;
 export type SalesCheckKind = (typeof SALES_CHECK_KINDS)[number];
 
 const line = { orderId: z.string().min(1).max(64), lineUid: z.string().min(1).max(64) };
@@ -22,6 +22,10 @@ export class CreditSaleDto extends createZodDto(CreditSaleSchema) {}
 
 export const NotSwapSaleSchema = z.object({ ...line, note: z.string().max(500).optional() }).strict();
 export class NotSwapSaleDto extends createZodDto(NotSwapSaleSchema) {}
+
+/** A fee check refunded some way Square doesn't show (Plan 48 fee check). */
+export const FeeHandledSchema = z.object({ orderId: z.string().min(1).max(64) }).strict();
+export class FeeHandledDto extends createZodDto(FeeHandledSchema) {}
 
 export const IgnoreCategorySchema = z.object({ categoryId: z.string().min(1).max(64), ignore: z.boolean() }).strict();
 export class IgnoreCategoryDto extends createZodDto(IgnoreCategorySchema) {}
@@ -66,12 +70,22 @@ export interface SalesCheckIssue {
   /** The item's categories, for "Never count …" (other_item). */
   categoryIds: string[];
   links: { sale: string | null; item: string | null };
+  /** double_fee, cash_fee: the sale's fees, and what to refund (`collectedCents` too). */
+  fee?: {
+    shopFeeName: string;
+    shopFeeCents: number;
+    /** Square's credit card surcharge, when charged too. */
+    surchargeCents: number | null;
+    cardCents: number;
+    cashCents: number;
+    refundCents: number;
+  };
 }
 
 export interface SalesCheckDecided {
   id: string;
   key: string;
-  decision: 'CREDIT' | 'NOT_SWAP';
+  decision: 'CREDIT' | 'NOT_SWAP' | 'FEE_HANDLED';
   orderId: string;
   lineUid: string;
   collectedCents: number;
@@ -91,6 +105,8 @@ export interface SalesCheckResponse {
   issues: SalesCheckIssue[];
   decided: SalesCheckDecided[];
   ignoredCategories: { id: string; name: string }[];
+  /** Card sales charged no fee: counted, not flagged. Null when fees weren't read. */
+  missedFees: { orders: number; cardCents: number; feeCents: number | null; percentage: string | null } | null;
 }
 
 export interface SalesCheckOutcome {

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { PayPalClient, type PayoutBatchResult, type PayoutItemRequest } from './paypal.client';
 import {
-  PosAdapterFactory, type IPosAdapter, type PosCatalogItem, type PosItemSync, type PosSaleLine, type PosUpsertResult, type PosVariationInfo,
+  PosAdapterFactory, type IPosAdapter, type PosCatalogItem, type PosItemSync, type PosOrderFees, type PosSaleLine, type PosUpsertResult, type PosVariationInfo,
 } from '../pos/pos.adapter';
 
 /**
@@ -133,6 +133,17 @@ class StubPosAdapter implements IPosAdapter {
       // The window is honoured, so a script can prove a sale outside it is
       // excluded rather than taking it on trust.
       .filter((r) => r.soldAt >= from && r.soldAt <= to);
+  }
+
+  /**
+   * Sales and, from `SMOKE_FEES_FILE` when a script gives one, each order's
+   * fees (Plan 48 fee check): rows as `PosOrderFees`, `soldAt` a string.
+   */
+  async readSales(locationId: string, from: Date, to: Date): Promise<{ lines: PosSaleLine[]; fees: PosOrderFees[] }> {
+    const lines = await this.listSales(locationId, from, to);
+    const path = process.env.SMOKE_FEES_FILE;
+    const rows = path && existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) as (Omit<PosOrderFees, 'soldAt'> & { soldAt: string })[] : [];
+    return { lines, fees: rows.map((r) => ({ ...r, soldAt: new Date(r.soldAt) })).filter((r) => r.soldAt >= from && r.soldAt <= to) };
   }
 
   async getSaleLine(orderId: string, lineUid: string): Promise<PosSaleLine | null> {

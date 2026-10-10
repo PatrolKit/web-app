@@ -8,6 +8,7 @@ import { IssuedTicketService } from './issued-ticket.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
 import { applyDecisions, classify, lineKeyOf, netUnits, salesHolds, type CheckItem, type DecisionRef, type SalesHolds } from './sales-check';
 import { squareItemUrl, squareSaleUrl } from './square-links';
+import { FEE_LINE, feeCheck, feeKeyOf } from './fee-check';
 import type {
   SalesCheckCount, SalesCheckDecided, SalesCheckIssue, SalesCheckOutcome, SalesCheckResponse,
 } from '../contracts/sales-check.contracts';
@@ -39,8 +40,8 @@ export class SalesCheckService {
 
   async list(orgId: string, swapId: string): Promise<SalesCheckResponse> {
     const read = await this.read(orgId, swapId);
-    if ('error' in read) return { asOf: new Date().toISOString(), error: read.error ?? 'Square couldn’t be read.', issues: [], decided: [], ignoredCategories: [] };
-    const { swap, at, lines, items, decisions, pos, env } = read;
+    if ('error' in read) return { asOf: new Date().toISOString(), error: read.error ?? 'Square couldn’t be read.', issues: [], decided: [], ignoredCategories: [], missedFees: null };
+    const { swap, at, lines, fees, items, decisions, pos, env } = read;
 
     const ourVariations = new Set(items.map((i) => i.squareVariationId).filter((v): v is string => !!v));
     const unknown = lines.filter((l) => l.variationId && !ourVariations.has(l.variationId)).map((l) => l.variationId);
@@ -60,12 +61,26 @@ export class SalesCheckService {
       links: { sale: squareSaleUrl(env, i.orderId, i.paymentId), item: squareItemUrl(env, i.rungUpAs?.itemId ?? null) },
     }));
 
+    // The fee check: a sale charged both fees, or a Shop Fee on cash. One per
+    // order, keyed `order:#fee`; cleared by Square showing the fee refunded.
+    const handled = new Set(decisions.filter((d) => d.decision === 'FEE_HANDLED').map((d) => feeKeyOf(d.orderId)));
+    const fee = fees ? feeCheck(fees, handled) : null;
+    for (const f of fee?.issues ?? []) {
+      issues.push({
+        key: f.key, kind: f.kind, orderId: f.orderId, lineUid: FEE_LINE, soldAt: f.soldAt.toISOString(),
+        quantity: 1, refundedQuantity: 0, collectedCents: f.refundCents, unitPriceCents: null,
+        rungUpAs: null, suggestion: null, ticket: null, categoryIds: [],
+        links: { sale: squareSaleUrl(env, f.orderId, f.paymentId), item: null },
+        fee: { shopFeeName: f.shopFeeName, shopFeeCents: f.shopFeeCents, surchargeCents: f.surchargeCents, cardCents: f.cardCents, cashCents: f.cashCents, refundCents: f.refundCents },
+      });
+    }
+
     const byId = new Map(items.map((i) => [i.id, i]));
     const names = await this.userNames(decisions.map((d) => d.decidedBy));
     const decided: SalesCheckDecided[] = decisions.map((d) => {
       const item = d.itemId ? byId.get(d.itemId) : undefined;
       return {
-        id: d.id, key: lineKeyOf(d.orderId, d.lineUid), decision: d.decision as 'CREDIT' | 'NOT_SWAP',
+        id: d.id, key: lineKeyOf(d.orderId, d.lineUid), decision: d.decision as SalesCheckDecided['decision'],
         orderId: d.orderId, lineUid: d.lineUid, collectedCents: d.collectedCents,
         item: item ? { id: item.id, sku: item.sku, name: item.name } : null,
         note: d.note, markedSold: d.markedSold, decidedBy: d.decidedBy ? names.get(d.decidedBy) ?? null : null,
@@ -77,6 +92,7 @@ export class SalesCheckService {
     return {
       asOf: new Date(at).toISOString(), error: null, issues, decided,
       ignoredCategories: [...ignored].map((id) => ({ id, name: categoryNames.get(id) ?? id })),
+      missedFees: fee?.missed ?? null,
     };
   }
 
@@ -153,6 +169,34 @@ export class SalesCheckService {
     await this.audit(orgId, userId, 'ski_swap.sales_check.restocked', { swapId, itemId, stock });
     this.breakdown.forgetSales(swapId);
     return { stock };
+  }
+
+  /**
+   * A fee check refunded some way Square doesn't show (an amount refund, say):
+   * marked handled, so it leaves the list. Undone like any decision.
+   */
+  async feeHandled(orgId: string, swapId: string, body: { orderId: string }, userId: string, key?: string): Promise<SalesCheckOutcome> {
+    return this.once(orgId, swapId, 'fee-handled', key, async () => {
+      const read = await this.read(orgId, swapId);
+      if ('error' in read) throw new BadRequestException(read.error);
+      const handled = new Set(read.decisions.filter((d) => d.decision === 'FEE_HANDLED').map((d) => feeKeyOf(d.orderId)));
+      const issue = read.fees ? feeCheck(read.fees, handled).issues.find((f) => f.orderId === body.orderId) : undefined;
+      const feeKey = feeKeyOf(body.orderId);
+      if (!issue) return { key: feeKey, ok: false, error: 'That fee isn’t waiting any more: it’s been refunded, or already marked.' };
+      try {
+        await this.prisma.swapSaleDecision.create({
+          data: {
+            swapId, orgId, orderId: body.orderId, lineUid: FEE_LINE, decision: 'FEE_HANDLED', itemId: null,
+            collectedCents: issue.refundCents, variationId: null, note: null, decidedBy: userId, liveKey: feeKey,
+          },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return { key: feeKey, ok: false, error: 'That fee was already marked.' };
+        throw err;
+      }
+      await this.audit(orgId, userId, 'ski_swap.sales_check.fee_handled', { swapId, orderId: body.orderId, kind: issue.kind, refundCents: issue.refundCents });
+      return { key: feeKey, ok: true };
+    });
   }
 
   /** D7: a whole Square category is never (or again) this swap's sales. */
@@ -284,7 +328,7 @@ export class SalesCheckService {
       id: r.id, sku: r.sku, name: r.name, priceCents: r.priceCents, squareVariationId: r.squareVariationId,
       originalQuantity: r.originalQuantity, deleted: r.deletedAt !== null, sellerName: r.seller ? sellerDisplayName(r.seller) : null, sellerId: r.seller?.id ?? null,
     }));
-    return { swap, at: raw.at, lines: raw.lines, items, decisions, pos, env: config?.environment ?? 'production' };
+    return { swap, at: raw.at, lines: raw.lines, fees: raw.fees ?? null, items, decisions, pos, env: config?.environment ?? 'production' };
   }
 
   private async context(orgId: string, swapId: string): Promise<Ctx> {

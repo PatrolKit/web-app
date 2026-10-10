@@ -6,7 +6,7 @@ import { buildRun } from './payouts/build-run';
 import { SalesCheckService } from './sales-check.service';
 import { SalesCheckController } from './sales-check.controller';
 import { PERMISSIONS_KEY } from '../common/decorators/require-permissions.decorator';
-import type { PosSaleLine, PosVariationInfo } from './pos/pos.adapter';
+import type { PosOrderFees, PosSaleLine, PosVariationInfo } from './pos/pos.adapter';
 
 /**
  * Sales check (Plan 48): sales PatrolKit can't put on this swap's items,
@@ -151,7 +151,7 @@ function readOnly<T extends object>(target: T, path = 'db'): T {
   });
 }
 
-function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Record<string, number> }) {
+function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Record<string, number>; fees?: PosOrderFees[] }) {
   const decisions: Record<string, unknown>[] = [];
   const audits: string[] = [];
   const stockSet: [string, number][] = [];
@@ -189,7 +189,7 @@ function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Recor
     setInventoryPhysicalCount: async (id: string, _loc: string, n: number) => { stockSet.push([id, n]); },
   };
   const breakdown = {
-    rawSales: async () => ({ at: at.getTime(), lines: opts.lines, swap }),
+    rawSales: async () => ({ at: at.getTime(), lines: opts.lines, fees: opts.fees, swap }),
     forgetSales: () => { forgotten++; },
   };
   const issued = {
@@ -287,7 +287,7 @@ describe('the Sales check routes (D1, D13)', () => {
 
   it('make every change a POST that needs an admin', () => {
     const changes = handlers.filter((n) => n !== 'list' && n !== 'count');
-    expect(changes.sort()).toEqual(['credit', 'creditSuggested', 'ignoreCategory', 'issueAndCredit', 'notSwap', 'restock', 'undo']);
+    expect(changes.sort()).toEqual(['credit', 'creditSuggested', 'feeHandled', 'ignoreCategory', 'issueAndCredit', 'notSwap', 'restock', 'undo']);
     for (const name of changes) {
       expect(Reflect.getMetadata(METHOD_METADATA, SalesCheckController.prototype[name])).toBe(RequestMethod.POST);
       expect(reflector.get(PERMISSIONS_KEY, SalesCheckController.prototype[name])).toEqual(['ski_swap:admin']);
@@ -311,6 +311,43 @@ describe('what open sales hold back in Catalog check', () => {
     expect(heldBy(holds, '87688', [])).toBe(1);
     expect(heldBy(holds, '1938', [])).toBe(0);
     expect(heldBy(holds, '73001', ['old-73001'])).toBe(0);
+  });
+});
+
+describe('the fee check in Sales check', () => {
+  const fees = (shopRefunded = 0): PosOrderFees[] => [{
+    orderId: 'f1', paymentId: 'pay-f1', soldAt: at, hasLines: true, cardCents: 31054, cashCents: 0,
+    charges: [
+      { uid: 'shop', name: 'Shop Fee', surcharge: false, percentage: '2.6', cents: 767, refundedCents: shopRefunded },
+      { uid: 'sur', name: 'Credit card surcharge', surcharge: true, percentage: '2.6', cents: 787, refundedCents: 0 },
+    ],
+  }, { orderId: 'f2', paymentId: 'pay-f2', soldAt: at, hasLines: true, cardCents: 5000, cashCents: 0, charges: [] }];
+
+  it('lists a sale charged both fees, links it, and counts card sales with none, without writing', async () => {
+    const h = harness({ items: [], lines: [], fees: fees() });
+    const res = await h.readOnlyService.list('org', 'swap');
+    expect(res.issues).toEqual([expect.objectContaining({
+      key: 'f1:#fee', kind: 'double_fee', collectedCents: 767, links: expect.objectContaining({ sale: expect.stringContaining('pay-f1') }),
+      fee: { shopFeeName: 'Shop Fee', shopFeeCents: 767, surchargeCents: 787, cardCents: 31054, cashCents: 0, refundCents: 767 },
+    })]);
+    expect(res.missedFees).toEqual({ orders: 1, cardCents: 5000, feeCents: 130, percentage: '2.6' });
+  });
+
+  it('clears once Square shows the fee refunded', async () => {
+    const h = harness({ items: [], lines: [], fees: fees(767) });
+    expect((await h.service.list('org', 'swap')).issues).toEqual([]);
+  });
+
+  it('marks one handled once, leaves the sales alone, and undoes', async () => {
+    const h = harness({ items: [item('73338')], lines: [line('o1', 'v-73338')], fees: fees() });
+    await expect(h.service.feeHandled('org', 'swap', { orderId: 'f1' }, 'staff')).resolves.toEqual({ key: 'f1:#fee', ok: true });
+    expect(h.decisions[0]).toMatchObject({ decision: 'FEE_HANDLED', lineUid: '#fee', collectedCents: 767, liveKey: 'f1:#fee' });
+    expect(h.audits).toEqual(['ski_swap.sales_check.fee_handled']);
+    const after = await h.service.list('org', 'swap');
+    expect([after.issues, after.decided.map((d) => [d.decision, d.key])]).toEqual([[], [['FEE_HANDLED', 'f1:#fee']]]);
+    await expect(h.service.feeHandled('org', 'swap', { orderId: 'f1' }, 'staff')).resolves.toMatchObject({ ok: false });
+    await h.service.undo('org', 'swap', 'd1', 'staff');
+    expect((await h.service.list('org', 'swap')).issues.map((i) => i.key)).toEqual(['f1:#fee']);
   });
 });
 

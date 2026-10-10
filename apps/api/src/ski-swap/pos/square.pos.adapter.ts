@@ -4,7 +4,7 @@ import { SquareClient, SquareError } from 'square';
 import { SquareClientService } from '../square-client.service';
 import { PosAdapterFactory, type IPosAdapter, type PosItemSync } from './pos.adapter';
 import type { Square } from 'square';
-import type { PosCatalogItem, PosSaleLine, PosUpsertResult, PosVariationInfo } from './pos.adapter';
+import type { PosCatalogItem, PosOrderFees, PosSaleLine, PosUpsertResult, PosVariationInfo } from './pos.adapter';
 import { withRateLimitRetry } from './square-retry';
 
 function isSquareMissingReferenceError(err: unknown): boolean {
@@ -505,18 +505,28 @@ class SquarePosAdapter implements IPosAdapter {
    * and paying on one would be paying for a sale that did not happen.
    */
   async listSales(locationId: string, from: Date, to: Date): Promise<PosSaleLine[]> {
+    return (await this.readSales(locationId, from, to)).lines;
+  }
+
+  async readSales(locationId: string, from: Date, to: Date): Promise<{ lines: PosSaleLine[]; fees: PosOrderFees[] }> {
     const lines: PosSaleLine[] = [];
+    const fees: PosOrderFees[] = [];
     // An itemized refund is an order of its own: a return pointing back at
-    // the sale's order and line. Each sale line gives back what was returned.
+    // the sale's order and line (and service charge). Each sale line, and
+    // each fee, gives back what was returned.
     const returned = new Map<string, number>();
+    const returnedFees = new Map<string, number>();
     const seen = new Set<string>();
     const take = (order: Square.Order) => {
       if (order.id) seen.add(order.id);
       for (const [key, qty] of returnedElsewhere(order)) returned.set(key, (returned.get(key) ?? 0) + qty);
+      for (const [key, cents] of feesReturned(order)) returnedFees.set(key, (returnedFees.get(key) ?? 0) + cents);
     };
 
     await this.eachCompletedOrder(locationId, from, to, (order) => {
       lines.push(...saleLinesOf(order));
+      const f = feesOf(order);
+      if (f) fees.push(f);
       take(order);
     });
     // A refund made after the window still takes back a sale inside it.
@@ -527,10 +537,16 @@ class SquarePosAdapter implements IPosAdapter {
       });
     }
 
-    return lines.map((line) => {
-      const more = line.lineUid ? returned.get(`${line.orderId}:${line.lineUid}`) ?? 0 : 0;
-      return more ? { ...line, refundedQuantity: Math.min(line.quantity, line.refundedQuantity + more) } : line;
-    });
+    return {
+      lines: lines.map((line) => {
+        const more = line.lineUid ? returned.get(`${line.orderId}:${line.lineUid}`) ?? 0 : 0;
+        return more ? { ...line, refundedQuantity: Math.min(line.quantity, line.refundedQuantity + more) } : line;
+      }),
+      fees: fees.map((f) => ({
+        ...f,
+        charges: f.charges.map((c) => ({ ...c, refundedCents: Math.min(c.cents, c.refundedCents + (returnedFees.get(`${f.orderId}:${c.uid}`) ?? 0)) })),
+      })),
+    };
   }
 
   /** Every completed order at the location closed in the window, page by page. */
@@ -723,6 +739,45 @@ export function returnedElsewhere(order: Square.Order): Map<string, number> {
     }
   }
   return out;
+}
+
+/** What an order refunds of other orders' service charges, by "order:charge uid" (as `returnedElsewhere`). */
+export function feesReturned(order: Square.Order): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const ret of order.returns ?? []) {
+    if (!ret.sourceOrderId) continue;
+    for (const sc of ret.returnServiceCharges ?? []) {
+      if (!sc.sourceServiceChargeUid) continue;
+      const key = `${ret.sourceOrderId}:${sc.sourceServiceChargeUid}`;
+      out.set(key, (out.get(key) ?? 0) + Number(sc.totalMoney?.amount ?? sc.appliedMoney?.amount ?? 0n));
+    }
+  }
+  return out;
+}
+
+/** An order's fees and how it was paid, or null for one with neither lines nor charges. */
+export function feesOf(order: Square.Order): PosOrderFees | null {
+  const hasLines = (order.lineItems ?? []).length > 0;
+  const charges = (order.serviceCharges ?? []).filter((c) => c.uid);
+  if (!order.id || (!hasLines && charges.length === 0)) return null;
+  const tendered = (type: string) => (order.tenders ?? []).filter((t) => t.type === type).reduce((n, t) => n + Number(t.amountMoney?.amount ?? 0n), 0);
+  return {
+    orderId: order.id,
+    paymentId: order.tenders?.find((t) => t.paymentId)?.paymentId ?? order.tenders?.[0]?.id ?? null,
+    soldAt: new Date(order.closedAt ?? order.createdAt ?? Date.now()),
+    hasLines,
+    cardCents: tendered('CARD'),
+    cashCents: tendered('CASH'),
+    charges: charges.map((c) => ({
+      uid: c.uid!,
+      name: c.name ?? '',
+      // Newer than the SDK's types: Square's credit card surcharge.
+      surcharge: (c.type as string | undefined) === 'CARD_SURCHARGE',
+      percentage: c.percentage ?? null,
+      cents: Number(c.totalMoney?.amount ?? c.appliedMoney?.amount ?? 0n),
+      refundedCents: 0,
+    })),
+  };
 }
 
 function refundedQuantities(order: Square.Order): Map<string, number> {

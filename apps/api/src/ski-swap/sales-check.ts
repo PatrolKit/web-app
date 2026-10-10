@@ -10,13 +10,14 @@ import { ticketNumberOf } from './legacy-ticket.service';
  * read, and only a person's choice, through the service, changes anything.
  */
 
-export type SalesCheckKind = 'other_copy' | 'register_item' | 'unknown_ticket' | 'custom_amount' | 'other_item' | 'oversold';
+export type SalesCheckKind = 'other_copy' | 'register_item' | 'unknown_ticket' | 'custom_amount' | 'other_item' | 'oversold' | 'double_fee' | 'cash_fee';
 
 /** A decision as attribution needs it: the line, and what it was decided to be. */
 export interface DecisionRef {
   orderId: string;
   lineUid: string;
-  decision: 'CREDIT' | 'NOT_SWAP';
+  /** FEE_HANDLED: a fee check marked handled; its line (`#fee`) is no sale line. */
+  decision: 'CREDIT' | 'NOT_SWAP' | 'FEE_HANDLED';
   itemId: string | null;
 }
 
