@@ -43,7 +43,6 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
     queryFn: () => api.skiSwap.listSellers(orgId),
     enabled: canFix,
   });
-  const [markSold, setMarkSold] = useState(true);
   const folds = useFolds('patrolkit:sales-check:collapsed');
   const [result, setResult] = useState<string | null>(null);
   /** After undoing an accepted sale that marked its item sold: offered here, as the undone row leaves the list. */
@@ -76,7 +75,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
   const groups = useMemo(() => groupsOf(shown, done), [shown, done]);
   const suggested = useMemo(() => suggestedLines(openIssues), [openIssues]);
   const creditAll = useMutation({
-    mutationFn: () => api.skiSwap.creditSuggestedSales(orgId, swapId, { lines: suggested.map(({ orderId, lineUid, itemId }) => ({ orderId, lineUid, itemId })), markSold }),
+    mutationFn: () => api.skiSwap.creditSuggestedSales(orgId, swapId, { lines: suggested.map(({ orderId, lineUid, itemId }) => ({ orderId, lineUid, itemId })), markSold: true }),
     onSuccess: (r) => {
       const ok = r.outcomes.filter((o) => o.ok).length;
       const failed = r.outcomes.filter((o) => !o.ok);
@@ -92,7 +91,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
   function confirmCreditAll() {
     const list = suggested.slice(0, 15).map((l) => `• ${l.label}`).join('\n');
     const more = suggested.length > 15 ? `\n…and ${suggested.length - 15} more` : '';
-    if (window.confirm(`Accept ${suggested.length === 1 ? 'this suggestion' : `these ${suggested.length} suggestions`}? Each sale goes on the suggested PatrolKit item, so its seller is paid.${markSold ? ' Each item is also marked sold in Square.' : ''}\n\n${list}${more}`)) {
+    if (window.confirm(`Accept ${suggested.length === 1 ? 'this suggestion' : `these ${suggested.length} suggestions`}? Each sale goes on the suggested PatrolKit item, so its seller is paid, and the item is marked sold in Square.\n\n${list}${more}`)) {
       creditAll.mutate();
     }
   }
@@ -120,10 +119,6 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
           </div>
           {canFix && suggested.length > 0 && (
             <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-1.5 text-xs text-gray-400">
-                <input type="checkbox" checked={markSold} onChange={(e) => setMarkSold(e.target.checked)} />
-                Also mark each item sold in Square
-              </label>
               <button type="button" className={primary} disabled={creditAll.isPending} onClick={confirmCreditAll}>
                 {creditAll.isPending ? 'Accepting…' : suggested.length === 1 ? 'Accept the suggestion' : `Accept all ${suggested.length} suggestions`}
               </button>
@@ -157,7 +152,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
       </div>
 
       {groups.map((g) => (
-        <Group key={g.kind} group={g} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} markSold={markSold} decided={decided} onDone={markDone}
+        <Group key={g.kind} group={g} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} decided={decided} onDone={markDone}
           collapsed={folds.isFolded(g.kind)} onToggle={() => folds.toggle(g.kind)} />
       ))}
 
@@ -189,13 +184,13 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
 /** A sale decided on this page, and what was done. */
 interface Tomb { issue: SalesCheckIssue; text: string; /** Its whole category stopped counting. */ category?: boolean }
 
-function Group({ group, orgId, swapId, canFix, sellers, markSold, decided, onDone, collapsed, onToggle }: {
-  group: SalesCheckGroup; orgId: string; swapId: string; canFix: boolean; sellers: SellerResponse[]; markSold: boolean;
+function Group({ group, orgId, swapId, canFix, sellers, decided, onDone, collapsed, onToggle }: {
+  group: SalesCheckGroup; orgId: string; swapId: string; canFix: boolean; sellers: SellerResponse[];
   decided: ReadonlyMap<string, Tomb>; onDone: (tombs: Tomb[]) => void; collapsed: boolean; onToggle: () => void;
 }) {
   const card = (i: SalesCheckIssue) => {
     const tomb = decided.get(i.key);
-    return tomb ? <Tombstone key={i.key} text={tomb.text} /> : <Issue key={i.key} issue={i} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} markSold={markSold} onDone={onDone} />;
+    return tomb ? <Tombstone key={i.key} text={tomb.text} /> : <Issue key={i.key} issue={i} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} onDone={onDone} />;
   };
   return (
     <section className="border border-gray-800 rounded-lg">
@@ -261,8 +256,12 @@ function Category({ category: c, ignored, orgId, swapId, canFix, onDone, childre
 
 type PickedItem = { id: string; sku: string; name: string; sellerName?: string | null };
 
-function Issue({ issue, orgId, swapId, canFix, sellers, markSold, onDone }: {
-  issue: SalesCheckIssue; orgId: string; swapId: string; canFix: boolean; sellers: SellerResponse[]; markSold: boolean; onDone: (tombs: Tomb[]) => void;
+/**
+ * One sale. Accepting it always marks its item sold in Square: every sale here
+ * did sell, and an item counted sold but still in stock reads as for sale.
+ */
+function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
+  issue: SalesCheckIssue; orgId: string; swapId: string; canFix: boolean; sellers: SellerResponse[]; onDone: (tombs: Tomb[]) => void;
 }) {
   const [picking, setPicking] = useState<'item' | 'seller' | null>(null);
   const [seller, setSeller] = useState('');
@@ -276,7 +275,7 @@ function Issue({ issue, orgId, swapId, canFix, sellers, markSold, onDone }: {
   };
   const credit = useMutation({
     mutationFn: ({ item, priceCents }: { item: PickedItem; accepted: boolean; priceCents?: number }) =>
-      api.skiSwap.creditSale(orgId, swapId, { ...line, itemId: item.id, markSold, ...(priceCents ? { priceCents } : {}) }),
+      api.skiSwap.creditSale(orgId, swapId, { ...line, itemId: item.id, markSold: true, ...(priceCents ? { priceCents } : {}) }),
     onMutate: () => setRefused(null),
     onSuccess: (r, { item, accepted }) => settle(r, `${accepted ? 'Accepted' : 'Done'}: ${acceptedText(issue, item, r.markedSold)}${
       r.pricedCents ? ` · priced ${money(r.pricedCents)}` : r.priceError ? ` · price not set: ${r.priceError}` : ''}`),
