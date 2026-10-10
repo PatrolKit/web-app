@@ -490,8 +490,36 @@ class SquarePosAdapter implements IPosAdapter {
    */
   async listSales(locationId: string, from: Date, to: Date): Promise<PosSaleLine[]> {
     const lines: PosSaleLine[] = [];
-    let cursor: string | undefined;
+    // An itemized refund is an order of its own: a return pointing back at
+    // the sale's order and line. Each sale line gives back what was returned.
+    const returned = new Map<string, number>();
+    const seen = new Set<string>();
+    const take = (order: Square.Order) => {
+      if (order.id) seen.add(order.id);
+      for (const [key, qty] of returnedElsewhere(order)) returned.set(key, (returned.get(key) ?? 0) + qty);
+    };
 
+    await this.eachCompletedOrder(locationId, from, to, (order) => {
+      lines.push(...saleLinesOf(order));
+      take(order);
+    });
+    // A refund made after the window still takes back a sale inside it.
+    const now = new Date();
+    if (to < now) {
+      await this.eachCompletedOrder(locationId, to, now, (order) => {
+        if (!order.id || !seen.has(order.id)) take(order);
+      });
+    }
+
+    return lines.map((line) => {
+      const more = line.lineUid ? returned.get(`${line.orderId}:${line.lineUid}`) ?? 0 : 0;
+      return more ? { ...line, refundedQuantity: Math.min(line.quantity, line.refundedQuantity + more) } : line;
+    });
+  }
+
+  /** Every completed order at the location closed in the window, page by page. */
+  private async eachCompletedOrder(locationId: string, from: Date, to: Date, each: (order: Square.Order) => void): Promise<void> {
+    let cursor: string | undefined;
     do {
       const res = await this.client.orders.search({
         locationIds: [locationId],
@@ -509,11 +537,9 @@ class SquarePosAdapter implements IPosAdapter {
       if (res.errors?.length) {
         throw new Error(`Square order search failed: ${res.errors.map((e) => `${e.code}: ${e.detail}`).join(', ')}`);
       }
-      for (const order of res.orders ?? []) lines.push(...saleLinesOf(order));
+      for (const order of res.orders ?? []) each(order);
       cursor = res.cursor;
     } while (cursor);
-
-    return lines;
   }
 
   async getSaleLine(orderId: string, lineUid: string): Promise<PosSaleLine | null> {
@@ -664,6 +690,25 @@ export class SquarePosAdapterFactory extends PosAdapterFactory {
  * they reverse. A refunded quantity is not a sale, and counting it would pay a
  * seller for goods the buyer handed back.
  */
+/**
+ * What an order returns from other orders' sales, by "order:line": an
+ * itemized refund is its own order, its returns pointing back at the sale
+ * (`sourceOrderId`, `sourceLineItemUid`). A return within the same order is
+ * `refundedQuantities`'.
+ */
+export function returnedElsewhere(order: Square.Order): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const ret of order.returns ?? []) {
+    if (!ret.sourceOrderId || ret.sourceOrderId === order.id) continue;
+    for (const line of ret.returnLineItems ?? []) {
+      if (!line.sourceLineItemUid) continue;
+      const key = `${ret.sourceOrderId}:${line.sourceLineItemUid}`;
+      out.set(key, (out.get(key) ?? 0) + Number(line.quantity ?? '0'));
+    }
+  }
+  return out;
+}
+
 function refundedQuantities(order: Square.Order): Map<string, number> {
   const out = new Map<string, number>();
   for (const ret of order.returns ?? []) {
