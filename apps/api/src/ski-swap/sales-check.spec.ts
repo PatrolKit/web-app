@@ -435,3 +435,18 @@ describe('a ticket scanned twice in one sale', () => {
   });
 });
 
+describe('accepting a sale with Square’s price over the item’s', () => {
+  it('credits the sale and replaces a different price when asked to', async () => {
+    const h = harness({ items: [item('86882', { priceCents: 6000 })], lines: [line('o1', 'old-86882', { collectedCents: 5400, unitPriceCents: 5400 })], stock: { 'v-86882': 1 } });
+    await expect(h.service.credit('org', 'swap', { orderId: 'o1', lineUid: 'o1-u', itemId: 'it-86882', markSold: true, priceCents: 5400, replacePrice: true }, 'staff'))
+      .resolves.toMatchObject({ ok: true, pricedCents: 5400 });
+    expect(h.patches).toEqual([{ itemId: 'it-86882', priceCents: 5400, actorId: 'staff' }]);
+  });
+
+  it('keeps the item’s price when accepted without one', async () => {
+    const h = harness({ items: [item('86882', { priceCents: 6000 })], lines: [line('o1', 'old-86882', { collectedCents: 5400, unitPriceCents: 5400 })] });
+    await h.service.credit('org', 'swap', { orderId: 'o1', lineUid: 'o1-u', itemId: 'it-86882', markSold: true }, 'staff');
+    expect(h.patches).toEqual([]);
+  });
+});
+

@@ -274,8 +274,8 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
     else setRefused(r.error ?? 'That didn’t work. Try again.');
   };
   const credit = useMutation({
-    mutationFn: ({ item, priceCents }: { item: PickedItem; accepted: boolean; priceCents?: number }) =>
-      api.skiSwap.creditSale(orgId, swapId, { ...line, itemId: item.id, markSold: true, ...(priceCents ? { priceCents } : {}) }),
+    mutationFn: ({ item, priceCents, replacePrice }: { item: PickedItem; accepted: boolean; priceCents?: number; replacePrice?: boolean }) =>
+      api.skiSwap.creditSale(orgId, swapId, { ...line, itemId: item.id, markSold: true, ...(priceCents ? { priceCents } : {}), ...(replacePrice ? { replacePrice } : {}) }),
     onMutate: () => setRefused(null),
     onSuccess: (r, { item, accepted }) => settle(r, `${accepted ? 'Accepted' : 'Done'}: ${acceptedText(issue, item, r.markedSold)}${
       r.pricedCents ? ` · priced ${money(r.pricedCents)}` : r.priceError ? ` · price not set: ${r.priceError}` : ''}`),
@@ -283,7 +283,10 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
   /** An unpriced suggestion is accepted with a price: Square's, or one asked for. */
   const unpriced = !!issue.suggestion && issue.suggestion.priceCents === null;
   const squarePrice = squarePriceOf(issue);
-  const accept = (priceCents?: number) => credit.mutate({ item: { id: issue.suggestion!.itemId, ...issue.suggestion! }, accepted: true, priceCents });
+  const accept = (priceCents?: number, replacePrice?: boolean) => credit.mutate({ item: { id: issue.suggestion!.itemId, ...issue.suggestion! }, accepted: true, priceCents, replacePrice });
+  /** A priced suggestion Square charged something else for: keep PatrolKit's price, or take Square's. */
+  const ourPrice = issue.suggestion?.priceCents ?? null;
+  const pricesDiffer = ourPrice !== null && squarePrice !== null && ourPrice !== squarePrice;
   function acceptWithPrice() {
     let ask = `A price for ${issue.suggestion!.sku}, in PatrolKit and Square:`;
     for (;;) {
@@ -354,7 +357,18 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
                 )}
               </>
             )}
-            {issue.suggestion && !unpriced && issue.kind !== 'scanned_twice' && (
+            {issue.suggestion && !unpriced && issue.kind !== 'scanned_twice' && pricesDiffer && (
+              <>
+                <button type="button" className={btn} disabled={busy} onClick={() => accept()}>
+                  Accept keeping PatrolKit price ({money(ourPrice!)})
+                </button>
+                <button type="button" className={primary} disabled={busy}
+                  onClick={() => { if (window.confirm(`Accept this sale and change ${issue.suggestion!.sku}’s price from ${money(ourPrice!)} to ${money(squarePrice!)}, in PatrolKit and Square?`)) accept(squarePrice!, true); }}>
+                  {credit.isPending ? 'Accepting…' : `Accept with Square price (${money(squarePrice!)})`}
+                </button>
+              </>
+            )}
+            {issue.suggestion && !unpriced && issue.kind !== 'scanned_twice' && !pricesDiffer && (
               <button type="button" className={primary} disabled={busy} onClick={() => accept()}>
                 {credit.isPending ? 'Accepting…' : 'Accept suggestion'}
               </button>

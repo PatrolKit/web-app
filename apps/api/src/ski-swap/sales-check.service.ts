@@ -116,13 +116,14 @@ export class SalesCheckService {
   /**
    * One sale to one item. With `priceCents`, an unpriced item takes that
    * price too, through the item edit (so Square's item has it), once the
-   * sale is credited. An item with a price keeps it: the price is refused
-   * up front, and nothing is credited.
+   * sale is credited. An item with a price keeps it unless `replacePrice`
+   * says otherwise (Square charged something else, and staff chose that):
+   * without it, the price is refused up front, and nothing is credited.
    */
-  async credit(orgId: string, swapId: string, body: Line & { itemId: string; markSold: boolean; priceCents?: number }, userId: string, key?: string): Promise<SalesCheckOutcome> {
+  async credit(orgId: string, swapId: string, body: Line & { itemId: string; markSold: boolean; priceCents?: number; replacePrice?: boolean }, userId: string, key?: string): Promise<SalesCheckOutcome> {
     return this.once(orgId, swapId, 'credit', key, async () => {
       const ctx = await this.context(orgId, swapId);
-      if (body.priceCents !== undefined) {
+      if (body.priceCents !== undefined && !body.replacePrice) {
         const item = ctx.items.find((i) => i.id === body.itemId && !i.deleted);
         if (item && item.priceCents !== null) {
           throw new ConflictException(`${item.sku} already has a price ($${(item.priceCents / 100).toFixed(2)}). Accept the suggestion without one.`);
@@ -133,7 +134,7 @@ export class SalesCheckService {
       if (body.priceCents === undefined) return outcome;
       if (!this.items) return { ...outcome, priceError: 'Prices can’t be set here.' };
       try {
-        await this.items.patch(orgId, swapId, body.itemId, { priceCents: body.priceCents, ifUnpriced: true, actorId: userId });
+        await this.items.patch(orgId, swapId, body.itemId, { priceCents: body.priceCents, ...(body.replacePrice ? {} : { ifUnpriced: true as const }), actorId: userId });
         await this.audit(orgId, userId, 'ski_swap.sales_check.priced', { swapId, itemId: body.itemId, priceCents: body.priceCents, orderId: body.orderId, lineUid: body.lineUid });
         return { ...outcome, pricedCents: body.priceCents };
       } catch (err) {

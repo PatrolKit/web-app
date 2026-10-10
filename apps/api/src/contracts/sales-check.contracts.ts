@@ -19,6 +19,8 @@ export const CreditSaleSchema = z.object({
   markSold: z.boolean().default(true),
   /** An unpriced item takes this price too (in cents), in PatrolKit and Square. */
   priceCents: z.number().int().positive().max(10_000_000).optional(),
+  /** With `priceCents`: a priced item takes it too, over the price it has (Square's, when they differ). */
+  replacePrice: z.boolean().optional(),
 }).strict();
 export class CreditSaleDto extends createZodDto(CreditSaleSchema) {}
 
