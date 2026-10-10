@@ -74,6 +74,8 @@ export interface SalesCheckIssue {
   /** The item's categories, for "Never count …" (other_item). */
   categoryIds: string[];
   links: { sale: string | null; item: string | null };
+  /** The sale's receipt number, as printed and searched on the POS ("Gq00"). */
+  receipt: string | null;
   /** double_fee, cash_fee: the sale's fees, and what to refund (`collectedCents` too). */
   fee?: {
     shopFeeName: string;

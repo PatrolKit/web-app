@@ -130,6 +130,7 @@ export function squareSide(i: SalesCheckIssue): Side {
     return {
       title: 'Sale in Square',
       fields: [
+        ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true }] : []),
         { label: 'Paid', value: paid || '—' },
         { label: i.fee.shopFeeName, value: money(i.fee.shopFeeCents) },
         ...(i.fee.surchargeCents !== null ? [{ label: 'Surcharge', value: money(i.fee.surchargeCents) }] : []),
@@ -163,6 +164,7 @@ export function squareSide(i: SalesCheckIssue): Side {
       { label: 'SKU', value: r?.sku || '—', mono: true },
       { label: 'Name', value: i.kind === 'custom_amount' ? 'Custom amount' : r?.name ?? '—', ...(tag ? { tag } : {}) },
       { label: 'Sold for', value: `${money(i.collectedCents)}${each}${refunded}` },
+      ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true }] : []),
     ],
     links,
   };

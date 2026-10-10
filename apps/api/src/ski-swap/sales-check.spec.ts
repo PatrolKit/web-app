@@ -233,7 +233,7 @@ describe('reading Sales check changes nothing (D13)', () => {
   it('lists and counts against a database and a Square that refuse every write', async () => {
     const h = harness({ items: [item('73338')], lines: [line('o1', 'old-73338')] });
     const res = await h.readOnlyService.list('org', 'swap');
-    expect(res.issues).toEqual([expect.objectContaining({ kind: 'other_copy', links: expect.objectContaining({ sale: expect.stringContaining('pay-o1') }) })]);
+    expect(res.issues).toEqual([expect.objectContaining({ kind: 'other_copy', receipt: 'pay-', links: expect.objectContaining({ sale: expect.stringContaining('pay-o1') }) })]);
     await expect(h.readOnlyService.count('org', 'swap')).resolves.toEqual({ open: 1, error: null });
   });
 });

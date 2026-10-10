@@ -62,6 +62,7 @@ export class SalesCheckService {
       rungUpAs: i.rungUpAs, suggestion: i.suggestion, ticket: i.ticket, ...(i.oversold ? { oversold: i.oversold } : {}),
       categoryIds: i.rungUpAs ? described.get(i.rungUpAs.variationId)?.categoryIds ?? [] : [],
       links: { sale: squareSaleUrl(env, i.orderId, i.paymentId), item: squareItemUrl(env, i.rungUpAs?.itemId ?? null) },
+      receipt: receiptOf(i.paymentId),
     }));
 
     // The fee check: a sale charged both fees, or a Shop Fee on cash. One per
@@ -74,6 +75,7 @@ export class SalesCheckService {
         quantity: 1, refundedQuantity: 0, collectedCents: f.refundCents, unitPriceCents: null,
         rungUpAs: null, suggestion: null, ticket: null, categoryIds: [],
         links: { sale: squareSaleUrl(env, f.orderId, f.paymentId), item: null },
+        receipt: receiptOf(f.paymentId),
         fee: { shopFeeName: f.shopFeeName, shopFeeCents: f.shopFeeCents, surchargeCents: f.surchargeCents, cardCents: f.cardCents, cashCents: f.cashCents, refundCents: f.refundCents },
       });
     }
@@ -433,5 +435,10 @@ function ignoredOf(json: Prisma.JsonValue | null): string[] {
 export function squarePriceOf(line: { unitPriceCents: number | null; collectedCents: number; quantity: number }): number | null {
   const cents = line.unitPriceCents ?? (line.quantity > 0 ? Math.round(line.collectedCents / line.quantity) : null);
   return cents && cents > 0 ? cents : null;
+}
+
+/** Square's receipt number: the payment id's first four characters, as on the paper receipt and the POS search. */
+export function receiptOf(paymentId: string | null | undefined): string | null {
+  return paymentId && paymentId.length >= 4 ? paymentId.slice(0, 4) : null;
 }
 

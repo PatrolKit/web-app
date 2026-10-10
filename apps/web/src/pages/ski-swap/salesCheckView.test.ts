@@ -4,7 +4,7 @@ import type { SalesCheckIssue } from '../../lib/api.types';
 
 const issue = (over: Partial<SalesCheckIssue>): SalesCheckIssue => ({
   key: 'o:u', kind: 'other_item', orderId: 'o', lineUid: 'u', soldAt: '2026-10-09T18:00:00Z', quantity: 1, refundedQuantity: 0,
-  collectedCents: 4000, unitPriceCents: 4000, rungUpAs: null, suggestion: null, ticket: null, categoryIds: [], links: { sale: null, item: null },
+  collectedCents: 4000, unitPriceCents: 4000, rungUpAs: null, suggestion: null, ticket: null, categoryIds: [], links: { sale: null, item: null }, receipt: null,
   ...over,
 });
 
@@ -156,6 +156,16 @@ describe('a ticket scanned twice in one sale', () => {
 
   it('is never offered to Accept all', () => {
     expect(suggestedLines([twice])).toEqual([]);
+  });
+});
+
+describe('the receipt number', () => {
+  it('is on each sale’s Square side, to look it up on the POS', () => {
+    const twice = issue({ kind: 'scanned_twice', receipt: 'Gq00', rungUpAs: { name: 'Swap Item 73475', sku: '73475', variationId: 'v', itemId: 'i', category: '2025', archived: true } });
+    expect(squareSide(twice).fields.find((f) => f.label === 'Receipt')).toEqual({ label: 'Receipt', value: '#Gq00', mono: true });
+    const fee = issue({ kind: 'double_fee', receipt: 'Ab12', fee: { shopFeeName: 'Shop Fee', shopFeeCents: 767, surchargeCents: 787, cardCents: 31054, cashCents: 0, refundCents: 767 } });
+    expect(squareSide(fee).fields[0]).toEqual({ label: 'Receipt', value: '#Ab12', mono: true });
+    expect(squareSide(issue({})).fields.some((f) => f.label === 'Receipt')).toBe(false);
   });
 });
 
