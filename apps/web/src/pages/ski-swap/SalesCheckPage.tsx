@@ -3,9 +3,9 @@ import { useOutletContext } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
 import SearchableSelect from '../../components/SearchableSelect';
-import type { ItemResponse, SalesCheckDecided, SalesCheckIssue, SalesCheckOutcome, SellerResponse } from '../../lib/api.types';
+import type { IssueNote, IssueNotesResponse, ItemResponse, SalesCheckDecided, SalesCheckIssue, SalesCheckOutcome, SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { BusyBanner, FoldHeader, SidePanel, Tombstone, useFolds } from './ReportCard';
+import { BusyBanner, FoldHeader, NoteBox, SidePanel, Tombstone, useFolds } from './ReportCard';
 import { centsOf } from './swapDiagnosticsView';
 import {
   acceptedText, byCategory, groupsOf, missedFeesText, money, patrolKitSide, squarePriceOf, squareSide, suggestedLines, withDecided, type CategoryGroup, type SalesCheckGroup,
@@ -44,6 +44,17 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
     enabled: canFix,
   });
   const folds = useFolds('patrolkit:sales-check:collapsed');
+  // Notes (Plan 48): anyone who can read Sales check may write them; they change nothing in Square.
+  const notesKey = ['ski-swap/issue-notes', orgId, swapId, 'sales'];
+  const { data: notes = {} } = useQuery<IssueNotesResponse>({ queryKey: notesKey, queryFn: () => api.skiSwap.issueNotes(orgId, swapId, 'sales') });
+  const saveNote = async (issueKey: string, text: string) => {
+    const saved = await api.skiSwap.saveIssueNote(orgId, swapId, 'sales', { issueKey, text });
+    qc.setQueryData<IssueNotesResponse>(notesKey, (m) => {
+      const next = { ...(m ?? {}) };
+      if (saved) next[issueKey] = saved; else delete next[issueKey];
+      return next;
+    });
+  };
   const [result, setResult] = useState<string | null>(null);
   /** After undoing an accepted sale that marked its item sold: offered here, as the undone row leaves the list. */
   const [restockOffer, setRestockOffer] = useState<{ itemId: string; label: string } | null>(null);
@@ -155,7 +166,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
       </div>
 
       {groups.map((g) => (
-        <Group key={g.kind} group={g} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} decided={decided} onDone={markDone}
+        <Group key={g.kind} group={g} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} decided={decided} onDone={markDone} notes={notes} onSaveNote={saveNote}
           collapsed={folds.isFolded(g.kind)} onToggle={() => folds.toggle(g.kind)} />
       ))}
 
@@ -187,13 +198,14 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
 /** A sale decided on this page, and what was done. */
 interface Tomb { issue: SalesCheckIssue; text: string; /** Its whole category stopped counting. */ category?: boolean }
 
-function Group({ group, orgId, swapId, canFix, sellers, decided, onDone, collapsed, onToggle }: {
+function Group({ group, orgId, swapId, canFix, sellers, decided, onDone, collapsed, onToggle, notes, onSaveNote }: {
   group: SalesCheckGroup; orgId: string; swapId: string; canFix: boolean; sellers: SellerResponse[];
+  notes: IssueNotesResponse; onSaveNote: (issueKey: string, text: string) => Promise<void>;
   decided: ReadonlyMap<string, Tomb>; onDone: (tombs: Tomb[]) => void; collapsed: boolean; onToggle: () => void;
 }) {
   const card = (i: SalesCheckIssue) => {
     const tomb = decided.get(i.key);
-    return tomb ? <Tombstone key={i.key} text={tomb.text} /> : <Issue key={i.key} issue={i} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} onDone={onDone} />;
+    return tomb ? <Tombstone key={i.key} text={tomb.text} /> : <Issue key={i.key} issue={i} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} onDone={onDone} note={notes[i.key]} onSaveNote={(text) => onSaveNote(i.key, text)} />;
   };
   return (
     <section className="border border-gray-800 rounded-lg">
@@ -263,8 +275,9 @@ type PickedItem = { id: string; sku: string; name: string; sellerName?: string |
  * One sale. Accepting it always marks its item sold in Square: every sale here
  * did sell, and an item counted sold but still in stock reads as for sale.
  */
-function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
+function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote }: {
   issue: SalesCheckIssue; orgId: string; swapId: string; canFix: boolean; sellers: SellerResponse[]; onDone: (tombs: Tomb[]) => void;
+  note: IssueNote | undefined; onSaveNote: (text: string) => Promise<void>;
 }) {
   const [picking, setPicking] = useState<'item' | 'seller' | null>(null);
   const [seller, setSeller] = useState('');
@@ -328,6 +341,9 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
         <SidePanel side={squareSide(issue)} icon="■" />
         <div className="hidden md:flex items-center justify-center text-gray-600">→</div>
         <SidePanel side={patrolKitSide(issue)} icon="◆" className="border-t md:border-t-0 md:border-l border-gray-800" />
+      </div>
+      <div className="px-3 pb-2.5">
+        <NoteBox note={note} canEdit onSave={onSaveNote} />
       </div>
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40 last:rounded-b-lg">
         <span className="text-xs text-gray-500 mr-auto">{when}</span>

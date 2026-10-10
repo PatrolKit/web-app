@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Side } from './salesCheckView';
+import type { IssueNote } from '../../lib/api.types';
 
 /**
  * The Reports tab's cards (Plan 48), shared by Sales check and Catalog check:
@@ -70,6 +71,69 @@ export function BusyBanner({ what }: { what: string }) {
       <span className="ml-auto text-xs text-gray-400 tabular-nums">{took} · keep this page open</span>
     </div>
   );
+}
+
+/**
+ * A person's note on an issue (Plan 48): what they looked up and found, for
+ * whoever decides. "Add note" when there's none; the note, who wrote it and
+ * when, once there is. Saving an empty note clears it.
+ */
+export function NoteBox({ note, canEdit, onSave }: {
+  note: IssueNote | null | undefined; canEdit: boolean; onSave: (text: string) => Promise<unknown>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(draft);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The note wasn’t saved. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="space-y-1.5">
+        <textarea autoFocus rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={2000}
+          placeholder="What you looked up, what you found, who should decide…"
+          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void save(); if (e.key === 'Escape') setEditing(false); }}
+          className="w-full bg-surface-100 border border-gray-700 focus:border-brand-500 rounded px-2.5 py-2 text-sm text-white" />
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <button type="button" disabled={saving} onClick={() => void save()}
+            className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-2.5 py-1 rounded font-medium">
+            {saving ? 'Saving…' : draft.trim() ? 'Save note' : note ? 'Clear note' : 'Save note'}
+          </button>
+          <button type="button" disabled={saving} onClick={() => setEditing(false)} className="text-gray-400 hover:text-white">Cancel</button>
+          <span className="text-gray-500">⌘↵ saves</span>
+          {error && <span className="text-red-400">{error}</span>}
+        </div>
+      </div>
+    );
+  }
+  if (note) {
+    const when = new Date(note.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return (
+      <div className="rounded border border-sky-800/60 bg-sky-950/30 px-2.5 py-2 text-xs">
+        <p className="text-sky-300 font-medium mb-0.5">Note</p>
+        <p className="whitespace-pre-wrap break-words text-gray-200 text-sm">{note.text}</p>
+        <p className="mt-1 text-gray-500">
+          {note.updatedByName ?? 'Someone'}, {when}
+          {canEdit && <> · <button type="button" className="text-brand-500 hover:underline" onClick={() => { setDraft(note.text); setEditing(true); }}>Edit</button></>}
+        </p>
+      </div>
+    );
+  }
+  return canEdit ? (
+    <button type="button" className="text-xs text-brand-500 hover:underline" onClick={() => { setDraft(''); setEditing(true); }}>+ Add note</button>
+  ) : null;
 }
 
 /** A section's header that folds it: ▾ open, ▸ folded. */

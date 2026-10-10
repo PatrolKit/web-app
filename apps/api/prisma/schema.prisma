@@ -473,6 +473,7 @@ model SkiSwap {
   diagnosticRuns   SwapDiagnosticRun[]
   diagnosticHidden SwapDiagnosticHidden[]
   saleDecisions    SwapSaleDecision[]
+  issueNotes       SwapIssueNote[]
 
   @@unique([orgId, title])
   @@unique([orgId, activeSkuPrefix])
@@ -1745,6 +1746,29 @@ model SwapSaleDecision {
   @@unique([swapId, liveKey])
   @@index([swapId, undoneAt])
   @@index([itemId])
+}
+
+/// A person's note on a Reports issue (Plan 48): what they looked up and
+/// found, for whoever decides. Keyed by the page and the issue's key, so a
+/// Catalog check note outlasts the run that found it. Its history is the
+/// audit log.
+model SwapIssueNote {
+  id        String   @id @default(cuid())
+  swapId    String
+  orgId     String
+  /// sales | catalog
+  page      String   @db.VarChar(8)
+  /// Sales check: the issue's key (`order:line`, `order:#fee`, `oversold:item`).
+  /// Catalog check: `sku|kind|field`.
+  issueKey  String   @db.VarChar(200)
+  text      String   @db.Text
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  swap SkiSwap @relation(fields: [swapId], references: [id], onDelete: Cascade)
+
+  @@unique([swapId, page, issueKey])
 }
 
 model SwapDiagnosticHidden {

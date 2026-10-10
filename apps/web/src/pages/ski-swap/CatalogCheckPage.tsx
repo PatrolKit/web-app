@@ -4,10 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
 import SearchableSelect from '../../components/SearchableSelect';
 import type {
-  DiagnosticChoice, DiagnosticIssueResponse, DiagnosticRunResponse, SellerResponse,
+  DiagnosticChoice, DiagnosticIssueResponse, DiagnosticRunResponse, IssueNote, IssueNotesResponse, SellerResponse,
 } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { BusyBanner, FoldHeader, SidePanel, Tombstone, useFolds, useJustDecided } from './ReportCard';
+import { BusyBanner, FoldHeader, NoteBox, SidePanel, Tombstone, useFolds, useJustDecided } from './ReportCard';
 import {
   CHOICE_LABEL, canUseSquarePrice, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
   rowChoices, shown, squareCopies, squareSide, stockText, tookText,
@@ -59,6 +59,17 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
 
   const running = run?.status === 'running' || start.isPending;
   const folds = useFolds('patrolkit:catalog-check:collapsed');
+  // Notes (Plan 48), by ticket, kind and field: they outlast the run that found the issue.
+  const notesKey = ['ski-swap/issue-notes', orgId, swapId, 'catalog'];
+  const { data: notes = {} } = useQuery<IssueNotesResponse>({ queryKey: notesKey, queryFn: () => api.skiSwap.issueNotes(orgId, swapId, 'catalog') });
+  const saveNote = async (issueKey: string, text: string) => {
+    const saved = await api.skiSwap.saveIssueNote(orgId, swapId, 'catalog', { issueKey, text });
+    qc.setQueryData<IssueNotesResponse>(notesKey, (m) => {
+      const next = { ...(m ?? {}) };
+      if (saved) next[issueKey] = saved; else delete next[issueKey];
+      return next;
+    });
+  };
   const groups = useMemo(() => (run && run.status === 'done' ? groupsOf(run) : []), [run]);
   const openCount = groups.reduce((n, g) => n + g.open, 0);
   const refresh = () => void qc.invalidateQueries({ queryKey: key });
@@ -119,7 +130,7 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
       )}
       {run?.status === 'done' && groups.map((g) => (
         <Group key={g.key} group={g} run={run} orgId={orgId} swapId={swapId} sellers={sellers} onChanged={refresh} onDecided={decided}
-          folded={folds.isFolded(g.key)} onToggle={() => folds.toggle(g.key)} />
+          folded={folds.isFolded(g.key)} onToggle={() => folds.toggle(g.key)} notes={notes} onSaveNote={saveNote} />
       ))}
     </div>
   );
@@ -145,7 +156,7 @@ function sellerOptions(sellers: SellerResponse[]) {
 }
 
 /** One kind of issue: what it means, its group choices (D4), and its rows. */
-function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folded, onToggle }: {
+function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folded, onToggle, notes, onSaveNote }: {
   group: DiagnosticGroup;
   run: DiagnosticRunResponse;
   orgId: string;
@@ -155,7 +166,10 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
   onDecided: (updated: DiagnosticIssueResponse) => void;
   folded: boolean;
   onToggle: () => void;
+  notes: IssueNotesResponse;
+  onSaveNote: (issueKey: string, text: string) => Promise<void>;
 }) {
+  const noteProps = (i: DiagnosticIssueResponse) => ({ note: notes[noteKeyOf(i)], onSaveNote: (text: string) => onSaveNote(noteKeyOf(i), text) });
   const priceCards = group.kind === 'differs' && group.field === 'price';
   const [shownRows, setShownRows] = useState(PAGE);
   const [groupSeller, setGroupSeller] = useState('');
@@ -234,12 +248,12 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
       {!folded && (<>
       {priceCards ? (
         <div className="p-3 space-y-3">
-          {group.issues.slice(0, shownRows).map((i) => <PriceCard key={i.id} issue={i} orgId={orgId} swapId={swapId} onDecided={onDecided} />)}
+          {group.issues.slice(0, shownRows).map((i) => <PriceCard key={i.id} issue={i} orgId={orgId} swapId={swapId} onDecided={onDecided} {...noteProps(i)} />)}
         </div>
       ) : (
         <div className="p-3 space-y-3">
           {group.issues.slice(0, shownRows).map((i) => (
-            <IssueRow key={i.id} issue={i} orgId={orgId} swapId={swapId} sellers={sellers} onDecided={onDecided} />
+            <IssueRow key={i.id} issue={i} orgId={orgId} swapId={swapId} sellers={sellers} onDecided={onDecided} {...noteProps(i)} />
           ))}
         </div>
       )}
@@ -258,8 +272,9 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
  * Price differs as a card, laid out as Sales check's: Square's item and ours
  * side by side, each with "Use this price", and a different price for both below.
  */
-function PriceCard({ issue, orgId, swapId, onDecided }: {
+function PriceCard({ issue, orgId, swapId, onDecided, note, onSaveNote }: {
   issue: DiagnosticIssueResponse; orgId: string; swapId: string; onDecided: (updated: DiagnosticIssueResponse) => void;
+  note: IssueNote | undefined; onSaveNote: (text: string) => Promise<void>;
 }) {
   /** Decided here: settles in, and a new price is remembered for the tombstone. */
   const [done, setDone] = useState<{ cents?: number } | null>(null);
@@ -300,6 +315,9 @@ function PriceCard({ issue, orgId, swapId, onDecided }: {
         <div className="hidden md:flex items-center justify-center text-gray-600">≠</div>
         <SidePanel side={sides.ours} icon="◆" className="border-t md:border-t-0 md:border-l border-gray-800" action={use('use_ours')} />
       </div>
+      <div className="px-3 pb-2.5">
+        <NoteBox note={note} canEdit onSave={onSaveNote} />
+      </div>
       {held ? (
         <p className="px-3 py-2 border-t border-gray-800 text-xs text-amber-300 bg-amber-900/20">
           ⏸ {heldText(issue)}{' '}
@@ -318,12 +336,14 @@ function PriceCard({ issue, orgId, swapId, onDecided }: {
 }
 
 /** One issue: the SKU, both sides, and its choices; or what was chosen. */
-function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
+function IssueRow({ issue, orgId, swapId, sellers, onDecided, note, onSaveNote }: {
   issue: DiagnosticIssueResponse;
   orgId: string;
   swapId: string;
   sellers: SellerResponse[];
   onDecided: (updated: DiagnosticIssueResponse) => void;
+  note: IssueNote | undefined;
+  onSaveNote: (text: string) => Promise<void>;
 }) {
   const [seller, setSeller] = useState('');
   const apply = useMutation({
@@ -452,6 +472,12 @@ function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
           {apply.isPending && <span className="text-xs text-gray-400">Working…</span>}
         </div>
       )}
+      <NoteBox note={note} canEdit onSave={onSaveNote} />
     </div>
   );
+}
+
+/** A Catalog check note's key: the ticket, the kind and the field, so it outlasts the run. */
+function noteKeyOf(i: DiagnosticIssueResponse): string {
+  return `${i.sku}|${i.kind}|${i.field ?? ''}`;
 }

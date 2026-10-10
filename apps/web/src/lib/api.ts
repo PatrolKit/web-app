@@ -888,6 +888,12 @@ export const api = {
     salesCheckCount: (orgId: string, swapId: string) =>
       request<import('./api.types').SalesCheckCount>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/count`),
     /** A fee refunded some way Square doesn't show: marked handled (Plan 48 fee check). */
+    /** Notes on Reports issues (Plan 48), by issue key. */
+    issueNotes: (orgId: string, swapId: string, page: import('./api.types').IssueNotePage) =>
+      request<import('./api.types').IssueNotesResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/issue-notes/${page}`),
+    /** Saves a note, or clears it for an empty text: answers the note, or null. */
+    saveIssueNote: (orgId: string, swapId: string, page: import('./api.types').IssueNotePage, body: { issueKey: string; text: string }) =>
+      request<import('./api.types').IssueNote | null>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/issue-notes/${page}`, { method: 'PUT', body: JSON.stringify(body) }),
     feeHandled: (orgId: string, swapId: string, body: { orderId: string }) =>
       request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/fee-handled`, {
         method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
