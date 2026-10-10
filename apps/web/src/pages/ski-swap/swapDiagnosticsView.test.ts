@@ -95,7 +95,7 @@ describe('Price differs as a card', () => {
 
   it('says what the price is now', () => {
     expect(priceDecidedText({ ...price, state: 'applied', choice: 'use_square', decidedByName: 'Dana' })).toBe('Used Square’s price: $45.00 in both by Dana');
-    expect(priceDecidedText({ ...price, state: 'applied', choice: 'set_price' }, 4000)).toBe('New price: $40.00 in both');
+    expect(priceDecidedText({ ...price, state: 'applied', choice: 'set_price' }, 4000)).toBe('Set a different price: $40.00 in both');
   });
 
   it('reads a typed price', () => {

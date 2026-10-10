@@ -15,8 +15,10 @@ import {
 } from './swapDiagnosticsView';
 
 const latestKey = (orgId: string, swapId: string) => ['ski-swap/diagnostics', orgId, swapId];
-const btn = 'bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-gray-200 px-2.5 py-1 rounded text-xs';
-const primary = 'bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-2.5 py-1 rounded text-xs font-medium';
+/** Price differs' "Set different price…": bordered too, quieter than the two above. */
+const bordered = 'border border-gray-600 text-gray-200 hover:bg-surface-200 hover:border-gray-500 disabled:opacity-40 px-3 py-1.5 rounded text-xs font-medium';
+/** Price differs' "Use this price": outlined, so it reads as a button on the card. */
+const outlined = 'border border-brand-500/70 text-brand-300 hover:bg-brand-600 hover:border-brand-600 hover:text-white disabled:opacity-40 disabled:hover:bg-transparent px-3 py-1.5 rounded text-xs font-medium';
 const PAGE = 100;
 
 function errorText(err: unknown): string {
@@ -250,13 +252,11 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided }: {
 
 /**
  * Price differs as a card, laid out as Sales check's: Square's item and ours
- * side by side, each with "Use this price", and a new price for both below.
+ * side by side, each with "Use this price", and a different price for both below.
  */
 function PriceCard({ issue, orgId, swapId, onDecided }: {
   issue: DiagnosticIssueResponse; orgId: string; swapId: string; onDecided: (updated: DiagnosticIssueResponse) => void;
 }) {
-  const [price, setPrice] = useState('');
-  const [invalid, setInvalid] = useState<string | null>(null);
   /** Decided here: settles in, and a new price is remembered for the tombstone. */
   const [done, setDone] = useState<{ cents?: number } | null>(null);
   const apply = useMutation({
@@ -272,14 +272,20 @@ function PriceCard({ issue, orgId, swapId, onDecided }: {
 
   if (!isOpen(issue)) return <Tombstone text={priceDecidedText(issue, done?.cents)} hint="" settle={!!done} />;
 
-  function setNew() {
-    const cents = centsOf(price);
-    if (cents === null) { setInvalid('Enter a price above $0, like 40 or 40.50.'); return; }
-    apply.mutate({ choice: 'set_price', priceCents: cents });
+  /** Asks for the price, again until it's one, or until cancelled. */
+  function setDifferent() {
+    let ask = `A different price for ${issue.sku}, in both PatrolKit and Square:`;
+    for (;;) {
+      const typed = window.prompt(ask, '');
+      if (typed === null) return;
+      const cents = centsOf(typed);
+      if (cents !== null) { apply.mutate({ choice: 'set_price', priceCents: cents }); return; }
+      ask = `“${typed}” isn’t a price. Enter one above $0, like 40 or 40.50:`;
+    }
   }
 
   const use = (choice: 'use_square' | 'use_ours', enabled = true) => (held ? undefined : (
-    <button type="button" className={btn} disabled={busy || !enabled} onClick={() => apply.mutate({ choice })}>Use this price</button>
+    <button type="button" className={outlined} disabled={busy || !enabled} onClick={() => apply.mutate({ choice })}>Use this price</button>
   ));
 
   return (
@@ -296,17 +302,10 @@ function PriceCard({ issue, orgId, swapId, onDecided }: {
         </p>
       ) : (
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40">
-          <label className="text-xs text-gray-400" htmlFor={`price-${issue.id}`}>New price for both</label>
-          <span className="text-sm text-gray-400">$</span>
-          <input id={`price-${issue.id}`} value={price} inputMode="decimal" placeholder="40.00"
-            onChange={(e) => { setPrice(e.target.value); setInvalid(null); }}
-            onKeyDown={(e) => { if (e.key === 'Enter') setNew(); }}
-            className="w-24 bg-surface-100 px-2 py-1 rounded text-sm text-white" />
-          <button type="button" className={primary} disabled={busy} onClick={setNew}>Set new price</button>
-          {busy && <span className="text-xs text-gray-400">Working…</span>}
-          {invalid && <span className="text-xs text-red-400">{invalid}</span>}
           {issue.state === 'failed' && issue.error && <span className="text-xs text-red-400">{issue.error}</span>}
           {apply.error && <span className="text-xs text-red-400">{errorText(apply.error)}</span>}
+          {busy && <span className="text-xs text-gray-400">Working…</span>}
+          <button type="button" className={`${bordered} ml-auto`} disabled={busy} onClick={setDifferent}>Set different price…</button>
         </div>
       )}
     </div>

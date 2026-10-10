@@ -77,12 +77,12 @@ export const CHOICE_LABEL: Record<DiagnosticChoice, string> = {
   delete_other: 'Delete the other item',
   renumber_other: 'Re-number the other item',
   resolve: 'Mark resolved',
-  set_price: 'Set a new price',
+  set_price: 'Set a different price',
 };
 
 /**
  * Choices not offered as plain buttons: Keep this copy is one per copy, and
- * Set a new price (and Price differs' own two) live on its card. Price
+ * Set a different price (and Price differs' own two) live on its card. Price
  * differs isn't Mark resolved: one of the prices has to win.
  */
 function offered(c: DiagnosticChoice, kind: DiagnosticIssueKind, field: DiagnosticField | null): boolean {
@@ -239,7 +239,7 @@ export function priceDecidedText(issue: DiagnosticIssueResponse, setCents?: numb
   const now = issue.choice === 'use_square' ? shown('price', sq)
     : issue.choice === 'use_ours' ? shown('price', ours)
       : setCents !== undefined ? `$${(setCents / 100).toFixed(2)}` : null;
-  const where = issue.choice === 'use_square' ? 'Used Square’s price' : issue.choice === 'use_ours' ? 'Used PatrolKit’s price' : 'New price';
+  const where = issue.choice === 'use_square' ? 'Used Square’s price' : issue.choice === 'use_ours' ? 'Used PatrolKit’s price' : 'Set a different price';
   return `${where}${now ? `: ${now} in both` : ''}${byAt(issue)}`;
 }
 
