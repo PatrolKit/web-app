@@ -146,8 +146,13 @@ function harness() {
   let salesError: string | null = null;
   const salesCheck = { holds: async () => (salesError ? { error: salesError } : salesHolds(openSales)) };
 
+  const salesReads: boolean[] = [];
   const breakdown = {
-    soldUnits: async () => { if (salesUnreadable) throw new Error('Square is down'); return new Map(sold); },
+    soldUnits: async (_o: string, _s: string, opts: { fresh?: boolean } = {}) => {
+      salesReads.push(!!opts.fresh);
+      if (salesUnreadable) throw new Error('Square is down');
+      return new Map(sold);
+    },
     forgetSales: () => {},
   };
 
@@ -160,7 +165,7 @@ function harness() {
   };
 
   return {
-    db, service, run, created, squareWrites, squareDeletes, renumbered, openSales, stockSets,
+    db, service, run, created, squareWrites, squareDeletes, renumbered, openSales, stockSets, salesReads: () => salesReads,
     /** Square's count for a variation, and units its sales leave sold. */
     stock: (variationId: string, count: number, unitsSold = 0) => { counts.set(variationId, count); sold.set(variationId, unitsSold); },
     sell: (variationId: string, units: number) => { sold.set(variationId, units); },
@@ -578,10 +583,18 @@ describe('stock against what the sales leave (Plan 48)', () => {
     const run = await h.run();
     const [one, two] = run.issues;
     h.sell('sv-1', 1); // its sale shows now: the stock was right
-    await expect(h.service.apply('org', 'swap', one.id, 'set_stock', {}, 'staff')).rejects.toThrow('changed since the check ran');
+    await expect(h.service.apply('org', 'swap', one.id, 'set_stock', {}, 'staff')).rejects.toThrow('1’s sales or stock changed since the check ran; it may have just sold');
     h.stockMoving(['sv-2']);
-    await expect(h.service.apply('org', 'swap', two.id, 'set_stock', {}, 'staff')).resolves.toMatchObject({ state: 'failed', error: expect.stringContaining('just changed in Square') });
+    await expect(h.service.apply('org', 'swap', two.id, 'set_stock', {}, 'staff')).rejects.toThrow('may have just sold');
     expect(h.stockSets).toEqual([]);
+  });
+
+  it('reads sales fresh for a run, and leaves out an item whose stock just moved (10/10, 73593)', async () => {
+    const h = harness();
+    h.ours('73593'); h.square('73593'); h.stock('sv-73593', 0, 0); // sold seconds ago; the sale not read yet
+    h.stockMoving(['sv-73593']);
+    expect((await h.run()).issues).toEqual([]);
+    expect(h.salesReads()).toEqual([true]);
   });
 
   it('runs without stock when Square’s sales can’t be read', async () => {

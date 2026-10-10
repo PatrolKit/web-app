@@ -113,7 +113,7 @@ export class SwapDiagnosticsService {
 
     const { ours, deleted, returned } = await this.ourItems(swap.id);
     const { elsewhere, categoryNames } = await this.elsewhere(swap, pos, ours.map((o) => o.sku));
-    const stock = await this.stockFor(swap, pos, ours);
+    const stock = await this.stockFor(swap, pos, ours, true);
     const found = diagnose({ ours, deleted, returned, square, elsewhere, categoryNames, stock });
     const hidden = await this.hiddenKeys(swap.id);
     const kept = found.filter((i) => !hidden.has(`${issueKey(i)}\u0000${i.fingerprint}`));
@@ -193,6 +193,9 @@ export class SwapDiagnosticsService {
     const { skipped, held } = await this.applyTo(swap, [issue], choice, extra, userId);
     if (held) {
       throw new ConflictException(`Ticket ${issue.sku} has ${held === 1 ? 'an open sale' : `${held} open sales`} in Sales check. Settle ${held === 1 ? 'it' : 'them'} there first.`);
+    }
+    if (skipped && issue.kind === 'stock') {
+      throw new ConflictException(`${issue.sku}’s sales or stock changed since the check ran; it may have just sold. Run the checks again.`);
     }
     if (skipped) throw new ConflictException('This changed since the check ran. Run the checks again.');
     const updated = await this.prisma.swapDiagnosticIssue.findUniqueOrThrow({ where: { id: issueId } });
@@ -526,20 +529,27 @@ export class SwapDiagnosticsService {
    * Stock for our linked items (Plan 48): what their sales leave (checked in,
    * less sold after refunds and Sales check's decisions) against Square's
    * count. Square's sales unreadable: not checked, rather than a failed run.
+   *
+   * Square's stock is read first, then its sales, `fresh` (never the cached
+   * read), so a sale the count shows is in the sales too. An item whose stock
+   * moved in the last couple of minutes is left out: its sale may not have
+   * reached Square's order search yet (10/10, 73593 sold 21 s before a run,
+   * and the run asked for it to be put back in stock).
    */
   private async stockFor(swap: Swap, pos: IPosAdapter, ours: OurItem[], fresh = false): Promise<Map<string, StockOf> | undefined> {
     const linked = ours.filter((o) => o.squareVariationId);
     if (linked.length === 0) return new Map();
     try {
-      const [sold, counts] = await Promise.all([
-        this.breakdown.soldUnits(swap.orgId, swap.id, { fresh }),
-        pos.getInventoryCounts(linked.map((o) => o.squareVariationId!), swap.locationId),
-      ]);
-      return new Map(linked.map((o) => {
+      const counts = await pos.getInventoryCounts(linked.map((o) => o.squareVariationId!), swap.locationId);
+      const sold = await this.breakdown.soldUnits(swap.orgId, swap.id, { fresh });
+      const stock = new Map(linked.map((o) => {
         const units = sold.get(o.squareVariationId!) ?? 0;
         const checkedIn = o.originalQuantity ?? 1;
-        return [o.sku, { sold: units, checkedIn, expected: Math.max(0, checkedIn - units), square: counts.get(o.squareVariationId!) ?? 0 }];
+        return [o.sku, { variationId: o.squareVariationId!, sold: units, checkedIn, expected: Math.max(0, checkedIn - units), square: counts.get(o.squareVariationId!) ?? 0 }];
       }));
+      const off = [...stock.values()].filter((s) => s.square !== s.expected).map((s) => s.variationId);
+      const moving = off.length ? await pos.stockChangedSince(off, swap.locationId, new Date(Date.now() - STOCK_SETTLE_MS)) : new Set<string>();
+      return new Map([...stock].filter(([, s]) => !moving.has(s.variationId)).map(([sku, { variationId: _v, ...s }]) => [sku, s]));
     } catch (err) {
       this.logger.warn({ err, swapId: swap.id }, 'Catalog check: stock not read');
       return undefined;
