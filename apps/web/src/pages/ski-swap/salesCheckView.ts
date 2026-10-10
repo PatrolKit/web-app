@@ -230,6 +230,15 @@ export function suggestedLines(issues: SalesCheckIssue[]): { orderId: string; li
     .map((i) => ({ orderId: i.orderId, lineUid: i.lineUid, itemId: i.suggestion!.itemId, label: `${money(i.collectedCents)} sale → ${i.suggestion!.sku}` }));
 }
 
+/**
+ * What Square sold it for, a unit's worth: what "Accept with Square price"
+ * gives an unpriced item. Null when the sale says nothing usable.
+ */
+export function squarePriceOf(i: SalesCheckIssue): number | null {
+  const cents = i.unitPriceCents ?? (i.quantity > 0 ? Math.round(i.collectedCents / i.quantity) : null);
+  return cents && cents > 0 ? cents : null;
+}
+
 /** "97 card sales were charged no fee (about $497.97 at 2.6%)." Null when there are none, or fees weren't read. */
 export function missedFeesText(m: { orders: number; cardCents: number; feeCents: number | null; percentage: string | null } | null): string | null {
   if (!m || m.orders === 0) return null;

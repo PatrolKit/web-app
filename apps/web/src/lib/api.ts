@@ -892,7 +892,7 @@ export const api = {
       request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/fee-handled`, {
         method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
       }),
-    creditSale: (orgId: string, swapId: string, body: { orderId: string; lineUid: string; itemId: string; markSold: boolean }) =>
+    creditSale: (orgId: string, swapId: string, body: { orderId: string; lineUid: string; itemId: string; markSold: boolean; priceCents?: number }) =>
       request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/credit`, {
         method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
       }),

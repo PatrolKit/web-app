@@ -17,6 +17,8 @@ export const CreditSaleSchema = z.object({
   itemId: z.string().min(1),
   /** D6: also set the item's Square stock, so it reads as sold. */
   markSold: z.boolean().default(true),
+  /** An unpriced item takes this price too (in cents), in PatrolKit and Square. */
+  priceCents: z.number().int().positive().max(10_000_000).optional(),
 }).strict();
 export class CreditSaleDto extends createZodDto(CreditSaleSchema) {}
 
@@ -115,6 +117,10 @@ export interface SalesCheckOutcome {
   error?: string;
   /** Crediting set the item's Square stock (D6). */
   markedSold?: boolean;
+  /** The price the item took with it, when one was asked for. */
+  pricedCents?: number;
+  /** The sale was accepted, but the price couldn't be set (say, it was priced meanwhile). */
+  priceError?: string;
 }
 
 export interface SalesCheckCount {

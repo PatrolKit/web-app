@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedText, byCategory, groupsOf, missedFeesText, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
+import { acceptedText, byCategory, groupsOf, missedFeesText, squarePriceOf, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
 import type { SalesCheckIssue } from '../../lib/api.types';
 
 const issue = (over: Partial<SalesCheckIssue>): SalesCheckIssue => ({
@@ -121,6 +121,14 @@ describe('the fee check', () => {
   it('counts card sales charged no fee', () => {
     expect(missedFeesText({ orders: 97, cardCents: 1915250, feeCents: 49797, percentage: '2.6' })).toBe('97 card sales were charged no fee (about $497.97 at 2.6%). Counted here, not flagged.');
     expect([missedFeesText({ orders: 0, cardCents: 0, feeCents: null, percentage: null }), missedFeesText(null)]).toEqual([null, null]);
+  });
+});
+
+describe('Square’s price for an unpriced item', () => {
+  it('is what one unit sold for', () => {
+    expect(squarePriceOf(issue({ unitPriceCents: 4000, collectedCents: 4000 }))).toBe(4000);
+    expect(squarePriceOf(issue({ unitPriceCents: null, collectedCents: 8000, quantity: 2 }))).toBe(4000);
+    expect(squarePriceOf(issue({ unitPriceCents: 0, collectedCents: 0 }))).toBeNull();
   });
 });
 

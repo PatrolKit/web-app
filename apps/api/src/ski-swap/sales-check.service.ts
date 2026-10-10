@@ -5,6 +5,7 @@ import { IdempotencyService } from '../common/services/idempotency.service';
 import { PosAdapterFactory, type IPosAdapter, type PosSaleLine } from './pos/pos.adapter';
 import { ItemBreakdownService } from './item-breakdown.service';
 import { IssuedTicketService } from './issued-ticket.service';
+import { ItemService } from './item.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
 import { applyDecisions, classify, lineKeyOf, netUnits, salesHolds, type CheckItem, type DecisionRef, type SalesHolds } from './sales-check';
 import { squareItemUrl, squareSaleUrl } from './square-links';
@@ -34,6 +35,8 @@ export class SalesCheckService {
     private readonly breakdown: ItemBreakdownService,
     private readonly issued: IssuedTicketService,
     private readonly idempotency: IdempotencyService,
+    // Optional for the unit tests that build this by hand; Nest always supplies it.
+    private readonly items?: ItemService,
   ) {}
 
   // ─── Reading (D13: no writes) ──────────────────────────────────────────────
@@ -110,12 +113,34 @@ export class SalesCheckService {
 
   // ─── Choices (D13: a person's, re-checked, audited) ─────────────────────────
 
-  async credit(orgId: string, swapId: string, body: Line & { itemId: string; markSold: boolean }, userId: string, key?: string): Promise<SalesCheckOutcome> {
+  /**
+   * One sale to one item. With `priceCents`, an unpriced item takes that
+   * price too, through the item edit (so Square's item has it), once the
+   * sale is credited. An item with a price keeps it: the price is refused
+   * up front, and nothing is credited.
+   */
+  async credit(orgId: string, swapId: string, body: Line & { itemId: string; markSold: boolean; priceCents?: number }, userId: string, key?: string): Promise<SalesCheckOutcome> {
     return this.once(orgId, swapId, 'credit', key, async () => {
       const ctx = await this.context(orgId, swapId);
+      if (body.priceCents !== undefined) {
+        const item = ctx.items.find((i) => i.id === body.itemId && !i.deleted);
+        if (item && item.priceCents !== null) {
+          throw new ConflictException(`${item.sku} already has a price ($${(item.priceCents / 100).toFixed(2)}). Accept the suggestion without one.`);
+        }
+      }
       const outcome = await this.creditOne(ctx, body, body.markSold, userId);
       if (!outcome.ok) throw new ConflictException(outcome.error);
-      return outcome;
+      if (body.priceCents === undefined) return outcome;
+      if (!this.items) return { ...outcome, priceError: 'Prices can’t be set here.' };
+      try {
+        await this.items.patch(orgId, swapId, body.itemId, { priceCents: body.priceCents, ifUnpriced: true, actorId: userId });
+        await this.audit(orgId, userId, 'ski_swap.sales_check.priced', { swapId, itemId: body.itemId, priceCents: body.priceCents, orderId: body.orderId, lineUid: body.lineUid });
+        return { ...outcome, pricedCents: body.priceCents };
+      } catch (err) {
+        const message = err instanceof ConflictException ? String((err.getResponse() as { message?: string }).message ?? err.message) : err instanceof Error ? err.message : 'The price couldn’t be set.';
+        this.logger.warn({ err, itemId: body.itemId }, 'Sales check: credited, but the price was not set');
+        return { ...outcome, priceError: message };
+      }
     });
   }
 

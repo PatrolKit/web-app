@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { METHOD_METADATA } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
@@ -151,7 +152,7 @@ function readOnly<T extends object>(target: T, path = 'db'): T {
   });
 }
 
-function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Record<string, number>; fees?: PosOrderFees[] }) {
+function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Record<string, number>; fees?: PosOrderFees[]; priceFails?: string }) {
   const decisions: Record<string, unknown>[] = [];
   const audits: string[] = [];
   const stockSet: [string, number][] = [];
@@ -202,11 +203,22 @@ function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Recor
     },
   };
   const idempotency = { getCached: async () => null, save: async () => undefined };
-  const make = (p: unknown, s: unknown) => new SalesCheckService(p as never, { forOrg: async () => s } as never, breakdown as never, issued as never, idempotency as never);
+  // The item edit (prices): records each patch; `opts.priceFails` makes it refuse.
+  const patches: Record<string, unknown>[] = [];
+  const itemsService = {
+    patch: async (_o: string, _s: string, itemId: string, data: Record<string, unknown>) => {
+      if (opts.priceFails) throw new ConflictException({ code: 'TICKET_PRICED', message: opts.priceFails });
+      patches.push({ itemId, ...data });
+      const it = opts.items.find((i) => i.id === itemId);
+      if (it) it.priceCents = data.priceCents as number;
+      return {};
+    },
+  };
+  const make = (p: unknown, s: unknown) => new SalesCheckService(p as never, { forOrg: async () => s } as never, breakdown as never, issued as never, idempotency as never, itemsService as never);
   return {
     service: make(prisma, pos),
     readOnlyService: make(readOnly(prisma), readOnly(pos)),
-    decisions, audits, stockSet, forgotten: () => forgotten, swap,
+    decisions, audits, stockSet, forgotten: () => forgotten, swap, patches,
   };
 }
 
@@ -348,6 +360,31 @@ describe('the fee check in Sales check', () => {
     await expect(h.service.feeHandled('org', 'swap', { orderId: 'f1' }, 'staff')).resolves.toMatchObject({ ok: false });
     await h.service.undo('org', 'swap', 'd1', 'staff');
     expect((await h.service.list('org', 'swap')).issues.map((i) => i.key)).toEqual(['f1:#fee']);
+  });
+});
+
+describe('accepting a sale onto an unpriced item, with a price', () => {
+  it('credits the sale, then prices the item through the item edit, only if still unpriced', async () => {
+    const h = harness({ items: [item('73338')], lines: [line('o1', 'old-73338')], stock: { 'v-73338': 1 } });
+    await expect(h.service.credit('org', 'swap', { orderId: 'o1', lineUid: 'o1-u', itemId: 'it-73338', markSold: true, priceCents: 4000 }, 'staff'))
+      .resolves.toEqual({ key: 'o1:o1-u', ok: true, markedSold: true, pricedCents: 4000 });
+    expect(h.decisions[0]).toMatchObject({ decision: 'CREDIT', itemId: 'it-73338' });
+    expect(h.patches).toEqual([{ itemId: 'it-73338', priceCents: 4000, ifUnpriced: true, actorId: 'staff' }]);
+    expect(h.audits).toEqual(['ski_swap.sales_check.credited', 'ski_swap.sales_check.priced']);
+  });
+
+  it('refuses a price for an item that has one, and credits nothing', async () => {
+    const h = harness({ items: [item('73338', { priceCents: 5000 })], lines: [line('o1', 'old-73338')] });
+    await expect(h.service.credit('org', 'swap', { orderId: 'o1', lineUid: 'o1-u', itemId: 'it-73338', markSold: true, priceCents: 4000 }, 'staff'))
+      .rejects.toThrow('73338 already has a price ($50.00)');
+    expect([h.decisions, h.patches]).toEqual([[], []]);
+  });
+
+  it('keeps the credit and says so when the price is refused meanwhile', async () => {
+    const h = harness({ items: [item('73338')], lines: [line('o1', 'old-73338')], priceFails: '73338 already has a price ($45.00).' });
+    await expect(h.service.credit('org', 'swap', { orderId: 'o1', lineUid: 'o1-u', itemId: 'it-73338', markSold: true, priceCents: 4000 }, 'staff'))
+      .resolves.toMatchObject({ ok: true, priceError: '73338 already has a price ($45.00).' });
+    expect(h.decisions).toHaveLength(1);
   });
 });
 

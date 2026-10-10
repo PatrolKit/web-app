@@ -6,8 +6,9 @@ import SearchableSelect from '../../components/SearchableSelect';
 import type { ItemResponse, SalesCheckDecided, SalesCheckIssue, SalesCheckOutcome, SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import { FoldHeader, SidePanel, Tombstone, useFolds } from './ReportCard';
+import { centsOf } from './swapDiagnosticsView';
 import {
-  acceptedText, byCategory, groupsOf, missedFeesText, money, patrolKitSide, squareSide, suggestedLines, withDecided, type CategoryGroup, type SalesCheckGroup,
+  acceptedText, byCategory, groupsOf, missedFeesText, money, patrolKitSide, squarePriceOf, squareSide, suggestedLines, withDecided, type CategoryGroup, type SalesCheckGroup,
 } from './salesCheckView';
 
 const key = (orgId: string, swapId: string) => ['ski-swap/sales-check', orgId, swapId];
@@ -274,10 +275,26 @@ function Issue({ issue, orgId, swapId, canFix, sellers, markSold, onDone }: {
     else setRefused(r.error ?? 'That didn’t work. Try again.');
   };
   const credit = useMutation({
-    mutationFn: ({ item }: { item: PickedItem; accepted: boolean }) => api.skiSwap.creditSale(orgId, swapId, { ...line, itemId: item.id, markSold }),
+    mutationFn: ({ item, priceCents }: { item: PickedItem; accepted: boolean; priceCents?: number }) =>
+      api.skiSwap.creditSale(orgId, swapId, { ...line, itemId: item.id, markSold, ...(priceCents ? { priceCents } : {}) }),
     onMutate: () => setRefused(null),
-    onSuccess: (r, { item, accepted }) => settle(r, `${accepted ? 'Accepted' : 'Done'}: ${acceptedText(issue, item, r.markedSold)}`),
+    onSuccess: (r, { item, accepted }) => settle(r, `${accepted ? 'Accepted' : 'Done'}: ${acceptedText(issue, item, r.markedSold)}${
+      r.pricedCents ? ` · priced ${money(r.pricedCents)}` : r.priceError ? ` · price not set: ${r.priceError}` : ''}`),
   });
+  /** An unpriced suggestion is accepted with a price: Square's, or one asked for. */
+  const unpriced = !!issue.suggestion && issue.suggestion.priceCents === null;
+  const squarePrice = squarePriceOf(issue);
+  const accept = (priceCents?: number) => credit.mutate({ item: { id: issue.suggestion!.itemId, ...issue.suggestion! }, accepted: true, priceCents });
+  function acceptWithPrice() {
+    let ask = `A price for ${issue.suggestion!.sku}, in PatrolKit and Square:`;
+    for (;;) {
+      const typed = window.prompt(ask, '');
+      if (typed === null) return;
+      const cents = centsOf(typed);
+      if (cents !== null) { accept(cents); return; }
+      ask = `“${typed}” isn’t a price. Enter one above $0, like 40 or 40.50:`;
+    }
+  }
   const notSwap = useMutation({
     mutationFn: (note?: string) => api.skiSwap.notSwapSale(orgId, swapId, { ...line, ...(note ? { note } : {}) }),
     onMutate: () => setRefused(null),
@@ -326,9 +343,18 @@ function Issue({ issue, orgId, swapId, canFix, sellers, markSold, onDone }: {
             {issue.kind === 'unknown_ticket' && (
               <button type="button" className={btn} disabled={busy} onClick={() => setPicking(picking === 'seller' ? null : 'seller')}>Issue to a seller…</button>
             )}
-            {issue.suggestion && (
-              <button type="button" className={primary} disabled={busy}
-                onClick={() => credit.mutate({ item: { id: issue.suggestion!.itemId, ...issue.suggestion! }, accepted: true })}>
+            {issue.suggestion && unpriced && (
+              <>
+                <button type="button" className={btn} disabled={busy} onClick={acceptWithPrice}>Accept with different price…</button>
+                {squarePrice !== null && (
+                  <button type="button" className={primary} disabled={busy} onClick={() => accept(squarePrice)}>
+                    {credit.isPending ? 'Accepting…' : `Accept with Square price (${money(squarePrice)})`}
+                  </button>
+                )}
+              </>
+            )}
+            {issue.suggestion && !unpriced && (
+              <button type="button" className={primary} disabled={busy} onClick={() => accept()}>
                 {credit.isPending ? 'Accepting…' : 'Accept suggestion'}
               </button>
             )}
