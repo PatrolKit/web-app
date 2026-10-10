@@ -178,7 +178,7 @@ export class SalesCheckService {
       const fresh = await this.context(orgId, swapId);
       const item = fresh.items.find((i) => i.id === created.id);
       if (!item?.squareVariationId) {
-        throw new ConflictException(`Ticket ${body.ticket} is issued, but couldn’t be put in Square yet. Try crediting it again in a minute.`);
+        throw new ConflictException(`Ticket ${body.ticket} is issued, but couldn’t be put in Square yet. Pick it for this sale again in a minute.`);
       }
       const outcome = await this.creditOne(fresh, { ...body, itemId: created.id }, true, userId);
       if (!outcome.ok) throw new ConflictException(outcome.error);
@@ -205,7 +205,7 @@ export class SalesCheckService {
         .filter((x) => x.variationId === item.squareVariationId)
         .reduce((n, x) => n + netUnits(x), 0);
       if (already + units > item.originalQuantity) {
-        return { key, ok: false, error: `${item.name} is already counted as sold. Undo the other sale first, or credit another item.` };
+        return { key, ok: false, error: `${item.name} is already counted as sold. Undo the other sale first, or pick another item.` };
       }
       const decision = await this.decide(ctx, line, { decision: 'CREDIT', itemId: item.id, note: null }, userId);
       ctx.decisions.push(decision);
@@ -230,7 +230,7 @@ export class SalesCheckService {
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return { key, ok: false, error: 'That sale was already decided.' };
       this.logger.warn({ err, key }, 'Sales check credit failed');
-      return { key, ok: false, error: err instanceof Error ? err.message : 'Couldn’t credit that sale.' };
+      return { key, ok: false, error: err instanceof Error ? err.message : 'Couldn’t put that sale on the item.' };
     }
   }
 

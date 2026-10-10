@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byCategory, groupsOf, patrolKitSide, squareSide, suggestedLines } from './salesCheckView';
+import { acceptedText, byCategory, groupsOf, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
 import type { SalesCheckIssue } from '../../lib/api.types';
 
 const issue = (over: Partial<SalesCheckIssue>): SalesCheckIssue => ({
@@ -74,5 +74,27 @@ describe('Accept all suggestions', () => {
       issue({ kind: 'unknown_ticket', orderId: 'c', lineUid: '3', ticket: '59443' }),
     ]);
     expect(lines.map((l) => [l.orderId, l.lineUid, l.itemId])).toEqual([['a', '1', 'it-1'], ['b', '2', 'it-2']]);
+  });
+});
+
+describe('sales decided on the page', () => {
+  const a = issue({ key: 'a', kind: 'other_copy', collectedCents: 1000 });
+  const b = issue({ key: 'b', kind: 'other_copy', collectedCents: 2000 });
+  const c = issue({ key: 'c', kind: 'other_copy', collectedCents: 3000 });
+
+  it('keeps a decided sale in its place after Square stops listing it', () => {
+    const seen = new Map<string, number>();
+    expect(withDecided([a, b, c], new Map(), seen).map((i) => i.key)).toEqual(['a', 'b', 'c']);
+    expect(withDecided([a, c], new Map([['b', b]]), seen).map((i) => i.key)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('counts it out of its group at once, before Square is read again', () => {
+    const [g] = groupsOf([a, b, c], new Set(['b']));
+    expect([g.issues.length, g.open, g.cents]).toEqual([3, 2, 4000]);
+  });
+
+  it('says where the sale went', () => {
+    expect(acceptedText(a, { sku: '73308', name: 'Item #73308', sellerName: 'Karen Beckwith' }, true))
+      .toBe('$10.00 sale put on 73308 Item #73308 · Karen Beckwith · marked sold in Square');
   });
 });

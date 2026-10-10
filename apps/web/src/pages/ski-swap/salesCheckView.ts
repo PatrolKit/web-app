@@ -10,7 +10,10 @@ export interface SalesCheckGroup {
   kind: SalesCheckKind;
   title: string;
   explain: string;
+  /** Open sales and, in place, ones just decided (shown as tombstones). */
   issues: SalesCheckIssue[];
+  /** Open sales only. */
+  open: number;
   cents: number;
 }
 
@@ -46,11 +49,31 @@ export function money(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-export function groupsOf(issues: SalesCheckIssue[]): SalesCheckGroup[] {
+/** `done`: sales decided on this page since it loaded, counted out but still shown. */
+export function groupsOf(issues: SalesCheckIssue[], done: ReadonlySet<string> = new Set()): SalesCheckGroup[] {
   return ORDER.flatMap((g) => {
     const mine = issues.filter((i) => i.kind === g.kind);
-    return mine.length ? [{ ...g, issues: mine, cents: mine.reduce((n, i) => n + i.collectedCents, 0) }] : [];
+    const open = mine.filter((i) => !done.has(i.key));
+    return mine.length ? [{ ...g, issues: mine, open: open.length, cents: open.reduce((n, i) => n + i.collectedCents, 0) }] : [];
   });
+}
+
+/**
+ * What the page shows: Square's open sales plus the ones decided here, which
+ * stay put as tombstones until the page reloads. `seen` numbers each sale the
+ * first time the page sees it, so a decided one keeps its place after the
+ * next read from Square leaves it out.
+ */
+export function withDecided(open: SalesCheckIssue[], decided: ReadonlyMap<string, SalesCheckIssue>, seen: Map<string, number>): SalesCheckIssue[] {
+  for (const i of open) if (!seen.has(i.key)) seen.set(i.key, seen.size);
+  const openKeys = new Set(open.map((i) => i.key));
+  const all = [...open, ...[...decided.values()].filter((i) => !openKeys.has(i.key))];
+  return all.sort((a, b) => (seen.get(a.key) ?? Infinity) - (seen.get(b.key) ?? Infinity));
+}
+
+/** What a tombstone says. */
+export function acceptedText(i: SalesCheckIssue, item: { sku: string; name: string; sellerName?: string | null }, markedSold?: boolean): string {
+  return `${money(i.collectedCents)} sale put on ${item.sku} ${item.name}${item.sellerName ? ` · ${item.sellerName}` : ''}${markedSold ? ' · marked sold in Square' : ''}`;
 }
 
 export interface Field {
