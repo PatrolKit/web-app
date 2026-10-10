@@ -537,7 +537,8 @@ export class SwapDiagnosticsService {
       ]);
       return new Map(linked.map((o) => {
         const units = sold.get(o.squareVariationId!) ?? 0;
-        return [o.sku, { sold: units, expected: Math.max(0, (o.originalQuantity ?? 1) - units), square: counts.get(o.squareVariationId!) ?? 0 }];
+        const checkedIn = o.originalQuantity ?? 1;
+        return [o.sku, { sold: units, checkedIn, expected: Math.max(0, checkedIn - units), square: counts.get(o.squareVariationId!) ?? 0 }];
       }));
     } catch (err) {
       this.logger.warn({ err, swapId: swap.id }, 'Catalog check: stock not read');

@@ -104,9 +104,14 @@ describe('Price differs as a card', () => {
 });
 
 describe('stock against sales', () => {
+  it('says what Square shows and what it should, from the quantity checked in', () => {
+    const twice = issue({ kind: 'stock', sku: '73190', ours: { itemId: 'o', name: 'x', notes: null, priceCents: 4000, squareItemId: 's', squareVariationId: 'v', sellerName: null, stock: 0, sold: 2, checkedIn: 1 }, square: { ...sq(4000), stock: -1 } });
+    expect(stockText(twice)).toBe('Square shows -1 in stock, but should show 0: 1 checked in, 2 sold (a refunded sale doesn’t count).');
+  });
+
   it('says what Square has and what the sales leave', () => {
     const stock = issue({ kind: 'stock', sku: '74329', ours: { itemId: 'o', name: 'x', notes: null, priceCents: 7500, squareItemId: 's', squareVariationId: 'v', sellerName: null, stock: 1, sold: 0 }, square: { ...sq(7500), stock: 0 } });
-    expect(stockText(stock)).toBe('Square has 0 in stock; its sales leave 1 (1 checked in, 0 sold after refunds).');
+    expect(stockText(stock)).toBe('Square shows 0 in stock, but should show 1: 1 checked in, 0 sold (a refunded sale doesn’t count).');
     expect(rowChoices(stock)).toEqual(['set_stock', 'resolve']);
     expect(groupsOf(run([stock]))[0]).toMatchObject({ title: 'Stock doesn’t match sales', groupChoices: ['set_stock', 'resolve'] });
     expect(decidedText({ ...stock, state: 'applied', choice: 'set_stock' })).toBe('Set Square’s stock to 1');

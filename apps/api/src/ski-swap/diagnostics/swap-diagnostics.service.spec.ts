@@ -548,7 +548,7 @@ describe('stock against what the sales leave (Plan 48)', () => {
     h.stock('sv-74329', 0, 0); // sold once, refunded once: unsold, but Square says 0
     const run = await h.run();
     const issue = run.issues.find((i) => i.kind === 'stock')!;
-    expect(issue).toMatchObject({ sku: '74329', ours: { stock: 1, sold: 0 }, square: { stock: 0 } });
+    expect(issue).toMatchObject({ sku: '74329', ours: { stock: 1, sold: 0, checkedIn: 1 }, square: { stock: 0 } });
     await h.service.apply('org', 'swap', issue.id, 'set_stock', {}, 'staff');
     expect(h.stockSets).toEqual([['sv-74329', 1]]);
     expect(open(await h.run())).toEqual([]);

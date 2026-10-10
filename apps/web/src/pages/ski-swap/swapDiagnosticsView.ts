@@ -34,7 +34,7 @@ const ORDER: { kind: DiagnosticIssueKind; field: DiagnosticField | null; title: 
   },
   {
     kind: 'stock', field: null, title: 'Stock doesn’t match sales',
-    explain: 'Square’s stock isn’t what the item’s sales leave (checked in, less sold after refunds): usually a refund not put back in stock, a ticket scanned twice, or a count changed by hand. At 0, PatrolKit shows the item as sold and the register as sold out; below 0 is never right.',
+    explain: 'Square’s stock should be the number checked in, minus the number sold (a refunded sale doesn’t count as sold). These don’t match, usually because a refund wasn’t put back in stock, a ticket was scanned twice, or someone changed the count by hand. At 0, PatrolKit shows the item as sold and the register shows it sold out; below 0 is never right.',
   },
   {
     kind: 'only_ours', field: null, title: 'In PatrolKit, not in Square',
@@ -258,11 +258,12 @@ export function centsOf(text: string): number | null {
   return cents > 0 ? cents : null;
 }
 
-/** Stock: "Square has 0 in stock; its sales leave 1 (1 checked in, 0 sold after refunds)." */
+/** Stock: "Square shows 0 in stock, but should show 1: 1 checked in, 0 sold (a refunded sale doesn’t count)." */
 export function stockText(issue: DiagnosticIssueResponse): string {
   const sq = squareSide(issue)?.stock ?? 0;
   const want = issue.ours?.stock ?? 0;
   const sold = issue.ours?.sold ?? 0;
-  return `Square has ${sq} in stock; its sales leave ${want} (${want + sold} checked in, ${sold} sold after refunds).`;
+  const checkedIn = issue.ours?.checkedIn ?? want + sold;
+  return `Square shows ${sq} in stock, but should show ${want}: ${checkedIn} checked in, ${sold} sold (a refunded sale doesn’t count).`;
 }
 

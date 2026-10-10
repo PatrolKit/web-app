@@ -71,15 +71,17 @@ export interface OurSide {
   squareItemId: string | null;
   squareVariationId: string | null;
   sellerName: string | null;
-  /** Stock only: what its sales leave (checked in, less sold after refunds), and how many sold. */
+  /** Stock only: what Square should show (checked in, less sold after refunds), and the two. */
   stock?: number;
   sold?: number;
+  checkedIn?: number;
 }
 
 /** Stock, for one linked item: what its sales leave, and what Square says. */
 export interface StockOf {
   expected: number;
   sold: number;
+  checkedIn: number;
   square: number;
 }
 
@@ -206,7 +208,7 @@ export function diagnose(input: {
     // stock, one scanned twice, or a count changed by hand. Linked items only.
     const st = input.stock?.get(sku);
     if (st && o.squareVariationId === sq.variationId && st.square !== st.expected) {
-      add(sku, 'stock', null, { ...o, stock: st.expected, sold: st.sold }, { ...sq, stock: st.square },
+      add(sku, 'stock', null, { ...o, stock: st.expected, sold: st.sold, checkedIn: st.checkedIn }, { ...sq, stock: st.square },
         { expected: st.expected, square: st.square });
     }
   }

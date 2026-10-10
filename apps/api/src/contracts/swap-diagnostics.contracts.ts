@@ -73,9 +73,10 @@ export interface DiagnosticOurSide {
   squareVariationId: string | null;
   sellerName: string | null;
   deleted?: boolean;
-  /** Stock: what its sales leave (checked in, less sold after refunds), and how many sold. */
+  /** Stock: what Square should show (checked in, less sold after refunds), and the two. */
   stock?: number;
   sold?: number;
+  checkedIn?: number;
 }
 
 export interface DiagnosticIssueResponse {
