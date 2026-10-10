@@ -132,3 +132,12 @@ describe('Square’s price for an unpriced item', () => {
   });
 });
 
+describe('sorting', () => {
+  it('puts each group in SKU order, numbers as numbers, and those with none last by time', () => {
+    const copy = (sku: string, key: string) => issue({ key, kind: 'other_copy', suggestion: { itemId: key, sku, name: 'x', priceCents: null, sellerName: null, sellerId: null } });
+    const fee = (key: string, soldAt: string) => issue({ key, kind: 'other_copy', soldAt });
+    const [g] = groupsOf([copy('73338', 'a'), fee('late', '2026-10-09T20:00:00Z'), copy('9001', 'b'), fee('early', '2026-10-09T15:00:00Z'), copy('73308', 'c')]);
+    expect(g.issues.map((i) => i.key)).toEqual(['b', 'c', 'a', 'early', 'late']);
+  });
+});
+

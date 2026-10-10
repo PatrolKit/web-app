@@ -57,10 +57,24 @@ export function money(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-/** `done`: sales decided on this page since it loaded, counted out but still shown. */
+/** The SKU an issue is about: the suggested item's, else the ticket's, else what Square rang up. */
+export function skuOf(i: SalesCheckIssue): string | null {
+  return i.suggestion?.sku ?? i.oversold?.sku ?? i.ticket ?? (i.rungUpAs?.sku || null);
+}
+
+/** By SKU, as numbers read (9001 before 73338); those with none last, by when they sold. */
+export function bySku(a: SalesCheckIssue, b: SalesCheckIssue): number {
+  const x = skuOf(a);
+  const y = skuOf(b);
+  if (x && y) return x.localeCompare(y, 'en', { numeric: true }) || a.soldAt.localeCompare(b.soldAt);
+  if (x || y) return x ? -1 : 1;
+  return a.soldAt.localeCompare(b.soldAt);
+}
+
+/** `done`: sales decided on this page since it loaded, counted out but still shown. Each group by SKU. */
 export function groupsOf(issues: SalesCheckIssue[], done: ReadonlySet<string> = new Set()): SalesCheckGroup[] {
   return ORDER.flatMap((g) => {
-    const mine = issues.filter((i) => i.kind === g.kind);
+    const mine = issues.filter((i) => i.kind === g.kind).sort(bySku);
     const open = mine.filter((i) => !done.has(i.key));
     return mine.length ? [{ ...g, issues: mine, open: open.length, cents: open.reduce((n, i) => n + i.collectedCents, 0) }] : [];
   });
