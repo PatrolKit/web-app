@@ -27,6 +27,7 @@ import { stationCodeOf, uncategorisedName } from './sku.util';
 import type { ItemResponse, UnpricedTicket } from '../contracts/ski-swap.contracts';
 import { searchedField, sortRows, type ItemListView, type ItemSort } from './item-list-order';
 import { servingDevice } from './device-stock.interceptor';
+import { CLAIM_RELEASED, claimForSquareCreate, releaseSquareCreateClaim } from './square-create-claim';
 
 export interface ItemPhotoResponse { id: string; url: string; }
 
@@ -1112,46 +1113,54 @@ export class ItemService {
       if (!swap.locationId) return;
       const pos = await this.posFactory.forOrg(orgId);
       if (!pos) return;
-      await this.issued?.push(orgId, swapId);
+      await this.issued?.push(orgId, swapId, itemIds);
 
       let categoryId = swap.squareCategoryId;
       let failed = 0;
       for (let at = 0; at < itemIds.length; at += IMPORT_PUSH_BATCH) {
-        const items = await this.prisma.swapItem.findMany({
+        const found = await this.prisma.swapItem.findMany({
           where: { id: { in: itemIds.slice(at, at + IMPORT_PUSH_BATCH) }, swapId, deletedAt: null, consignedAt: { not: null } },
         });
+        // Creates are claimed (Plan 47): one another path holds is left to it.
+        const claim = await claimForSquareCreate(this.prisma, found.filter((o) => !o.squareItemId).map((o) => o.id));
+        const items = found.filter((o) => o.squareItemId || claim.ids.includes(o.id));
         if (items.length === 0) continue;
-        const { results, resolvedCategoryId } = await pos.upsertItems(
-          items.map((o) => ({
-            posItemId: o.squareItemId ?? undefined,
-            posVariationId: o.squareVariationId ?? undefined,
-            name: o.name,
-            description: o.description ?? undefined,
-            priceCents: o.priceCents,
-            sku: o.sku,
-            categoryId,
-            categoryName: swap.title,
-          })),
-          swap.locationId,
-          1,
-        );
-        if (resolvedCategoryId && resolvedCategoryId !== categoryId) {
-          categoryId = resolvedCategoryId;
-          await this.prisma.skiSwap.update({ where: { id: swapId }, data: { squareCategoryId: categoryId } });
-        }
-        const syncedAt = new Date();
-        const landed = items.flatMap((o, i) => {
-          const r = results[i];
-          if ('error' in r) {
-            failed++;
-            return [];
+        try {
+          const { results, resolvedCategoryId } = await pos.upsertItems(
+            items.map((o) => ({
+              posItemId: o.squareItemId ?? undefined,
+              posVariationId: o.squareVariationId ?? undefined,
+              name: o.name,
+              description: o.description ?? undefined,
+              priceCents: o.priceCents,
+              sku: o.sku,
+              categoryId,
+              categoryName: swap.title,
+            })),
+            swap.locationId,
+            1,
+          );
+          if (resolvedCategoryId && resolvedCategoryId !== categoryId) {
+            categoryId = resolvedCategoryId;
+            await this.prisma.skiSwap.update({ where: { id: swapId }, data: { squareCategoryId: categoryId } });
           }
-          return [this.prisma.swapItem.update({
-            where: { id: o.id },
-            data: { squareItemId: r.posItemId, squareVariationId: r.posVariationId, lastSyncedAt: syncedAt },
-          })];
-        });
-        await this.prisma.$transaction(landed);
+          const syncedAt = new Date();
+          const landed = items.flatMap((o, i) => {
+            const r = results[i];
+            if ('error' in r) {
+              failed++;
+              return [];
+            }
+            return [this.prisma.swapItem.update({
+              where: { id: o.id },
+              data: { squareItemId: r.posItemId, squareVariationId: r.posVariationId, lastSyncedAt: syncedAt, ...CLAIM_RELEASED },
+            })];
+          });
+          await this.prisma.$transaction(landed);
+        } finally {
+          // Whatever didn't land is free for Diagnostics or a re-push to create.
+          await releaseSquareCreateClaim(this.prisma, claim);
+        }
       }
       // Left as they are for Diagnostics, or a re-push from Items, to find.
       if (failed) this.logger.warn({ orgId, swapId, failed, of: itemIds.length }, 'Import finished with items not in Square');
@@ -1378,7 +1387,18 @@ export class ItemService {
       if (!latest) return 'skipped';
       const squareItemId = latest.squareItemId ?? item.squareItemId;
       const squareVariationId = latest.squareVariationId ?? item.squareVariationId;
-      return this.pushToPos(orgId, swap, pos, { ...item, squareItemId, squareVariationId });
+      if (squareItemId) return this.pushToPos(orgId, swap, pos, { ...item, squareItemId, squareVariationId });
+      /*
+       * A create: claimed first (Plan 47). The lock above serialises this
+       * service's pushes of one item, but not the issued-ticket push or an
+       * import, which swept up an iPad's tickets mid-create and made them twice.
+       * Not ours to claim means another path is creating it right now.
+       */
+      const claim = await claimForSquareCreate(this.prisma, [item.id]);
+      if (claim.ids.length === 0) return 'skipped';
+      const result = await this.pushToPos(orgId, swap, pos, { ...item, squareItemId, squareVariationId });
+      if (result !== 'synced') await releaseSquareCreateClaim(this.prisma, claim);
+      return result;
     });
   }
 
@@ -1415,7 +1435,7 @@ export class ItemService {
       if (result.resolvedCategoryId !== swap.squareCategoryId) {
         await this.prisma.skiSwap.update({ where: { id: swap.id }, data: { squareCategoryId: result.resolvedCategoryId } });
       }
-      await this.prisma.swapItem.update({ where: { id: item.id }, data: { squareItemId: result.posItemId, squareVariationId: result.posVariationId, lastSyncedAt: new Date() } });
+      await this.prisma.swapItem.update({ where: { id: item.id }, data: { squareItemId: result.posItemId, squareVariationId: result.posVariationId, lastSyncedAt: new Date(), ...CLAIM_RELEASED } });
 
       // Photos taken before the item reached Square have nowhere to go at the
       // time. A station check-in defers this sync until the seller finishes, so

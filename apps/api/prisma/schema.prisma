@@ -539,6 +539,12 @@ model SwapItem {
   squareItemId      String?
   squareVariationId String?
   lastSyncedAt      DateTime?
+  /// Who is creating this item in Square right now (Plan 47). Taken in one
+  /// statement before a create, so two paths can't both create it; cleared
+  /// when `squareItemId` is written or the create fails. One older than two
+  /// minutes was abandoned (a crash mid-create) and may be taken over.
+  squareCreateClaim     String?   @db.VarChar(40)
+  squareCreateClaimedAt DateTime?
   donateProceeds    Boolean   @default(false)
   hasPrintedTag     Boolean   @default(false)
 

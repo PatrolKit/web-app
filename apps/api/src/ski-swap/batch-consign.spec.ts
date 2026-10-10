@@ -1,4 +1,5 @@
 import { ItemService } from './item.service';
+import { claimRead, claimUpdate, isClaimCall } from './__fixtures__/claim-fake';
 
 /**
  * Accepting everything one seller is waiting on, when the set moves underneath.
@@ -68,12 +69,14 @@ function harness(opts: { duringGap?: (rows: Row[]) => void } = {}) {
     },
     swapItem: {
       findMany: async ({ where }: { where: Record<string, unknown> }) => {
+        if (isClaimCall(where)) return claimRead(rows as never, where);
         const found = rows.filter((r) => matches(r, where)).map((r) => ({ id: r.id }));
         // The gap. A row landing here is the whole point of the test.
         opts.duringGap?.(rows);
         return found;
       },
       updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Partial<Row> }) => {
+        if (isClaimCall(where, data as Record<string, unknown>)) return claimUpdate(rows as never, where, data as Record<string, unknown>);
         const hit = rows.filter((r) => matches(r, where));
         for (const r of hit) Object.assign(r, data);
         return { count: hit.length };

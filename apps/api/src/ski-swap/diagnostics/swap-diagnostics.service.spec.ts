@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { SwapDiagnosticsService } from './swap-diagnostics.service';
 import type { PosCatalogItem, PosItemSync } from '../pos/pos.adapter';
+import { claimRead, claimUpdate, isClaimCall } from '../__fixtures__/claim-fake';
 
 /**
  * Swap diagnostics end to end (Plan 41), against an in-memory database and
@@ -78,8 +79,9 @@ function harness() {
       findMany: async ({ where }: Row) => db.hidden.filter((h) => matches(h, where)),
     },
     swapItem: {
-      findMany: async ({ where }: Row) =>
-        db.items.filter((r) => matches(r, where)).map((r) => ({ ...r, seller: null })),
+      findMany: async ({ where }: Row) => (isClaimCall(where) ? claimRead(db.items as never, where)
+        : db.items.filter((r) => matches(r, where)).map((r) => ({ ...r, seller: null }))),
+      updateMany: async ({ where, data }: Row) => claimUpdate(db.items as never, where, data),
       update: async ({ where, data }: Row) => Object.assign(db.items.find((r) => r.id === where.id)!, data),
     },
     user: { findMany: async () => [{ id: 'staff', firstName: 'Dana', lastName: 'Smith', email: null }] },

@@ -1,3 +1,4 @@
+import { CLAIM_RELEASED, claimForSquareCreate, releaseSquareCreateClaim } from '../square-create-claim';
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -266,8 +267,20 @@ export class SwapDiagnosticsService {
           where: { id: { in: issues.map((i) => ourOf(i)!.itemId) }, swapId: swap.id, deletedAt: null },
         });
         const byId = new Map(ours.map((o) => [o.id, o]));
-        const sendable = issues.filter((i) => byId.has(ourOf(i)!.itemId));
         for (const i of issues) if (!byId.has(ourOf(i)!.itemId)) out.push({ issue: i, state: 'failed', error: 'That item was deleted.' });
+        // A copy creates a Square item, so it's claimed first (Plan 47): one
+        // another path is creating right now is left to it.
+        const creates = choice === 'copy_to_square' ? ours.filter((o) => !o.squareItemId).map((o) => o.id) : [];
+        const claim = await claimForSquareCreate(this.prisma, creates);
+        const sendable = issues.filter((i) => {
+          const id = ourOf(i)!.itemId;
+          if (!byId.has(id)) return false;
+          if (creates.includes(id) && !claim.ids.includes(id)) {
+            out.push({ issue: i, state: 'failed', error: 'It’s being put in Square right now. Run the checks again in a minute.' });
+            return false;
+          }
+          return true;
+        });
         const sync: PosItemSync[] = sendable.map((i) => {
           const o = byId.get(ourOf(i)!.itemId)!;
           const target = choice === 'use_ours' ? squareOf(i) : null;
@@ -278,7 +291,10 @@ export class SwapDiagnosticsService {
             categoryId: swap.squareCategoryId, categoryName: swap.title,
           };
         });
-        const { results, resolvedCategoryId } = await pos.upsertItems(sync, swap.locationId, 1);
+        const { results, resolvedCategoryId } = await pos.upsertItems(sync, swap.locationId, 1).catch(async (err: unknown) => {
+          await releaseSquareCreateClaim(this.prisma, claim);
+          throw err;
+        });
         if (resolvedCategoryId && resolvedCategoryId !== swap.squareCategoryId) {
           await this.prisma.skiSwap.update({ where: { id: swap.id }, data: { squareCategoryId: resolvedCategoryId } });
         }
@@ -290,11 +306,13 @@ export class SwapDiagnosticsService {
           if (choice === 'copy_to_square') {
             await this.prisma.swapItem.update({
               where: { id: ourOf(issue)!.itemId },
-              data: { squareItemId: r.posItemId, squareVariationId: r.posVariationId, lastSyncedAt: new Date() },
+              data: { squareItemId: r.posItemId, squareVariationId: r.posVariationId, lastSyncedAt: new Date(), ...CLAIM_RELEASED },
             });
           }
           out.push({ issue, state: 'applied' });
         }
+        // Any that didn't land are free for the next try.
+        await releaseSquareCreateClaim(this.prisma, claim);
         return out;
       }
 

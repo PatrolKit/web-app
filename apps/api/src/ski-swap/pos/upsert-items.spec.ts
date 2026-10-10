@@ -9,6 +9,8 @@ function harness(opts: { failBatch?: (n: number) => Error | null } = {}) {
   let batch = 0;
   const client = {
     catalog: {
+      // Nothing in Square yet under these SKUs (Plan 47 looks before creating).
+      search: async () => ({ objects: [], relatedObjects: [] }),
       batchGet: async ({ objectIds }: { objectIds: string[] }) => ({
         objects: objectIds.map((id) => ({ type: 'ITEM', id, version })),
       }),
@@ -72,6 +74,8 @@ describe('the variation Square prints on the receipt', () => {
     const seen: unknown[] = [];
     const client = {
       catalog: {
+      // Nothing in Square yet under these SKUs (Plan 47 looks before creating).
+      search: async () => ({ objects: [], relatedObjects: [] }),
         batchGet: async () => ({ objects: [] }),
         batchUpsert: async ({ batches }: { batches: { objects: unknown[] }[] }) => {
           seen.push(...batches[0].objects);

@@ -7,6 +7,7 @@ import { PosAdapterFactory } from './pos/pos.adapter';
 import { isUntouched, runsOf, ticketNumberOf, type Range } from './legacy-ticket.service';
 import { uncategorisedName } from './sku.util';
 import { IdempotencyService } from '../common/services/idempotency.service';
+import { CLAIM_RELEASED, claimForSquareCreate, releaseSquareCreateClaim, unclaimedWhere } from './square-create-claim';
 
 /** A shop's tickets in a swap, as the Sellers page shows them (Plan 38). */
 export interface IssuedTicketSummary {
@@ -193,64 +194,93 @@ export class IssuedTicketService {
         await tx.swapItem.createMany({ data: rows.slice(at, at + 1000) });
       }
     }, { timeout: 60_000 });
-    void this.push(orgId, swapId);
+    // These tickets only: sweeping the swap is what picked up an iPad's
+    // tickets mid-sync and created them twice (Plan 47).
+    void this.push(orgId, swapId, rows.map((r) => r.id as string));
   }
 
   /**
-   * Puts the swap's accepted tickets that aren't in Square there, in batches
-   * (D9). Picks up whatever is missing, so it's also the resume. One at a time
-   * per swap: a second call while one runs waits for it.
+   * Puts accepted tickets that aren't in Square there, in batches (D9): the
+   * ones named, or with none named, every one the swap has (the resume).
+   * One at a time per swap: a call while another runs goes after it.
+   *
+   * Each batch is claimed before it's created (Plan 47), so a ticket another
+   * path is creating right now is left to it rather than created twice.
    */
-  push(orgId: string, swapId: string): Promise<void> {
-    const running = this.pushing.get(swapId);
-    if (running) return running;
-    const run = this.pushPending(orgId, swapId)
-      .catch((err: unknown) => this.logger.error({ err, swapId }, 'Issued ticket push stopped'))
-      .finally(() => this.pushing.delete(swapId));
+  push(orgId: string, swapId: string, itemIds?: string[]): Promise<void> {
+    const before = this.pushing.get(swapId) ?? Promise.resolve();
+    const run = before
+      .then(() => this.pushPending(orgId, swapId, itemIds))
+      .catch((err: unknown) => this.logger.error({ err, swapId }, 'Issued ticket push stopped'));
     this.pushing.set(swapId, run);
+    void run.finally(() => { if (this.pushing.get(swapId) === run) this.pushing.delete(swapId); });
     return run;
   }
 
-  private async pushPending(orgId: string, swapId: string): Promise<void> {
+  private async pushPending(orgId: string, swapId: string, itemIds?: string[]): Promise<void> {
     const swap = await this.swapOrThrow(orgId, swapId);
     if (!swap.locationId) return;
     const pos = await this.posFactory.forOrg(orgId);
     if (!pos) return;
 
     let categoryId = swap.squareCategoryId;
+    let empty = 0;
     for (;;) {
-      const pending = (await this.pendingTickets(swapId)).slice(0, 1000);
+      const pending = (await this.pendingTickets(swapId, { itemIds, unclaimedOnly: true })).slice(0, 1000);
       if (pending.length === 0) return;
-      const { ids, resolvedCategoryId } = await pos.syncNewItems(
-        pending.map((i) => ({
-          name: i.name,
-          description: i.description ?? undefined,
-          priceCents: i.priceCents,
-          sku: i.sku,
-          categoryId,
-          categoryName: swap.title,
-        })),
-        swap.locationId,
-        1,
-      );
-      if (resolvedCategoryId !== categoryId) {
-        categoryId = resolvedCategoryId;
-        await this.prisma.skiSwap.update({ where: { id: swapId }, data: { squareCategoryId: categoryId } });
+      const claim = await claimForSquareCreate(this.prisma, pending.map((i) => i.id));
+      // Every one went to another path in the meantime: it creates them, and
+      // the next read won't list them. Never spin on it.
+      if (claim.ids.length === 0) {
+        if (++empty >= 3) return;
+        continue;
       }
-      const syncedAt = new Date();
-      await this.prisma.$transaction(
-        pending.map((item, i) => this.prisma.swapItem.update({
-          where: { id: item.id },
-          data: { squareItemId: ids[i].posItemId, squareVariationId: ids[i].posVariationId, lastSyncedAt: syncedAt },
-        })),
-      );
+      empty = 0;
+      const mine = pending.filter((i) => claim.ids.includes(i.id));
+      try {
+        const { ids, resolvedCategoryId } = await pos.syncNewItems(
+          mine.map((i) => ({
+            name: i.name,
+            description: i.description ?? undefined,
+            priceCents: i.priceCents,
+            sku: i.sku,
+            categoryId,
+            categoryName: swap.title,
+          })),
+          swap.locationId,
+          1,
+        );
+        if (resolvedCategoryId !== categoryId) {
+          categoryId = resolvedCategoryId;
+          await this.prisma.skiSwap.update({ where: { id: swapId }, data: { squareCategoryId: categoryId } });
+        }
+        const syncedAt = new Date();
+        await this.prisma.$transaction(
+          mine.map((item, i) => this.prisma.swapItem.update({
+            where: { id: item.id },
+            data: { squareItemId: ids[i].posItemId, squareVariationId: ids[i].posVariationId, lastSyncedAt: syncedAt, ...CLAIM_RELEASED },
+          })),
+        );
+      } catch (err) {
+        // Free them for the next push to try; a half-created batch is found
+        // and linked by SKU then, not created again.
+        await releaseSquareCreateClaim(this.prisma, claim);
+        throw err;
+      }
     }
   }
 
-  /** Accepted ticket items not yet in Square, in number order. */
-  private async pendingTickets(swapId: string) {
+  /**
+   * Accepted ticket items not yet in Square, in number order: these ones, or
+   * the swap's. With `unclaimedOnly`, not those another path is creating now.
+   */
+  private async pendingTickets(swapId: string, opts: { itemIds?: string[]; unclaimedOnly?: boolean } = {}) {
     const rows = await this.prisma.swapItem.findMany({
-      where: { swapId, deletedAt: null, consignedAt: { not: null }, squareItemId: null },
+      where: {
+        swapId, deletedAt: null, consignedAt: { not: null }, squareItemId: null,
+        ...(opts.itemIds ? { id: { in: opts.itemIds } } : {}),
+        ...(opts.unclaimedOnly ? unclaimedWhere() : {}),
+      },
       select: { id: true, sku: true, name: true, description: true, priceCents: true },
     });
     return rows

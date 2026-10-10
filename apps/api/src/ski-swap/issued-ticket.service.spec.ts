@@ -1,4 +1,5 @@
 import { IssuedTicketService, clashMessage, takenMessage } from './issued-ticket.service';
+import { claimRead, claimUpdate, isClaimCall } from './__fixtures__/claim-fake';
 
 /**
  * Issuing tickets puts them on sale (Plan 38): a block becomes one unpriced,
@@ -32,8 +33,16 @@ function harness(opts: {
     sellerProfile: { findFirst: async () => ({ id: 'seller-1' }) },
     swapItem: {
       findMany: async ({ where }: { where: Record<string, unknown> }) => {
+        if (isClaimCall(where)) return claimRead(live, where);
         // The push asks for accepted items with no Square id.
-        if ('squareItemId' in where) return live.filter((r) => r.consignedAt && !r.squareItemId);
+        if ('squareItemId' in where) {
+          // As the database answers it: these ids if named, and with `OR`, not
+          // held by another path's live claim (Plan 47).
+          const ids = (where.id as { in?: string[] } | undefined)?.in;
+          const cutoff = Date.now() - 2 * 60 * 1000;
+          return live.filter((r) => r.consignedAt && !r.squareItemId && (!ids || ids.includes(r.id))
+            && (!('OR' in where) || !r.squareCreateClaim || (r.squareCreateClaimedAt as Date).getTime() < cutoff));
+        }
         // Batch add and the per-scan check ask by SKU (Plan 40).
         const skuIn = (where.sku as { in?: string[] } | undefined)?.in;
         if (skuIn) return live.filter((r) => skuIn.includes(r.sku));
@@ -45,7 +54,8 @@ function harness(opts: {
         if (row) Object.assign(row, data);
         return row;
       },
-      updateMany: async ({ where }: { where: { id: { in: string[] } } }) => {
+      updateMany: async ({ where, data }: { where: { id: { in: string[] } }; data: Record<string, unknown> }) => {
+        if (isClaimCall(where, data)) return claimUpdate(live, where, data);
         tombstoned.push(...where.id.in);
         return { count: where.id.in.length };
       },
@@ -137,6 +147,46 @@ describe('putting issued tickets in Square', () => {
     expect(swap.squareCategoryId).toBe('cat-2');
   });
 
+  it('leaves a ticket another path is creating right now to that path (Plan 47)', async () => {
+    const pos = fakePos();
+    const live = [
+      ticket(74820, { squareItemId: null, squareCreateClaim: 'ipad', squareCreateClaimedAt: new Date() }),
+      ticket(74821, { squareItemId: null }),
+    ];
+    const { service } = harness({ live, pos });
+    await service.push('org-1', 'swap-1');
+    expect(pos.batches).toEqual([1]);
+    expect(live[0]).toMatchObject({ squareItemId: null, squareCreateClaim: 'ipad' });
+    expect(live[1]).toMatchObject({ squareItemId: 'sq-74821', squareCreateClaim: null });
+  });
+
+  it('pushes only the tickets it was given, when given some', async () => {
+    const pos = fakePos();
+    const live = [ticket(67000, { squareItemId: null }), ticket(67001, { squareItemId: null })];
+    const { service } = harness({ live, pos });
+    await service.push('org-1', 'swap-1', ['t67001']);
+    expect(live.map((r) => r.squareItemId)).toEqual([null, 'sq-67001']);
+  });
+
+  it('frees its claim when Square fails, so the next push tries again', async () => {
+    let fail = true;
+    const pos = {
+      batches: [] as number[],
+      syncNewItems: async (items: { sku: string }[]) => {
+        if (fail) throw new Error('Square is down');
+        pos.batches.push(items.length);
+        return { ids: items.map((i) => ({ posItemId: `sq-${i.sku}`, posVariationId: `var-${i.sku}` })), resolvedCategoryId: 'cat-1' };
+      },
+    };
+    const live = [ticket(67000, { squareItemId: null })];
+    const { service } = harness({ live, pos });
+    await service.push('org-1', 'swap-1');
+    expect(live[0]).toMatchObject({ squareItemId: null, squareCreateClaim: null });
+    fail = false;
+    await service.push('org-1', 'swap-1');
+    expect(live[0].squareItemId).toBe('sq-67000');
+  });
+
   it('picks up only what isn’t in Square, so running it again resumes', async () => {
     const pos = fakePos();
     const live = [ticket(67000), ticket(67001, { squareItemId: null }), ticket(67002, { consignedAt: null, squareItemId: null })];
@@ -160,12 +210,13 @@ describe('putting issued tickets in Square', () => {
       .resolves.toMatchObject({ squareReady: false });
   });
 
-  it('joins a push already running for the swap rather than starting another', async () => {
+  it('queues a push behind one already running for the swap, which then has nothing left to do', async () => {
     const pos = fakePos();
     const { service } = harness({ live: [ticket(67000, { squareItemId: null })], pos });
     const first = service.push('org-1', 'swap-1');
-    expect(service.push('org-1', 'swap-1')).toBe(first);
-    await first;
+    const second = service.push('org-1', 'swap-1');
+    await Promise.all([first, second]);
+    expect(pos.batches).toHaveLength(1);
   });
 });
 

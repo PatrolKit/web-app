@@ -77,10 +77,22 @@ class SquarePosAdapter implements IPosAdapter {
     const categoryName = items[0]?.categoryName ?? '';
 
     for (let start = 0; start < items.length; start += 500) {
-      const chunk = items.slice(start, start + 500);
+      const slice = items.slice(start, start + 500);
+      // One already in Square under its SKU is linked and updated, not
+      // created again (Plan 47): a crash mid-create, or an older orphan.
+      const existing = await this.activeBySku(categoryId, slice.map((i) => i.sku));
+      const chunk = slice.map((item) => {
+        const found = existing.get(item.sku);
+        return found ? { ...item, posItemId: found.itemId, posVariationId: found.variationId } : item;
+      });
       const request = (category: string): Square.BatchUpsertCatalogObjectsRequest => ({
         idempotencyKey: uuidv4(),
-        batches: [{ objects: chunk.map((item, i) => itemObject(item, category, `#item${i}`, `#variation${i}`)) }],
+        batches: [{ objects: chunk.map((item, i) => {
+          const found = existing.get(item.sku);
+          return found
+            ? itemObject(item, category, found.itemId, found.variationId, found.version)
+            : itemObject(item, category, `#item${i}`, `#variation${i}`);
+        }) }],
       });
       const res = await this.client.catalog.batchUpsert(request(categoryId)).catch(async (err) => {
         if (!isSquareMissingReferenceError(err)) throw err;
@@ -89,14 +101,15 @@ class SquarePosAdapter implements IPosAdapter {
         return this.client.catalog.batchUpsert(request(categoryId));
       });
       const mapped = new Map((res.idMappings ?? []).map((m) => [m.clientObjectId, m.objectId]));
-      const chunkIds = chunk.map((_, i) => {
-        const posItemId = mapped.get(`#item${i}`);
-        const posVariationId = mapped.get(`#variation${i}`);
+      const chunkIds = chunk.map((item, i) => {
+        const posItemId = item.posItemId ?? mapped.get(`#item${i}`);
+        const posVariationId = item.posVariationId ?? mapped.get(`#variation${i}`);
         if (!posItemId || !posVariationId) throw new Error('Square did not return ids for every item in a batch');
         return { posItemId, posVariationId };
       });
       ids.push(...chunkIds);
-      await this.addStartingStock(chunkIds.map((x) => x.posVariationId), locationId, initialQuantity);
+      // Stock for the ones just created; a linked one already has its count.
+      await this.addStartingStock(chunkIds.filter((_, i) => !chunk[i].posItemId).map((x) => x.posVariationId), locationId, initialQuantity);
     }
 
     return { ids, resolvedCategoryId: categoryId };
@@ -146,6 +159,61 @@ class SquarePosAdapter implements IPosAdapter {
   }
 
   /**
+   * The active item in the category carrying each SKU, for linking instead
+   * of creating (Plan 47). Archived ones never count: they can't be sold
+   * through a link, and Square still scans them, so they're Catalog check's to
+   * delete. Two active ones for a SKU link the same one every time (the
+   * lower id), and are logged: Catalog check reports the other.
+   */
+  private async activeBySku(categoryId: string, skus: string[]): Promise<Map<string, { itemId: string; variationId: string; version?: bigint }>> {
+    const wanted = new Set(skus.filter(Boolean));
+    const out = new Map<string, { itemId: string; variationId: string; version?: bigint }>();
+    if (!categoryId || wanted.size === 0) return out;
+    const list = [...wanted];
+    for (let at = 0; at < list.length; at += 100) {
+      let cursor: string | undefined;
+      do {
+        const res = await withRateLimitRetry(() => this.client.catalog.search({
+          objectTypes: ['ITEM_VARIATION'],
+          includeRelatedObjects: true,
+          limit: 1000,
+          cursor,
+          query: { setQuery: { attributeName: 'sku', attributeValues: list.slice(at, at + 100) } },
+        }));
+        const parents = new Map((res.relatedObjects ?? []).filter((o) => o.type === 'ITEM' && o.id).map((o) => [o.id!, o]));
+        for (const v of res.objects ?? []) {
+          const vd = v.type === 'ITEM_VARIATION' ? (v as Square.CatalogObject.ItemVariation).itemVariationData : null;
+          const sku = vd?.sku;
+          if (!v.id || v.isDeleted || !sku || !wanted.has(sku) || !vd?.itemId) continue;
+          const parent = parents.get(vd.itemId);
+          const data = asItem(parent)?.itemData;
+          if (!parent || parent.isDeleted || !data || data.isArchived || !inCategory(parent, categoryId)) continue;
+          const candidate = { itemId: parent.id!, variationId: v.id, version: parent.version };
+          const seen = out.get(sku);
+          if (seen && seen.itemId !== candidate.itemId) {
+            console.warn('[Square] SKU on more than one active item; linking one, Catalog check reports the other:', sku);
+            if (candidate.itemId > seen.itemId) continue;
+          }
+          out.set(sku, candidate);
+        }
+        cursor = res.cursor;
+      } while (cursor);
+    }
+    return out;
+  }
+
+  /** These items, with any that have no stored id linked to the one Square already has under its SKU. */
+  private async adoptBySku(items: PosItemSync[], categoryId: string): Promise<PosItemSync[]> {
+    const missing = items.filter((i) => !i.posItemId).map((i) => i.sku);
+    if (missing.length === 0) return items;
+    const existing = await this.activeBySku(categoryId, missing);
+    return items.map((i) => {
+      const found = i.posItemId ? undefined : existing.get(i.sku);
+      return found ? { ...i, posItemId: found.itemId, posVariationId: found.variationId } : i;
+    });
+  }
+
+  /**
    * Variations by SKU, with their items, then only the items in the category.
    * 100 SKUs to a search; Square answers up to 1,000 objects a page.
    */
@@ -182,9 +250,12 @@ class SquarePosAdapter implements IPosAdapter {
    * once more at fresh versions. A batch that still fails is reported on its
    * items, and the other batches stand.
    */
-  async upsertItems(items: PosItemSync[], locationId: string, initialQuantity: number) {
-    const results: PosUpsertResult[] = new Array(items.length);
-    let categoryId = items[0]?.categoryId ?? '';
+  async upsertItems(input: PosItemSync[], locationId: string, initialQuantity: number) {
+    const results: PosUpsertResult[] = new Array(input.length);
+    let categoryId = input[0]?.categoryId ?? '';
+    // One with no stored id that Square already has under its SKU is linked
+    // and updated, not created again (Plan 47).
+    const items = await this.adoptBySku(input, categoryId);
     const categoryName = items[0]?.categoryName ?? '';
 
     for (let start = 0; start < items.length; start += 500) {
@@ -276,6 +347,15 @@ class SquarePosAdapter implements IPosAdapter {
       } else {
         console.warn('[Square] stored item no longer exists, recreating:', item.posItemId);
         item = { ...item, posItemId: undefined, posVariationId: undefined };
+      }
+    }
+    if (!item.posItemId) {
+      // Already in Square under its SKU: link and update it rather than
+      // create a second (Plan 47).
+      const found = (await this.activeBySku(item.categoryId, [item.sku])).get(item.sku);
+      if (found) {
+        item = { ...item, posItemId: found.itemId, posVariationId: found.variationId };
+        existingVersion = found.version;
       }
     }
 

@@ -1,4 +1,5 @@
 import { ItemService } from './item.service';
+import { claimRead, claimUpdate, isClaimCall } from './__fixtures__/claim-fake';
 
 /**
  * A file import answers once its rows are written, and Square follows in the
@@ -27,7 +28,9 @@ function setup(rows: Row[], opts: { failSkus?: string[]; squareThrows?: boolean 
     },
     swapItem: {
       findMany: async ({ where }: { where: { id: { in: string[] }; consignedAt?: unknown } }) =>
-        where.id.in.map((id) => byId.get(id)!).filter((r) => r && (where.consignedAt === undefined || r.consignedAt !== null)),
+        isClaimCall(where) ? claimRead(rows as never, where)
+          : where.id.in.map((id) => byId.get(id)!).filter((r) => r && (where.consignedAt === undefined || r.consignedAt !== null)),
+      updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => claimUpdate(rows as never, where, data),
       update: ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => ({ where, data }),
     },
     $transaction: async (ops: { where: { id: string }; data: Record<string, unknown> }[]) => {
