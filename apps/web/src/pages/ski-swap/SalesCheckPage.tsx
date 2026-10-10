@@ -315,13 +315,14 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
   const when = new Date(issue.soldAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   return (
-    <div className={`border border-gray-800 rounded-lg overflow-hidden bg-surface-50 transition-opacity ${busy ? 'opacity-60' : ''}`} aria-busy={busy}>
+    // Not overflow-hidden: the seller search's list hangs below the card.
+    <div className={`border border-gray-800 rounded-lg bg-surface-50 transition-opacity ${busy ? 'opacity-60' : ''}`} aria-busy={busy}>
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_1.75rem_minmax(0,1fr)]">
         <SidePanel side={squareSide(issue)} icon="■" />
         <div className="hidden md:flex items-center justify-center text-gray-600">→</div>
         <SidePanel side={patrolKitSide(issue)} icon="◆" className="border-t md:border-t-0 md:border-l border-gray-800" />
       </div>
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40 last:rounded-b-lg">
         <span className="text-xs text-gray-500 mr-auto">{when}</span>
         {err && <span className="text-xs text-red-400">{err}</span>}
         {canFix && issue.fee && (
