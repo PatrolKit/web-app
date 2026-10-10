@@ -712,9 +712,19 @@ export class ItemService {
     // A file import writes every row first and sends Square the lot after.
     if (!data.deferPos) await this.syncItemToPos(orgId, swap, updated);
 
-    if (data.quantity !== undefined && updated.squareVariationId && swap.locationId) {
+    // A changed quantity moves Square's stock by the change, so units already
+    // sold stay sold. The edit form sends the quantity with every save; set
+    // outright, it put a sold item back in stock (10/10, 75123), and the
+    // register could sell it again.
+    const change = data.quantity !== undefined ? data.quantity - existing.originalQuantity : 0;
+    if (change !== 0 && updated.squareVariationId && swap.locationId) {
       const pos = await this.posFactory.forOrg(orgId);
-      if (pos) await pos.setInventoryPhysicalCount(updated.squareVariationId, swap.locationId, data.quantity).catch(() => {});
+      const counts = pos ? await pos.getInventoryCounts([updated.squareVariationId], swap.locationId).catch(() => null) : null;
+      // Square unreadable: its stock is left alone rather than guessed at.
+      if (pos && counts) {
+        const now = counts.get(updated.squareVariationId) ?? 0;
+        await pos.setInventoryPhysicalCount(updated.squareVariationId, swap.locationId, Math.max(0, now + change)).catch(() => {});
+      }
     }
 
     /*
