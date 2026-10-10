@@ -322,7 +322,7 @@ describe('what open sales hold back in Catalog check', () => {
       { key: 'a', ticket: null, suggestion: { itemId: 'i', sku: '73338', name: 'x', priceCents: null, sellerName: null, sellerId: null },
         rungUpAs: { name: 'Swap Item 73338', sku: '73338', variationId: 'v', itemId: 'old-73338', category: '2025', archived: true } },
       { key: 'b', ticket: '59443', suggestion: null, rungUpAs: { name: 'Swap Item 59443', sku: '59443', variationId: 'v2', itemId: 'old-59443', category: '2025', archived: true } },
-      { key: 'c', ticket: null, suggestion: null, oversold: { itemId: 'it', sku: '87688', name: 'Elan', units: 2, quantity: 1, orders: [] }, rungUpAs: null },
+      { key: 'c', ticket: null, suggestion: null, oversold: { sku: '87688' }, rungUpAs: null },
       { key: 'd', ticket: null, suggestion: null, rungUpAs: { name: 'TShirt', sku: 'TSH-1938', variationId: 'v3', itemId: 'tee', category: 'Swag', archived: false } },
     ]);
     expect(heldBy(holds, '73338', [])).toBe(1);
@@ -447,6 +447,40 @@ describe('accepting a sale with Square’s price over the item’s', () => {
     const h = harness({ items: [item('86882', { priceCents: 6000 })], lines: [line('o1', 'old-86882', { collectedCents: 5400, unitPriceCents: 5400 })] });
     await h.service.credit('org', 'swap', { orderId: 'o1', lineUid: 'o1-u', itemId: 'it-86882', markSold: true }, 'staff');
     expect(h.patches).toEqual([]);
+  });
+});
+
+describe('an item rung up more times than it has units', () => {
+  it('is scanned twice in one sale when one order rang it up twice, or as quantity 2 (10/09: 73297, 73190)', () => {
+    const issues = classify(input({
+      items: [item('73297'), item('73190', { sellerName: 'Carrie Will', priceCents: 2000 })],
+      lines: [
+        line('WE', 'v-73297', { lineUid: 'a', collectedCents: 1000, unitPriceCents: 1000, paymentId: 'WErnX' }),
+        line('WE', 'v-73297', { lineUid: 'b', collectedCents: 2000, unitPriceCents: 2000, paymentId: 'WErnX' }),
+        line('iW', 'v-73190', { lineUid: 'c', quantity: 2, collectedCents: 4000, unitPriceCents: 2000, paymentId: 'iWVdX' }),
+      ],
+    }));
+    expect(issues.map((i) => [i.kind, i.key, i.oversold?.units, i.oversold?.sales.map((s) => [s.lineUid, s.quantity, s.collectedCents])])).toEqual([
+      ['scanned_twice', 'twice:WE:it-73297', 2, [['a', 1, 1000], ['b', 1, 2000]]],
+      ['scanned_twice', 'twice:iW:it-73190', 2, [['c', 2, 4000]]],
+    ]);
+    expect(issues[1].oversold).toMatchObject({ sku: '73190', sellerName: 'Carrie Will', priceCents: 2000, quantity: 1 });
+  });
+
+  it('is sold more than once only across different sales (10/09–10: 87025)', () => {
+    const issues = classify(input({
+      items: [item('87025')],
+      lines: [line('l5', 'v-87025', { lineUid: 'a' }), line('3A', 'v-87025', { lineUid: 'b' })],
+    }));
+    expect(issues.map((i) => [i.kind, i.key, i.oversold?.orders])).toEqual([['oversold', 'oversold:it-87025', ['l5', '3A']]]);
+  });
+
+  it('is both when one sale rang it up twice and another sold it again', () => {
+    const issues = classify(input({
+      items: [item('90830')],
+      lines: [line('o1', 'v-90830', { lineUid: 'a' }), line('o1', 'v-90830', { lineUid: 'b' }), line('o2', 'v-90830', { lineUid: 'c' })],
+    }));
+    expect(issues.map((i) => i.kind)).toEqual(['scanned_twice', 'oversold']);
   });
 });
 

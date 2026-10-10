@@ -93,8 +93,16 @@ export interface SalesCheckIssue {
   suggestion: { itemId: string; sku: string; name: string; priceCents: number | null; sellerName: string | null; sellerId: string | null } | null;
   /** unknown_ticket: the number no item of this swap has. */
   ticket: string | null;
-  /** oversold: the item, and every order line that counts it. */
-  oversold?: { itemId: string; sku: string; name: string; units: number; quantity: number; orders: string[] };
+  /**
+   * One of our items rung up more times than it has units: in one order
+   * (scanned_twice), or across orders (oversold). The item, and each sale
+   * line that counts it.
+   */
+  oversold?: {
+    itemId: string; sku: string; name: string; sellerName: string | null; priceCents: number | null;
+    units: number; quantity: number; orders: string[];
+    sales: { orderId: string; lineUid: string; paymentId: string | null; soldAt: string; quantity: number; collectedCents: number }[];
+  };
 }
 
 export interface ClassifyInput {
@@ -204,17 +212,38 @@ function oversold(input: ClassifyInput): SalesCheckIssue[] {
   const byVariation = new Map<string, PosSaleLine[]>();
   for (const l of attributed) if (ourVariations.has(l.variationId) && netUnits(l) > 0) byVariation.set(l.variationId, [...(byVariation.get(l.variationId) ?? []), l]);
   const out: SalesCheckIssue[] = [];
+  const units = (lines: PosSaleLine[]) => lines.reduce((n, l) => n + netUnits(l), 0);
+  const issue = (kind: 'scanned_twice' | 'oversold', key: string, item: CheckItem, lines: PosSaleLine[]): SalesCheckIssue => {
+    const last = lines[lines.length - 1];
+    return {
+      key, kind, orderId: last.orderId, lineUid: last.lineUid ?? '', soldAt: last.soldAt.toISOString(),
+      quantity: units(lines), refundedQuantity: 0, collectedCents: lines.reduce((n, l) => n + l.collectedCents, 0), unitPriceCents: null,
+      paymentId: last.paymentId ?? null, rungUpAs: null, suggestion: null, ticket: null,
+      oversold: {
+        itemId: item.id, sku: item.sku, name: item.name, sellerName: item.sellerName, priceCents: item.priceCents,
+        units: units(lines), quantity: item.originalQuantity, orders: [...new Set(lines.map((l) => l.orderId))],
+        sales: lines.map((l) => ({
+          orderId: l.orderId, lineUid: l.lineUid ?? '', paymentId: l.paymentId ?? null, soldAt: l.soldAt.toISOString(),
+          quantity: netUnits(l), collectedCents: l.collectedCents,
+        })),
+      },
+    };
+  };
   for (const item of input.items) {
     const lines = item.squareVariationId ? byVariation.get(item.squareVariationId) ?? [] : [];
-    const units = lines.reduce((n, l) => n + netUnits(l), 0);
-    if (units <= item.originalQuantity) continue;
-    const last = lines[lines.length - 1];
-    out.push({
-      key: `oversold:${item.id}`, kind: 'oversold', orderId: last.orderId, lineUid: last.lineUid ?? '', soldAt: last.soldAt.toISOString(),
-      quantity: units, refundedQuantity: 0, collectedCents: lines.reduce((n, l) => n + l.collectedCents, 0), unitPriceCents: null,
-      paymentId: last.paymentId ?? null, rungUpAs: null, suggestion: null, ticket: null,
-      oversold: { itemId: item.id, sku: item.sku, name: item.name, units, quantity: item.originalQuantity, orders: [...new Set(lines.map((l) => l.orderId))] },
-    });
+    if (units(lines) <= item.originalQuantity) continue;
+    // An order that rang the ticket up more times than it has units: twice
+    // in one sale (or quantity 2), one item charged for twice.
+    const byOrder = new Map<string, PosSaleLine[]>();
+    for (const l of lines) byOrder.set(l.orderId, [...(byOrder.get(l.orderId) ?? []), l]);
+    let extra = 0;
+    for (const [orderId, inOrder] of byOrder) {
+      if (units(inOrder) <= item.originalQuantity) continue;
+      out.push(issue('scanned_twice', `twice:${orderId}:${item.id}`, item, inOrder));
+      extra += units(inOrder) - item.originalQuantity;
+    }
+    // What's left over, across different sales.
+    if (units(lines) - extra > item.originalQuantity) out.push(issue('oversold', `oversold:${item.id}`, item, lines));
   }
   return out;
 }
@@ -230,7 +259,7 @@ export interface SalesHolds {
   byItem: Map<string, Set<string>>;
 }
 
-type HoldingIssue = Pick<SalesCheckIssue, 'key' | 'suggestion' | 'ticket' | 'oversold' | 'rungUpAs'>;
+type HoldingIssue = Pick<SalesCheckIssue, 'key' | 'suggestion' | 'ticket' | 'rungUpAs'> & { oversold?: { sku: string } };
 
 export function salesHolds(issues: HoldingIssue[]): SalesHolds {
   const holds: SalesHolds = { byTicket: new Map(), byItem: new Map() };

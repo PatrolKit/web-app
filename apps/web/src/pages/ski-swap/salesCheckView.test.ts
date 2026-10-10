@@ -169,3 +169,38 @@ describe('the receipt number', () => {
   });
 });
 
+describe('a ticket rung up more times than it has units', () => {
+  const repeat = (kind: 'scanned_twice' | 'oversold', sales: { orderId: string; receipt: string; soldAt: string; quantity: number; collectedCents: number }[]) => issue({
+    kind, key: `${kind}:x`,
+    oversold: {
+      itemId: 'it', sku: '73297', name: 'Item #73297', sellerName: 'Karen Beckwith', priceCents: null, units: 2, quantity: 1,
+      orders: [...new Set(sales.map((s) => s.orderId))], sales: sales.map((s) => ({ ...s, link: `https://sq/${s.orderId}` })),
+    },
+  });
+
+  it('lists each line of the one sale, its receipt, and one refund link', () => {
+    const side = squareSide(repeat('scanned_twice', [
+      { orderId: 'WE', receipt: 'WErn', soldAt: '2026-10-09T19:19:00Z', quantity: 1, collectedCents: 1000 },
+      { orderId: 'WE', receipt: 'WErn', soldAt: '2026-10-09T19:19:00Z', quantity: 1, collectedCents: 2000 },
+    ]));
+    expect(side.title).toBe('Rung up in one sale');
+    expect(side.fields.map((f) => [f.label, f.value]).filter(([l]) => l !== 'When')).toEqual([['Receipt', '#WErn'], ['Line 1', '$10.00'], ['Line 2', '$20.00']]);
+    expect(side.links).toEqual([{ label: 'Refund in Square', href: 'https://sq/WE' }]);
+  });
+
+  it('lists each sale across sales by receipt, with a link to each', () => {
+    const side = squareSide(repeat('oversold', [
+      { orderId: 'l5', receipt: '8pWs', soldAt: '2026-10-09T18:17:00Z', quantity: 1, collectedCents: 8900 },
+      { orderId: '3A', receipt: 'mYLC', soldAt: '2026-10-10T19:03:00Z', quantity: 1, collectedCents: 8900 },
+    ]));
+    expect(side.title).toBe('Sold in different sales');
+    expect(side.fields.map((f) => f.label)).toEqual(['#8pWs', '#mYLC']);
+    expect(side.links.map((l) => l.label)).toEqual(['Sale #8pWs', 'Sale #mYLC']);
+  });
+
+  it('shows the item with its seller, price and quantity checked in', () => {
+    const side = patrolKitSide(repeat('scanned_twice', [{ orderId: 'WE', receipt: 'WErn', soldAt: '2026-10-09T19:19:00Z', quantity: 2, collectedCents: 4000 }]));
+    expect(side.fields.map((f) => [f.label, f.value])).toEqual([['SKU', '73297'], ['Name', 'Item #73297'], ['Seller', 'Karen Beckwith'], ['Price', 'unpriced'], ['Checked in', '1']]);
+  });
+});
+

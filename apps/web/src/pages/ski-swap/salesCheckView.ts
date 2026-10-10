@@ -29,7 +29,7 @@ const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
   },
   {
     kind: 'scanned_twice', title: 'Scanned twice in one sale',
-    explain: 'The ticket was rung up twice in the same sale: once on this year’s item, which is already counted as sold, and again on another copy. If the customer paid twice, refund this line in Square; it leaves this list once Square shows the refund. If it was really a different item, pick that one.',
+    explain: 'The ticket was rung up more than once in the same sale: twice, as a quantity of 2, or again on another copy. Each ticket is one item, so either the customer paid for it twice (refund the extra in Square; it leaves this list once Square shows the refund) or another item was rung up under this ticket (check the receipt and the stubs, and note which ticket it was).',
   },
   {
     kind: 'double_fee', title: 'Charged both fees',
@@ -41,7 +41,7 @@ const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
   },
   {
     kind: 'oversold', title: 'Counted as sold more than once',
-    explain: 'An item is counted as sold more times than it has. If an accepted suggestion caused it, undo that below. Otherwise open the sale in Square: the ticket may have been scanned twice (refund the extra), or scanned in place of another ticket.',
+    explain: 'The ticket sold in two different sales, but each ticket is one item: one sale was really another ticket, or the first was returned without a refund in Square. Check the receipts and stubs, and note what you find. If an accepted suggestion caused it, undo that below.',
   },
   {
     kind: 'unknown_ticket', title: 'A ticket PatrolKit doesn’t have',
@@ -142,17 +142,7 @@ export function squareSide(i: SalesCheckIssue): Side {
   if (i.links.sale) links.push({ label: 'Sale', href: i.links.sale });
   if (i.links.item) links.push({ label: 'Item', href: i.links.item });
 
-  if (i.kind === 'oversold' && i.oversold) {
-    return {
-      title: 'Sold in Square',
-      fields: [
-        { label: 'Sold', value: `${i.oversold.units} times`, warn: true },
-        { label: 'Orders', value: String(i.oversold.orders.length) },
-        { label: 'Last for', value: money(i.collectedCents) },
-      ],
-      links: i.links.sale ? [{ label: 'Last sale', href: i.links.sale }] : [],
-    };
-  }
+  if (i.oversold) return repeatSales(i.kind, i.oversold);
 
   const r = i.rungUpAs;
   const tag = [r?.archived ? 'archived' : null, r?.category].filter(Boolean).join(' · ');
@@ -181,13 +171,15 @@ export function patrolKitSide(i: SalesCheckIssue): Side {
       links: i.links.sale ? [{ label: 'Refund in Square', href: i.links.sale }] : [],
     };
   }
-  if (i.kind === 'oversold' && i.oversold) {
+  if (i.oversold) {
     return {
       title: 'PatrolKit item',
       fields: [
         { label: 'SKU', value: i.oversold.sku, mono: true },
         { label: 'Name', value: i.oversold.name },
-        { label: 'Quantity', value: String(i.oversold.quantity) },
+        { label: 'Seller', value: i.oversold.sellerName ?? '—' },
+        { label: 'Price', value: i.oversold.priceCents === null ? 'unpriced' : money(i.oversold.priceCents) },
+        { label: 'Checked in', value: String(i.oversold.quantity) },
       ],
       links: [itemLink(i.oversold.sku)],
     };
@@ -276,5 +268,32 @@ export function missedFeesText(m: { orders: number; cardCents: number; feeCents:
   if (!m || m.orders === 0) return null;
   const about = m.feeCents !== null && m.percentage ? ` (about ${money(m.feeCents)} at ${m.percentage}%)` : '';
   return `${m.orders.toLocaleString('en-US')} card sale${m.orders === 1 ? ' was' : 's were'} charged no fee${about}. Counted here, not flagged.`;
+}
+
+type Repeat = NonNullable<SalesCheckIssue['oversold']>;
+
+/**
+ * A ticket rung up more times than it has units: each sale that counts it,
+ * with its receipt, as Square has them, and a link to refund each.
+ */
+function repeatSales(kind: SalesCheckIssue['kind'], o: Repeat): Side {
+  const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const one = kind === 'scanned_twice';
+  const fields = o.sales.map((s, n) => ({
+    label: one ? `Line ${n + 1}` : s.receipt ? `#${s.receipt}` : `Sale ${n + 1}`,
+    value: `${money(s.collectedCents)}${s.quantity > 1 ? ` (×${s.quantity})` : ''}${one ? '' : ` · ${when(s.soldAt)}`}`,
+    warn: true,
+  }));
+  const first = o.sales[0];
+  const head = one && first ? [{ label: 'Receipt', value: first.receipt ? `#${first.receipt}` : '—', mono: true }, { label: 'When', value: when(first.soldAt) }] : [];
+  // One link per sale (one, for a sale that rang it up twice).
+  const seen = new Set<string>();
+  const links: SideLink[] = [];
+  for (const s of o.sales) {
+    if (!s.link || seen.has(s.orderId)) continue;
+    seen.add(s.orderId);
+    links.push({ label: one ? 'Refund in Square' : `Sale ${s.receipt ? `#${s.receipt}` : links.length + 1}`, href: s.link });
+  }
+  return { title: one ? 'Rung up in one sale' : 'Sold in different sales', fields: [...head, ...fields], links };
 }
 

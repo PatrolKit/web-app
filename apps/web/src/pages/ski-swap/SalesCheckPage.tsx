@@ -354,7 +354,7 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
             Mark refunded…
           </button>
         )}
-        {canFix && issue.kind !== 'oversold' && !issue.fee && (
+        {canFix && !issue.oversold && !issue.fee && (
           <>
             <button type="button" className={btn} disabled={busy}
               onClick={() => { const note = window.prompt('Not a swap sale. A note, if you like (e.g. “swag”):', ''); if (note !== null) notSwap.mutate(note.trim() || undefined); }}>

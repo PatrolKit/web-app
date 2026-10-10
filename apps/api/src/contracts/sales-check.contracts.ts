@@ -70,7 +70,15 @@ export interface SalesCheckIssue {
   rungUpAs: SalesCheckRungUpAs | null;
   suggestion: { itemId: string; sku: string; name: string; priceCents: number | null; sellerName: string | null; sellerId: string | null } | null;
   ticket: string | null;
-  oversold?: { itemId: string; sku: string; name: string; units: number; quantity: number; orders: string[] };
+  /**
+   * One of our items rung up more times than it has units: in one sale
+   * (scanned_twice) or across sales (oversold), with each sale that counts it.
+   */
+  oversold?: {
+    itemId: string; sku: string; name: string; sellerName: string | null; priceCents: number | null;
+    units: number; quantity: number; orders: string[];
+    sales: { orderId: string; receipt: string | null; soldAt: string; quantity: number; collectedCents: number; link: string | null }[];
+  };
   /** The item's categories, for "Never count …" (other_item). */
   categoryIds: string[];
   links: { sale: string | null; item: string | null };

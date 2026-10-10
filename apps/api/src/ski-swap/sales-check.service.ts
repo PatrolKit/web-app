@@ -59,7 +59,13 @@ export class SalesCheckService {
     const issues: SalesCheckIssue[] = found.map((i) => ({
       key: i.key, kind: i.kind, orderId: i.orderId, lineUid: i.lineUid, soldAt: i.soldAt,
       quantity: i.quantity, refundedQuantity: i.refundedQuantity, collectedCents: i.collectedCents, unitPriceCents: i.unitPriceCents,
-      rungUpAs: i.rungUpAs, suggestion: i.suggestion, ticket: i.ticket, ...(i.oversold ? { oversold: i.oversold } : {}),
+      rungUpAs: i.rungUpAs, suggestion: i.suggestion, ticket: i.ticket,
+      ...(i.oversold ? {
+        oversold: {
+          ...i.oversold,
+          sales: i.oversold.sales.map(({ paymentId, lineUid: _l, ...s }) => ({ ...s, receipt: receiptOf(paymentId), link: squareSaleUrl(env, s.orderId, paymentId) })),
+        },
+      } : {}),
       categoryIds: i.rungUpAs ? described.get(i.rungUpAs.variationId)?.categoryIds ?? [] : [],
       links: { sale: squareSaleUrl(env, i.orderId, i.paymentId), item: squareItemUrl(env, i.rungUpAs?.itemId ?? null) },
       receipt: receiptOf(i.paymentId),
