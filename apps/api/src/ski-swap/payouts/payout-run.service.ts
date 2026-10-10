@@ -10,7 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PosAdapterFactory } from '../pos/pos.adapter';
 import { sellerDisplayName, SELLER_NAME_INCLUDE } from '../seller.service';
 import { ItemService } from '../item.service';
-import { buildRun, discountsOf, type BuiltRun, type RunItem, type RunSeller } from './build-run';
+import { buildRun, discountsOf, type BuiltRun, type HeldSale, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
 import { PayPalClient, PayPalError, type PayoutItemRequest } from './paypal.client';
 import { formatCents } from './money';
@@ -105,7 +105,7 @@ export class PayoutRunService {
       where: { swapId },
       select: {
         id: true, name: true, sku: true, priceCents: true,
-        squareVariationId: true, donateProceeds: true, sellerId: true,
+        squareVariationId: true, donateProceeds: true, sellerId: true, originalQuantity: true,
       },
     });
     const items: RunItem[] = itemRows;
@@ -181,6 +181,10 @@ export class PayoutRunService {
           // org took that nobody is being paid for, and the only response
           // guaranteed to mean nobody looks is silence.
           unmatchedSales: built.unmatched.length ? (built.unmatched as never) : undefined,
+          // Plan 48: a ticket paid at most once; the rest waits for Sales check.
+          heldSales: built.held.length
+            ? (built.held.map((h) => ({ ...h, sellerName: sellers.find((s) => s.sellerId === h.sellerId)?.name ?? null })) as never)
+            : undefined,
         },
       });
 
@@ -237,6 +241,7 @@ export class PayoutRunService {
     await this.audit(orgId, actorId, 'payout_run.created', runId, {
       lines: built.lines.length,
       unmatched: built.unmatched.length,
+      held: built.held.map((h) => ({ sku: h.sku, units: h.units, reason: h.reason })),
       commissionBasisPoints,
     });
 
@@ -293,6 +298,7 @@ export class PayoutRunService {
       commissionBasisPoints: run.commissionBasisPoints,
       sendAttempt: run.sendAttempt,
       unmatchedSales: (run.unmatchedSales ?? []) as BuiltRun['unmatched'],
+      heldSales: (run.heldSales ?? []) as unknown as (HeldSale & { sellerName: string | null })[],
       createdAt: run.createdAt.toISOString(),
       closedAt: run.closedAt?.toISOString() ?? null,
       totals: {

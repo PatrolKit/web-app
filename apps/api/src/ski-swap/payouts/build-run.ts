@@ -21,6 +21,11 @@ export interface RunItem {
   /** This item's proceeds were given to the patrol. Sold, owed to nobody. */
   donateProceeds: boolean;
   sellerId: string | null;
+  /**
+   * Units checked in: the most a run pays for (Plan 48). Every ticket is one
+   * item, so a ticket rung up twice is paid once and the rest is held.
+   */
+  originalQuantity: number;
 }
 
 /** A seller, and where their money is meant to go. */
@@ -91,6 +96,27 @@ export interface BuiltRun {
    * price them. Square includes the price on catalog sales, so this is a guard.
    */
   unpricedSales: { itemId: string; sku: string; orderId: string }[];
+  /**
+   * Sales not paid because the ticket was rung up more times than it has
+   * units (Plan 48): a double charge, or another item rung up under it. Held
+   * until it's settled in Sales check, then the run is built again. A priced
+   * ticket is paid once and the rest held; an unpriced one rung up at
+   * different prices is held whole, since which price is its isn't known.
+   */
+  held: HeldSale[];
+}
+
+export interface HeldSale {
+  itemId: string;
+  sku: string;
+  name: string;
+  sellerId: string;
+  /** Units held, and what each was rung up at. */
+  units: number;
+  unitCents: number[];
+  orders: string[];
+  /** one_sale: rung up more than once in one sale; different_sales; different_prices: an unpriced ticket typed at different prices. */
+  reason: 'one_sale' | 'different_sales' | 'different_prices';
 }
 
 export interface BuildOptions {
@@ -119,7 +145,10 @@ export function buildRun(
   const owedBySeller = new Map<string, BuiltLineItem[]>();
   const unmatched: BuiltRun['unmatched'] = [];
   const unpricedSales: BuiltRun['unpricedSales'] = [];
+  const held: HeldSale[] = [];
   const typedPrices = new Map<string, Set<number>>();
+  // Each item's sales, owed on once they're all seen (Plan 48: at most its units).
+  const byItem = new Map<string, { item: RunItem; sales: { sale: PosSaleLine; soldQty: number; unitCents: number }[] }>();
 
   for (const sale of sales) {
     const item = byVariation.get(sale.variationId);
@@ -146,25 +175,59 @@ export function buildRun(
       unpricedSales.push({ itemId: item.id, sku: item.sku, orderId: sale.orderId });
       continue;
     }
-    if (item.priceCents === null) {
-      const seen = typedPrices.get(item.id) ?? new Set<number>();
-      seen.add(unitCents);
-      typedPrices.set(item.id, seen);
+    const entry = byItem.get(item.id) ?? { item, sales: [] };
+    entry.sales.push({ sale, soldQty, unitCents });
+    byItem.set(item.id, entry);
+  }
+
+  for (const { item, sales: sold } of byItem.values()) {
+    // Never more units than were checked in (Plan 48). The earliest sales
+    // are the ones paid; a line is split when only part of it fits.
+    const cap = Math.max(0, item.originalQuantity);
+    const total = sold.reduce((n, s) => n + s.soldQty, 0);
+    let paying = sold.map((s) => ({ ...s, payQty: s.soldQty }));
+    if (total > cap) {
+      const typed = new Set(sold.map((s) => s.unitCents));
+      const orders = [...new Set(sold.map((s) => s.sale.orderId))];
+      const inOrder = [...sold].sort((a, b) => a.sale.soldAt.getTime() - b.sale.soldAt.getTime());
+      if (item.priceCents === null && typed.size > 1) {
+        held.push({ itemId: item.id, sku: item.sku, name: item.name, sellerId: item.sellerId!, units: total, unitCents: inOrder.flatMap((s) => Array(s.soldQty).fill(s.unitCents)), orders, reason: 'different_prices' });
+        paying = [];
+      } else {
+        let left = cap;
+        const heldCents: number[] = [];
+        paying = inOrder.map((s) => {
+          const payQty = Math.min(left, s.soldQty);
+          left -= payQty;
+          for (let n = payQty; n < s.soldQty; n++) heldCents.push(s.unitCents);
+          return { ...s, payQty };
+        });
+        held.push({ itemId: item.id, sku: item.sku, name: item.name, sellerId: item.sellerId!, units: total - cap, unitCents: heldCents, orders, reason: orders.length === 1 ? 'one_sale' : 'different_sales' });
+      }
     }
 
-    const list = owedBySeller.get(item.sellerId) ?? [];
-    list.push({
-      itemId: item.id,
-      name: item.name,
-      sku: item.sku,
-      priceCents: unitCents,
-      quantity: soldQty,
-      collectedCents: sale.collectedCents,
-      squareOrderId: sale.orderId,
-      soldAt: sale.soldAt,
-      refundedQty: sale.refundedQuantity,
-    });
-    owedBySeller.set(item.sellerId, list);
+    for (const { sale, soldQty, unitCents, payQty } of paying) {
+      if (payQty <= 0) continue;
+      if (item.priceCents === null) {
+        const seen = typedPrices.get(item.id) ?? new Set<number>();
+        seen.add(unitCents);
+        typedPrices.set(item.id, seen);
+      }
+      const list = owedBySeller.get(item.sellerId!) ?? [];
+      list.push({
+        itemId: item.id,
+        name: item.name,
+        sku: item.sku,
+        priceCents: unitCents,
+        quantity: payQty,
+        // For the org's reporting only: the paid share of what the line took.
+        collectedCents: payQty === soldQty ? sale.collectedCents : Math.round(sale.collectedCents * (payQty / soldQty)),
+        squareOrderId: sale.orderId,
+        soldAt: sale.soldAt,
+        refundedQty: sale.refundedQuantity,
+      });
+      owedBySeller.set(item.sellerId!, list);
+    }
   }
 
   const donated = new Set(items.filter((i) => i.donateProceeds).map((i) => i.id));
@@ -217,7 +280,7 @@ export function buildRun(
   const pricesFromRegister = [...typedPrices]
     .filter(([, prices]) => prices.size === 1)
     .map(([itemId, prices]) => ({ itemId, priceCents: [...prices][0] }));
-  return { lines, unmatched, pricesFromRegister, unpricedSales };
+  return { lines, unmatched, pricesFromRegister, unpricedSales, held };
 }
 
 /**

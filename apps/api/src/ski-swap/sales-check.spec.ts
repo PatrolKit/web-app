@@ -121,7 +121,7 @@ describe('every reader sees what was decided (D5)', () => {
 
 describe('payouts count a credited sale (D5)', () => {
   it('pays the seller at the typed price for an unpriced ticket, and drops a not-swap line from unmatched', () => {
-    const items = [{ id: 'it-73338', name: 'Item #73338', sku: '73338', priceCents: null, squareVariationId: 'v-73338', donateProceeds: false, sellerId: 'karen' }];
+    const items = [{ id: 'it-73338', name: 'Item #73338', sku: '73338', priceCents: null, squareVariationId: 'v-73338', donateProceeds: false, sellerId: 'karen', originalQuantity: 1 }];
     const sellers = [{ sellerId: 'karen', name: 'Karen Beckwith', method: 'CHECK' as const, target: null, handle: null, handleScanned: false, verifiedEmail: null, verifiedPhone: null }];
     const sales = applyDecisions(
       [line('o1', 'old-73338', { unitPriceCents: 4000, collectedCents: 4000 }), line('t', 'tee', { collectedCents: 2000 }), line('x', 'mystery', { collectedCents: 700 })],

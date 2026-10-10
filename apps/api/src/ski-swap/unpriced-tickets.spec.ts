@@ -100,7 +100,7 @@ describe('an unpriced ticket in Square', () => {
 const SOLD_AT = new Date('2026-10-18T12:00:00Z');
 const ticket = (over: Partial<RunItem> = {}): RunItem => ({
   id: 'i1', name: 'Skis', sku: '67169', priceCents: null,
-  squareVariationId: 'v1', donateProceeds: false, sellerId: 's1', ...over,
+  squareVariationId: 'v1', donateProceeds: false, sellerId: 's1', originalQuantity: 1, ...over,
 });
 const seller: RunSeller = {
   sellerId: 's1', name: 'Dana Reyes', method: 'CHECK', target: null,
@@ -129,7 +129,7 @@ describe('paying for a ticket sold before it was priced', () => {
 
   it('owes each sale its own typed price, and records none when they differ', () => {
     const run = buildRun(
-      [ticket()], [seller],
+      [ticket({ originalQuantity: 2 })], [seller],
       [sale({ orderId: 'o1', unitPriceCents: 4000 }), sale({ orderId: 'o2', unitPriceCents: 3000, collectedCents: 3000 })],
       opts,
     );

@@ -6,7 +6,7 @@ const SOLD_AT = new Date('2026-09-18T12:00:00Z');
 
 const item = (over: Partial<RunItem> = {}): RunItem => ({
   id: 'i1', name: 'Skis', sku: 'SW-A-0001', priceCents: 10_000,
-  squareVariationId: 'v1', donateProceeds: false, sellerId: 's1', ...over,
+  squareVariationId: 'v1', donateProceeds: false, sellerId: 's1', originalQuantity: 1, ...over,
 });
 
 const seller = (over: Partial<RunSeller> = {}): RunSeller => ({
@@ -42,7 +42,7 @@ describe('buildRun', () => {
 
   it('does not owe for a unit that came back', () => {
     const { lines } = buildRun(
-      [item()], [seller()], [sale({ quantity: 3, refundedQuantity: 1, collectedCents: 30_000 })], opts,
+      [item({ originalQuantity: 3 })], [seller()], [sale({ quantity: 3, refundedQuantity: 1, collectedCents: 30_000 })], opts,
     );
     expect(lines[0].grossCents).toBe(20_000);
     expect(lines[0].items[0].quantity).toBe(2);
@@ -181,3 +181,52 @@ describe('discountsOf', () => {
     expect(discounts.map((d) => d.gapCents)).toEqual([30_000, 1_000]);
   });
 });
+
+describe('a ticket rung up more times than it has units (Plan 48)', () => {
+  it('pays a priced ticket once, from the earliest sale, and holds the rest', () => {
+    const run = buildRun(
+      [item({ priceCents: 8900, sku: '87025' })], [seller()],
+      [
+        sale({ orderId: 'later', soldAt: new Date('2026-10-10T19:03:00Z'), collectedCents: 8900, unitPriceCents: 8900 }),
+        sale({ orderId: 'first', soldAt: new Date('2026-10-09T18:17:00Z'), collectedCents: 8900, unitPriceCents: 8900 }),
+      ],
+      opts,
+    );
+    expect(run.lines[0].grossCents).toBe(8900);
+    expect(run.lines[0].items.map((i) => [i.squareOrderId, i.quantity])).toEqual([['first', 1]]);
+    expect(run.held).toEqual([{ itemId: 'i1', sku: '87025', name: 'Skis', sellerId: 's1', units: 1, unitCents: [8900], orders: ['later', 'first'], reason: 'different_sales' }]);
+  });
+
+  it('pays one unit of a line rung up as quantity 2, and holds the other', () => {
+    const run = buildRun([item({ priceCents: 1900 })], [seller()], [sale({ quantity: 2, collectedCents: 3800, unitPriceCents: 1900 })], opts);
+    expect(run.lines[0].items.map((i) => [i.quantity, i.collectedCents])).toEqual([[1, 1900]]);
+    expect(run.held).toEqual([expect.objectContaining({ units: 1, unitCents: [1900], reason: 'one_sale' })]);
+  });
+
+  it('holds an unpriced ticket whole when it was typed at different prices, and records no price from the register', () => {
+    const run = buildRun(
+      [item({ priceCents: null, sku: '73297' })], [seller()],
+      [sale({ orderId: 'WE', unitPriceCents: 1000, collectedCents: 1000 }), sale({ orderId: 'WE', unitPriceCents: 2000, collectedCents: 2000 })],
+      opts,
+    );
+    expect(run.lines).toEqual([]);
+    expect(run.held).toEqual([expect.objectContaining({ sku: '73297', units: 2, unitCents: [1000, 2000], reason: 'different_prices' })]);
+    expect(run.pricesFromRegister).toEqual([]);
+  });
+
+  it('pays an unpriced ticket once when it was typed at one price, and keeps that price', () => {
+    const run = buildRun(
+      [item({ priceCents: null })], [seller()],
+      [sale({ orderId: 'g', unitPriceCents: 1500, collectedCents: 1500 }), sale({ orderId: 'g', unitPriceCents: 1500, collectedCents: 1500 })],
+      opts,
+    );
+    expect(run.lines[0].grossCents).toBe(1500);
+    expect(run.held).toEqual([expect.objectContaining({ units: 1, reason: 'one_sale' })]);
+    expect(run.pricesFromRegister).toEqual([{ itemId: 'i1', priceCents: 1500 }]);
+  });
+
+  it('holds nothing for a ticket sold once', () => {
+    expect(buildRun([item()], [seller()], [sale()], opts).held).toEqual([]);
+  });
+});
+

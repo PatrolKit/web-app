@@ -102,6 +102,7 @@ export default function PayoutRunPage() {
       {tab === 'payouts' && (
         <>
           <UnmatchedSales run={run} />
+          <HeldSales run={run} />
           <LinesTable run={run} isAdmin={isAdmin} onChanged={invalidate} />
         </>
       )}
@@ -317,6 +318,70 @@ function UnmatchedSales({ run }: { run: PayoutRun }) {
                 <td className="py-1.5 font-mono text-amber-100/90">{sale.orderId}</td>
                 <td className="py-1.5 font-mono text-amber-200/60">{sale.variationId}</td>
                 <td className="py-1.5 text-right text-amber-100">{usd(sale.collectedCents)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Sales this run holds back (Plan 48): a ticket is one item, so one rung up
+ * more than once is paid once, and the rest waits for Sales check. An
+ * unpriced ticket typed at different prices is held whole: which price was
+ * its isn't known.
+ */
+function HeldSales({ run }: { run: PayoutRun }) {
+  const [open, setOpen] = useState(false);
+  const held = run.heldSales ?? [];
+  if (!held.length) return null;
+  const total = held.reduce((sum, h) => sum + h.unitCents.reduce((a, b) => a + b, 0), 0);
+  const why = (h: (typeof held)[number]) =>
+    h.reason === 'different_prices' ? 'Unpriced, rung up at different prices: none paid, since which is this item isn’t known'
+      : h.reason === 'one_sale' ? 'Rung up more than once in one sale: paid once'
+        : 'Sold in different sales: paid once, for the earliest';
+
+  return (
+    <div className="rounded-lg border border-amber-800/50 bg-amber-500/5 p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <span className="text-amber-400 leading-none">⏸</span>
+        <div className="flex-1 text-sm text-amber-100">
+          <p>
+            {held.length} {held.length === 1 ? 'ticket was' : 'tickets were'} rung up more times than {held.length === 1 ? 'it has' : 'they have'} units,
+            so <strong>{usd(total)}</strong> isn’t paid in this run.
+          </p>
+          <p className="text-amber-200/70 text-xs mt-1">
+            Each ticket is one item: the extra is a double charge to refund, or another item rung up under the ticket.{' '}
+            <Link to="/dashboard/ski-swap/reports" className="text-amber-300 underline hover:text-amber-200">
+              Settle them in Reports › Sales check
+            </Link>
+            , then close this run and build it again.
+          </p>
+        </div>
+        <button onClick={() => setOpen((v) => !v)} className="text-xs text-amber-300 hover:text-amber-200 shrink-0">
+          {open ? 'Hide' : 'Show tickets'}
+        </button>
+      </div>
+
+      {open && (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-amber-200/60 text-left">
+              <th className="pb-1.5 font-normal">Ticket</th>
+              <th className="pb-1.5 font-normal">Seller</th>
+              <th className="pb-1.5 font-normal">Why</th>
+              <th className="pb-1.5 font-normal text-right">Held</th>
+            </tr>
+          </thead>
+          <tbody>
+            {held.map((h) => (
+              <tr key={h.itemId} className="border-t border-amber-800/30 align-top">
+                <td className="py-1.5 pr-2"><span className="font-mono text-amber-100/90">{h.sku}</span> <span className="text-amber-200/60">{h.name}</span></td>
+                <td className="py-1.5 pr-2 text-amber-100/90">{h.sellerName ?? '—'}</td>
+                <td className="py-1.5 pr-2 text-amber-200/70">{why(h)}</td>
+                <td className="py-1.5 text-right text-amber-100 whitespace-nowrap">{h.unitCents.map(usd).join(' + ')}</td>
               </tr>
             ))}
           </tbody>

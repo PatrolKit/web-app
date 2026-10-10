@@ -826,7 +826,25 @@ export interface PayoutRun {
    * entry, a mis-scan, or another swap's stock at the same location.
    */
   unmatchedSales: { variationId: string; orderId: string; collectedCents: number }[];
+  /**
+   * Sales not paid because their ticket was rung up more times than it has
+   * units (Plan 48), waiting for Sales check. Absent on runs built before.
+   */
+  heldSales?: PayoutHeldSale[];
   lines: PayoutLine[];
+}
+
+export interface PayoutHeldSale {
+  itemId: string;
+  sku: string;
+  name: string;
+  sellerId: string;
+  sellerName: string | null;
+  units: number;
+  /** What each held unit was rung up at. */
+  unitCents: number[];
+  orders: string[];
+  reason: 'one_sale' | 'different_sales' | 'different_prices';
 }
 
 export interface PayoutRunSummary {

@@ -1439,6 +1439,12 @@ model PayoutRun {
   /// orders and re-deriving it would need Square again.
   unmatchedSales Json?
 
+  /// Sales not paid because their ticket was rung up more times than it has
+  /// units (Plan 48): a double charge, or another item rung up under it. Held
+  /// until it's settled in Sales check, then the run is built again. Frozen
+  /// with the run, as `unmatchedSales` is.
+  heldSales Json?
+
   createdAt DateTime  @default(now())
   closedAt  DateTime?
   closedBy  String?
