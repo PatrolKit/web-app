@@ -808,10 +808,26 @@ export default function SwapItemsPanel({
                     )}
                     {/* Decided per item, not per seller (Plan 31): a seller on
                         issued tickets may also have items with generated SKUs.
-                        An item on a ticket has its tag on the goods already,
-                        out of a box, so there is nothing a printer could
-                        produce; every other item can be printed. */}
-                    {item.legacyTicket ? null : item.hasPrintedTag ? (
+                        An item on a ticket wears its paper ticket, out of a
+                        box; a lost or torn one gets a replacement tag, same
+                        number and barcode. Not before it has a price. */}
+                    {item.legacyTicket ? (item.priceCents === null ? (
+                      <span
+                        className="text-xs text-gray-600 cursor-not-allowed flex items-center gap-1"
+                        title="Price this ticket first, then print its replacement tag."
+                      >
+                        <FontAwesomeIcon icon={faRotateRightDuo} /> Reprint
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handlePrint(item)}
+                        disabled={printingItem}
+                        className="text-xs text-gray-400 hover:text-white flex items-center gap-1 disabled:opacity-40"
+                        title="Print a replacement tag: the same number and barcode as the paper ticket"
+                      >
+                        <FontAwesomeIcon icon={faRotateRightDuo} /> Reprint
+                      </button>
+                    )) : item.hasPrintedTag ? (
                       <button
                         onClick={() => handlePrint(item)}
                         disabled={printingItem}

@@ -70,10 +70,11 @@ export class PrintRecipeService {
           where: { id: recipe.itemId, orgId, deletedAt: null },
         });
         if (!item) throw new NotFoundException('Item no longer exists');
-        // Only a legacy ticket is ever unpriced, and a ticket wears its paper
-        // ticket rather than a printed tag (Plan 32).
+        // Only a legacy ticket is ever unpriced (Plan 32). A priced one may be
+        // printed a replacement tag, same number and barcode as its paper
+        // ticket; an unpriced one waits for its price.
         if (item.priceCents === null) {
-          throw new BadRequestException('This ticket has no price yet, and a ticket has no printed tag.');
+          throw new BadRequestException(`Ticket ${item.sku} has no price yet. Price it, then print its tag.`);
         }
         const settings = await this.prisma.skiSwapSettings.findUnique({
           where: { orgId },
