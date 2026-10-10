@@ -5,26 +5,12 @@ import { api, ApiError } from '../../lib/api';
 import SearchableSelect from '../../components/SearchableSelect';
 import type { ItemResponse, SalesCheckDecided, SalesCheckIssue, SalesCheckOutcome, SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { SidePanel, Tombstone } from './ReportCard';
+import { FoldHeader, SidePanel, Tombstone, useFolds } from './ReportCard';
 import {
   acceptedText, byCategory, groupsOf, missedFeesText, money, patrolKitSide, squareSide, suggestedLines, withDecided, type CategoryGroup, type SalesCheckGroup,
 } from './salesCheckView';
 
 const key = (orgId: string, swapId: string) => ['ski-swap/sales-check', orgId, swapId];
-
-/** Which sections are folded, kept per browser so they stay folded across reloads. */
-const COLLAPSED_KEY = 'patrolkit:sales-check:collapsed';
-function readCollapsed(): Set<string> {
-  try {
-    const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]') as unknown;
-    return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
-  } catch {
-    return new Set();
-  }
-}
-function writeCollapsed(kinds: Set<string>) {
-  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...kinds])); } catch { /* private window: folds just aren't kept */ }
-}
 
 function errorText(err: unknown): string {
   return err instanceof ApiError ? err.message : 'Something went wrong. Try again.';
@@ -57,13 +43,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
     enabled: canFix,
   });
   const [markSold, setMarkSold] = useState(true);
-  const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
-  /** Folds (or unfolds) sections, from the latest folds, so quick clicks don't undo each other. */
-  const fold = (change: (prev: Set<string>) => Iterable<string>) => setCollapsed((prev) => {
-    const next = new Set(change(prev));
-    writeCollapsed(next);
-    return next;
-  });
+  const folds = useFolds('patrolkit:sales-check:collapsed');
   const [result, setResult] = useState<string | null>(null);
   /** After undoing an accepted sale that marked its item sold: offered here, as the undone row leaves the list. */
   const [restockOffer, setRestockOffer] = useState<{ itemId: string; label: string } | null>(null);
@@ -154,8 +134,8 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
             {groups.filter((g) => g.open > 0).map((g) => <span key={g.kind}>{g.title}: <span className="text-gray-200">{g.open}</span> · {money(g.cents)}</span>)}
             {groups.length > 1 && (
               <button type="button" className="text-brand-500 hover:underline"
-                onClick={() => fold((prev) => (groups.every((g) => prev.has(g.kind)) ? [] : groups.map((g) => g.kind)))}>
-                {groups.every((g) => collapsed.has(g.kind)) ? 'Expand all' : 'Collapse all'}
+                onClick={() => folds.toggleAll(groups.map((g) => g.kind))}>
+                {folds.allFolded(groups.map((g) => g.kind)) ? 'Expand all' : 'Collapse all'}
               </button>
             )}
           </p>
@@ -177,7 +157,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
 
       {groups.map((g) => (
         <Group key={g.kind} group={g} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} markSold={markSold} decided={decided} onDone={markDone}
-          collapsed={collapsed.has(g.kind)} onToggle={() => fold((prev) => (prev.has(g.kind) ? [...prev].filter((k) => k !== g.kind) : [...prev, g.kind]))} />
+          collapsed={folds.isFolded(g.kind)} onToggle={() => folds.toggle(g.kind)} />
       ))}
 
       {data.ignoredCategories.length > 0 && (
@@ -219,12 +199,11 @@ function Group({ group, orgId, swapId, canFix, sellers, markSold, decided, onDon
   return (
     <section className="border border-gray-800 rounded-lg">
       <div className={`p-3 ${collapsed ? '' : 'border-b border-gray-800'}`}>
-        <button type="button" onClick={onToggle} aria-expanded={!collapsed} className="w-full flex items-baseline gap-2 text-left">
-          <span className="text-gray-500 w-3 shrink-0">{collapsed ? '▸' : '▾'}</span>
+        <FoldHeader folded={collapsed} onToggle={onToggle}>
           <h4 className="text-white text-sm font-medium">
             {group.title} <span className="text-gray-500">({group.open ? `${group.open} · ${money(group.cents)}` : 'all done'})</span>
           </h4>
-        </button>
+        </FoldHeader>
         {!collapsed && <p className="text-xs text-gray-400 mt-0.5 ml-5">{group.explain}</p>}
       </div>
       {collapsed ? null : group.kind === 'other_item' ? (

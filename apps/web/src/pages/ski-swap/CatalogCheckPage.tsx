@@ -7,7 +7,7 @@ import type {
   DiagnosticChoice, DiagnosticIssueResponse, DiagnosticRunResponse, SellerResponse,
 } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { SidePanel, Tombstone } from './ReportCard';
+import { FoldHeader, SidePanel, Tombstone, useFolds } from './ReportCard';
 import {
   CHOICE_LABEL, canUseSquarePrice, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
   rowChoices, shown, squareCopies, squareSide, stockText, tookText, yearOf,
@@ -58,6 +58,7 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
   });
 
   const running = run?.status === 'running' || start.isPending;
+  const folds = useFolds('patrolkit:catalog-check:collapsed');
   const groups = useMemo(() => (run && run.status === 'done' ? groupsOf(run) : []), [run]);
   const openCount = groups.reduce((n, g) => n + g.open, 0);
   const refresh = () => void qc.invalidateQueries({ queryKey: key });
@@ -109,8 +110,16 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
           ✓ Everything matches{run.issues.length ? ': every issue from this run has been dealt with.' : '.'}
         </p>
       )}
+      {run?.status === 'done' && groups.length > 1 && (
+        <p className="text-xs">
+          <button type="button" className="text-brand-500 hover:underline" onClick={() => folds.toggleAll(groups.map((g) => g.key))}>
+            {folds.allFolded(groups.map((g) => g.key)) ? 'Expand all' : 'Collapse all'}
+          </button>
+        </p>
+      )}
       {run?.status === 'done' && groups.map((g) => (
-        <Group key={g.key} group={g} run={run} orgId={orgId} swapId={swapId} sellers={sellers} onChanged={refresh} onDecided={decided} />
+        <Group key={g.key} group={g} run={run} orgId={orgId} swapId={swapId} sellers={sellers} onChanged={refresh} onDecided={decided}
+          folded={folds.isFolded(g.key)} onToggle={() => folds.toggle(g.key)} />
       ))}
     </div>
   );
@@ -136,7 +145,7 @@ function sellerOptions(sellers: SellerResponse[]) {
 }
 
 /** One kind of issue: what it means, its group choices (D4), and its rows. */
-function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided }: {
+function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folded, onToggle }: {
   group: DiagnosticGroup;
   run: DiagnosticRunResponse;
   orgId: string;
@@ -144,6 +153,8 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided }: {
   sellers: SellerResponse[];
   onChanged: () => void;
   onDecided: (updated: DiagnosticIssueResponse) => void;
+  folded: boolean;
+  onToggle: () => void;
 }) {
   const priceCards = group.kind === 'differs' && group.field === 'price';
   const [shownRows, setShownRows] = useState(PAGE);
@@ -191,8 +202,8 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided }: {
 
   return (
     <section className="border border-gray-800 rounded-lg">
-      <div className="p-3 space-y-2 border-b border-gray-800">
-        <div className="flex items-center justify-between gap-3">
+      <div className={`p-3 space-y-2 ${folded ? '' : 'border-b border-gray-800'}`}>
+        <FoldHeader folded={folded} onToggle={onToggle}>
           <h4 className="text-white text-sm font-medium">
             {group.title}{' '}
             <span className={group.open ? 'text-red-400' : 'text-gray-500'}>
@@ -200,8 +211,9 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided }: {
             </span>
             {group.held > 0 && <span className="text-amber-400 text-xs font-normal"> · {group.held} waiting on Sales check</span>}
           </h4>
-        </div>
-        <p className="text-xs text-gray-400">{group.explain}</p>
+        </FoldHeader>
+        {!folded && (<>
+        <p className="text-xs text-gray-400 ml-5">{group.explain}</p>
         {group.held > 0 && (
           <p className="text-xs text-amber-400">
             {group.held === 1 ? 'One has' : `${group.held} have`} an open sale in Sales check, so {group.held === 1 ? 'it’s' : 'they’re'} left out of the choices below.{' '}
@@ -228,7 +240,9 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided }: {
         {all.isPending && <p className="text-xs text-gray-400">Working…</p>}
         {result && <p className="text-xs text-gray-300">{result}</p>}
         {all.error && <p className="text-xs text-red-400">{errorText(all.error)}</p>}
+        </>)}
       </div>
+      {!folded && (<>
       {priceCards ? (
         <div className="p-3 space-y-3">
           {group.issues.slice(0, shownRows).map((i) => <PriceCard key={i.id} issue={i} orgId={orgId} swapId={swapId} onDecided={onDecided} />)}
@@ -246,6 +260,7 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided }: {
           Show {Math.min(PAGE, group.issues.length - shownRows)} more of {(group.issues.length - shownRows).toLocaleString('en-US')}
         </button>
       )}
+      </>)}
     </section>
   );
 }

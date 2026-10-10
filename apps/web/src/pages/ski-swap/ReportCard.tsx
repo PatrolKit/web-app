@@ -1,12 +1,50 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Side } from './salesCheckView';
 
 /**
  * The Reports tab's cards (Plan 48), shared by Sales check and Catalog check:
- * one side of a comparison as labelled fields with its links, and the
- * tombstone a decided card leaves in its place.
+ * one side of a comparison as labelled fields with its links, the tombstone
+ * a decided card leaves in its place, and sections that fold.
  */
+
+/**
+ * Which sections are folded, kept in the browser under `storageKey`, so a
+ * reload or the next read leaves them as they were. Each change builds on
+ * the latest folds, so quick clicks don't undo each other.
+ */
+export function useFolds(storageKey: string) {
+  const [folded, setFolded] = useState<Set<string>>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(storageKey) ?? '[]') as unknown;
+      return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+    } catch {
+      return new Set();
+    }
+  });
+  const change = (to: (prev: Set<string>) => Iterable<string>) => setFolded((prev) => {
+    const next = new Set(to(prev));
+    try { localStorage.setItem(storageKey, JSON.stringify([...next])); } catch { /* private window: folds just aren't kept */ }
+    return next;
+  });
+  return {
+    isFolded: (key: string) => folded.has(key),
+    toggle: (key: string) => change((prev) => (prev.has(key) ? [...prev].filter((k) => k !== key) : [...prev, key])),
+    /** All folded: unfold them all. Otherwise fold them all. */
+    toggleAll: (keys: string[]) => change((prev) => (keys.every((k) => prev.has(k)) ? [] : keys)),
+    allFolded: (keys: string[]) => keys.length > 0 && keys.every((k) => folded.has(k)),
+  };
+}
+
+/** A section's header that folds it: ▾ open, ▸ folded. */
+export function FoldHeader({ folded, onToggle, children }: { folded: boolean; onToggle: () => void; children: ReactNode }) {
+  return (
+    <button type="button" onClick={onToggle} aria-expanded={!folded} className="w-full flex items-baseline gap-2 text-left">
+      <span className="text-gray-500 w-3 shrink-0">{folded ? '▸' : '▾'}</span>
+      {children}
+    </button>
+  );
+}
 
 /** Where a decided sale was: says what was done, and settles in so the change is seen. */
 export function Tombstone({ text, hint = 'Undo it under Decided.', settle = true }: { text: string; hint?: string; settle?: boolean }) {
