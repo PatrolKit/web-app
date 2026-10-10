@@ -7,10 +7,10 @@ import type {
   DiagnosticChoice, DiagnosticIssueResponse, DiagnosticRunResponse, SellerResponse,
 } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { FoldHeader, SidePanel, Tombstone, useFolds, useJustDecided } from './ReportCard';
+import { BusyBanner, FoldHeader, SidePanel, Tombstone, useFolds, useJustDecided } from './ReportCard';
 import {
   CHOICE_LABEL, canUseSquarePrice, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
-  rowChoices, shown, squareCopies, squareSide, stockText, tookText, yearOf,
+  rowChoices, shown, squareCopies, squareSide, stockText, tookText,
   type DiagnosticGroup,
 } from './swapDiagnosticsView';
 
@@ -159,13 +159,11 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
   const priceCards = group.kind === 'differs' && group.field === 'price';
   const [shownRows, setShownRows] = useState(PAGE);
   const [groupSeller, setGroupSeller] = useState('');
-  const [groupPrefix, setGroupPrefix] = useState('');
   const [result, setResult] = useState<string | null>(null);
   const all = useMutation({
-    mutationFn: ({ choice, prefix }: { choice: DiagnosticChoice; prefix?: string }) => api.skiSwap.applyDiagnosticChoiceToAll(orgId, swapId, run.id, {
+    mutationFn: ({ choice }: { choice: DiagnosticChoice }) => api.skiSwap.applyDiagnosticChoiceToAll(orgId, swapId, run.id, {
       kind: group.kind, ...(group.field ? { field: group.field } : {}), choice,
       ...(choice === 'copy_to_patrolkit' && groupSeller ? { sellerId: groupSeller } : {}),
-      ...(choice === 'renumber_other' && prefix ? { prefix } : {}),
     }),
     onSuccess: (r) => {
       setResult([
@@ -183,17 +181,6 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
 
   function applyAll(choice: DiagnosticChoice) {
     const n = fixable;
-    if (choice === 'renumber_other') {
-      // Each copy's year when its category is named for one (D11); a prefix here for the rest.
-      const given = window.prompt(
-        `Re-number all ${n} other items' SKUs? Each is prefixed with the year its category is named for (e.g. 2025-73789). For any whose category isn't a year, give a prefix here (letters and digits), or leave it blank to skip those.`,
-        groupPrefix,
-      );
-      if (given === null) return;
-      setGroupPrefix(given.trim());
-      all.mutate({ choice, prefix: given.trim() || undefined });
-      return;
-    }
     const what = choice === 'resolve'
       ? `Mark all ${n} resolved? Nothing changes in Square or PatrolKit; any that still disagree won’t come up again until something changes.`
       : `${groupChoiceLabel(choice, n)}? This changes ${n === 1 ? 'that item' : `all ${n} items`}${choice === 'copy_to_patrolkit' ? ' (deleted items with the same SKU are restored instead)' : ''}.`;
@@ -237,7 +224,9 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
             ))}
           </div>
         )}
-        {all.isPending && <p className="text-xs text-gray-400">Working…</p>}
+        {all.isPending && all.variables && (
+          <BusyBanner what={`${groupChoiceLabel(all.variables.choice, fixable)}: ${fixable === 1 ? 'one item' : `${fixable.toLocaleString('en-US')} items`}, each checked against Square first…`} />
+        )}
         {result && <p className="text-xs text-gray-300">{result}</p>}
         {all.error && <p className="text-xs text-red-400">{errorText(all.error)}</p>}
         </>)}
@@ -382,6 +371,12 @@ function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
           {deleted && <> One of our deleted items had this SKU ({deleted.name}{deleted.sellerName ? `, ${deleted.sellerName}` : ''}).</>}
         </p>
       )}
+      {issue.kind === 'only_square' && issue.saleCreditedTo && (
+        <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-800/50 rounded px-2 py-1.5">
+          Its sale went on {issue.saleCreditedTo.sku} {issue.saleCreditedTo.name} in Sales check: this is a copy made at the register.
+          Copying it to PatrolKit would make a second item for the same thing. Mark it resolved, or delete it in Square.
+        </p>
+      )}
       {issue.kind === 'stock' && <p className="text-xs text-gray-400">{stockText(issue)}</p>}
       {issue.kind === 'only_ours' && ours && (
         <p className="text-xs text-gray-400">Ours: {shown('price', ours)}.</p>
@@ -428,7 +423,7 @@ function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
 
       {open && (
         <div className="flex flex-wrap items-center gap-2">
-          {issue.kind === 'only_square' && (
+          {issue.kind === 'only_square' && !issue.saleCreditedTo && (
             <>
               {deleted && (
                 <button type="button" disabled={apply.isPending}
@@ -443,18 +438,10 @@ function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
               </div>
             </>
           )}
-          {rowChoices(issue).map((c) => (
+          {rowChoices(issue).filter((c) => !(c === 'copy_to_patrolkit' && issue.saleCreditedTo)).map((c) => (
             <button key={c} type="button"
               disabled={apply.isPending || (c === 'copy_to_patrolkit' && !seller)}
               onClick={() => {
-                if (c === 'renumber_other') {
-                  const year = squareCopies(issue).map((x) => yearOf(x.category)).find(Boolean);
-                  const prefix = year ?? window.prompt('Prefix for the other item’s SKU (letters and digits), e.g. OLD:', 'OLD')?.trim();
-                  if (!prefix) return;
-                  if (!window.confirm(`Re-number the other item’s SKU to ${prefix}-${issue.sku}? It stays in Square, and stops scanning as ${issue.sku}.`)) return;
-                  apply.mutate({ choice: c, ...(year ? {} : { prefix }) });
-                  return;
-                }
                 if (c === 'delete_other' && !window.confirm(`Delete the other item from Square? This can’t be undone; its past sales stay in Square’s history.`)) return;
                 apply.mutate({ choice: c, ...(c === 'copy_to_patrolkit' ? { sellerId: seller } : {}) });
               }}

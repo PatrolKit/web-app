@@ -97,6 +97,12 @@ export interface DiagnosticIssueResponse {
   squareUrl?: string | null;
   /** Open Sales check sales on this ticket or its Square items: every choice waits for them. */
   heldBySales?: number;
+  /**
+   * In Square, not in PatrolKit: the item its sale was put on in Sales check
+   * (a copy made at the register). Copying it to PatrolKit would be a second
+   * item for the same thing, so that choice is refused.
+   */
+  saleCreditedTo?: { sku: string; name: string } | null;
 }
 
 export interface DiagnosticRunResponse {

@@ -46,12 +46,15 @@ describe('item tombstone coverage', () => {
         'after it is deleted, as payouts treat a direct sale.',
     },
     'ski-swap/diagnostics/swap-diagnostics.service.ts': {
-      count: 2,
+      count: 3,
       because:
         'Catalog check\'s "elsewhere" (Plan 48 D11) asks whether PatrolKit ' +
         'links a Square item at all, withdrawn items included: once to find ' +
         'the other copies, and again just before deleting or re-numbering ' +
-        'one, so it never touches an item PatrolKit still points at.',
+        'one, so it never touches an item PatrolKit still points at. And ' +
+        '"In Square, not in PatrolKit" names the item a register-made copy\'s ' +
+        'sale was put on in Sales check, which stays that sale\'s item after ' +
+        'it is withdrawn.',
     },
     'ski-swap/sales-check.service.ts': {
       count: 1,

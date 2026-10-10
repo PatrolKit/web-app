@@ -51,6 +51,27 @@ export function useJustDecided(open: boolean): boolean {
   return just;
 }
 
+/**
+ * A long batch at work (Accept all, a whole group's choice): a spinner, what
+ * it's doing, and the time so far, so a minute's wait reads as working.
+ */
+export function BusyBanner({ what }: { what: string }) {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const tick = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(tick);
+  }, []);
+  const took = seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+  return (
+    <div role="status" aria-live="polite" className="flex items-center gap-3 rounded-lg border border-brand-700/60 bg-brand-900/20 px-3 py-2.5 text-sm">
+      <span className="h-4 w-4 shrink-0 rounded-full border-2 border-brand-400 border-t-transparent animate-spin" aria-hidden="true" />
+      <span className="text-gray-100">{what}</span>
+      <span className="ml-auto text-xs text-gray-400 tabular-nums">{took} · keep this page open</span>
+    </div>
+  );
+}
+
 /** A section's header that folds it: ▾ open, ▸ folded. */
 export function FoldHeader({ folded, onToggle, children }: { folded: boolean; onToggle: () => void; children: ReactNode }) {
   return (

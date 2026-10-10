@@ -118,3 +118,11 @@ describe('stock against sales', () => {
   });
 });
 
+describe('another copy of a ticket', () => {
+  it('offers deleting it or marking it resolved, never re-numbering', () => {
+    const copy = issue({ kind: 'elsewhere', sku: '73789' });
+    expect(rowChoices(copy)).toEqual(['delete_other', 'resolve']);
+    expect(groupsOf(run([copy]))[0].groupChoices).toEqual(['delete_other', 'resolve']);
+  });
+});
+

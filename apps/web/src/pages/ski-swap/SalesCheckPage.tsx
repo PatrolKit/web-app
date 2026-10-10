@@ -5,7 +5,7 @@ import { api, ApiError } from '../../lib/api';
 import SearchableSelect from '../../components/SearchableSelect';
 import type { ItemResponse, SalesCheckDecided, SalesCheckIssue, SalesCheckOutcome, SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { FoldHeader, SidePanel, Tombstone, useFolds } from './ReportCard';
+import { BusyBanner, FoldHeader, SidePanel, Tombstone, useFolds } from './ReportCard';
 import { centsOf } from './swapDiagnosticsView';
 import {
   acceptedText, byCategory, groupsOf, missedFeesText, money, patrolKitSide, squarePriceOf, squareSide, suggestedLines, withDecided, type CategoryGroup, type SalesCheckGroup,
@@ -125,6 +125,9 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
             </div>
           )}
         </div>
+        {creditAll.isPending && (
+          <BusyBanner what={`Accepting ${suggested.length === 1 ? 'the suggestion' : `${suggested.length} suggestions`}: each sale goes on its item, and each item is marked sold in Square…`} />
+        )}
         {groups.length > 0 && (
           <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
             {groups.filter((g) => g.open > 0).map((g) => <span key={g.kind}>{g.title}: <span className="text-gray-200">{g.open}</span> · {money(g.cents)}</span>)}

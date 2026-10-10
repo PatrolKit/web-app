@@ -41,8 +41,13 @@ function harness() {
   let n = 0;
   const id = (p: string) => `${p}-${++n}`;
 
+  // Sales check's decisions: a register-made copy's sale put on one of ours.
+  const saleDecisions: Row[] = [];
   const prisma = {
     squareConfig: { findUnique: async () => ({ environment: 'production' }) },
+    swapSaleDecision: {
+      findMany: async ({ where }: { where: { variationId: { in: string[] } } }) => saleDecisions.filter((d) => where.variationId.in.includes(d.variationId)),
+    },
     skiSwap: {
       findFirst: async () => SWAP,
       update: async () => SWAP,
@@ -166,6 +171,8 @@ function harness() {
 
   return {
     db, service, run, created, squareWrites, squareDeletes, renumbered, openSales, stockSets, salesReads: () => salesReads,
+    /** This Square variation's sale was put on our item in Sales check. */
+    creditedSale: (variationId: string, itemId: string) => saleDecisions.push({ variationId, itemId, decision: 'CREDIT', liveKey: 'k' }),
     /** Square's count for a variation, and units its sales leave sold. */
     stock: (variationId: string, count: number, unitsSold = 0) => { counts.set(variationId, count); sold.set(variationId, unitsSold); },
     sell: (variationId: string, units: number) => { sold.set(variationId, units); },
@@ -603,6 +610,22 @@ describe('stock against what the sales leave (Plan 48)', () => {
     h.salesUnreadable(true);
     const run = await h.run();
     expect([run.status, run.issues]).toEqual(['done', []]);
+  });
+});
+
+describe('a register-made copy whose sale is settled (10/10, 6867 → 86867)', () => {
+  it('names the item its sale went on, and refuses to copy it in', async () => {
+    const h = harness();
+    h.ours('86867', { name: 'Roxa Raven' });
+    h.square('86867');
+    h.square('6867', { itemId: 'sq-reg', variationId: 'sv-reg', name: '86867' });
+    h.creditedSale('sv-reg', 'our-86867');
+    const run = await h.run();
+    const copy = run.issues.find((i) => i.kind === 'only_square')!;
+    expect(copy).toMatchObject({ sku: '6867', saleCreditedTo: { sku: '86867', name: 'Roxa Raven' } });
+    await expect(h.service.apply('org', 'swap', copy.id, 'copy_to_patrolkit', { sellerId: 'seller-1' }, 'staff')).rejects.toThrow('Its sale went on 86867 Roxa Raven in Sales check');
+    expect(h.created).toEqual([]);
+    await expect(h.service.apply('org', 'swap', copy.id, 'resolve', {}, 'staff')).resolves.toMatchObject({ state: 'left' });
   });
 });
 

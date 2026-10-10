@@ -162,6 +162,7 @@ export class SwapDiagnosticsService {
     const open = run.issues.filter((i) => i.state === 'open' || i.state === 'failed');
     const holds = run.status === 'done' && open.length ? await this.readHolds(orgId, swapId) : null;
     const env = (await this.prisma.squareConfig.findUnique({ where: { orgId }, select: { environment: true } }))?.environment;
+    const credited = await this.creditedFrom(swapId, open.filter((i) => i.kind === 'only_square'));
     return {
       id: run.id,
       status: run.status === 'running' && isStale(run) ? 'interrupted' : (run.status as DiagnosticRunResponse['status']),
@@ -177,6 +178,7 @@ export class SwapDiagnosticsService {
         ...toIssueResponse(i, names),
         heldBySales: holds && !('error' in holds) && open.includes(i) ? heldBy(holds, i.sku, squareItemIdsOf(i)) : 0,
         squareUrl: squareItemUrl(env, (i.square as unknown as { itemId?: string } | null)?.itemId ?? null),
+        ...(i.kind === 'only_square' ? { saleCreditedTo: credited.get(i.id) ?? null } : {}),
       })),
     };
   }
@@ -235,6 +237,18 @@ export class SwapDiagnosticsService {
       if (choice === 'set_price' && (issue.field !== 'price' || !extra.priceCents)) {
         throw new BadRequestException('A new price is set on Price differs, with the price.');
       }
+    }
+
+    // A copy made at the register whose sale went on one of ours isn't copied in.
+    if (choice === 'copy_to_patrolkit') {
+      const credited = await this.creditedFrom(swap.id, issues);
+      const first = issues.find((i) => credited.has(i.id));
+      if (first && issues.length === 1) {
+        const to = credited.get(first.id)!;
+        throw new ConflictException(`Its sale went on ${to.sku} ${to.name} in Sales check: this is a copy made at the register, so copying it in would make a second item. Mark it resolved.`);
+      }
+      issues = issues.filter((i) => !credited.has(i.id));
+      if (issues.length === 0) return tally;
     }
 
     // An open sale in Sales check holds back every choice on its ticket, read now.
@@ -609,6 +623,34 @@ export class SwapDiagnosticsService {
     const rows = await this.prisma.swapDiagnosticHidden.findMany({ where: { swapId } });
     return new Set(rows.map((h) =>
       `${issueKey({ sku: h.sku, kind: h.kind, field: h.field || null })}\u0000${h.fingerprint}`));
+  }
+
+  /**
+   * "In Square, not in PatrolKit" issues whose Square item's sale was put on
+   * one of our items in Sales check, by issue id: the item it went on.
+   */
+  private async creditedFrom(swapId: string, issues: IssueRow[]): Promise<Map<string, { sku: string; name: string }>> {
+    const byVariation = new Map<string, string[]>();
+    for (const i of issues) {
+      const v = i.kind === 'only_square' ? squareOf(i)?.variationId : undefined;
+      if (v) byVariation.set(v, [...(byVariation.get(v) ?? []), i.id]);
+    }
+    if (byVariation.size === 0) return new Map();
+    const decisions = await this.prisma.swapSaleDecision.findMany({
+      where: { swapId, decision: 'CREDIT', liveKey: { not: null }, variationId: { in: [...byVariation.keys()] } },
+      select: { variationId: true, itemId: true },
+    });
+    const ids = [...new Set(decisions.map((d) => d.itemId).filter((x): x is string => !!x))];
+    // Deleted ones too: a sale credited to an item since withdrawn still went on it.
+    const items = ids.length ? await this.prisma.swapItem.findMany({ where: { id: { in: ids } }, select: { id: true, sku: true, name: true } }) : [];
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const out = new Map<string, { sku: string; name: string }>();
+    for (const d of decisions) {
+      const item = d.itemId ? byId.get(d.itemId) : undefined;
+      if (!d.variationId || !item) continue;
+      for (const id of byVariation.get(d.variationId) ?? []) out.set(id, { sku: item.sku, name: item.name });
+    }
+    return out;
   }
 
   /** Sales check's open sales, as holds; Square unreadable is an answer, not a throw. */

@@ -30,7 +30,7 @@ export interface DiagnosticGroup {
 const ORDER: { kind: DiagnosticIssueKind; field: DiagnosticField | null; title: string; explain: string }[] = [
   {
     kind: 'elsewhere', field: null, title: 'Another Square item has this ticket number',
-    explain: 'Last year’s item, or an archived one: Square still scans archived items, so the register can ring a sale up on it, where PatrolKit can’t see it. Delete it, or re-number its SKU (e.g. 2025-73789) so it no longer scans.',
+    explain: 'Last year’s item, or an archived one: Square still scans archived items, so the register can ring a sale up on it, where PatrolKit can’t see it. Delete it, so it no longer scans.',
   },
   {
     kind: 'stock', field: null, title: 'Stock doesn’t match sales',
@@ -91,7 +91,8 @@ export const CHOICE_LABEL: Record<DiagnosticChoice, string> = {
  * differs isn't Mark resolved: one of the prices has to win.
  */
 function offered(c: DiagnosticChoice, kind: DiagnosticIssueKind, field: DiagnosticField | null): boolean {
-  if (c === 'keep' || c === 'set_price') return false;
+  // Re-numbering another copy isn't offered: delete it, or leave it resolved.
+  if (c === 'keep' || c === 'set_price' || c === 'renumber_other') return false;
   return !(kind === 'differs' && field === 'price' && c === 'resolve');
 }
 
