@@ -276,7 +276,7 @@ export class SalesCheckService {
     ]);
     const items: CheckItem[] = rows.map((r) => ({
       id: r.id, sku: r.sku, name: r.name, priceCents: r.priceCents, squareVariationId: r.squareVariationId,
-      originalQuantity: r.originalQuantity, deleted: r.deletedAt !== null, sellerName: r.seller ? sellerDisplayName(r.seller) : null,
+      originalQuantity: r.originalQuantity, deleted: r.deletedAt !== null, sellerName: r.seller ? sellerDisplayName(r.seller) : null, sellerId: r.seller?.id ?? null,
     }));
     return { swap, at: raw.at, lines: raw.lines, items, decisions, pos, env: config?.environment ?? 'production' };
   }

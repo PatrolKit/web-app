@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import { Link, useOutletContext } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
 import SearchableSelect from '../../components/SearchableSelect';
 import type { SalesCheckDecided, SalesCheckIssue, SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { groupsOf, money, sentence, suggestedLines, type SalesCheckGroup } from './salesCheckView';
+import {
+  byCategory, groupsOf, money, patrolKitSide, squareSide, suggestedLines, type CategoryGroup, type SalesCheckGroup, type Side,
+} from './salesCheckView';
 
 const key = (orgId: string, swapId: string) => ['ski-swap/sales-check', orgId, swapId];
 
@@ -41,7 +43,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
   });
   const [markSold, setMarkSold] = useState(true);
   const [result, setResult] = useState<string | null>(null);
-  /** After undoing a credit that marked its item sold: offered here, as the undone row leaves the list. */
+  /** After undoing an accepted sale that marked its item sold: offered here, as the undone row leaves the list. */
   const [restockOffer, setRestockOffer] = useState<{ itemId: string; label: string } | null>(null);
   const restock = useMutation({
     mutationFn: (itemId: string) => api.skiSwap.restockItem(orgId, swapId, itemId),
@@ -59,7 +61,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
     onSuccess: (r) => {
       const ok = r.outcomes.filter((o) => o.ok).length;
       const failed = r.outcomes.filter((o) => !o.ok);
-      setResult(`${ok} credited${failed.length ? `; ${failed.length} not: ${[...new Set(failed.map((f) => f.error))].join(' ')}` : ''}`);
+      setResult(`${ok} accepted${failed.length ? `; ${failed.length} not: ${[...new Set(failed.map((f) => f.error))].join(' ')}` : ''}`);
       changed();
     },
   });
@@ -67,7 +69,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
   function confirmCreditAll() {
     const list = suggested.slice(0, 15).map((l) => `• ${l.label}`).join('\n');
     const more = suggested.length > 15 ? `\n…and ${suggested.length - 15} more` : '';
-    if (window.confirm(`Credit these ${suggested.length} sales to the tickets suggested?${markSold ? ' Each item is also marked sold in Square.' : ''}\n\n${list}${more}`)) {
+    if (window.confirm(`Accept ${suggested.length === 1 ? 'this suggestion' : `these ${suggested.length} suggestions`}? Each sale goes on the suggested PatrolKit item, so its seller is paid.${markSold ? ' Each item is also marked sold in Square.' : ''}\n\n${list}${more}`)) {
       creditAll.mutate();
     }
   }
@@ -96,10 +98,10 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-1.5 text-xs text-gray-400">
                 <input type="checkbox" checked={markSold} onChange={(e) => setMarkSold(e.target.checked)} />
-                Also mark credited items sold in Square
+                Also mark each item sold in Square
               </label>
               <button type="button" className={primary} disabled={creditAll.isPending} onClick={confirmCreditAll}>
-                {creditAll.isPending ? 'Crediting…' : `Credit all ${suggested.length} suggested`}
+                {creditAll.isPending ? 'Accepting…' : suggested.length === 1 ? 'Accept the suggestion' : `Accept all ${suggested.length} suggestions`}
               </button>
             </div>
           )}
@@ -121,7 +123,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
         )}
         {restock.error && <p className="text-xs text-red-400">{errorText(restock.error)}</p>}
         {creditAll.error && <p className="text-xs text-red-400">{errorText(creditAll.error)}</p>}
-        {!canFix && open > 0 && <p className="text-xs text-gray-500">An administrator can credit these to the right items.</p>}
+        {!canFix && open > 0 && <p className="text-xs text-gray-500">An administrator can resolve these.</p>}
       </div>
 
       {groups.map((g) => (
@@ -155,6 +157,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
 function Group({ group, orgId, swapId, canFix, sellers, markSold, onChanged }: {
   group: SalesCheckGroup; orgId: string; swapId: string; canFix: boolean; sellers: SellerResponse[]; markSold: boolean; onChanged: () => void;
 }) {
+  const card = (i: SalesCheckIssue) => <Issue key={i.key} issue={i} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} markSold={markSold} onChanged={onChanged} />;
   return (
     <section className="border border-gray-800 rounded-lg">
       <div className="p-3 border-b border-gray-800">
@@ -163,12 +166,73 @@ function Group({ group, orgId, swapId, canFix, sellers, markSold, onChanged }: {
         </h4>
         <p className="text-xs text-gray-400 mt-0.5">{group.explain}</p>
       </div>
-      <ul className="divide-y divide-gray-800">
-        {group.issues.map((i) => (
-          <Issue key={i.key} issue={i} orgId={orgId} swapId={swapId} canFix={canFix} sellers={sellers} markSold={markSold} onChanged={onChanged} />
-        ))}
-      </ul>
+      {group.kind === 'other_item' ? (
+        <ul className="divide-y divide-gray-800">
+          {byCategory(group.issues).map((c) => (
+            <Category key={c.name} category={c} orgId={orgId} swapId={swapId} canFix={canFix} onChanged={onChanged}>{c.issues.map(card)}</Category>
+          ))}
+        </ul>
+      ) : (
+        <div className="p-3 space-y-3">{group.issues.map(card)}</div>
+      )}
     </section>
+  );
+}
+
+/** Other items: one row per Square category, its sales folded away until opened. */
+function Category({ category: c, orgId, swapId, canFix, onChanged, children }: {
+  category: CategoryGroup; orgId: string; swapId: string; canFix: boolean; onChanged: () => void; children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ignore = useMutation({ mutationFn: (categoryId: string) => api.skiSwap.ignoreSquareCategory(orgId, swapId, { categoryId, ignore: true }), onSuccess: onChanged });
+  const shown = c.names.slice(0, 3).join(', ') + (c.names.length > 3 ? `, +${c.names.length - 3} more` : '');
+  return (
+    <li>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+        <button type="button" className="flex items-center gap-2 text-left text-gray-200 hover:text-white min-w-0" onClick={() => setOpen(!open)} aria-expanded={open}>
+          <span className="text-gray-500 w-3">{open ? '▾' : '▸'}</span>
+          <span className="font-medium">{c.name}</span>
+          <span className="text-xs text-gray-500 truncate">({shown})</span>
+        </button>
+        <span className="text-xs text-gray-400">{c.issues.length} sale{c.issues.length === 1 ? '' : 's'} · {money(c.cents)}</span>
+        {canFix && c.categoryId && (
+          <button type="button" className={`${btn} ml-auto`} disabled={ignore.isPending}
+            onClick={() => { if (window.confirm(`Never count sales from “${c.name}” as swap sales? They stop showing here. You can count them again below.`)) ignore.mutate(c.categoryId!); }}>
+            {ignore.isPending ? 'Working…' : `Never count “${c.name}”`}
+          </button>
+        )}
+      </div>
+      {ignore.error && <p className="px-3 pb-2 text-xs text-red-400">{errorText(ignore.error)}</p>}
+      {open && <div className="px-3 pb-3 space-y-3">{children}</div>}
+    </li>
+  );
+}
+
+function SidePanel({ side, icon, className = '' }: { side: Side; icon: string; className?: string }) {
+  return (
+    <div className={`p-3 min-w-0 ${className}`}>
+      <p className="text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">{icon} {side.title}</p>
+      {side.empty ? <p className="text-xs text-gray-400">{side.empty}</p> : (
+        <dl className="grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-0.5 text-sm">
+          {side.fields.map((f) => (
+            <Fragment key={f.label}>
+              <dt className="text-xs text-gray-500 pt-0.5">{f.label}</dt>
+              <dd className={`min-w-0 break-words ${f.mono ? 'font-mono' : ''} ${f.warn ? 'text-amber-400' : 'text-gray-200'}`}>
+                {f.value}
+                {f.tag && <span className="ml-1.5 inline-block whitespace-nowrap text-[11px] bg-amber-900/40 text-amber-300 rounded px-1.5 py-px font-sans">{f.tag}</span>}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+      {side.links.length > 0 && (
+        <p className="mt-2 flex gap-3 text-xs">
+          {side.links.map((l) => 'href' in l
+            ? <a key={l.label} href={l.href} target="_blank" rel="noreferrer" className="text-brand-500 hover:underline">{l.label} ↗</a>
+            : <Link key={l.label} to={l.to} className="text-brand-500 hover:underline">{l.label} ›</Link>)}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -181,71 +245,60 @@ function Issue({ issue, orgId, swapId, canFix, sellers, markSold, onChanged }: {
   const credit = useMutation({ mutationFn: (itemId: string) => api.skiSwap.creditSale(orgId, swapId, { ...line, itemId, markSold }), onSuccess: onChanged });
   const notSwap = useMutation({ mutationFn: (note?: string) => api.skiSwap.notSwapSale(orgId, swapId, { ...line, ...(note ? { note } : {}) }), onSuccess: onChanged });
   const issue_ = useMutation({ mutationFn: () => api.skiSwap.issueAndCreditSale(orgId, swapId, { ...line, sellerId: seller, ticket: issue.ticket! }), onSuccess: onChanged });
-  const ignore = useMutation({ mutationFn: (categoryId: string) => api.skiSwap.ignoreSquareCategory(orgId, swapId, { categoryId, ignore: true }), onSuccess: onChanged });
-  const busy = credit.isPending || notSwap.isPending || issue_.isPending || ignore.isPending;
-  const err = credit.error ?? notSwap.error ?? issue_.error ?? ignore.error;
+  const busy = credit.isPending || notSwap.isPending || issue_.isPending;
+  const err = credit.error ?? notSwap.error ?? issue_.error;
   const when = new Date(issue.soldAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   return (
-    <li className="p-3 text-sm space-y-2">
-      <p className="text-gray-200">{sentence(issue)}</p>
-      <p className="text-xs text-gray-500 flex flex-wrap gap-x-3">
-        <span>{when}</span>
-        {issue.unitPriceCents !== null && issue.kind !== 'oversold' && <span>rung up at {money(issue.unitPriceCents)}</span>}
-        {issue.refundedQuantity > 0 && <span>{issue.refundedQuantity} refunded</span>}
-        {issue.rungUpAs?.sku && <span>SKU <span className="font-mono">{issue.rungUpAs.sku}</span></span>}
-        {issue.suggestion && <span>ours: {issue.suggestion.name} · {issue.suggestion.priceCents === null ? 'unpriced' : money(issue.suggestion.priceCents)}</span>}
-        {issue.oversold && <span>orders {issue.oversold.orders.join(', ')}</span>}
-        {issue.links.sale && <a href={issue.links.sale} target="_blank" rel="noreferrer" className="text-brand-500 hover:underline">Sale in Square ↗</a>}
-        {issue.links.item && <a href={issue.links.item} target="_blank" rel="noreferrer" className="text-brand-500 hover:underline">Item in Square ↗</a>}
-      </p>
-      {err && <p className="text-xs text-red-400">{errorText(err)}</p>}
-
-      {canFix && issue.kind !== 'oversold' && (
-        <div className="flex flex-wrap items-center gap-2">
-          {issue.suggestion && (
-            <button type="button" className={primary} disabled={busy} onClick={() => credit.mutate(issue.suggestion!.itemId)}>
-              Credit to {issue.suggestion.sku}
-            </button>
-          )}
-          {issue.kind === 'unknown_ticket' && (
-            <button type="button" className={btn} disabled={busy} onClick={() => setPicking(picking === 'seller' ? null : 'seller')}>Issue to a seller…</button>
-          )}
-          <button type="button" className={btn} disabled={busy} onClick={() => setPicking(picking === 'item' ? null : 'item')}>
-            Credit to {issue.suggestion ? 'another' : 'an'} item…
-          </button>
-          <button type="button" className={btn} disabled={busy}
-            onClick={() => { const note = window.prompt('Not a swap sale. A note, if you like (e.g. “swag”):', ''); if (note !== null) notSwap.mutate(note.trim() || undefined); }}>
-            Not a swap sale
-          </button>
-          {issue.kind === 'other_item' && issue.categoryIds.length > 0 && issue.rungUpAs?.category && (
+    <div className="border border-gray-800 rounded-lg overflow-hidden bg-surface-50">
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_1.75rem_minmax(0,1fr)]">
+        <SidePanel side={squareSide(issue)} icon="■" />
+        <div className="hidden md:flex items-center justify-center text-gray-600">→</div>
+        <SidePanel side={patrolKitSide(issue)} icon="◆" className="border-t md:border-t-0 md:border-l border-gray-800" />
+      </div>
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40">
+        <span className="text-xs text-gray-500 mr-auto">{when}</span>
+        {err && <span className="text-xs text-red-400">{errorText(err)}</span>}
+        {busy && <span className="text-xs text-gray-400">Working…</span>}
+        {canFix && issue.kind !== 'oversold' && (
+          <>
             <button type="button" className={btn} disabled={busy}
-              onClick={() => { if (window.confirm(`Never count sales from “${issue.rungUpAs!.category}” as swap sales? They stop showing here. You can count them again below.`)) ignore.mutate(issue.categoryIds[0]); }}>
-              Never count “{issue.rungUpAs.category}”
+              onClick={() => { const note = window.prompt('Not a swap sale. A note, if you like (e.g. “swag”):', ''); if (note !== null) notSwap.mutate(note.trim() || undefined); }}>
+              Not a swap sale
             </button>
-          )}
-          {busy && <span className="text-xs text-gray-400">Working…</span>}
-        </div>
-      )}
+            <button type="button" className={btn} disabled={busy} onClick={() => setPicking(picking === 'item' ? null : 'item')}>
+              Pick {issue.suggestion ? 'another' : 'an'} item…
+            </button>
+            {issue.kind === 'unknown_ticket' && (
+              <button type="button" className={btn} disabled={busy} onClick={() => setPicking(picking === 'seller' ? null : 'seller')}>Issue to a seller…</button>
+            )}
+            {issue.suggestion && (
+              <button type="button" className={primary} disabled={busy} onClick={() => credit.mutate(issue.suggestion!.itemId)}>
+                Accept suggestion
+              </button>
+            )}
+          </>
+        )}
+      </div>
 
-      {picking === 'item' && <ItemPicker orgId={orgId} swapId={swapId} onPick={(id) => { setPicking(null); credit.mutate(id); }} />}
+      {picking === 'item' && <div className="px-3 pb-3"><ItemPicker orgId={orgId} swapId={swapId} onPick={(id) => { setPicking(null); credit.mutate(id); }} /></div>}
       {picking === 'seller' && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
           <div className="w-64">
             <SearchableSelect value={seller} onChange={setSeller} placeholder="Whose ticket is it?" clearLabel="No seller chosen"
               options={sellers.map((s) => ({ value: s.id, label: s.displayName, sublabel: s.phone ?? undefined, keywords: s.email ?? undefined }))} />
           </div>
           <button type="button" className={primary} disabled={!seller || busy}
-            onClick={() => { if (window.confirm(`Issue ticket ${issue.ticket} to this seller, put it in Square, and credit this sale to it?`)) issue_.mutate(); }}>
-            Issue {issue.ticket} and credit
+            onClick={() => { if (window.confirm(`Issue ticket ${issue.ticket} to this seller, put it in Square, and put this sale on it?`)) issue_.mutate(); }}>
+            Issue {issue.ticket} and use it
           </button>
         </div>
       )}
-    </li>
+    </div>
   );
 }
 
-/** "Credit to another item…": the Items search, by ticket or name. */
+/** "Pick another item…": the Items search, by ticket or name. */
 function ItemPicker({ orgId, swapId, onPick }: { orgId: string; swapId: string; onPick: (itemId: string) => void }) {
   const [q, setQ] = useState('');
   const { data } = useQuery({
@@ -277,7 +330,7 @@ function Decided({ d, orgId, swapId, canFix, onUndone }: {
   return (
     <li className="px-4 py-2 text-xs text-gray-400 flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="text-gray-200">
-        {d.decision === 'CREDIT' ? `Credited ${money(d.collectedCents)} to ${d.item ? `${d.item.sku} ${d.item.name}` : 'an item'}` : `Not a swap sale (${money(d.collectedCents)})`}
+        {d.decision === 'CREDIT' ? `${money(d.collectedCents)} sale put on ${d.item ? `${d.item.sku} ${d.item.name}` : 'an item'}` : `Not a swap sale (${money(d.collectedCents)})`}
       </span>
       {d.note && <span>“{d.note}”</span>}
       {d.markedSold && <span>marked sold in Square</span>}

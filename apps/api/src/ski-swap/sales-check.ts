@@ -60,6 +60,7 @@ export interface CheckItem {
   name: string;
   priceCents: number | null;
   sellerName: string | null;
+  sellerId: string | null;
   squareVariationId: string | null;
   originalQuantity: number;
   deleted: boolean;
@@ -88,7 +89,7 @@ export interface SalesCheckIssue {
   paymentId: string | null;
   rungUpAs: RungUpAs | null;
   /** D8: the item the evidence points to exactly. Only ever a button's label. */
-  suggestion: { itemId: string; sku: string; name: string; priceCents: number | null; sellerName: string | null } | null;
+  suggestion: { itemId: string; sku: string; name: string; priceCents: number | null; sellerName: string | null; sellerId: string | null } | null;
   /** unknown_ticket: the number no item of this swap has. */
   ticket: string | null;
   /** oversold: the item, and every order line that counts it. */
@@ -121,7 +122,7 @@ export function classify(input: ClassifyInput): SalesCheckIssue[] {
   const liveBySku = new Map(input.items.filter((i) => !i.deleted).map((i) => [i.sku, i]));
   const decided = new Set(input.decisions.map((d) => lineKeyOf(d.orderId, d.lineUid)));
   const issues: SalesCheckIssue[] = [];
-  const suggest = (i: CheckItem) => ({ itemId: i.id, sku: i.sku, name: i.name, priceCents: i.priceCents, sellerName: i.sellerName });
+  const suggest = (i: CheckItem) => ({ itemId: i.id, sku: i.sku, name: i.name, priceCents: i.priceCents, sellerName: i.sellerName, sellerId: i.sellerId });
 
   for (const line of input.lines) {
     if (ours.has(line.variationId)) continue;                      // ours: nothing to check

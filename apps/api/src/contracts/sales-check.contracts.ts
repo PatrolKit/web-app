@@ -60,7 +60,7 @@ export interface SalesCheckIssue {
   collectedCents: number;
   unitPriceCents: number | null;
   rungUpAs: SalesCheckRungUpAs | null;
-  suggestion: { itemId: string; sku: string; name: string; priceCents: number | null; sellerName: string | null } | null;
+  suggestion: { itemId: string; sku: string; name: string; priceCents: number | null; sellerName: string | null; sellerId: string | null } | null;
   ticket: string | null;
   oversold?: { itemId: string; sku: string; name: string; units: number; quantity: number; orders: string[] };
   /** The item's categories, for "Never count …" (other_item). */

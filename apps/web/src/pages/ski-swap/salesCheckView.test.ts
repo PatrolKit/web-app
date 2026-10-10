@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupsOf, sentence, suggestedLines } from './salesCheckView';
+import { byCategory, groupsOf, patrolKitSide, squareSide, suggestedLines } from './salesCheckView';
 import type { SalesCheckIssue } from '../../lib/api.types';
 
 const issue = (over: Partial<SalesCheckIssue>): SalesCheckIssue => ({
@@ -20,23 +20,57 @@ describe('Sales check groups', () => {
   });
 });
 
-describe('what each issue says', () => {
-  it('names the copy, the seller and the amount', () => {
-    expect(sentence(issue({
-      kind: 'other_copy',
-      rungUpAs: { name: 'Swap Item 73338', sku: '73338', variationId: 'v', itemId: 'i', category: '2025', archived: true },
-      suggestion: { itemId: 'it', sku: '73338', name: 'Item #73338', priceCents: null, sellerName: 'Karen Beckwith' },
-    }))).toBe('Ticket 73338 was rung up on “Swap Item 73338”, an archived item in “2025”, for $40.00. It isn’t on Karen Beckwith’s item.');
-    expect(sentence(issue({ kind: 'unknown_ticket', ticket: '59443', collectedCents: 1000, rungUpAs: { name: 'Swap Item 59443', sku: '59443', variationId: 'v', itemId: 'i', category: '2025', archived: true } })))
-      .toBe('Ticket 59443 isn’t in PatrolKit. It sold as “Swap Item 59443” for $10.00.');
+describe('the two sides of a card', () => {
+  const copy = issue({
+    kind: 'other_copy', collectedCents: 500, unitPriceCents: 500, links: { sale: 'https://sq/sale', item: 'https://sq/item' },
+    rungUpAs: { name: 'Swap Item 73308', sku: '73308', variationId: 'v', itemId: 'i', category: '2025', archived: true },
+    suggestion: { itemId: 'it', sku: '73308', name: 'Item #73308', priceCents: 500, sellerName: 'Karen Beckwith', sellerId: 's-1' },
+  });
+
+  it('shows the sale as Square has it, with its links', () => {
+    const side = squareSide(copy);
+    expect(side.fields.map((f) => [f.label, f.value, f.tag])).toEqual([['SKU', '73308', undefined], ['Name', 'Swap Item 73308', 'archived · 2025'], ['Sold for', '$5.00', undefined]]);
+    expect(side.links).toEqual([{ label: 'Sale', href: 'https://sq/sale' }, { label: 'Item', href: 'https://sq/item' }]);
+  });
+
+  it('shows the suggested item, its seller, and links into PatrolKit', () => {
+    const side = patrolKitSide(copy);
+    expect(side.title).toBe('Suggested PatrolKit item');
+    expect(side.fields.map((f) => [f.label, f.value, f.warn ?? false])).toEqual([['SKU', '73308', false], ['Name', 'Item #73308', false], ['Seller', 'Karen Beckwith', false], ['Price', '$5.00', false]]);
+    expect(side.links).toEqual([{ label: 'Item', to: '/dashboard/ski-swap/items?q=73308' }, { label: 'Seller', to: '/dashboard/ski-swap/sellers?edit=s-1' }]);
+  });
+
+  it('flags a seller price that differs from what Square charged', () => {
+    const side = patrolKitSide({ ...copy, unitPriceCents: 400 });
+    expect(side.fields.find((f) => f.label === 'Price')?.warn).toBe(true);
+  });
+
+  it('says why there is no suggestion', () => {
+    expect(patrolKitSide(issue({ kind: 'unknown_ticket', ticket: '59443' })).empty).toBe('No ticket 59443 in this swap.');
+    expect(patrolKitSide(issue({ kind: 'other_item' })).empty).toBe('Not a swap item.');
+    expect(squareSide(issue({ kind: 'custom_amount' })).fields.find((f) => f.label === 'Name')?.value).toBe('Custom amount');
   });
 });
 
-describe('Credit all suggested', () => {
+describe('other items by category', () => {
+  it('folds sales into one row per category, the biggest first', () => {
+    const swag = (name: string, cents: number) => issue({ collectedCents: cents, categoryIds: ['cat-swag'], rungUpAs: { name, sku: 'x', variationId: 'v', itemId: 'i', category: 'Swag', archived: false } });
+    const rows = byCategory([
+      issue({ collectedCents: 700, categoryIds: ['cat-cpr'], rungUpAs: { name: 'CPR Fees', sku: '', variationId: 'v', itemId: 'i', category: 'CPR', archived: false } }),
+      swag('TShirt', 2500), swag('TShirt', 2500), swag('Socks', 1500),
+    ]);
+    expect(rows.map((r) => [r.name, r.categoryId, r.names, r.issues.length, r.cents])).toEqual([
+      ['Swag', 'cat-swag', ['TShirt', 'Socks'], 3, 6500],
+      ['CPR', 'cat-cpr', ['CPR Fees'], 1, 700],
+    ]);
+  });
+});
+
+describe('Accept all suggestions', () => {
   it('lists exactly the lines with a suggestion, nothing else', () => {
     const lines = suggestedLines([
-      issue({ kind: 'other_copy', orderId: 'a', lineUid: '1', suggestion: { itemId: 'it-1', sku: '73338', name: 'x', priceCents: null, sellerName: null } }),
-      issue({ kind: 'register_item', orderId: 'b', lineUid: '2', suggestion: { itemId: 'it-2', sku: '86882', name: 'y', priceCents: 5400, sellerName: null } }),
+      issue({ kind: 'other_copy', orderId: 'a', lineUid: '1', suggestion: { itemId: 'it-1', sku: '73338', name: 'x', priceCents: null, sellerName: null, sellerId: null } }),
+      issue({ kind: 'register_item', orderId: 'b', lineUid: '2', suggestion: { itemId: 'it-2', sku: '86882', name: 'y', priceCents: 5400, sellerName: null, sellerId: null } }),
       issue({ kind: 'unknown_ticket', orderId: 'c', lineUid: '3', ticket: '59443' }),
     ]);
     expect(lines.map((l) => [l.orderId, l.lineUid, l.itemId])).toEqual([['a', '1', 'it-1'], ['b', '2', 'it-2']]);

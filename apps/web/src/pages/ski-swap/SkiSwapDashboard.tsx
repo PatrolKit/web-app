@@ -159,7 +159,7 @@ export default function SkiSwapDashboard() {
           </p>
           <p className="text-xs text-amber-500/80 mt-0.5">
             Sold at the swap’s location, but not on one of its items: a ticket scanned onto another copy, an item
-            made at the register, or something else. Click to credit each to the right item, or set it aside.
+            made at the register, or something else. Open it to put each on the right item, or set it aside.
           </p>
         </Link>
       )}

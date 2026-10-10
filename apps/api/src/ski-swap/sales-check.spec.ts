@@ -19,7 +19,7 @@ const line = (orderId: string, variationId: string, over: Partial<PosSaleLine> =
   orderId, variationId, lineUid: `${orderId}-u`, quantity: 1, collectedCents: 4000, unitPriceCents: 4000, refundedQuantity: 0, soldAt: at, paymentId: `pay-${orderId}`, ...over,
 });
 const item = (sku: string, over: Partial<CheckItem> = {}): CheckItem => ({
-  id: `it-${sku}`, sku, name: `Item #${sku}`, priceCents: null, sellerName: 'Karen Beckwith', squareVariationId: `v-${sku}`, originalQuantity: 1, deleted: false, ...over,
+  id: `it-${sku}`, sku, name: `Item #${sku}`, priceCents: null, sellerName: 'Karen Beckwith', sellerId: 'seller-1', squareVariationId: `v-${sku}`, originalQuantity: 1, deleted: false, ...over,
 });
 const variation = (id: string, sku: string, itemName: string, over: Partial<PosVariationInfo> = {}): PosVariationInfo => ({
   variationId: id, itemId: `sq-${id}`, itemName, variationName: null, sku, categoryIds: ['cat-2025'], archived: true, ...over,
