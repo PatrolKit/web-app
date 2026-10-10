@@ -458,6 +458,9 @@ model SkiSwap {
   receiptFinePrint     String?  @db.Text
   /// IANA zone the swap happens in: receipts give their times in it.
   timeZone             String   @default("America/New_York")
+  /// Square categories whose sales are never this swap's (Plan 48 D7), e.g.
+  /// the patrol's swag: Sales check doesn't list them. A JSON array of ids.
+  ignoredSquareCategoryIds Json?
   createdBy            String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -469,6 +472,7 @@ model SkiSwap {
   payoutRuns   PayoutRun[]
   diagnosticRuns   SwapDiagnosticRun[]
   diagnosticHidden SwapDiagnosticHidden[]
+  saleDecisions    SwapSaleDecision[]
 
   @@unique([orgId, title])
   @@unique([orgId, activeSkuPrefix])
@@ -1709,6 +1713,40 @@ model SwapDiagnosticIssue {
 /// An issue marked resolved and left as is: later runs don't raise it again
 /// while both sides hold these values. Kept apart from the issues, which are
 /// pruned with their runs, so a hide lasts as long as the swap.
+/// What staff decided about one Square sale line that isn't on this swap's
+/// items (Plan 48 D4–D7): credit it to an item, or not a swap sale. Kept with
+/// who and when; undone rather than deleted.
+model SwapSaleDecision {
+  id             String    @id @default(cuid())
+  swapId         String
+  orgId          String
+  orderId        String    @db.VarChar(64)
+  lineUid        String    @db.VarChar(64)
+  /// CREDIT | NOT_SWAP
+  decision       String    @db.VarChar(16)
+  /// The item a CREDIT puts the sale on.
+  itemId         String?
+  /// As seen when decided: what the register took, and on which variation.
+  collectedCents Int
+  variationId    String?   @db.VarChar(64)
+  note           String?   @db.VarChar(500)
+  /// Whether crediting set the item's Square stock (D6), so an undo can say so.
+  markedSold     Boolean   @default(false)
+  decidedBy      String?
+  decidedAt      DateTime  @default(now())
+  undoneAt       DateTime?
+  undoneBy       String?
+  /// `orderId:lineUid` while the decision stands, null once undone: one live
+  /// decision per line (MySQL has no partial unique index; as `liveSku`).
+  liveKey        String?   @db.VarChar(140)
+
+  swap SkiSwap @relation(fields: [swapId], references: [id], onDelete: Cascade)
+
+  @@unique([swapId, liveKey])
+  @@index([swapId, undoneAt])
+  @@index([itemId])
+}
+
 model SwapDiagnosticHidden {
   id          String   @id @default(cuid())
   swapId      String

@@ -53,6 +53,12 @@ export default function SkiSwapDashboard() {
   const { orgId, selectedSwap, perms, requireConsignmentScan } = useOutletContext<SkiSwapContext>();
   // Fixing a seller or pricing a ticket is staff's; a viewer gets the list.
   const canManage = perms.has('ski_swap:manage');
+  const { data: salesToCheck } = useQuery({
+    queryKey: ['ski-swap/sales-check-count', orgId, selectedSwap?.id],
+    queryFn: () => api.skiSwap.salesCheckCount(orgId, selectedSwap!.id),
+    enabled: !!selectedSwap && perms.has('ski_swap:admin'),
+    refetchInterval: 2 * 60_000,
+  });
 
   const { data: stats } = useQuery({
     queryKey: ['ski-swap/stats', orgId, selectedSwap?.id],
@@ -143,6 +149,20 @@ export default function SkiSwapDashboard() {
       {/* Each card says what's wrong and what to do, and goes where it's
           done. Shown only when there is something to act on: a zero here is
           the normal state, and a card reading zero every day stops being read. */}
+
+      {/* Sales PatrolKit can't put on an item (Plan 48): a seller may be
+          going unpaid. Admins only, as the fixes are. Counting reads only. */}
+      {(salesToCheck?.open ?? 0) > 0 && (
+        <Link to="/dashboard/ski-swap/reports" className={`${issueCard} hover:border-amber-600`}>
+          <p className="text-amber-300 text-sm font-medium">
+            {salesToCheck!.open} {salesToCheck!.open === 1 ? 'sale needs' : 'sales need'} checking
+          </p>
+          <p className="text-xs text-amber-500/80 mt-0.5">
+            Sold at the swap’s location, but not on one of its items: a ticket scanned onto another copy, an item
+            made at the register, or something else. Click to credit each to the right item, or set it aside.
+          </p>
+        </Link>
+      )}
 
       {/* Nothing here accepts an item: that happens at the table, on the
           staff iPad. The link shows which ones. */}

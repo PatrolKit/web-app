@@ -16,6 +16,7 @@ import { PayPalClient, PayPalError, type PayoutItemRequest } from './paypal.clie
 import { formatCents } from './money';
 import { checksToCsv, phoneForHumans, type CheckRow } from './checks-csv';
 import { TERMINAL_PAYOUT_STATUSES, type PayoutLineStatus } from '../../contracts/payouts.contracts';
+import { applyDecisions, type DecisionRef } from '../sales-check';
 
 /**
  * Payout runs: building them, approving them, and sending them (Plan 25 §4–§7).
@@ -83,7 +84,13 @@ export class PayoutRunService {
       throw new BadRequestException('This swap has no Square location, so sales cannot be read');
     }
 
-    const sales = await adapter.listSales(swap.locationId, salesFrom, salesTo);
+    const read = await adapter.listSales(swap.locationId, salesFrom, salesTo);
+    // What Sales check decided (Plan 48 D5): a sale credited to an item pays
+    // its seller; one that isn't a swap sale leaves the unmatched list.
+    const decisions = await this.prisma.swapSaleDecision.findMany({
+      where: { swapId, liveKey: { not: null } },
+      select: { orderId: true, lineUid: true, decision: true, itemId: true },
+    });
 
     const itemRows = await this.prisma.swapItem.findMany({
       // Tombstones included, deliberately, and the only read in the codebase
@@ -102,6 +109,12 @@ export class PayoutRunService {
       },
     });
     const items: RunItem[] = itemRows;
+    const sales = applyDecisions(
+      read,
+      decisions as DecisionRef[],
+      new Set(itemRows.map((i) => i.squareVariationId).filter((v): v is string => !!v)),
+      new Map(itemRows.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!])),
+    );
 
     const sellerIds = [...new Set(itemRows.map((i) => i.sellerId).filter((id): id is string => !!id))];
     const sellerRows = await this.prisma.sellerProfile.findMany({

@@ -43,6 +43,7 @@ describe('the dashboard pie', () => {
     let reads = 0;
     const pos = { listSales: async () => { reads++; return [sale('sv-1')]; } };
     const prisma = {
+      swapSaleDecision: { findMany: async () => [] },
       skiSwap: { findFirst: async () => ({ id: 'swap', createdAt: new Date('2026-09-01'), locationId: 'loc' }) },
       swapItem: { findMany: async () => [{ ...item('1'), consignedAt: new Date() }] },
     };

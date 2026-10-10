@@ -24,6 +24,8 @@ export const ApplyDiagnosticChoiceSchema = z
     restoreItemId: z.string().min(1).optional(),
     /** Keep this copy: the Square item to keep. */
     keepSquareItemId: z.string().min(1).optional(),
+    /** Re-number the other item (Plan 48 D11): the prefix, when its category isn't named for a year. */
+    prefix: z.string().regex(/^[A-Za-z0-9]{1,12}$/, 'Letters and digits, up to 12.').optional(),
   })
   .strict();
 export class ApplyDiagnosticChoiceDto extends createZodDto(ApplyDiagnosticChoiceSchema) {}
@@ -36,6 +38,8 @@ export const ApplyDiagnosticChoiceToAllSchema = z
     choice: z.enum(DIAGNOSTIC_CHOICES),
     /** Copy to PatrolKit: one seller for every item not restored. */
     sellerId: z.string().min(1).optional(),
+    /** Re-number the other item (Plan 48 D11): the prefix, when its category isn't named for a year. */
+    prefix: z.string().regex(/^[A-Za-z0-9]{1,12}$/, 'Letters and digits, up to 12.').optional(),
   })
   .strict();
 export class ApplyDiagnosticChoiceToAllDto extends createZodDto(ApplyDiagnosticChoiceToAllSchema) {}
@@ -49,6 +53,10 @@ export interface DiagnosticSquareSide {
   priceCents: number | null;
   version: string | null;
   updatedAt: string | null;
+  /** Elsewhere (Plan 48 D11): the copy's SKU, categories and whether it's archived. */
+  sku?: string;
+  category?: string | null;
+  archived?: boolean;
 }
 
 /** One of our items, on an issue. `deleted`: a deleted item with the same SKU. */

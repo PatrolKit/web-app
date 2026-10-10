@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { Link, useOutletContext } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
 import SearchableSelect from '../../components/SearchableSelect';
 import type {
-  DiagnosticChoice, DiagnosticIssueResponse, DiagnosticRunResponse, SellerResponse, SwapResponse,
+  DiagnosticChoice, DiagnosticIssueResponse, DiagnosticRunResponse, SellerResponse,
 } from '../../lib/api.types';
+import type { SkiSwapContext } from './SkiSwapLayout';
 import {
-  CHOICE_LABEL, decidedText, groupChoiceLabel, groupsOf, isOpen, rowChoices, shown, squareCopies, squareSide, tookText,
+  CHOICE_LABEL, decidedText, groupChoiceLabel, groupsOf, isOpen, rowChoices, shown, squareCopies, squareSide, tookText, yearOf,
   type DiagnosticGroup,
 } from './swapDiagnosticsView';
 
@@ -19,24 +20,30 @@ function errorText(err: unknown): string {
 }
 
 /**
- * Swap diagnostics (Plan 41): our items against the swap's Square category,
- * matched by SKU. Every disagreement is a row with its own choices; nothing
- * changes until someone clicks one.
+ * Catalog check (Plan 48 D2): Plan 41's swap diagnostics as a page in Reports,
+ * for the selected swap. Our items against Square, by SKU, and (D11) any other
+ * Square item a scan of one of our tickets could find. Running the checks
+ * reads Square and records what it found; nothing changes until someone picks
+ * a choice.
  */
-export default function SwapDiagnosticsModal({ orgId, swap, onClose }: {
-  orgId: string;
-  swap: SwapResponse;
-  onClose: () => void;
-}) {
+export default function CatalogCheckPage() {
+  const { orgId, perms, selectedSwap: swap } = useOutletContext<SkiSwapContext>();
+  if (!swap) return <p className="text-sm text-gray-400">Pick a swap to check.</p>;
+  // The checks and their choices change Square, so they're an admin's (Plan 41 D12).
+  if (!perms.has('ski_swap:admin')) return <p className="text-sm text-gray-400">Catalog check is for administrators.</p>;
+  return <CatalogCheck orgId={orgId} swapId={swap.id} title={swap.title} />;
+}
+
+function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string; title: string }) {
   const qc = useQueryClient();
-  const key = latestKey(orgId, swap.id);
+  const key = latestKey(orgId, swapId);
   const { data: run, isLoading, error } = useQuery({
     queryKey: key,
-    queryFn: () => api.skiSwap.latestDiagnostics(orgId, swap.id),
+    queryFn: () => api.skiSwap.latestDiagnostics(orgId, swapId),
     refetchInterval: (q) => (q.state.data?.status === 'running' ? 2000 : false),
   });
   const start = useMutation({
-    mutationFn: () => api.skiSwap.startDiagnostics(orgId, swap.id),
+    mutationFn: () => api.skiSwap.startDiagnostics(orgId, swapId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: key }),
   });
   const { data: sellers = [] } = useQuery<SellerResponse[]>({
@@ -44,65 +51,46 @@ export default function SwapDiagnosticsModal({ orgId, swap, onClose }: {
     queryFn: () => api.skiSwap.listSellers(orgId),
   });
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const running = run?.status === 'running' || start.isPending;
   const groups = useMemo(() => (run && run.status === 'done' ? groupsOf(run) : []), [run]);
   const openCount = groups.reduce((n, g) => n + g.open, 0);
   const refresh = () => void qc.invalidateQueries({ queryKey: key });
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-4 pt-[5vh]" onClick={onClose}>
-      <div
-        role="dialog" aria-modal="true" aria-label="Diagnostics"
-        className="bg-surface-50 border border-gray-700 rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-5 pb-4 space-y-3 border-b border-gray-800 shrink-0">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h3 className="text-white font-medium">Diagnostics: {swap.title}</h3>
-              <p className="text-sm text-gray-400 mt-0.5">
-                Compares this swap’s items in PatrolKit with its items in Square, by SKU. Nothing changes until you choose.
-              </p>
-            </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 text-gray-400 hover:text-white text-lg leading-none">×</button>
-          </div>
-          {/* The run and the way to run it, together: what was found, and when. */}
-          <div className="flex items-center justify-between gap-4 bg-surface-100 rounded-lg px-3 py-2">
-            <RunLine run={run ?? null} loading={isLoading} />
-            <button
-              type="button"
-              onClick={() => start.mutate()}
-              disabled={running}
-              className="shrink-0 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-3 py-1.5 rounded text-sm font-medium"
-            >
-              {running ? 'Checking…' : run ? 'Run checks again' : 'Run checks'}
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-y-auto p-5 space-y-5">
-          {error && <p className="text-sm text-red-400">{errorText(error)}</p>}
-          {start.error && <p className="text-sm text-red-400">{errorText(start.error)}</p>}
-          {run?.status === 'running' && (
-            <p className="text-sm text-gray-300">Reading Square: {run.done.toLocaleString('en-US')} items so far…</p>
-          )}
-          {run?.status === 'failed' && <p className="text-sm text-red-400">The check failed: {run.error}</p>}
-          {run?.status === 'done' && openCount === 0 && (
-            <p className="text-sm text-green-400">
-              ✓ Everything matches{run.issues.length ? ': every issue from this run has been dealt with.' : '.'}
-            </p>
-          )}
-          {run?.status === 'done' && groups.map((g) => (
-            <Group key={g.key} group={g} run={run} orgId={orgId} swapId={swap.id} sellers={sellers} onChanged={refresh} />
-          ))}
+    <div className="space-y-5">
+      <div className="space-y-3">
+        <p className="text-sm text-gray-400">
+          Compares {title}’s items in PatrolKit with Square, by SKU, and looks for any other Square item one of its tickets
+          would scan as. Nothing changes until you choose.
+        </p>
+        {/* The run and the way to run it, together: what was found, and when. */}
+        <div className="flex items-center justify-between gap-4 bg-surface-50 border border-gray-800 rounded-lg px-3 py-2">
+          <RunLine run={run ?? null} loading={isLoading} />
+          <button
+            type="button"
+            onClick={() => start.mutate()}
+            disabled={running}
+            className="shrink-0 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-3 py-1.5 rounded text-sm font-medium"
+          >
+            {running ? 'Checking…' : run ? 'Run checks again' : 'Run checks'}
+          </button>
         </div>
       </div>
+
+      {error && <p className="text-sm text-red-400">{errorText(error)}</p>}
+      {start.error && <p className="text-sm text-red-400">{errorText(start.error)}</p>}
+      {run?.status === 'running' && (
+        <p className="text-sm text-gray-300">Reading Square: {run.done.toLocaleString('en-US')} items so far…</p>
+      )}
+      {run?.status === 'failed' && <p className="text-sm text-red-400">The check failed: {run.error}</p>}
+      {run?.status === 'done' && openCount === 0 && (
+        <p className="text-sm text-green-400">
+          ✓ Everything matches{run.issues.length ? ': every issue from this run has been dealt with.' : '.'}
+        </p>
+      )}
+      {run?.status === 'done' && groups.map((g) => (
+        <Group key={g.key} group={g} run={run} orgId={orgId} swapId={swapId} sellers={sellers} onChanged={refresh} />
+      ))}
     </div>
   );
 }
@@ -137,11 +125,13 @@ function Group({ group, run, orgId, swapId, sellers, onChanged }: {
 }) {
   const [shownRows, setShownRows] = useState(PAGE);
   const [groupSeller, setGroupSeller] = useState('');
+  const [groupPrefix, setGroupPrefix] = useState('');
   const [result, setResult] = useState<string | null>(null);
   const all = useMutation({
-    mutationFn: (choice: DiagnosticChoice) => api.skiSwap.applyDiagnosticChoiceToAll(orgId, swapId, run.id, {
+    mutationFn: ({ choice, prefix }: { choice: DiagnosticChoice; prefix?: string }) => api.skiSwap.applyDiagnosticChoiceToAll(orgId, swapId, run.id, {
       kind: group.kind, ...(group.field ? { field: group.field } : {}), choice,
       ...(choice === 'copy_to_patrolkit' && groupSeller ? { sellerId: groupSeller } : {}),
+      ...(choice === 'renumber_other' && prefix ? { prefix } : {}),
     }),
     onSuccess: (r) => {
       setResult([
@@ -155,10 +145,21 @@ function Group({ group, run, orgId, swapId, sellers, onChanged }: {
 
   function applyAll(choice: DiagnosticChoice) {
     const n = group.open;
+    if (choice === 'renumber_other') {
+      // Each copy's year when its category is named for one (D11); a prefix here for the rest.
+      const given = window.prompt(
+        `Re-number all ${n} other items' SKUs? Each is prefixed with the year its category is named for (e.g. 2025-73789). For any whose category isn't a year, give a prefix here (letters and digits), or leave it blank to skip those.`,
+        groupPrefix,
+      );
+      if (given === null) return;
+      setGroupPrefix(given.trim());
+      all.mutate({ choice, prefix: given.trim() || undefined });
+      return;
+    }
     const what = choice === 'resolve'
       ? `Mark all ${n} resolved? Nothing changes in Square or PatrolKit; any that still disagree won’t come up again until something changes.`
       : `${groupChoiceLabel(choice, n)}? This changes ${n === 1 ? 'that item' : `all ${n} items`}${choice === 'copy_to_patrolkit' ? ' (deleted items with the same SKU are restored instead)' : ''}.`;
-    if (window.confirm(what)) all.mutate(choice);
+    if (window.confirm(what)) all.mutate({ choice });
   }
 
   return (
@@ -219,7 +220,7 @@ function IssueRow({ issue, orgId, swapId, sellers, onChanged }: {
 }) {
   const [seller, setSeller] = useState('');
   const apply = useMutation({
-    mutationFn: (body: { choice: DiagnosticChoice; sellerId?: string; restoreItemId?: string; keepSquareItemId?: string }) =>
+    mutationFn: (body: { choice: DiagnosticChoice; sellerId?: string; restoreItemId?: string; keepSquareItemId?: string; prefix?: string }) =>
       api.skiSwap.applyDiagnosticChoice(orgId, swapId, issue.id, body),
     onSuccess: onChanged,
   });
@@ -258,6 +259,19 @@ function IssueRow({ issue, orgId, swapId, sellers, onChanged }: {
       )}
       {issue.kind === 'only_ours' && ours && (
         <p className="text-xs text-gray-400">Ours: {shown('price', ours)}.</p>
+      )}
+
+      {issue.kind === 'elsewhere' && (
+        <ul className="space-y-1">
+          {squareCopies(issue).map((c) => (
+            <li key={c.itemId} className="text-xs bg-surface-100 rounded px-2 py-1.5 text-gray-300">
+              {c.name}
+              <span className="text-gray-500"> · SKU <span className="font-mono">{c.sku}</span></span>
+              <span className="text-gray-500"> · {c.category ?? 'no category'}</span>
+              {c.archived && <span className="text-amber-400"> · archived, still scans</span>}
+            </li>
+          ))}
+        </ul>
       )}
 
       {!open && <p className="text-xs text-gray-400">{decidedText(issue)}</p>}
@@ -301,7 +315,18 @@ function IssueRow({ issue, orgId, swapId, sellers, onChanged }: {
           {rowChoices(issue).map((c) => (
             <button key={c} type="button"
               disabled={apply.isPending || (c === 'copy_to_patrolkit' && !seller)}
-              onClick={() => apply.mutate({ choice: c, ...(c === 'copy_to_patrolkit' ? { sellerId: seller } : {}) })}
+              onClick={() => {
+                if (c === 'renumber_other') {
+                  const year = squareCopies(issue).map((x) => yearOf(x.category)).find(Boolean);
+                  const prefix = year ?? window.prompt('Prefix for the other item’s SKU (letters and digits), e.g. OLD:', 'OLD')?.trim();
+                  if (!prefix) return;
+                  if (!window.confirm(`Re-number the other item’s SKU to ${prefix}-${issue.sku}? It stays in Square, and stops scanning as ${issue.sku}.`)) return;
+                  apply.mutate({ choice: c, ...(year ? {} : { prefix }) });
+                  return;
+                }
+                if (c === 'delete_other' && !window.confirm(`Delete the other item from Square? This can’t be undone; its past sales stay in Square’s history.`)) return;
+                apply.mutate({ choice: c, ...(c === 'copy_to_patrolkit' ? { sellerId: seller } : {}) });
+              }}
               className="bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-gray-200 px-2.5 py-1 rounded text-xs">
               {c === 'copy_to_patrolkit' && deleted ? 'Copy to PatrolKit as new' : CHOICE_LABEL[c]}
             </button>

@@ -882,6 +882,33 @@ export const api = {
 
     // Swap diagnostics (Plan 41)
     /** Starts the checks, or answers the run already going. */
+    // ─── Sales check (Plan 48): reading changes nothing; every POST is a person's choice ───
+    salesCheck: (orgId: string, swapId: string) =>
+      request<import('./api.types').SalesCheckResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check`),
+    salesCheckCount: (orgId: string, swapId: string) =>
+      request<import('./api.types').SalesCheckCount>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/count`),
+    creditSale: (orgId: string, swapId: string, body: { orderId: string; lineUid: string; itemId: string; markSold: boolean }) =>
+      request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/credit`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
+      }),
+    creditSuggestedSales: (orgId: string, swapId: string, body: { lines: { orderId: string; lineUid: string; itemId: string }[]; markSold: boolean }) =>
+      request<{ outcomes: import('./api.types').SalesCheckOutcome[] }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/credit-suggested`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
+      }),
+    notSwapSale: (orgId: string, swapId: string, body: { orderId: string; lineUid: string; note?: string }) =>
+      request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/not-swap`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
+      }),
+    undoSaleDecision: (orgId: string, swapId: string, decisionId: string) =>
+      request<{ markedSold: boolean; itemId: string | null }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/undo/${decisionId}`, { method: 'POST' }),
+    restockItem: (orgId: string, swapId: string, itemId: string) =>
+      request<{ stock: number }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/restock/${itemId}`, { method: 'POST' }),
+    ignoreSquareCategory: (orgId: string, swapId: string, body: { categoryId: string; ignore: boolean }) =>
+      request<{ ignored: string[] }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/ignore-category`, { method: 'POST', body: JSON.stringify(body) }),
+    issueAndCreditSale: (orgId: string, swapId: string, body: { orderId: string; lineUid: string; sellerId: string; ticket: string }) =>
+      request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/issue-and-credit`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
+      }),
     startDiagnostics: (orgId: string, swapId: string) =>
       request<{ runId: string }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics`, { method: 'POST' }),
     /** The latest run with its issues; null before the first. */
@@ -889,7 +916,7 @@ export const api = {
       request<import('./api.types').DiagnosticRunResponse | null>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics/latest`),
     applyDiagnosticChoice: (
       orgId: string, swapId: string, issueId: string,
-      body: { choice: import('./api.types').DiagnosticChoice; sellerId?: string; restoreItemId?: string; keepSquareItemId?: string },
+      body: { choice: import('./api.types').DiagnosticChoice; sellerId?: string; restoreItemId?: string; keepSquareItemId?: string; prefix?: string },
     ) =>
       request<import('./api.types').DiagnosticIssueResponse>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics/issues/${issueId}`,
@@ -897,7 +924,7 @@ export const api = {
       ),
     applyDiagnosticChoiceToAll: (
       orgId: string, swapId: string, runId: string,
-      body: { kind: import('./api.types').DiagnosticIssueKind; field?: import('./api.types').DiagnosticField; choice: import('./api.types').DiagnosticChoice; sellerId?: string },
+      body: { kind: import('./api.types').DiagnosticIssueKind; field?: import('./api.types').DiagnosticField; choice: import('./api.types').DiagnosticChoice; sellerId?: string; prefix?: string },
     ) =>
       request<import('./api.types').DiagnosticApplyAllResponse>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics/runs/${runId}/apply-all`,

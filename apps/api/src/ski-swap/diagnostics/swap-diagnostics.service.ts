@@ -1,8 +1,8 @@
-import { CLAIM_RELEASED, claimForSquareCreate, releaseSquareCreateClaim } from '../square-create-claim';
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PosAdapterFactory, type IPosAdapter, type PosItemSync } from '../pos/pos.adapter';
+import { PosAdapterFactory, type IPosAdapter, type PosCatalogItem, type PosItemSync } from '../pos/pos.adapter';
+import { CLAIM_RELEASED, claimForSquareCreate, releaseSquareCreateClaim } from '../square-create-claim';
 import { ItemService } from '../item.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from '../seller.service';
 import { ticketNumberOf } from '../legacy-ticket.service';
@@ -26,7 +26,13 @@ const KEPT_RUNS = 30;
 
 type Swap = { id: string; orgId: string; title: string; squareCategoryId: string; locationId: string };
 type IssueRow = Prisma.SwapDiagnosticIssueGetPayload<object>;
-type Extra = { sellerId?: string; restoreItemId?: string; keepSquareItemId?: string };
+type Extra = { sellerId?: string; restoreItemId?: string; keepSquareItemId?: string; prefix?: string };
+
+/** A copy's category, as a re-number prefix when it's named for a year ("2025"). */
+function yearOf(category: string | null | undefined): string | null {
+  const m = (category ?? '').match(/(?:^|,\s*)((?:19|20)\d{2})(?:$|,)/);
+  return m ? m[1] : null;
+}
 
 /**
  * Swap diagnostics (Plan 41): a run compares our items with the swap's Square
@@ -94,7 +100,8 @@ export class SwapDiagnosticsService {
     await progress;
 
     const { ours, deleted, returned } = await this.ourItems(swap.id);
-    const found = diagnose({ ours, deleted, returned, square });
+    const { elsewhere, categoryNames } = await this.elsewhere(swap, pos, ours.map((o) => o.sku));
+    const found = diagnose({ ours, deleted, returned, square, elsewhere, categoryNames });
     const hidden = await this.hiddenKeys(swap.id);
     const kept = found.filter((i) => !hidden.has(`${issueKey(i)}\u0000${i.fingerprint}`));
 
@@ -351,6 +358,28 @@ export class SwapDiagnosticsService {
         return out;
       }
 
+      case 'delete_other':
+      case 'renumber_other': {
+        // Elsewhere (Plan 48 D11): never an item PatrolKit links, re-checked now.
+        const pos = await this.posOrThrow(swap);
+        await each(async (issue) => {
+          const copies = (issue.square as unknown as { copies: SquareSide[] } | null)?.copies ?? [];
+          const ids = copies.map((c) => c.itemId);
+          const linked = await this.prisma.swapItem.findFirst({ where: { orgId: swap.orgId, squareItemId: { in: ids } }, select: { id: true } });
+          if (linked) throw new ConflictException('PatrolKit uses one of those items. Run the checks again.');
+          if (choice === 'delete_other') {
+            await pos.deleteItems(ids);
+            return;
+          }
+          for (const c of copies) {
+            const prefix = extra.prefix ?? yearOf(c.category);
+            if (!prefix) throw new BadRequestException(`Give a prefix: "${c.category ?? 'its category'}" isn't a year.`);
+            await pos.renumberItemSkus(c.itemId, prefix);
+          }
+        });
+        return out;
+      }
+
       case 'keep':
         await each(async (issue) => {
           const copies = (issue.square as unknown as { copies: SquareSide[] } | null)?.copies ?? [];
@@ -413,8 +442,28 @@ export class SwapDiagnosticsService {
     const pos = await this.posOrThrow(swap);
     const square = await pos.itemsBySku(swap.squareCategoryId, skus);
     const { ours, deleted, returned } = await this.ourItems(swap.id, skus);
-    const found = diagnose({ ours, deleted, returned, square, onlySkus: new Set(skus) });
+    const { elsewhere, categoryNames } = await this.elsewhere(swap, pos, skus);
+    const found = diagnose({ ours, deleted, returned, square, elsewhere, categoryNames, onlySkus: new Set(skus) });
     return new Map(found.map((i) => [issueKey(i), i]));
+  }
+
+  /**
+   * Other Square items with these SKUs (Plan 48 D11): anywhere in the
+   * catalogue, archived included, except the swap's own active ones and any
+   * item PatrolKit links. A scan of the ticket can find each of them.
+   */
+  private async elsewhere(swap: Swap, pos: IPosAdapter, skus: string[]): Promise<{ elsewhere: PosCatalogItem[]; categoryNames: Map<string, string> }> {
+    if (skus.length === 0) return { elsewhere: [], categoryNames: new Map() };
+    const [anywhere, categoryNames] = await Promise.all([pos.itemsBySkuAnywhere(skus), pos.listCategories()]);
+    const ids = [...new Set(anywhere.map((e) => e.itemId))];
+    const linked = new Set((await this.prisma.swapItem.findMany({
+      // Any item of the org PatrolKit links, withdrawn ones too: never "another copy".
+      where: { orgId: swap.orgId, squareItemId: { in: ids } },
+      select: { squareItemId: true },
+    })).map((r) => r.squareItemId));
+    const elsewhere = anywhere.filter((e) => !linked.has(e.itemId)
+      && (e.archived || !(e.categoryIds ?? []).includes(swap.squareCategoryId)));
+    return { elsewhere, categoryNames };
   }
 
   private async ourItems(swapId: string, skus?: string[]): Promise<{ ours: OurItem[]; deleted: OurDeletedItem[]; returned: OurReturnedItem[] }> {

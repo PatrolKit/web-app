@@ -52,6 +52,10 @@ export interface SquareSide {
   priceCents: number | null;
   version: string | null;
   updatedAt: string | null;
+  /** Elsewhere (Plan 48 D11) only. */
+  sku?: string;
+  category?: string | null;
+  archived?: boolean;
 }
 
 /** Our side of one item, as stored on an issue. */
@@ -122,6 +126,13 @@ export function diagnose(input: {
   /** Returned items (Plan 43): never "only ours"; still in Square is its own issue. */
   returned?: OurReturnedItem[];
   square: PosCatalogItem[];
+  /**
+   * Other Square items with our SKUs (Plan 48 D11): outside the category, or
+   * archived inside it, and not one PatrolKit links. Absent: not checked.
+   */
+  elsewhere?: PosCatalogItem[];
+  /** Category names, to say where each copy is. */
+  categoryNames?: Map<string, string>;
   /** Limit to these SKUs: a re-read of a few. Absent for a whole run. */
   onlySkus?: Set<string>;
 }): FoundIssue[] {
@@ -180,6 +191,22 @@ export function diagnose(input: {
     if (squareBySku.has(sku) || !our.consigned) continue;
     const o = ourSide(our);
     add(sku, 'only_ours', null, o, null, { ours: [o.itemId, o.name, o.notes, o.priceCents] });
+  }
+
+  // Another item a scan of this ticket can find (D11): the register may ring
+  // the sale up on it, where PatrolKit can't see it.
+  const elsewhereBySku = new Map<string, PosCatalogItem[]>();
+  for (const e of input.elsewhere ?? []) {
+    if (!want(e.sku) || !ourBySku.has(e.sku)) continue;
+    elsewhereBySku.set(e.sku, [...(elsewhereBySku.get(e.sku) ?? []), e]);
+  }
+  for (const [sku, entries] of elsewhereBySku) {
+    const copies = entries.map((e) => ({
+      ...squareSide(e), sku: e.sku, archived: !!e.archived,
+      category: (e.categoryIds ?? []).map((c) => input.categoryNames?.get(c) ?? c).join(', ') || null,
+    })).sort((a, b) => a.itemId.localeCompare(b.itemId));
+    add(sku, 'elsewhere', null, ourSide(ourBySku.get(sku)!), { copies },
+      { copies: copies.map((c) => [c.itemId, c.sku, c.archived]) });
   }
 
   return issues;

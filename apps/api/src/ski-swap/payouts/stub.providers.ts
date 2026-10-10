@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { PayPalClient, type PayoutBatchResult, type PayoutItemRequest } from './paypal.client';
 import {
-  PosAdapterFactory, type IPosAdapter, type PosCatalogItem, type PosItemSync, type PosSaleLine, type PosUpsertResult,
+  PosAdapterFactory, type IPosAdapter, type PosCatalogItem, type PosItemSync, type PosSaleLine, type PosUpsertResult, type PosVariationInfo,
 } from '../pos/pos.adapter';
 
 /**
@@ -128,10 +128,42 @@ class StubPosAdapter implements IPosAdapter {
       soldAt: string;
     })[];
     return rows
-      .map((r) => ({ ...r, soldAt: new Date(r.soldAt) }))
+      // A line's uid defaults to its place in the file (Plan 48 D4).
+      .map((r, i) => ({ ...r, lineUid: r.lineUid ?? `line-${i}`, soldAt: new Date(r.soldAt) }))
       // The window is honoured, so a script can prove a sale outside it is
       // excluded rather than taking it on trust.
       .filter((r) => r.soldAt >= from && r.soldAt <= to);
+  }
+
+  async getSaleLine(orderId: string, lineUid: string): Promise<PosSaleLine | null> {
+    const all = await this.listSales('', new Date(0), new Date(8.64e15));
+    return all.find((l) => l.orderId === orderId && l.lineUid === lineUid) ?? null;
+  }
+
+  // ─── Sales check (Plan 48), from the catalog file ──────────────────────────
+  //
+  // Rows may carry `archived` and `categoryName`, so a script can stand up
+  // last year's archived copy of a ticket, or a register-made item.
+
+  async describeVariations(variationIds: string[]): Promise<Map<string, PosVariationInfo>> {
+    const rows = process.env.SMOKE_CATALOG_FILE ? this.catalog() : [];
+    return new Map(rows.filter((r) => variationIds.includes(r.variationId)).map((r) => [r.variationId, {
+      variationId: r.variationId, itemId: r.itemId, itemName: r.name, variationName: r.sku, sku: r.sku,
+      categoryIds: r.categoryId ? [r.categoryId] : [], archived: !!r.archived,
+    }]));
+  }
+
+  async listCategories(): Promise<Map<string, string>> {
+    const rows = process.env.SMOKE_CATALOG_FILE ? this.catalog() : [];
+    return new Map(rows.filter((r) => r.categoryId).map((r) => [r.categoryId, (r as { categoryName?: string }).categoryName ?? r.categoryId]));
+  }
+
+  async itemsBySkuAnywhere(skus: string[]): Promise<PosCatalogItem[]> {
+    return this.catalog().filter((r) => skus.includes(r.sku)).map((r) => ({ ...r, categoryIds: r.categoryId ? [r.categoryId] : [], archived: !!r.archived }));
+  }
+
+  async renumberItemSkus(posItemId: string, prefix: string): Promise<void> {
+    this.saveCatalog(this.catalog().map((r) => (r.itemId === posItemId && !r.sku.startsWith(`${prefix}-`) ? { ...r, sku: `${prefix}-${r.sku}` } : r)));
   }
 
   // ─── A catalog in a file, for the swap diagnostics (Plan 41) ───────────────
@@ -139,7 +171,7 @@ class StubPosAdapter implements IPosAdapter {
   // `SMOKE_CATALOG_FILE` is the catalog: read on every call and written back,
   // so a smoke script can change "Square" between runs as staff would by hand.
 
-  private catalog(): (PosCatalogItem & { categoryId: string })[] {
+  private catalog(): (PosCatalogItem & { categoryId: string; archived?: boolean })[] {
     const path = process.env.SMOKE_CATALOG_FILE;
     if (!path) this.refuse();
     return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : [];
@@ -214,7 +246,14 @@ class StubPosAdapter implements IPosAdapter {
     return new Map(variationIds.filter((id) => id in counts).map((id) => [id, counts[id]]));
   }
   setInitialInventory(): never { this.refuse(); }
-  setInventoryPhysicalCount(): never { this.refuse(); }
+  /** Into `SMOKE_INVENTORY_FILE` when a script gives one (Plan 48 D6: crediting marks an item sold). */
+  async setInventoryPhysicalCount(variationId: string, _locationId: string, quantity: number): Promise<void> {
+    const path = process.env.SMOKE_INVENTORY_FILE;
+    if (!path) return;
+    const counts = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) as Record<string, number> : {};
+    counts[variationId] = quantity;
+    writeFileSync(path, JSON.stringify(counts, null, 2));
+  }
 }
 
 /** Whether this process is running with the test doubles in place. */

@@ -77,7 +77,7 @@ export interface BuiltRun {
    * nobody is being paid for, and silence is the one response that guarantees
    * nobody looks.
    */
-  unmatched: { variationId: string; orderId: string; collectedCents: number }[];
+  unmatched: { variationId: string; orderId: string; collectedCents: number; lineUid?: string; name?: string | null }[];
   /**
    * Unpriced tickets that sold at one price typed at the register, which
    * becomes the item's price (Plan 32 D5). One that sold at different prices
@@ -128,6 +128,9 @@ export function buildRun(
         variationId: sale.variationId,
         orderId: sale.orderId,
         collectedCents: sale.collectedCents,
+        // For Sales check (Plan 48): which line, and what it was rung up as.
+        ...(sale.lineUid ? { lineUid: sale.lineUid } : {}),
+        ...(sale.name ? { name: sale.name } : {}),
       });
       continue;
     }

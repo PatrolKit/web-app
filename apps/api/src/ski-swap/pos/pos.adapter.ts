@@ -19,8 +19,20 @@ export interface PosItemSync {
  */
 export interface PosSaleLine {
   orderId: string;
-  /** The catalog variation, which is `SwapItem.squareVariationId`. */
+  /**
+   * The catalog variation, which is `SwapItem.squareVariationId`. Empty for a
+   * custom amount typed at the register, which has none (Plan 48).
+   */
   variationId: string;
+  /**
+   * The line within its order (Square's line `uid`): with `orderId`, what a
+   * Sales check decision is keyed on (Plan 48 D4).
+   */
+  lineUid?: string;
+  /** The line's name as rung up, e.g. "Swap Item 73338" or "Custom Amount". */
+  name?: string | null;
+  /** The order's payment, for a link to the sale in Square. */
+  paymentId?: string | null;
   quantity: number;
   /** What the register actually took for this line, after any discount. */
   collectedCents: number;
@@ -51,6 +63,21 @@ export interface PosCatalogItem {
   version: string | null;
   /** When Square last changed it. Square keeps no creation time. */
   updatedAt: string | null;
+  /** The item's categories (Plan 48 D11). */
+  categoryIds?: string[];
+  /** Archived in Square: hidden from the item list, but still scanned (Plan 48). */
+  archived?: boolean;
+}
+
+/** What a sale was rung up on (Plan 48): a variation and its item, archived or not. */
+export interface PosVariationInfo {
+  variationId: string;
+  itemId: string;
+  itemName: string;
+  variationName: string | null;
+  sku: string;
+  categoryIds: string[];
+  archived: boolean;
 }
 
 /** One item's outcome in a bulk write: its ids, or Square's reason. */
@@ -102,6 +129,22 @@ export interface IPosAdapter {
     results: PosUpsertResult[];
     resolvedCategoryId: string;
   }>;
+  /**
+   * What these variations are (Plan 48): each with its item, archived ones
+   * included. One Square can't find is absent.
+   */
+  describeVariations(variationIds: string[]): Promise<Map<string, PosVariationInfo>>;
+  /** Category names by id (Plan 48). */
+  listCategories(): Promise<Map<string, string>>;
+  /** One order line, re-read before a Sales check decision (Plan 48 D13). Null when it's gone. */
+  getSaleLine(orderId: string, lineUid: string): Promise<PosSaleLine | null>;
+  /**
+   * Every item carrying these SKUs anywhere in the catalogue, archived ones
+   * included (Plan 48 D11): what a scan can find, wherever it is filed.
+   */
+  itemsBySkuAnywhere(skus: string[]): Promise<PosCatalogItem[]>;
+  /** Prefixes each of an item's variation SKUs, e.g. "2025-73789" (Plan 48 D11). */
+  renumberItemSkus(posItemId: string, prefix: string): Promise<void>;
 }
 
 /** Factory that builds an org-scoped adapter, returning null when POS is not configured. */

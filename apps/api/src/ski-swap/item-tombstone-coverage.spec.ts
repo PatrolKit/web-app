@@ -38,10 +38,27 @@ describe('item tombstone coverage', () => {
         'count share one `where`, which carries the condition.',
     },
     'ski-swap/item-breakdown.service.ts': {
-      count: 1,
+      count: 2,
       because:
         'Sales by hour and sold by category (Plan 46 D2): a sale stays a sale ' +
-        'after its item is deleted, and so does its category.',
+        'after its item is deleted, and so does its category. And a sale ' +
+        'credited to an item by Sales check (Plan 48 D5) stays that item\'s ' +
+        'after it is deleted, as payouts treat a direct sale.',
+    },
+    'ski-swap/diagnostics/swap-diagnostics.service.ts': {
+      count: 2,
+      because:
+        'Catalog check\'s "elsewhere" (Plan 48 D11) asks whether PatrolKit ' +
+        'links a Square item at all, withdrawn items included: once to find ' +
+        'the other copies, and again just before deleting or re-numbering ' +
+        'one, so it never touches an item PatrolKit still points at.',
+    },
+    'ski-swap/sales-check.service.ts': {
+      count: 1,
+      because:
+        'Sales check (Plan 48) reads withdrawn items too, marked as such: a ' +
+        'sale on an item since withdrawn is still that item\'s, and is never ' +
+        'listed as a stray. Credits go to live items only.',
     },
     'ski-swap/payouts/payout-run.service.ts': {
       count: 1,

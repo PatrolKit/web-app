@@ -4,7 +4,7 @@ import { SquareClient, SquareError } from 'square';
 import { SquareClientService } from '../square-client.service';
 import { PosAdapterFactory, type IPosAdapter, type PosItemSync } from './pos.adapter';
 import type { Square } from 'square';
-import type { PosCatalogItem, PosSaleLine, PosUpsertResult } from './pos.adapter';
+import type { PosCatalogItem, PosSaleLine, PosUpsertResult, PosVariationInfo } from './pos.adapter';
 import { withRateLimitRetry } from './square-retry';
 
 function isSquareMissingReferenceError(err: unknown): boolean {
@@ -509,35 +509,98 @@ class SquarePosAdapter implements IPosAdapter {
       if (res.errors?.length) {
         throw new Error(`Square order search failed: ${res.errors.map((e) => `${e.code}: ${e.detail}`).join(', ')}`);
       }
-
-      for (const order of res.orders ?? []) {
-        // `closedAt` is when the money was taken, which is the date a seller
-        // would recognise. `createdAt` is when the cart was opened.
-        const soldAt = new Date(order.closedAt ?? order.createdAt ?? Date.now());
-        const refundedByLine = refundedQuantities(order);
-
-        for (const line of order.lineItems ?? []) {
-          // A line with no catalog object is something rung up by hand. It
-          // cannot be matched to a seller's item, and the run reports those
-          // rather than dropping them — see `PayoutRunService`.
-          if (!line.catalogObjectId) continue;
-          lines.push({
-            orderId: order.id ?? '',
-            variationId: line.catalogObjectId,
-            quantity: Number(line.quantity ?? '0'),
-            // `totalMoney` is after discounts, which is what the register took
-            // and therefore what the org actually has.
-            collectedCents: Number(line.totalMoney?.amount ?? 0n),
-            unitPriceCents: line.basePriceMoney?.amount != null ? Number(line.basePriceMoney.amount) : null,
-            refundedQuantity: refundedByLine.get(line.uid ?? '') ?? 0,
-            soldAt,
-          });
-        }
-      }
+      for (const order of res.orders ?? []) lines.push(...saleLinesOf(order));
       cursor = res.cursor;
     } while (cursor);
 
     return lines;
+  }
+
+  async getSaleLine(orderId: string, lineUid: string): Promise<PosSaleLine | null> {
+    const res = await withRateLimitRetry(() => this.client.orders.get({ orderId })).catch((err: unknown) => {
+      if (err instanceof SquareError && err.errors.some((e) => e.code === 'NOT_FOUND')) return null;
+      throw err;
+    });
+    const order = res?.order;
+    if (!order || order.state !== 'COMPLETED') return null;
+    return saleLinesOf(order).find((l) => l.lineUid === lineUid) ?? null;
+  }
+
+  // ─── Sales check (Plan 48) ──────────────────────────────────────────────────
+
+  async describeVariations(variationIds: string[]): Promise<Map<string, PosVariationInfo>> {
+    const out = new Map<string, PosVariationInfo>();
+    const ids = [...new Set(variationIds.filter(Boolean))];
+    for (let at = 0; at < ids.length; at += 1000) {
+      const res = await withRateLimitRetry(() =>
+        this.client.catalog.batchGet({ objectIds: ids.slice(at, at + 1000), includeRelatedObjects: true }));
+      const parents = new Map((res.relatedObjects ?? []).filter((o) => o.type === 'ITEM' && o.id).map((o) => [o.id!, o]));
+      for (const v of res.objects ?? []) {
+        const vd = v.type === 'ITEM_VARIATION' ? (v as Square.CatalogObject.ItemVariation).itemVariationData : null;
+        if (!v.id || !vd?.itemId) continue;
+        const parent = parents.get(vd.itemId);
+        const data = asItem(parent)?.itemData;
+        out.set(v.id, {
+          variationId: v.id,
+          itemId: vd.itemId,
+          itemName: data?.name ?? '',
+          variationName: vd.name ?? null,
+          sku: vd.sku ?? '',
+          categoryIds: parent ? categoryIdsOf(parent) : [],
+          archived: !!data?.isArchived || !!parent?.isDeleted,
+        });
+      }
+    }
+    return out;
+  }
+
+  async listCategories(): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const page = await withRateLimitRetry(() => this.client.catalog.list({ types: 'CATEGORY' }));
+    for await (const c of page) {
+      if (c.type === 'CATEGORY' && c.id && !c.isDeleted) out.set(c.id, (c as Square.CatalogObject.Category).categoryData?.name ?? '');
+    }
+    return out;
+  }
+
+  async itemsBySkuAnywhere(skus: string[]): Promise<PosCatalogItem[]> {
+    const wanted = new Set(skus.filter(Boolean));
+    const parents = new Map<string, Square.CatalogObject>();
+    const list = [...wanted];
+    for (let at = 0; at < list.length; at += 100) {
+      let cursor: string | undefined;
+      do {
+        const res = await withRateLimitRetry(() => this.client.catalog.search({
+          objectTypes: ['ITEM_VARIATION'],
+          includeRelatedObjects: true,
+          limit: 1000,
+          cursor,
+          query: { setQuery: { attributeName: 'sku', attributeValues: list.slice(at, at + 100) } },
+        }));
+        for (const obj of res.relatedObjects ?? []) if (obj.type === 'ITEM' && obj.id) parents.set(obj.id, obj);
+        cursor = res.cursor;
+      } while (cursor);
+    }
+    return [...parents.values()].flatMap((obj) => catalogEntries(obj, { includeArchived: true })).filter((e) => wanted.has(e.sku));
+  }
+
+  async renumberItemSkus(posItemId: string, prefix: string): Promise<void> {
+    const res = await withRateLimitRetry(() => this.client.catalog.object.get({ objectId: posItemId }));
+    const item = res.object;
+    const data = asItem(item)?.itemData;
+    if (!item || !data) throw new Error('Square no longer has that item.');
+    const tag = `${prefix}-`;
+    const variations = (data.variations ?? []).map((v) => {
+      const vd = (v as Square.CatalogObject.ItemVariation).itemVariationData;
+      const sku = vd?.sku ?? '';
+      return sku && !sku.startsWith(tag)
+        ? { ...v, itemVariationData: { ...vd, sku: `${tag}${sku}` } }
+        : v;
+    });
+    await withRateLimitRetry(() => this.client.catalog.batchUpsert({
+      idempotencyKey: uuidv4(),
+      batches: [{ objects: [{ ...item, itemData: { ...data, variations } } as Square.CatalogObject] }],
+    }));
   }
 
   async setInitialInventory(variationId: string, locationId: string, quantity: number): Promise<void> {
@@ -627,6 +690,42 @@ export function variationPricing(priceCents: number | null) {
     : { pricingType: 'FIXED_PRICING' as const, priceMoney: { amount: BigInt(priceCents), currency: 'USD' as const } };
 }
 
+/** A catalog item's categories, in either of the ways Square records them. */
+function categoryIdsOf(obj: Square.CatalogObject): string[] {
+  const data = asItem(obj)?.itemData;
+  if (!data) return [];
+  return [...new Set([data.categoryId, ...(data.categories ?? []).map((c) => c.id)].filter((x): x is string => !!x))];
+}
+
+/**
+ * An order's lines, one entry per line (Plan 25, Plan 48).
+ *
+ * A line with no catalog object is a custom amount typed at the register. It
+ * can't be anyone's item, so it carries an empty `variationId`: payouts list
+ * it as unmatched, and Sales check asks what it was.
+ */
+function saleLinesOf(order: Square.Order): PosSaleLine[] {
+  // `closedAt` is when the money was taken, which is the date a seller
+  // would recognise. `createdAt` is when the cart was opened.
+  const soldAt = new Date(order.closedAt ?? order.createdAt ?? Date.now());
+  const refundedByLine = refundedQuantities(order);
+  const paymentId = order.tenders?.find((t) => t.paymentId)?.paymentId ?? order.tenders?.[0]?.id ?? null;
+  return (order.lineItems ?? []).map((line) => ({
+    orderId: order.id ?? '',
+    variationId: line.catalogObjectId ?? '',
+    lineUid: line.uid ?? undefined,
+    name: line.name ?? null,
+    paymentId,
+    quantity: Number(line.quantity ?? '0'),
+    // `totalMoney` is after discounts, which is what the register took
+    // and therefore what the org actually has.
+    collectedCents: Number(line.totalMoney?.amount ?? 0n),
+    unitPriceCents: line.basePriceMoney?.amount != null ? Number(line.basePriceMoney.amount) : null,
+    refundedQuantity: refundedByLine.get(line.uid ?? '') ?? 0,
+    soldAt,
+  }));
+}
+
 /** Whether a catalog item is in a category, in either of the ways Square records it. */
 function inCategory(obj: Square.CatalogObject, categoryId: string): boolean {
   const data = asItem(obj)?.itemData;
@@ -634,9 +733,12 @@ function inCategory(obj: Square.CatalogObject, categoryId: string): boolean {
 }
 
 /** A catalog item flattened to its variations, as the diagnostics compare them (Plan 41). */
-export function catalogEntries(obj: Square.CatalogObject): PosCatalogItem[] {
+export function catalogEntries(obj: Square.CatalogObject, opts: { includeArchived?: boolean } = {}): PosCatalogItem[] {
   const item = asItem(obj);
   if (!item?.id || !item.itemData || item.isDeleted) return [];
+  // Archived items are out of the item list, but Square still scans them
+  // (Plan 48). Diagnostics' category read leaves them out; D11 asks for them.
+  if (item.itemData.isArchived && !opts.includeArchived) return [];
   const data = item.itemData;
   const description = (data.description ?? data.descriptionPlaintext ?? '').trim();
   return (data.variations ?? []).flatMap((v) => {
@@ -653,6 +755,8 @@ export function catalogEntries(obj: Square.CatalogObject): PosCatalogItem[] {
         : { type: 'fixed' as const, cents: Number(vd.priceMoney.amount) },
       version: item.version !== undefined ? item.version.toString() : null,
       updatedAt: item.updatedAt ?? null,
+      categoryIds: categoryIdsOf(item),
+      archived: !!data.isArchived,
     }];
   });
 }

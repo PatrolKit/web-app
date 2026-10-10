@@ -75,6 +75,8 @@ import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { IdentityModule } from '../common/identity/identity.module';
 import { SwapDiagnosticsController } from './diagnostics/swap-diagnostics.controller';
+import { SalesCheckController } from './sales-check.controller';
+import { SalesCheckService } from './sales-check.service';
 import { SwapDiagnosticsService } from './diagnostics/swap-diagnostics.service';
 import { IndemnificationController } from './indemnification/indemnification.controller';
 import { IndemnificationAdminController } from './indemnification/indemnification-admin.controller';
@@ -113,6 +115,7 @@ import { IndemnificationImportService } from './indemnification/indemnification-
     SellerReceiptController,
     PublicReceiptController,
     SwapDiagnosticsController,
+    SalesCheckController,
     IndemnificationController,
     IndemnificationAdminController,
   ],
@@ -145,6 +148,7 @@ import { IndemnificationImportService } from './indemnification/indemnification-
     ItemCategorizeService,
     StatsService,
     ItemBreakdownService,
+    SalesCheckService,
     PublicLookupService,
     PublicStatusService,
     PublicSellerService,

@@ -35,6 +35,9 @@ import SellersPage from './pages/ski-swap/SellersPage';
 import PayoutsPage from './pages/ski-swap/PayoutsPage';
 import PayoutRunPage from './pages/ski-swap/PayoutRunPage';
 import AdministrationPage from './pages/ski-swap/AdministrationPage';
+import ReportsLayout from './pages/ski-swap/ReportsLayout';
+import SalesCheckPage from './pages/ski-swap/SalesCheckPage';
+import CatalogCheckPage from './pages/ski-swap/CatalogCheckPage';
 import AdministrationLayout from './pages/ski-swap/AdministrationLayout';
 import ItemDetailsPage from './pages/ski-swap/ItemDetailsPage';
 import BusinessSellerPage from './pages/ski-swap/BusinessSellerPage';
@@ -156,6 +159,10 @@ export default function App() {
             <Route path="sellers" element={<SellersPage />} />
             <Route path="payouts" element={<PayoutsPage />} />
             <Route path="payouts/:runId" element={<PayoutRunPage />} />
+            <Route path="reports" element={<ReportsLayout />}>
+              <Route index element={<SalesCheckPage />} />
+              <Route path="catalog" element={<CatalogCheckPage />} />
+            </Route>
             <Route path="check-in" element={<CheckinStationsPage />} />
             <Route path="bindings" element={<BindingsPage />} />
             <Route path="printers" element={<PrintersPage />} />

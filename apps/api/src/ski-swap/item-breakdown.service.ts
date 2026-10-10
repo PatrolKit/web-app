@@ -4,6 +4,7 @@ import { PosAdapterFactory, type PosSaleLine } from './pos/pos.adapter';
 import { uncategorisedName } from './sku.util';
 import { salesHeatmap, soldByCategory, type SalesHeatmapData } from './sales-heatmap';
 import { checkoutTotals, sellerTotals } from './seller-checkout-totals';
+import { applyDecisions, type DecisionRef } from './sales-check';
 import type { CheckoutTotals, SellerTotals } from '../contracts/ski-swap.contracts';
 
 /**
@@ -223,8 +224,45 @@ export class ItemBreakdownService {
     });
   }
 
+  /**
+   * Square's sales as every card counts them (Plan 48 D5): the cached read,
+   * with what Sales check decided applied. A line credited to an item counts
+   * as that item's; one that isn't a swap sale is left out. Decisions are
+   * read fresh each time, so a credit shows at once.
+   */
+  private async sales(orgId: string, swap: { id: string; createdAt: Date; locationId: string }): Promise<SalesRead> {
+    const read = await this.rawRead(orgId, swap);
+    const decisions = await this.prisma.swapSaleDecision.findMany({
+      where: { swapId: swap.id, liveKey: { not: null } },
+      select: { orderId: true, lineUid: true, decision: true, itemId: true },
+    });
+    if (decisions.length === 0) return read;
+    const credited = [...new Set(decisions.map((d) => d.itemId).filter((x): x is string => !!x))];
+    const items = credited.length
+      // Deleted ones too: a credited sale stays a sale after its item goes.
+      ? await this.prisma.swapItem.findMany({ where: { id: { in: credited } }, select: { id: true, squareVariationId: true } })
+      : [];
+    const variationOfItem = new Map(items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
+    return {
+      at: read.at,
+      lines: applyDecisions(read.lines, decisions as DecisionRef[], new Set(), variationOfItem),
+    };
+  }
+
+  /** Sales check's read (Plan 48): Square's lines as they are, from the same cache. */
+  async rawSales(orgId: string, swapId: string): Promise<{ at: number; lines: PosSaleLine[]; swap: Awaited<ReturnType<ItemBreakdownService['swapOf']>> }> {
+    const swap = await this.swapOf(orgId, swapId);
+    const read = await this.rawRead(orgId, swap);
+    return { ...read, swap };
+  }
+
+  /** Drops the cached read, after a decision, so every card reads afresh. */
+  forgetSales(swapId: string): void {
+    this.salesCache.delete(swapId);
+  }
+
   /** Square's sales for the swap's whole life, reused for two minutes. */
-  private sales(orgId: string, swap: { id: string; createdAt: Date; locationId: string }): Promise<SalesRead> {
+  private rawRead(orgId: string, swap: { id: string; createdAt: Date; locationId: string }): Promise<SalesRead> {
     const cached = this.salesCache.get(swap.id);
     if (cached && Date.now() - cached.at < CACHE_MS) return cached.read;
     const at = Date.now();

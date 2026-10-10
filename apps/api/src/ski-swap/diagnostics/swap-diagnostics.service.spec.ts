@@ -32,6 +32,8 @@ function harness() {
     audit: [] as Row[],
   };
   let square: PosCatalogItem[] = [];
+  const elsewhere: PosCatalogItem[] = [];
+  const renumbered: [string, string][] = [];
   const squareWrites: PosItemSync[][] = [];
   const squareDeletes: string[][] = [];
   let failListing: Error | null = null;
@@ -82,6 +84,7 @@ function harness() {
       findMany: async ({ where }: Row) => (isClaimCall(where) ? claimRead(db.items as never, where)
         : db.items.filter((r) => matches(r, where)).map((r) => ({ ...r, seller: null }))),
       updateMany: async ({ where, data }: Row) => claimUpdate(db.items as never, where, data),
+      findFirst: async ({ where }: Row) => db.items.find((r) => matches(r, where)) ?? null,
       update: async ({ where, data }: Row) => Object.assign(db.items.find((r) => r.id === where.id)!, data),
     },
     user: { findMany: async () => [{ id: 'staff', firstName: 'Dana', lastName: 'Smith', email: null }] },
@@ -96,6 +99,10 @@ function harness() {
       return rows;
     },
     itemsBySku: async (_cat: string, skus: string[]) => square.filter((s) => skus.includes(s.sku)),
+    // Plan 48 D11: other copies anywhere, archived included. None unless a test adds them.
+    itemsBySkuAnywhere: async (skus: string[]) => elsewhere.filter((s) => skus.includes(s.sku)),
+    listCategories: async () => new Map([['cat', 'Ski Swap 2026'], ['old', '2025']]),
+    renumberItemSkus: async (itemId: string, prefix: string) => { renumbered.push([itemId, prefix]); },
     upsertItems: async (items: PosItemSync[]) => {
       squareWrites.push(items);
       return {
@@ -132,7 +139,13 @@ function harness() {
   };
 
   return {
-    db, service, run, created, squareWrites, squareDeletes,
+    db, service, run, created, squareWrites, squareDeletes, renumbered,
+    /** Another Square item with this SKU (Plan 48 D11): last year's archived copy by default. */
+    elsewhere: (sku: string, over: Partial<PosCatalogItem> = {}) => {
+      const entry: PosCatalogItem = { itemId: `old-${sku}`, variationId: `oldv-${sku}`, sku, name: `Swap Item ${sku}`, description: null, pricing: { type: 'variable' }, version: '1', updatedAt: null, categoryIds: ['old'], archived: true, ...over };
+      elsewhere.push(entry);
+      return entry;
+    },
     ours: (sku: string, over: Row = {}) => {
       const row = { id: `our-${sku}`, swapId: 'swap', sku, name: 'Red Skis', description: null, priceCents: 4500, consignedAt: new Date(), deletedAt: null, squareItemId: `sq-${sku}`, squareVariationId: `sv-${sku}`, ...over };
       db.items.push(row);
@@ -354,5 +367,60 @@ describe('the other choices (D3, D4, D6)', () => {
       actorId: 'staff', action: 'ski_swap.diagnostics.applied',
       metadata: { sku: '1', kind: 'not_linked', choice: 'link', ours: expect.any(Object), square: expect.any(Object) },
     });
+  });
+});
+
+describe('another Square item with our ticket number (Plan 48 D11)', () => {
+  it('finds last year’s archived copy, and says where it is', async () => {
+    const h = harness();
+    h.ours('73789');
+    h.square('73789');
+    h.elsewhere('73789');
+    h.elsewhere('99999'); // not one of ours: not this swap's business
+    const run = await h.run();
+    expect(run.issues).toEqual([expect.objectContaining({
+      sku: '73789', kind: 'elsewhere',
+      square: { copies: [expect.objectContaining({ itemId: 'old-73789', archived: true, category: '2025' })] },
+    })]);
+  });
+
+  it('re-numbers it with the year its category is named for, and keeps the item', async () => {
+    const h = harness();
+    h.ours('73789');
+    h.square('73789');
+    h.elsewhere('73789');
+    const run = await h.run();
+    await h.service.apply('org', 'swap', run.issues[0].id, 'renumber_other', {}, 'staff');
+    expect(h.renumbered).toEqual([['old-73789', '2025']]);
+  });
+
+  it('asks for a prefix when the category isn’t a year, and uses the one given', async () => {
+    const h = harness();
+    h.ours('73789');
+    h.square('73789');
+    h.elsewhere('73789', { categoryIds: ['cat-x'] });
+    const run = await h.run();
+    await h.service.apply('org', 'swap', run.issues[0].id, 'renumber_other', {}, 'staff');
+    expect((await h.service.latest('org', 'swap'))!.issues[0]).toMatchObject({ state: 'failed', error: expect.stringContaining('Give a prefix') });
+    await h.service.apply('org', 'swap', run.issues[0].id, 'renumber_other', { prefix: 'OLD' }, 'staff');
+    expect(h.renumbered).toEqual([['old-73789', 'OLD']]);
+  });
+
+  it('deletes the other copy, but never one PatrolKit has come to link', async () => {
+    const h = harness();
+    h.ours('73789');
+    h.square('73789');
+    h.elsewhere('73789');
+    h.ours('73790');
+    h.square('73790');
+    h.elsewhere('73790');
+    const run = await h.run();
+    const [first, second] = run.issues;
+    await h.service.apply('org', 'swap', first.id, 'delete_other', {}, 'staff');
+    expect(h.squareDeletes).toEqual([['old-73789']]);
+    // Linked since the run, by a withdrawn item of ours.
+    h.db.items.push({ id: 'gone', orgId: 'org', swapId: 'swap', sku: 'x', deletedAt: new Date(), squareItemId: 'old-73790' });
+    await expect(h.service.apply('org', 'swap', second.id, 'delete_other', {}, 'staff')).rejects.toThrow();
+    expect(h.squareDeletes).toEqual([['old-73789']]);
   });
 });

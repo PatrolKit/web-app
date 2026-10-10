@@ -26,6 +26,10 @@ export interface DiagnosticGroup {
 /** Most urgent first: what the register can't sell, then what it sells wrongly. */
 const ORDER: { kind: DiagnosticIssueKind; field: DiagnosticField | null; title: string; explain: string }[] = [
   {
+    kind: 'elsewhere', field: null, title: 'Another Square item has this ticket number',
+    explain: 'Last year’s item, or an archived one: Square still scans archived items, so the register can ring a sale up on it, where PatrolKit can’t see it. Delete it, or re-number its SKU (e.g. 2025-73789) so it no longer scans.',
+  },
+  {
     kind: 'only_ours', field: null, title: 'In PatrolKit, not in Square',
     explain: 'The register can’t sell these. Usually a push to Square that failed, or a self check-in the seller never finished.',
   },
@@ -67,6 +71,8 @@ export const CHOICE_LABEL: Record<DiagnosticChoice, string> = {
   link: 'Link to it',
   keep: 'Keep this copy',
   remove_from_square: 'Remove from Square',
+  delete_other: 'Delete the other item',
+  renumber_other: 'Re-number the other item',
   resolve: 'Mark resolved',
 };
 
@@ -80,9 +86,17 @@ export function groupChoiceLabel(choice: DiagnosticChoice, n: number): string {
     case 'use_ours': return `Use ours for all ${count}`;
     case 'link': return `Link all ${count}`;
     case 'remove_from_square': return `Remove all ${count} from Square`;
+    case 'delete_other': return `Delete all ${count} other items`;
+    case 'renumber_other': return `Re-number all ${count} other items`;
     case 'resolve': return `Mark all ${count} resolved`;
     default: return CHOICE_LABEL[choice];
   }
+}
+
+/** A copy's category, as a re-number prefix when it's named for a year ("2025"), as the server reads it. */
+export function yearOf(category: string | null | undefined): string | null {
+  const m = (category ?? '').match(/(?:^|,\s*)((?:19|20)\d{2})(?:$|,)/);
+  return m ? m[1] : null;
 }
 
 /** A ticket is the one item allowed to be unpriced: a ticket number is digits only. */

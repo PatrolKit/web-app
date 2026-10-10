@@ -1433,3 +1433,8 @@ export type {
   DiagnosticRunResponse,
   DiagnosticSquareSide,
 } from '@patrolkit/contracts/swap-diagnostics.contracts';
+
+// Sales check (Plan 48).
+export type {
+  SalesCheckKind, SalesCheckIssue, SalesCheckDecided, SalesCheckResponse, SalesCheckOutcome, SalesCheckCount, SalesCheckRungUpAs,
+} from '@patrolkit/contracts/sales-check.contracts';

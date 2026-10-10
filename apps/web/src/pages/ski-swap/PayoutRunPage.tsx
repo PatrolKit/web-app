@@ -285,8 +285,13 @@ function UnmatchedSales({ run }: { run: PayoutRun }) {
             for {run.unmatchedSales.length === 1 ? 'it' : 'them'}.
           </p>
           <p className="text-amber-200/70 text-xs mt-1">
-            Usually something rung up by hand, or another swap's stock at the same Square
-            location.
+            Usually something rung up by hand, a ticket scanned onto another copy of it, or another
+            swap's stock at the same Square location.{' '}
+            {/* Plan 48: where each one can be credited to its item, or set aside. */}
+            <Link to="/dashboard/ski-swap/reports" className="text-amber-300 underline hover:text-amber-200">
+              Check them in Reports › Sales check
+            </Link>
+            ; a sale credited there pays its seller in the next run.
           </p>
         </div>
         <button

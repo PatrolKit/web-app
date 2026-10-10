@@ -58,6 +58,7 @@ describe('one Square read for every card (D1)', () => {
   function service(lines: PosSaleLine[]) {
     let calls = 0;
     const prisma = {
+      swapSaleDecision: { findMany: async () => [] },
       skiSwap: { findFirst: async () => ({ id: 'swap', createdAt: new Date('2026-10-01'), locationId: 'loc', timeZone: TZ }) },
       swapItem: {
         findMany: async () => [{ squareVariationId: 'v1', categoryId: 'skis', sku: '1', name: 'Skis', priceCents: 1, consignedAt: new Date(), returnedAt: null, squareItemId: 's1', originalQuantity: 1 }],
@@ -81,6 +82,7 @@ describe('one Square read for every card (D1)', () => {
     let fail = true;
     let calls = 0;
     const prisma = {
+      swapSaleDecision: { findMany: async () => [] },
       skiSwap: { findFirst: async () => ({ id: 'swap', createdAt: new Date(), locationId: 'loc', timeZone: TZ }) },
       swapItem: { findMany: async () => [] },
     };
