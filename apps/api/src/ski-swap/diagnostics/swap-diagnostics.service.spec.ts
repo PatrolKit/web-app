@@ -2,6 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import { SwapDiagnosticsService } from './swap-diagnostics.service';
 import type { PosCatalogItem, PosItemSync } from '../pos/pos.adapter';
 import { claimRead, claimUpdate, isClaimCall } from '../__fixtures__/claim-fake';
+import { salesHolds } from '../sales-check';
 
 /**
  * Swap diagnostics end to end (Plan 41), against an in-memory database and
@@ -130,7 +131,12 @@ function harness() {
     },
   };
 
-  const service = new SwapDiagnosticsService(prisma as never, { forOrg: async () => pos } as never, items as never);
+  // Sales check's open sales (Plan 48): none unless a test opens one.
+  const openSales: Parameters<typeof salesHolds>[0] = [];
+  let salesError: string | null = null;
+  const salesCheck = { holds: async () => (salesError ? { error: salesError } : salesHolds(openSales)) };
+
+  const service = new SwapDiagnosticsService(prisma as never, { forOrg: async () => pos } as never, items as never, salesCheck as never);
 
   const run = async () => {
     const { runId } = await service.start('org', 'swap', 'staff');
@@ -139,7 +145,13 @@ function harness() {
   };
 
   return {
-    db, service, run, created, squareWrites, squareDeletes, renumbered,
+    db, service, run, created, squareWrites, squareDeletes, renumbered, openSales,
+    /** An open Sales check sale rung up on this Square item, suggesting this ticket. */
+    openSale: (key: string, sku: string, squareItemId: string) => openSales.push({
+      key, ticket: null, rungUpAs: { name: `Swap Item ${sku}`, sku, variationId: `v-${key}`, itemId: squareItemId, category: '2025', archived: true },
+      suggestion: { itemId: `our-${sku}`, sku, name: 'Red Skis', priceCents: null, sellerName: null, sellerId: null },
+    }),
+    salesUnreadable: (err: string | null) => { salesError = err; },
     /** Another Square item with this SKU (Plan 48 D11): last year's archived copy by default. */
     elsewhere: (sku: string, over: Partial<PosCatalogItem> = {}) => {
       const entry: PosCatalogItem = { itemId: `old-${sku}`, variationId: `oldv-${sku}`, sku, name: `Swap Item ${sku}`, description: null, pricing: { type: 'variable' }, version: '1', updatedAt: null, categoryIds: ['old'], archived: true, ...over };
@@ -257,7 +269,7 @@ describe('Mark resolved (D5)', () => {
     const run = await h.run();
     h.setSquarePrice('1', 5000);
     expect(await h.service.applyAll('org', 'swap', run.id, { kind: 'differs', field: 'price' }, 'resolve', {}, 'staff'))
-      .toEqual({ applied: 2, skipped: 0, failed: 0 });
+      .toEqual({ applied: 2, skipped: 0, failed: 0, held: 0 });
   });
 });
 
@@ -354,7 +366,7 @@ describe('the other choices (D3, D4, D6)', () => {
     await h.service.apply('org', 'swap', run.issues[0].id, 'resolve', {}, 'staff');
     h.db.items.find((r) => r.sku === '2')!.name = 'Changed';
     expect(await h.service.applyAll('org', 'swap', run.id, { kind: 'only_ours' }, 'copy_to_square', {}, 'staff'))
-      .toEqual({ applied: 1, skipped: 1, failed: 0 });
+      .toEqual({ applied: 1, skipped: 1, failed: 0, held: 0 });
   });
 
   it('audits every choice with both values', async () => {
@@ -422,5 +434,62 @@ describe('another Square item with our ticket number (Plan 48 D11)', () => {
     h.db.items.push({ id: 'gone', orgId: 'org', swapId: 'swap', sku: 'x', deletedAt: new Date(), squareItemId: 'old-73790' });
     await expect(h.service.apply('org', 'swap', second.id, 'delete_other', {}, 'staff')).rejects.toThrow();
     expect(h.squareDeletes).toEqual([['old-73789']]);
+  });
+});
+
+describe('open sales hold back their tickets (Plan 48)', () => {
+  it('flags an issue whose ticket or Square item has an open sale, with how many', async () => {
+    const h = harness();
+    h.ours('73789'); h.square('73789'); h.elsewhere('73789');
+    h.ours('73790'); h.square('73790'); h.elsewhere('73790');
+    h.openSale('o1:l1', '73789', 'old-73789');
+    h.openSale('o2:l1', '73789', 'old-73789');
+    const run = await h.run();
+    expect(run.issues.map((i) => [i.sku, i.heldBySales])).toEqual([['73789', 2], ['73790', 0]]);
+    expect(run.salesCheckError).toBeNull();
+  });
+
+  it('refuses every choice on a held issue, until the sale is settled', async () => {
+    const h = harness();
+    h.ours('73789'); h.square('73789'); h.elsewhere('73789');
+    h.openSale('o1:l1', '73789', 'old-73789');
+    const [issue] = (await h.run()).issues;
+    for (const choice of ['delete_other', 'renumber_other', 'resolve'] as const) {
+      await expect(h.service.apply('org', 'swap', issue.id, choice, {}, 'staff')).rejects.toThrow('Ticket 73789 has an open sale in Sales check');
+    }
+    expect([h.squareDeletes, h.renumbered]).toEqual([[], []]);
+
+    h.openSales.length = 0; // settled in Sales check
+    await h.service.apply('org', 'swap', issue.id, 'delete_other', {}, 'staff');
+    expect(h.squareDeletes).toEqual([['old-73789']]);
+  });
+
+  it('holds an issue named by the Square item alone, whatever the ticket', async () => {
+    const h = harness();
+    h.ours('73789'); h.square('73789'); h.elsewhere('73789');
+    h.openSale('o1:l1', '11111', 'old-73789');
+    const [issue] = (await h.run()).issues;
+    expect(issue.heldBySales).toBe(1);
+  });
+
+  it('leaves held issues out of a group choice, and says how many', async () => {
+    const h = harness();
+    for (const sku of ['73789', '73790', '73791']) { h.ours(sku); h.square(sku); h.elsewhere(sku); }
+    h.openSale('o1:l1', '73790', 'old-73790');
+    const run = await h.run();
+    const res = await h.service.applyAll('org', 'swap', run.id, { kind: 'elsewhere' }, 'delete_other', {}, 'staff');
+    expect(res).toEqual({ applied: 2, skipped: 0, failed: 0, held: 1 });
+    expect(h.squareDeletes.flat().sort()).toEqual(['old-73789', 'old-73791']);
+    expect((await h.service.latest('org', 'swap'))!.issues.find((i) => i.sku === '73790')).toMatchObject({ state: 'open', heldBySales: 1 });
+  });
+
+  it('changes nothing when Square’s sales can’t be read, and says so', async () => {
+    const h = harness();
+    h.ours('73789'); h.square('73789'); h.elsewhere('73789');
+    const run = await h.run();
+    h.salesUnreadable('Square is down');
+    expect((await h.service.latest('org', 'swap'))!.salesCheckError).toBe('Square is down');
+    await expect(h.service.apply('org', 'swap', run.issues[0].id, 'delete_other', {}, 'staff')).rejects.toThrow('Couldn’t read Square’s sales');
+    expect(h.squareDeletes).toEqual([]);
   });
 });

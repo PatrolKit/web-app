@@ -19,6 +19,8 @@ export interface DiagnosticGroup {
   issues: DiagnosticIssueResponse[];
   /** Rows still waiting for a choice. */
   open: number;
+  /** Open rows an open Sales check sale holds back: no choice until it's settled. */
+  held: number;
   /** What the group offers for all its open rows at once (D4). */
   groupChoices: DiagnosticChoice[];
 }
@@ -131,13 +133,25 @@ export function isOpen(issue: DiagnosticIssueResponse): boolean {
   return issue.state === 'open' || issue.state === 'failed';
 }
 
+/** Open, but waiting on an open sale in Sales check. */
+export function isHeld(issue: DiagnosticIssueResponse): boolean {
+  return isOpen(issue) && (issue.heldBySales ?? 0) > 0;
+}
+
+/** "Ticket 73308 has 2 open sales in Sales check." */
+export function heldText(issue: DiagnosticIssueResponse): string {
+  const n = issue.heldBySales ?? 0;
+  return `Ticket ${issue.sku} has ${n === 1 ? 'an open sale' : `${n} open sales`} in Sales check. Settle ${n === 1 ? 'it' : 'them'} there first; until then this can’t be changed, so the sale’s evidence stays put.`;
+}
+
 export function groupsOf(run: DiagnosticRunResponse): DiagnosticGroup[] {
   return ORDER.flatMap((g) => {
     const issues = run.issues.filter((i) => i.kind === g.kind && (g.kind !== 'differs' || i.field === g.field));
     if (issues.length === 0) return [];
     const open = issues.filter(isOpen).length;
+    const held = issues.filter(isHeld).length;
     const groupChoices = CHOICES_FOR[g.kind].filter((c) => c !== 'keep');
-    return [{ key: `${g.kind}:${g.field ?? ''}`, ...g, issues, open, groupChoices }];
+    return [{ key: `${g.kind}:${g.field ?? ''}`, ...g, issues, open, held, groupChoices }];
   });
 }
 

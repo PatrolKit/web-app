@@ -194,3 +194,42 @@ function oversold(input: ClassifyInput): SalesCheckIssue[] {
   }
   return out;
 }
+
+/**
+ * What open sales hold back (Catalog check): each ticket and Square item an
+ * open Sales check sale involves, with the sales. A catalog fix on one of
+ * them waits until those sales are settled, so it can't move or delete what
+ * the sale is evidence of.
+ */
+export interface SalesHolds {
+  byTicket: Map<string, Set<string>>;
+  byItem: Map<string, Set<string>>;
+}
+
+type HoldingIssue = Pick<SalesCheckIssue, 'key' | 'suggestion' | 'ticket' | 'oversold' | 'rungUpAs'>;
+
+export function salesHolds(issues: HoldingIssue[]): SalesHolds {
+  const holds: SalesHolds = { byTicket: new Map(), byItem: new Map() };
+  const add = (m: Map<string, Set<string>>, id: string | null | undefined, key: string) => {
+    if (!id) return;
+    const s = m.get(id) ?? new Set<string>();
+    s.add(key);
+    m.set(id, s);
+  };
+  for (const i of issues) {
+    add(holds.byTicket, i.suggestion?.sku, i.key);
+    add(holds.byTicket, i.ticket, i.key);
+    add(holds.byTicket, i.oversold?.sku, i.key);
+    add(holds.byTicket, i.rungUpAs?.sku, i.key);
+    for (const n of ticketNumbersIn(`${i.rungUpAs?.name ?? ''} ${i.rungUpAs?.sku ?? ''}`)) add(holds.byTicket, n, i.key);
+    add(holds.byItem, i.rungUpAs?.itemId, i.key);
+  }
+  return holds;
+}
+
+/** How many open sales hold back a catalog issue on this ticket and these Square items. */
+export function heldBy(holds: SalesHolds, sku: string, squareItemIds: string[]): number {
+  const keys = new Set(holds.byTicket.get(sku) ?? []);
+  for (const id of squareItemIds) for (const k of holds.byItem.get(id) ?? []) keys.add(k);
+  return keys.size;
+}

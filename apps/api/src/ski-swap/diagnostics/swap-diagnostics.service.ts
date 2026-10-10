@@ -7,6 +7,8 @@ import { ItemService } from '../item.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from '../seller.service';
 import { ticketNumberOf } from '../legacy-ticket.service';
 import { displayName } from '../../common/util/person';
+import { SalesCheckService } from '../sales-check.service';
+import { heldBy, type SalesHolds } from '../sales-check';
 import {
   CHOICES_FOR,
   type DiagnosticApplyAllResponse,
@@ -49,6 +51,7 @@ export class SwapDiagnosticsService {
     private readonly prisma: PrismaService,
     private readonly posFactory: PosAdapterFactory,
     private readonly items: ItemService,
+    private readonly salesCheck: SalesCheckService,
   ) {}
 
   // ─── Runs ───────────────────────────────────────────────────────────────────
@@ -145,6 +148,9 @@ export class SwapDiagnosticsService {
     });
     if (!run) return null;
     const names = await this.userNames([run.startedBy, ...run.issues.map((i) => i.decidedBy)]);
+    // Open sales hold back their tickets' fixes: read them only for a finished run with something open.
+    const open = run.issues.filter((i) => i.state === 'open' || i.state === 'failed');
+    const holds = run.status === 'done' && open.length ? await this.readHolds(orgId, swapId) : null;
     return {
       id: run.id,
       status: run.status === 'running' && isStale(run) ? 'interrupted' : (run.status as DiagnosticRunResponse['status']),
@@ -155,7 +161,11 @@ export class SwapDiagnosticsService {
       ourCount: run.ourCount,
       squareCount: run.squareCount,
       error: run.error,
-      issues: run.issues.map((i) => toIssueResponse(i, names)),
+      salesCheckError: holds && 'error' in holds ? holds.error : null,
+      issues: run.issues.map((i) => ({
+        ...toIssueResponse(i, names),
+        heldBySales: holds && !('error' in holds) && open.includes(i) ? heldBy(holds, i.sku, squareItemIdsOf(i)) : 0,
+      })),
     };
   }
 
@@ -168,7 +178,10 @@ export class SwapDiagnosticsService {
     if (!issue) throw new NotFoundException('That issue is gone. Run the checks again.');
     if (issue.state !== 'open' && issue.state !== 'failed') throw new ConflictException('That issue was already dealt with.');
 
-    const { skipped } = await this.applyTo(swap, [issue], choice, extra, userId);
+    const { skipped, held } = await this.applyTo(swap, [issue], choice, extra, userId);
+    if (held) {
+      throw new ConflictException(`Ticket ${issue.sku} has ${held === 1 ? 'an open sale' : `${held} open sales`} in Sales check. Settle ${held === 1 ? 'it' : 'them'} there first.`);
+    }
     if (skipped) throw new ConflictException('This changed since the check ran. Run the checks again.');
     const updated = await this.prisma.swapDiagnosticIssue.findUniqueOrThrow({ where: { id: issueId } });
     return toIssueResponse(updated, await this.userNames([updated.decidedBy]));
@@ -188,18 +201,31 @@ export class SwapDiagnosticsService {
         state: { in: ['open', 'failed'] },
       },
     });
-    const { applied, skipped, failed } = await this.applyTo(swap, issues, choice, extra, userId);
-    return { applied, skipped, failed };
+    const { applied, skipped, failed, held } = await this.applyTo(swap, issues, choice, extra, userId);
+    return { applied, skipped, failed, held };
   }
 
+  /**
+   * `held`: for one issue, the open sales holding it back; for several, how
+   * many issues were left alone for them.
+   */
   private async applyTo(swap: Swap, issues: IssueRow[], choice: DiagnosticChoice, extra: Extra, userId: string | null) {
-    const tally = { applied: 0, skipped: 0, failed: 0 };
+    const tally = { applied: 0, skipped: 0, failed: 0, held: 0 };
     if (issues.length === 0) return tally;
     for (const issue of issues) {
       if (!CHOICES_FOR[issue.kind as IssueKind]?.includes(choice)) {
         throw new BadRequestException('That choice doesn’t apply to this issue.');
       }
     }
+
+    // An open sale in Sales check holds back every choice on its ticket, read now.
+    const holds = await this.readHolds(swap.orgId, swap.id);
+    if ('error' in holds) throw new ConflictException(`Couldn’t read Square’s sales to check for open ones (${holds.error}). Try again.`);
+    const holding = issues.map((i) => heldBy(holds, i.sku, squareItemIdsOf(i)));
+    if (issues.length === 1 && holding[0]) return { ...tally, held: holding[0] };
+    tally.held = holding.filter(Boolean).length;
+    issues = issues.filter((_, n) => !holding[n]);
+    if (issues.length === 0) return tally;
 
     // Both sides, as they are now, for every SKU involved.
     const current = await this.recheck(swap, [...new Set(issues.map((i) => i.sku))]);
@@ -501,6 +527,11 @@ export class SwapDiagnosticsService {
       `${issueKey({ sku: h.sku, kind: h.kind, field: h.field || null })}\u0000${h.fingerprint}`));
   }
 
+  /** Sales check's open sales, as holds; Square unreadable is an answer, not a throw. */
+  private async readHolds(orgId: string, swapId: string): Promise<SalesHolds | { error: string }> {
+    return this.salesCheck.holds(orgId, swapId).catch((err: unknown) => ({ error: err instanceof Error ? err.message : 'Square couldn’t be read.' }));
+  }
+
   private async swapOrThrow(orgId: string, swapId: string): Promise<Swap> {
     const swap = await this.prisma.skiSwap.findFirst({
       where: { id: swapId, orgId },
@@ -546,6 +577,13 @@ function squareOf(issue: IssueRow): SquareSide | null {
 function messageOf(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+/** Every Square item an issue names: ours, Square's, or each copy. */
+function squareItemIdsOf(i: IssueRow): string[] {
+  const square = i.square as unknown as { itemId?: string; copies?: { itemId: string }[] } | null;
+  const ours = i.ours as unknown as { squareItemId?: string | null } | null;
+  return [square?.itemId, ...(square?.copies ?? []).map((c) => c.itemId), ours?.squareItemId].filter((id): id is string => !!id);
 }
 
 function toIssueResponse(i: IssueRow, names: Map<string, string>): DiagnosticIssueResponse {

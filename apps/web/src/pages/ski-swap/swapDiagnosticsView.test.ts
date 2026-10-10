@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DiagnosticIssueResponse, DiagnosticRunResponse } from '../../lib/api.types';
-import { decidedText, groupChoiceLabel, groupsOf, rowChoices, shown } from './swapDiagnosticsView';
+import { decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, rowChoices, shown } from './swapDiagnosticsView';
 
 const issue = (over: Partial<DiagnosticIssueResponse>): DiagnosticIssueResponse => ({
   id: 'i', sku: 'SP-0001', kind: 'only_ours', field: null, ours: null, square: null, state: 'open',
@@ -58,3 +58,21 @@ describe('the diagnostics popover (Plan 41)', () => {
     expect(decidedText(issue({ state: 'applied', choice: 'link' }))).toBe('Link to it');
   });
 });
+
+describe('issues an open sale holds back (Plan 48)', () => {
+  it('counts held rows apart, and only open ones', () => {
+    const [g] = groupsOf(run([
+      issue({ id: '1', kind: 'elsewhere', sku: '73308', heldBySales: 2 }),
+      issue({ id: '2', kind: 'elsewhere', sku: '73001', heldBySales: 0 }),
+      issue({ id: '3', kind: 'elsewhere', sku: '73002', heldBySales: 1, state: 'applied' }),
+    ]));
+    expect([g.open, g.held]).toEqual([2, 1]);
+    expect(isHeld(issue({ heldBySales: 1, state: 'failed' }))).toBe(true);
+  });
+
+  it('says what holds it, and where to go', () => {
+    expect(heldText(issue({ sku: '73308', heldBySales: 2 }))).toMatch(/^Ticket 73308 has 2 open sales in Sales check\. Settle them there first/);
+    expect(heldText(issue({ sku: '73308', heldBySales: 1 }))).toMatch(/^Ticket 73308 has an open sale in Sales check\. Settle it there first/);
+  });
+});
+

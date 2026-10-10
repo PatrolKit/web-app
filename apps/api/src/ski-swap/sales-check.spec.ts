@@ -294,3 +294,23 @@ describe('the Sales check routes (D1, D13)', () => {
     }
   });
 });
+
+describe('what open sales hold back in Catalog check', () => {
+  it('names each ticket and Square item a sale involves, never a fused number', async () => {
+    const { salesHolds, heldBy } = await import('./sales-check');
+    const holds = salesHolds([
+      { key: 'a', ticket: null, suggestion: { itemId: 'i', sku: '73338', name: 'x', priceCents: null, sellerName: null, sellerId: null },
+        rungUpAs: { name: 'Swap Item 73338', sku: '73338', variationId: 'v', itemId: 'old-73338', category: '2025', archived: true } },
+      { key: 'b', ticket: '59443', suggestion: null, rungUpAs: { name: 'Swap Item 59443', sku: '59443', variationId: 'v2', itemId: 'old-59443', category: '2025', archived: true } },
+      { key: 'c', ticket: null, suggestion: null, oversold: { itemId: 'it', sku: '87688', name: 'Elan', units: 2, quantity: 1, orders: [] }, rungUpAs: null },
+      { key: 'd', ticket: null, suggestion: null, rungUpAs: { name: 'TShirt', sku: 'TSH-1938', variationId: 'v3', itemId: 'tee', category: 'Swag', archived: false } },
+    ]);
+    expect(heldBy(holds, '73338', [])).toBe(1);
+    expect(heldBy(holds, '99999', ['old-73338'])).toBe(1);
+    expect(heldBy(holds, '59443', ['old-59443'])).toBe(1);
+    expect(heldBy(holds, '87688', [])).toBe(1);
+    expect(heldBy(holds, '1938', [])).toBe(0);
+    expect(heldBy(holds, '73001', ['old-73001'])).toBe(0);
+  });
+});
+

@@ -8,7 +8,7 @@ import type {
 } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import {
-  CHOICE_LABEL, decidedText, groupChoiceLabel, groupsOf, isOpen, rowChoices, shown, squareCopies, squareSide, tookText, yearOf,
+  CHOICE_LABEL, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, rowChoices, shown, squareCopies, squareSide, tookText, yearOf,
   type DiagnosticGroup,
 } from './swapDiagnosticsView';
 
@@ -83,6 +83,11 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
         <p className="text-sm text-gray-300">Reading Square: {run.done.toLocaleString('en-US')} items so far…</p>
       )}
       {run?.status === 'failed' && <p className="text-sm text-red-400">The check failed: {run.error}</p>}
+      {run?.status === 'done' && run.salesCheckError && (
+        <p className="text-sm text-amber-400">
+          Couldn’t read Square’s sales, so it isn’t known which tickets have an open sale in Sales check. Choices are refused until it can be read: {run.salesCheckError}
+        </p>
+      )}
       {run?.status === 'done' && openCount === 0 && (
         <p className="text-sm text-green-400">
           ✓ Everything matches{run.issues.length ? ': every issue from this run has been dealt with.' : '.'}
@@ -136,6 +141,7 @@ function Group({ group, run, orgId, swapId, sellers, onChanged }: {
     onSuccess: (r) => {
       setResult([
         `${r.applied.toLocaleString('en-US')} done`,
+        r.held ? `${r.held} left for their open sales in Sales check` : null,
         r.skipped ? `${r.skipped} changed since the check ran (run it again to see them)` : null,
         r.failed ? `${r.failed} failed (see the rows)` : null,
       ].filter(Boolean).join(', '));
@@ -143,8 +149,11 @@ function Group({ group, run, orgId, swapId, sellers, onChanged }: {
     },
   });
 
+  /** What a group choice changes: open rows not held for Sales check. */
+  const fixable = group.open - group.held;
+
   function applyAll(choice: DiagnosticChoice) {
-    const n = group.open;
+    const n = fixable;
     if (choice === 'renumber_other') {
       // Each copy's year when its category is named for one (D11); a prefix here for the rest.
       const given = window.prompt(
@@ -171,10 +180,17 @@ function Group({ group, run, orgId, swapId, sellers, onChanged }: {
             <span className={group.open ? 'text-red-400' : 'text-gray-500'}>
               ({group.open ? `${group.open.toLocaleString('en-US')} open` : 'all dealt with'})
             </span>
+            {group.held > 0 && <span className="text-amber-400 text-xs font-normal"> · {group.held} waiting on Sales check</span>}
           </h4>
         </div>
         <p className="text-xs text-gray-400">{group.explain}</p>
-        {group.open > 1 && (
+        {group.held > 0 && (
+          <p className="text-xs text-amber-400">
+            {group.held === 1 ? 'One has' : `${group.held} have`} an open sale in Sales check, so {group.held === 1 ? 'it’s' : 'they’re'} left out of the choices below.{' '}
+            <Link to="/dashboard/ski-swap/reports" className="underline hover:text-amber-300">Open Sales check</Link>
+          </p>
+        )}
+        {fixable > 1 && (
           <div className="flex flex-wrap items-center gap-2">
             {group.groupChoices.includes('copy_to_patrolkit') && (
               <div className="w-64">
@@ -186,7 +202,7 @@ function Group({ group, run, orgId, swapId, sellers, onChanged }: {
               <button key={c} type="button" onClick={() => applyAll(c)}
                 disabled={all.isPending || (c === 'copy_to_patrolkit' && !groupSeller)}
                 className="bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-gray-200 px-2.5 py-1 rounded text-xs">
-                {groupChoiceLabel(c, group.open)}
+                {groupChoiceLabel(c, fixable)}
               </button>
             ))}
           </div>
@@ -224,14 +240,16 @@ function IssueRow({ issue, orgId, swapId, sellers, onChanged }: {
       api.skiSwap.applyDiagnosticChoice(orgId, swapId, issue.id, body),
     onSuccess: onChanged,
   });
-  const open = isOpen(issue);
+  const held = isHeld(issue);
+  // A held row shows what it is, and no choices (Plan 48): its sale comes first.
+  const open = isOpen(issue) && !held;
   const sq = squareSide(issue);
   const ours = issue.ours && !issue.ours.deleted ? issue.ours : null;
   const deleted = issue.ours?.deleted ? issue.ours : null;
   const compareField = issue.kind === 'differs' ? issue.field : null;
 
   return (
-    <li className={`p-3 text-sm space-y-2 ${open ? '' : 'opacity-50'}`}>
+    <li className={`p-3 text-sm space-y-2 ${open || held ? '' : 'opacity-50'}`}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <Link to={`/dashboard/ski-swap/items?q=${encodeURIComponent(issue.sku)}`} target="_blank"
           className="font-mono text-brand-400 hover:underline">{issue.sku}</Link>
@@ -274,7 +292,13 @@ function IssueRow({ issue, orgId, swapId, sellers, onChanged }: {
         </ul>
       )}
 
-      {!open && <p className="text-xs text-gray-400">{decidedText(issue)}</p>}
+      {held && (
+        <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-800/50 rounded px-2 py-1.5">
+          ⏸ {heldText(issue)}{' '}
+          <Link to="/dashboard/ski-swap/reports" className="underline hover:text-amber-200">Open Sales check</Link>
+        </p>
+      )}
+      {!open && !held && <p className="text-xs text-gray-400">{decidedText(issue)}</p>}
       {issue.state === 'failed' && issue.error && <p className="text-xs text-red-400">{issue.error}</p>}
       {apply.error && <p className="text-xs text-red-400">{errorText(apply.error)}</p>}
 

@@ -85,6 +85,8 @@ export interface DiagnosticIssueResponse {
   decidedByName: string | null;
   decidedAt: string | null;
   error: string | null;
+  /** Open Sales check sales on this ticket or its Square items: every choice waits for them. */
+  heldBySales?: number;
 }
 
 export interface DiagnosticRunResponse {
@@ -99,6 +101,8 @@ export interface DiagnosticRunResponse {
   ourCount: number | null;
   squareCount: number | null;
   error: string | null;
+  /** Sales check couldn't be read, so what open sales hold back isn't known. */
+  salesCheckError?: string | null;
   issues: DiagnosticIssueResponse[];
 }
 
@@ -107,4 +111,6 @@ export interface DiagnosticApplyAllResponse {
   /** Changed since the run: run the checks again to see them as they are. */
   skipped: number;
   failed: number;
+  /** Left alone: an open Sales check sale holds them back. */
+  held: number;
 }

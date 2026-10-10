@@ -6,7 +6,7 @@ import { PosAdapterFactory, type IPosAdapter, type PosSaleLine } from './pos/pos
 import { ItemBreakdownService } from './item-breakdown.service';
 import { IssuedTicketService } from './issued-ticket.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
-import { applyDecisions, classify, lineKeyOf, netUnits, type CheckItem, type DecisionRef } from './sales-check';
+import { applyDecisions, classify, lineKeyOf, netUnits, salesHolds, type CheckItem, type DecisionRef, type SalesHolds } from './sales-check';
 import { squareItemUrl, squareSaleUrl } from './square-links';
 import type {
   SalesCheckCount, SalesCheckDecided, SalesCheckIssue, SalesCheckOutcome, SalesCheckResponse,
@@ -78,6 +78,12 @@ export class SalesCheckService {
       asOf: new Date(at).toISOString(), error: null, issues, decided,
       ignoredCategories: [...ignored].map((id) => ({ id, name: categoryNames.get(id) ?? id })),
     };
+  }
+
+  /** What open sales hold back in Catalog check (D13: no writes). */
+  async holds(orgId: string, swapId: string): Promise<SalesHolds | { error: string }> {
+    const res = await this.list(orgId, swapId);
+    return res.error ? { error: res.error } : salesHolds(res.issues);
   }
 
   /** The dashboard card (D13: no writes): how many lines need a decision. */
