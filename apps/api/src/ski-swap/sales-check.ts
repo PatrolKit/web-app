@@ -10,7 +10,7 @@ import { ticketNumberOf } from './legacy-ticket.service';
  * read, and only a person's choice, through the service, changes anything.
  */
 
-export type SalesCheckKind = 'other_copy' | 'register_item' | 'unknown_ticket' | 'custom_amount' | 'other_item' | 'oversold' | 'double_fee' | 'cash_fee';
+export type SalesCheckKind = 'other_copy' | 'register_item' | 'scanned_twice' | 'unknown_ticket' | 'custom_amount' | 'other_item' | 'oversold' | 'double_fee' | 'cash_fee';
 
 /** A decision as attribution needs it: the line, and what it was decided to be. */
 export interface DecisionRef {
@@ -123,6 +123,25 @@ export function classify(input: ClassifyInput): SalesCheckIssue[] {
   const liveBySku = new Map(input.items.filter((i) => !i.deleted).map((i) => [i.sku, i]));
   const decided = new Set(input.decisions.map((d) => lineKeyOf(d.orderId, d.lineUid)));
   const issues: SalesCheckIssue[] = [];
+
+  // Units of each of our items an order already sold: on the item itself, or
+  // put on it in Sales check. A ticket scanned again in the same order, onto
+  // another copy, is a second scan, not a second sale (unless the item has
+  // units to spare).
+  const soldInOrder = new Map<string, number>();
+  const addSold = (orderId: string, itemId: string, units: number) => {
+    const k = `${orderId}\u0000${itemId}`;
+    soldInOrder.set(k, (soldInOrder.get(k) ?? 0) + units);
+  };
+  for (const l of input.lines) {
+    const our = ours.get(l.variationId);
+    if (our) addSold(l.orderId, our.id, netUnits(l));
+  }
+  const unitsByLine = new Map(input.lines.map((l) => [lineKeyOf(l.orderId, l.lineUid ?? ''), netUnits(l)]));
+  for (const d of input.decisions) {
+    if (d.decision === 'CREDIT' && d.itemId) addSold(d.orderId, d.itemId, unitsByLine.get(lineKeyOf(d.orderId, d.lineUid)) ?? 1);
+  }
+  const alreadySold = (orderId: string, item: CheckItem) => (soldInOrder.get(`${orderId}\u0000${item.id}`) ?? 0) >= item.originalQuantity;
   const suggest = (i: CheckItem) => ({ itemId: i.id, sku: i.sku, name: i.name, priceCents: i.priceCents, sellerName: i.sellerName, sellerId: i.sellerId });
 
   for (const line of input.lines) {
@@ -155,13 +174,17 @@ export function classify(input: ClassifyInput): SalesCheckIssue[] {
 
     // Another copy of one of our tickets: the exact SKU (D8).
     const sameSku = info?.sku ? liveBySku.get(info.sku) : undefined;
-    if (sameSku) { issues.push({ ...base, kind: 'other_copy', suggestion: suggest(sameSku) }); continue; }
+    if (sameSku) { issues.push({ ...base, kind: alreadySold(line.orderId, sameSku) ? 'scanned_twice' : 'other_copy', suggestion: suggest(sameSku) }); continue; }
 
     // A register-made item named or numbered for exactly one of our tickets.
     const text = `${info?.itemName ?? line.name ?? ''} ${info?.sku ?? ''}`;
     const numbers = ticketNumbersIn(text);
     const matched = numbers.filter((n) => liveBySku.has(n));
-    if (matched.length === 1) { issues.push({ ...base, kind: 'register_item', suggestion: suggest(liveBySku.get(matched[0])!) }); continue; }
+    if (matched.length === 1) {
+      const it = liveBySku.get(matched[0])!;
+      issues.push({ ...base, kind: alreadySold(line.orderId, it) ? 'scanned_twice' : 'register_item', suggestion: suggest(it) });
+      continue;
+    }
 
     // A ticket number no item of ours has.
     const unknown = numbers.filter((n) => !liveBySku.has(n));

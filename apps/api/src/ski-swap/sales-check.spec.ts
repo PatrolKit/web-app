@@ -388,3 +388,42 @@ describe('accepting a sale onto an unpriced item, with a price', () => {
   });
 });
 
+describe('a ticket scanned twice in one sale', () => {
+  const old = new Map([['old-73475', variation('old-73475', '73475', 'Swap Item 73475')]]);
+
+  it('is a second scan when the same order already sold the item (10/09, 73475 Poles)', () => {
+    const issues = classify(input({
+      items: [item('73475', { name: 'Poles', priceCents: 2200 })],
+      lines: [
+        line('xV', 'old-73475', { lineUid: 'old', collectedCents: 1950, unitPriceCents: 1950 }),
+        line('xV', 'v-73475', { lineUid: 'ours', collectedCents: 2200, unitPriceCents: 2200 }),
+      ],
+      described: old,
+    }));
+    expect(issues.map((i) => [i.kind, i.lineUid, i.suggestion?.sku])).toEqual([['scanned_twice', 'old', '73475']]);
+  });
+
+  it('counts a sale already put on the item in Sales check, in the same order', () => {
+    const issues = classify(input({
+      items: [item('73475')],
+      lines: [line('o1', 'old-73475', { lineUid: 'a' }), line('o1', 'old-73475', { lineUid: 'b' })],
+      decisions: [{ orderId: 'o1', lineUid: 'a', decision: 'CREDIT', itemId: 'it-73475' }],
+      described: old,
+    }));
+    expect(issues.map((i) => [i.kind, i.lineUid])).toEqual([['scanned_twice', 'b']]);
+  });
+
+  it('is still another copy when the item sold in a different order, or has units to spare', () => {
+    expect(classify(input({
+      items: [item('73475')],
+      lines: [line('o1', 'v-73475'), line('o2', 'old-73475')],
+      described: old,
+    })).map((i) => i.kind)).toEqual(['other_copy']);
+    expect(classify(input({
+      items: [item('73475', { originalQuantity: 2 })],
+      lines: [line('o1', 'v-73475', { lineUid: 'a' }), line('o1', 'old-73475', { lineUid: 'b' })],
+      described: old,
+    })).map((i) => i.kind)).toEqual(['other_copy']);
+  });
+});
+

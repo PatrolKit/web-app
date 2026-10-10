@@ -7,7 +7,7 @@ import { createZodDto } from 'nestjs-zod';
  * decision below is a person's choice, made by an admin.
  */
 
-export const SALES_CHECK_KINDS = ['other_copy', 'register_item', 'unknown_ticket', 'custom_amount', 'other_item', 'oversold', 'double_fee', 'cash_fee'] as const;
+export const SALES_CHECK_KINDS = ['other_copy', 'register_item', 'scanned_twice', 'unknown_ticket', 'custom_amount', 'other_item', 'oversold', 'double_fee', 'cash_fee'] as const;
 export type SalesCheckKind = (typeof SALES_CHECK_KINDS)[number];
 
 const line = { orderId: z.string().min(1).max(64), lineUid: z.string().min(1).max(64) };

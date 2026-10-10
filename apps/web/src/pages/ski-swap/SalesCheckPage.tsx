@@ -342,7 +342,7 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
             {issue.kind === 'unknown_ticket' && (
               <button type="button" className={btn} disabled={busy} onClick={() => setPicking(picking === 'seller' ? null : 'seller')}>Issue to a seller…</button>
             )}
-            {issue.suggestion && unpriced && (
+            {issue.suggestion && unpriced && issue.kind !== 'scanned_twice' && (
               <>
                 <button type="button" className={btn} disabled={busy} onClick={acceptWithPrice}>Accept with different price…</button>
                 {squarePrice !== null && (
@@ -352,7 +352,7 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone }: {
                 )}
               </>
             )}
-            {issue.suggestion && !unpriced && (
+            {issue.suggestion && !unpriced && issue.kind !== 'scanned_twice' && (
               <button type="button" className={primary} disabled={busy} onClick={() => accept()}>
                 {credit.isPending ? 'Accepting…' : 'Accept suggestion'}
               </button>

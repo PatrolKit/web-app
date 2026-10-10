@@ -141,3 +141,21 @@ describe('sorting', () => {
   });
 });
 
+describe('a ticket scanned twice in one sale', () => {
+  const twice = issue({
+    kind: 'scanned_twice', collectedCents: 1950, links: { sale: 'https://sq/sale', item: null },
+    suggestion: { itemId: 'it', sku: '73475', name: 'Poles', priceCents: 2200, sellerName: 'Karen Beckwith', sellerId: 's-1' },
+  });
+
+  it('shows the item as already sold in this sale, with a refund link', () => {
+    const side = patrolKitSide(twice);
+    expect(side.title).toBe('Already sold in this sale');
+    expect(side.links).toEqual([{ label: 'Item', to: '/dashboard/ski-swap/items?q=73475' }, { label: 'Refund in Square', href: 'https://sq/sale' }]);
+    expect(groupsOf([twice])[0].title).toBe('Scanned twice in one sale');
+  });
+
+  it('is never offered to Accept all', () => {
+    expect(suggestedLines([twice])).toEqual([]);
+  });
+});
+

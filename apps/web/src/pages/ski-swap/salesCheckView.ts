@@ -28,6 +28,10 @@ const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
     explain: 'Someone made a new item at the register, named for a ticket. Accept the suggestion so that ticket’s seller is paid.',
   },
   {
+    kind: 'scanned_twice', title: 'Scanned twice in one sale',
+    explain: 'The ticket was rung up twice in the same sale: once on this year’s item, which is already counted as sold, and again on another copy. If the customer paid twice, refund this line in Square; it leaves this list once Square shows the refund. If it was really a different item, pick that one.',
+  },
+  {
     kind: 'double_fee', title: 'Charged both fees',
     explain: 'Square’s credit card surcharge and the Shop Fee were both charged on this sale. In Square, open the sale, choose Issue refund, and refund the Shop Fee only. It leaves this list once Square shows the refund.',
   },
@@ -187,6 +191,18 @@ export function patrolKitSide(i: SalesCheckIssue): Side {
     };
   }
   const s = i.suggestion;
+  if (s && i.kind === 'scanned_twice') {
+    return {
+      title: 'Already sold in this sale',
+      fields: [
+        { label: 'SKU', value: s.sku, mono: true },
+        { label: 'Name', value: s.name },
+        { label: 'Seller', value: s.sellerName ?? '—' },
+        { label: 'Price', value: s.priceCents === null ? 'unpriced' : money(s.priceCents) },
+      ],
+      links: [itemLink(s.sku), ...(i.links.sale ? [{ label: 'Refund in Square', href: i.links.sale }] : [])],
+    };
+  }
   if (!s) {
     return {
       title: 'Suggested PatrolKit item',
