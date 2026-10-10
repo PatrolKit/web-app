@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DiagnosticIssueResponse, DiagnosticRunResponse } from '../../lib/api.types';
-import { decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, rowChoices, shown } from './swapDiagnosticsView';
+import { centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, priceDecidedText, priceSides, rowChoices, shown } from './swapDiagnosticsView';
 
 const issue = (over: Partial<DiagnosticIssueResponse>): DiagnosticIssueResponse => ({
   id: 'i', sku: 'SP-0001', kind: 'only_ours', field: null, ours: null, square: null, state: 'open',
@@ -32,9 +32,9 @@ describe('the diagnostics popover (Plan 41)', () => {
   });
 
   it('offers Use Square’s no price only to a ticket', () => {
-    expect(rowChoices(issue({ kind: 'differs', field: 'price', square: sq(null) }))).toEqual(['use_ours', 'resolve']);
+    expect(rowChoices(issue({ kind: 'differs', field: 'price', square: sq(null) }))).toEqual(['use_ours']);
     expect(rowChoices(issue({ sku: '67169', kind: 'differs', field: 'price', square: sq(null) })))
-      .toEqual(['use_square', 'use_ours', 'resolve']);
+      .toEqual(['use_square', 'use_ours']);
   });
 
   it('has no group form of Keep this copy', () => {
@@ -73,6 +73,33 @@ describe('issues an open sale holds back (Plan 48)', () => {
   it('says what holds it, and where to go', () => {
     expect(heldText(issue({ sku: '73308', heldBySales: 2 }))).toMatch(/^Ticket 73308 has 2 open sales in Sales check\. Settle them there first/);
     expect(heldText(issue({ sku: '73308', heldBySales: 1 }))).toMatch(/^Ticket 73308 has an open sale in Sales check\. Settle it there first/);
+  });
+});
+
+describe('Price differs as a card', () => {
+  const ours = { itemId: 'o', name: 'Item #73308', notes: null, priceCents: 5000, squareItemId: 's', squareVariationId: 'v', sellerName: 'Karen Beckwith' };
+  const price = issue({ kind: 'differs', field: 'price', sku: '73308', ours, square: sq(4500), squareUrl: 'https://sq/item' });
+
+  it('offers no Mark resolved, alone or for the group, and no new price for the group', () => {
+    expect(rowChoices(price)).toEqual(['use_square', 'use_ours']);
+    expect(groupsOf(run([price]))[0].groupChoices).toEqual(['use_square', 'use_ours']);
+    expect(rowChoices(issue({ kind: 'differs', field: 'name', square: sq(1) }))).toEqual(['use_square', 'use_ours', 'resolve']);
+  });
+
+  it('shows each side with its price flagged, and its links', () => {
+    const { square, ours: our } = priceSides(price);
+    expect(square.fields.map((f) => [f.label, f.value, f.warn ?? false])).toEqual([['SKU', '73308', false], ['Name', 'Skis', false], ['Price', '$45.00', true]]);
+    expect(our.fields.map((f) => [f.label, f.value])).toEqual([['SKU', '73308'], ['Name', 'Item #73308'], ['Seller', 'Karen Beckwith'], ['Price', '$50.00']]);
+    expect([square.links, our.links]).toEqual([[{ label: 'Item', href: 'https://sq/item' }], [{ label: 'Item', to: '/dashboard/ski-swap/items?q=73308' }]]);
+  });
+
+  it('says what the price is now', () => {
+    expect(priceDecidedText({ ...price, state: 'applied', choice: 'use_square', decidedByName: 'Dana' })).toBe('Used Square’s price: $45.00 in both by Dana');
+    expect(priceDecidedText({ ...price, state: 'applied', choice: 'set_price' }, 4000)).toBe('New price: $40.00 in both');
+  });
+
+  it('reads a typed price', () => {
+    expect([centsOf('40'), centsOf('$40.5'), centsOf(' 40.50 '), centsOf('0'), centsOf('4o'), centsOf('40.555')]).toEqual([4000, 4050, 4050, null, null, null]);
   });
 });
 

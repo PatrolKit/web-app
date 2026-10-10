@@ -26,6 +26,8 @@ export const ApplyDiagnosticChoiceSchema = z
     keepSquareItemId: z.string().min(1).optional(),
     /** Re-number the other item (Plan 48 D11): the prefix, when its category isn't named for a year. */
     prefix: z.string().regex(/^[A-Za-z0-9]{1,12}$/, 'Letters and digits, up to 12.').optional(),
+    /** Set a new price: in cents, for PatrolKit and Square both. */
+    priceCents: z.number().int().positive().max(10_000_000).optional(),
   })
   .strict();
 export class ApplyDiagnosticChoiceDto extends createZodDto(ApplyDiagnosticChoiceSchema) {}
@@ -85,6 +87,8 @@ export interface DiagnosticIssueResponse {
   decidedByName: string | null;
   decidedAt: string | null;
   error: string | null;
+  /** The Square item in the Square Dashboard. */
+  squareUrl?: string | null;
   /** Open Sales check sales on this ticket or its Square items: every choice waits for them. */
   heldBySales?: number;
 }

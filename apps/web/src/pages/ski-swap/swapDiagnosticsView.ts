@@ -3,6 +3,7 @@ import type {
   DiagnosticChoice, DiagnosticField, DiagnosticIssueKind, DiagnosticIssueResponse, DiagnosticRunResponse,
   DiagnosticSquareSide,
 } from '../../lib/api.types';
+import type { Side } from './salesCheckView';
 
 /**
  * Swap diagnostics' popover (Plan 41), kept apart from it so it can be
@@ -76,7 +77,18 @@ export const CHOICE_LABEL: Record<DiagnosticChoice, string> = {
   delete_other: 'Delete the other item',
   renumber_other: 'Re-number the other item',
   resolve: 'Mark resolved',
+  set_price: 'Set a new price',
 };
+
+/**
+ * Choices not offered as plain buttons: Keep this copy is one per copy, and
+ * Set a new price (and Price differs' own two) live on its card. Price
+ * differs isn't Mark resolved: one of the prices has to win.
+ */
+function offered(c: DiagnosticChoice, kind: DiagnosticIssueKind, field: DiagnosticField | null): boolean {
+  if (c === 'keep' || c === 'set_price') return false;
+  return !(kind === 'differs' && field === 'price' && c === 'resolve');
+}
 
 /** The button for a whole group: "Copy all 300 to Square". */
 export function groupChoiceLabel(choice: DiagnosticChoice, n: number): string {
@@ -112,7 +124,7 @@ export function isTicket(sku: string): boolean {
  */
 export function rowChoices(issue: DiagnosticIssueResponse): DiagnosticChoice[] {
   return CHOICES_FOR[issue.kind].filter((c) => {
-    if (c === 'keep') return false;
+    if (!offered(c, issue.kind, issue.field)) return false;
     if (c === 'use_square' && issue.field === 'price') {
       const sq = squareSide(issue);
       return !!sq && (sq.priceCents !== null || isTicket(issue.sku));
@@ -150,7 +162,7 @@ export function groupsOf(run: DiagnosticRunResponse): DiagnosticGroup[] {
     if (issues.length === 0) return [];
     const open = issues.filter(isOpen).length;
     const held = issues.filter(isHeld).length;
-    const groupChoices = CHOICES_FOR[g.kind].filter((c) => c !== 'keep');
+    const groupChoices = CHOICES_FOR[g.kind].filter((c) => offered(c, g.kind, g.field));
     return [{ key: `${g.kind}:${g.field ?? ''}`, ...g, issues, open, held, groupChoices }];
   });
 }
@@ -168,11 +180,16 @@ export function decidedText(issue: DiagnosticIssueResponse): string {
   const what = issue.state === 'fixed' ? 'Resolved, fixed'
     : issue.state === 'left' ? 'Resolved, left as is'
       : issue.choice ? CHOICE_LABEL[issue.choice] : 'Done';
+  return `${what}${byAt(issue)}`;
+}
+
+/** " by Dana, Oct 10, 9:42 PM". */
+function byAt(issue: DiagnosticIssueResponse): string {
   const by = issue.decidedByName ? ` by ${issue.decidedByName}` : '';
   const at = issue.decidedAt
     ? `, ${new Date(issue.decidedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
     : '';
-  return `${what}${by}${at}`;
+  return `${by}${at}`;
 }
 
 /** "took 48 s". */
@@ -181,3 +198,56 @@ export function tookText(run: DiagnosticRunResponse): string | null {
   const s = Math.max(1, Math.round((Date.parse(run.finishedAt) - Date.parse(run.startedAt)) / 1000));
   return s < 90 ? `took ${s} s` : `took ${Math.round(s / 60)} min`;
 }
+
+/** Price differs: true when Square's price can be used ("no price" only for a ticket). */
+export function canUseSquarePrice(issue: DiagnosticIssueResponse): boolean {
+  const sq = squareSide(issue);
+  return !!sq && (sq.priceCents !== null || isTicket(issue.sku));
+}
+
+/** Price differs as a card: Square's item on the left, ours on the right, the prices flagged. */
+export function priceSides(issue: DiagnosticIssueResponse): { square: Side; ours: Side } {
+  const sq = squareSide(issue);
+  const ours = issue.ours && !issue.ours.deleted ? issue.ours : null;
+  return {
+    square: {
+      title: 'Square',
+      fields: [
+        { label: 'SKU', value: issue.sku, mono: true },
+        { label: 'Name', value: sq?.name ?? '—' },
+        { label: 'Price', value: shown('price', sq), warn: true },
+      ],
+      links: issue.squareUrl ? [{ label: 'Item', href: issue.squareUrl }] : [],
+    },
+    ours: {
+      title: 'PatrolKit',
+      fields: [
+        { label: 'SKU', value: issue.sku, mono: true },
+        { label: 'Name', value: ours?.name ?? '—' },
+        { label: 'Seller', value: ours?.sellerName ?? '—' },
+        { label: 'Price', value: shown('price', ours), warn: true },
+      ],
+      links: [{ label: 'Item', to: `/dashboard/ski-swap/items?q=${encodeURIComponent(issue.sku)}` }],
+    },
+  };
+}
+
+/** A decided price card's tombstone: what the price is now, and where. */
+export function priceDecidedText(issue: DiagnosticIssueResponse, setCents?: number): string {
+  const sq = squareSide(issue);
+  const ours = issue.ours;
+  const now = issue.choice === 'use_square' ? shown('price', sq)
+    : issue.choice === 'use_ours' ? shown('price', ours)
+      : setCents !== undefined ? `$${(setCents / 100).toFixed(2)}` : null;
+  const where = issue.choice === 'use_square' ? 'Used Square’s price' : issue.choice === 'use_ours' ? 'Used PatrolKit’s price' : 'New price';
+  return `${where}${now ? `: ${now} in both` : ''}${byAt(issue)}`;
+}
+
+/** "$40", "40.5", "40.50" → cents; anything else (or nothing above zero) → null. */
+export function centsOf(text: string): number | null {
+  const m = text.trim().replace(/^\$/, '').match(/^(\d{1,6})(?:\.(\d{1,2}))?$/);
+  if (!m) return null;
+  const cents = Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0') || 0);
+  return cents > 0 ? cents : null;
+}
+

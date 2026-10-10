@@ -42,6 +42,7 @@ function harness() {
   const id = (p: string) => `${p}-${++n}`;
 
   const prisma = {
+    squareConfig: { findUnique: async () => ({ environment: 'production' }) },
     skiSwap: {
       findFirst: async () => SWAP,
       update: async () => SWAP,
@@ -295,6 +296,32 @@ describe('the other choices (D3, D4, D6)', () => {
     expect(open(await h.run())).toEqual([['1', 'not_linked', null]]);
   });
 
+  it('Set a new price writes it to ours and sends it to the Square item it was compared with', async () => {
+    const h = harness();
+    h.ours('1', { priceCents: 5000 });
+    h.square('1');
+    const run = await h.run();
+    const price = run.issues.find((i) => i.kind === 'differs')!;
+    expect(price.squareUrl).toBe('https://app.squareup.com/dashboard/items/library/sq-1');
+    await h.service.apply('org', 'swap', price.id, 'set_price', { priceCents: 4000 }, 'staff');
+    expect(h.db.items.find((i) => i.sku === '1')!.priceCents).toBe(4000);
+    expect(h.squareWrites[0][0]).toMatchObject({ posItemId: 'sq-1', priceCents: 4000 });
+    expect(open(await h.run())).toEqual([]);
+  });
+
+  it('Set a new price is refused without a price, off Price differs, or for a whole group', async () => {
+    const h = harness();
+    h.ours('1', { priceCents: 5000, name: 'Blue Skis' });
+    h.square('1');
+    const run = await h.run();
+    const price = run.issues.find((i) => i.field === 'price')!;
+    const name = run.issues.find((i) => i.field === 'name')!;
+    await expect(h.service.apply('org', 'swap', price.id, 'set_price', {}, 'staff')).rejects.toThrow('with the price');
+    await expect(h.service.apply('org', 'swap', name.id, 'set_price', { priceCents: 4000 }, 'staff')).rejects.toThrow('with the price');
+    await expect(h.service.applyAll('org', 'swap', run.id, { kind: 'differs', field: 'price' }, 'set_price', { priceCents: 4000 }, 'staff')).rejects.toThrow('one item at a time');
+    expect(h.squareWrites).toEqual([]);
+  });
+
   it('Use Square’s writes Square’s value to ours, and sends nothing', async () => {
     const h = harness();
     const ours = h.ours('1', { name: 'Blue Skis' });
@@ -446,6 +473,7 @@ describe('open sales hold back their tickets (Plan 48)', () => {
     h.openSale('o2:l1', '73789', 'old-73789');
     const run = await h.run();
     expect(run.issues.map((i) => [i.sku, i.heldBySales])).toEqual([['73789', 2], ['73790', 0]]);
+    expect(run.issues[0].squareUrl).toBeNull(); // elsewhere names its copies, not one item
     expect(run.salesCheckError).toBeNull();
   });
 

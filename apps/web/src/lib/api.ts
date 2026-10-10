@@ -916,7 +916,7 @@ export const api = {
       request<import('./api.types').DiagnosticRunResponse | null>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics/latest`),
     applyDiagnosticChoice: (
       orgId: string, swapId: string, issueId: string,
-      body: { choice: import('./api.types').DiagnosticChoice; sellerId?: string; restoreItemId?: string; keepSquareItemId?: string; prefix?: string },
+      body: { choice: import('./api.types').DiagnosticChoice; sellerId?: string; restoreItemId?: string; keepSquareItemId?: string; prefix?: string; priceCents?: number },
     ) =>
       request<import('./api.types').DiagnosticIssueResponse>(
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics/issues/${issueId}`,

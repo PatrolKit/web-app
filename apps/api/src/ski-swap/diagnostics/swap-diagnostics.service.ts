@@ -9,6 +9,7 @@ import { ticketNumberOf } from '../legacy-ticket.service';
 import { displayName } from '../../common/util/person';
 import { SalesCheckService } from '../sales-check.service';
 import { heldBy, type SalesHolds } from '../sales-check';
+import { squareItemUrl } from '../square-links';
 import {
   CHOICES_FOR,
   type DiagnosticApplyAllResponse,
@@ -28,7 +29,8 @@ const KEPT_RUNS = 30;
 
 type Swap = { id: string; orgId: string; title: string; squareCategoryId: string; locationId: string };
 type IssueRow = Prisma.SwapDiagnosticIssueGetPayload<object>;
-type Extra = { sellerId?: string; restoreItemId?: string; keepSquareItemId?: string; prefix?: string };
+type Performed = { issue: IssueRow; state: 'applied' | 'failed'; error?: string };
+type Extra = { sellerId?: string; restoreItemId?: string; keepSquareItemId?: string; prefix?: string; priceCents?: number };
 
 /** A copy's category, as a re-number prefix when it's named for a year ("2025"). */
 function yearOf(category: string | null | undefined): string | null {
@@ -151,6 +153,7 @@ export class SwapDiagnosticsService {
     // Open sales hold back their tickets' fixes: read them only for a finished run with something open.
     const open = run.issues.filter((i) => i.state === 'open' || i.state === 'failed');
     const holds = run.status === 'done' && open.length ? await this.readHolds(orgId, swapId) : null;
+    const env = (await this.prisma.squareConfig.findUnique({ where: { orgId }, select: { environment: true } }))?.environment;
     return {
       id: run.id,
       status: run.status === 'running' && isStale(run) ? 'interrupted' : (run.status as DiagnosticRunResponse['status']),
@@ -165,6 +168,7 @@ export class SwapDiagnosticsService {
       issues: run.issues.map((i) => ({
         ...toIssueResponse(i, names),
         heldBySales: holds && !('error' in holds) && open.includes(i) ? heldBy(holds, i.sku, squareItemIdsOf(i)) : 0,
+        squareUrl: squareItemUrl(env, (i.square as unknown as { itemId?: string } | null)?.itemId ?? null),
       })),
     };
   }
@@ -194,6 +198,7 @@ export class SwapDiagnosticsService {
   ): Promise<DiagnosticApplyAllResponse> {
     const swap = await this.swapOrThrow(orgId, swapId);
     if (choice === 'keep') throw new BadRequestException('Keep this copy is chosen one item at a time.');
+    if (choice === 'set_price') throw new BadRequestException('A new price is set one item at a time.');
     const issues = await this.prisma.swapDiagnosticIssue.findMany({
       where: {
         runId, swapId, kind: group.kind,
@@ -215,6 +220,9 @@ export class SwapDiagnosticsService {
     for (const issue of issues) {
       if (!CHOICES_FOR[issue.kind as IssueKind]?.includes(choice)) {
         throw new BadRequestException('That choice doesn’t apply to this issue.');
+      }
+      if (choice === 'set_price' && (issue.field !== 'price' || !extra.priceCents)) {
+        throw new BadRequestException('A new price is set on Price differs, with the price.');
       }
     }
 
@@ -277,8 +285,8 @@ export class SwapDiagnosticsService {
   }
 
   /** What each choice does (D3), for issues checked as unchanged. */
-  private async perform(swap: Swap, issues: IssueRow[], choice: DiagnosticChoice, extra: Extra) {
-    const out: { issue: IssueRow; state: 'applied' | 'failed'; error?: string }[] = [];
+  private async perform(swap: Swap, issues: IssueRow[], choice: DiagnosticChoice, extra: Extra): Promise<Performed[]> {
+    const out: Performed[] = [];
     const each = async (fn: (issue: IssueRow) => Promise<void>) => {
       for (const issue of issues) {
         try {
@@ -347,6 +355,22 @@ export class SwapDiagnosticsService {
         // Any that didn't land are free for the next try.
         await releaseSquareCreateClaim(this.prisma, claim);
         return out;
+      }
+
+      case 'set_price': {
+        // A new price for both sides: ours first, then Use ours sends it to
+        // the Square item it was compared with. Written straight to the item,
+        // as Use Square's is, so an unlinked item makes no second copy.
+        const written: IssueRow[] = [];
+        for (const issue of issues) {
+          try {
+            await this.prisma.swapItem.update({ where: { id: ourOf(issue)!.itemId }, data: { priceCents: extra.priceCents! } });
+            written.push(issue);
+          } catch (err) {
+            out.push({ issue, state: 'failed', error: messageOf(err) });
+          }
+        }
+        return [...out, ...(written.length ? await this.perform(swap, written, 'use_ours', extra) : [])];
       }
 
       case 'use_square':

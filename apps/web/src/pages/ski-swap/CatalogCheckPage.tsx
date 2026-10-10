@@ -7,12 +7,16 @@ import type {
   DiagnosticChoice, DiagnosticIssueResponse, DiagnosticRunResponse, SellerResponse,
 } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
+import { SidePanel, Tombstone } from './ReportCard';
 import {
-  CHOICE_LABEL, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, rowChoices, shown, squareCopies, squareSide, tookText, yearOf,
+  CHOICE_LABEL, canUseSquarePrice, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
+  rowChoices, shown, squareCopies, squareSide, tookText, yearOf,
   type DiagnosticGroup,
 } from './swapDiagnosticsView';
 
 const latestKey = (orgId: string, swapId: string) => ['ski-swap/diagnostics', orgId, swapId];
+const btn = 'bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-gray-200 px-2.5 py-1 rounded text-xs';
+const primary = 'bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-2.5 py-1 rounded text-xs font-medium';
 const PAGE = 100;
 
 function errorText(err: unknown): string {
@@ -55,6 +59,16 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
   const groups = useMemo(() => (run && run.status === 'done' ? groupsOf(run) : []), [run]);
   const openCount = groups.reduce((n, g) => n + g.open, 0);
   const refresh = () => void qc.invalidateQueries({ queryKey: key });
+  /**
+   * One issue decided: shown at once from the answer, before the page reads
+   * again (that read waits on Square's sales, for what they hold back).
+   */
+  const decided = (updated: DiagnosticIssueResponse) => {
+    qc.setQueryData<DiagnosticRunResponse | null>(key, (r) => r && {
+      ...r, issues: r.issues.map((i) => (i.id === updated.id ? { ...i, ...updated, heldBySales: i.heldBySales, squareUrl: i.squareUrl } : i)),
+    });
+    refresh();
+  };
 
   return (
     <div className="space-y-5">
@@ -94,7 +108,7 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
         </p>
       )}
       {run?.status === 'done' && groups.map((g) => (
-        <Group key={g.key} group={g} run={run} orgId={orgId} swapId={swapId} sellers={sellers} onChanged={refresh} />
+        <Group key={g.key} group={g} run={run} orgId={orgId} swapId={swapId} sellers={sellers} onChanged={refresh} onDecided={decided} />
       ))}
     </div>
   );
@@ -120,14 +134,16 @@ function sellerOptions(sellers: SellerResponse[]) {
 }
 
 /** One kind of issue: what it means, its group choices (D4), and its rows. */
-function Group({ group, run, orgId, swapId, sellers, onChanged }: {
+function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided }: {
   group: DiagnosticGroup;
   run: DiagnosticRunResponse;
   orgId: string;
   swapId: string;
   sellers: SellerResponse[];
   onChanged: () => void;
+  onDecided: (updated: DiagnosticIssueResponse) => void;
 }) {
+  const priceCards = group.kind === 'differs' && group.field === 'price';
   const [shownRows, setShownRows] = useState(PAGE);
   const [groupSeller, setGroupSeller] = useState('');
   const [groupPrefix, setGroupPrefix] = useState('');
@@ -211,11 +227,17 @@ function Group({ group, run, orgId, swapId, sellers, onChanged }: {
         {result && <p className="text-xs text-gray-300">{result}</p>}
         {all.error && <p className="text-xs text-red-400">{errorText(all.error)}</p>}
       </div>
-      <ul className="divide-y divide-gray-800">
-        {group.issues.slice(0, shownRows).map((i) => (
-          <IssueRow key={i.id} issue={i} orgId={orgId} swapId={swapId} sellers={sellers} onChanged={onChanged} />
-        ))}
-      </ul>
+      {priceCards ? (
+        <div className="p-3 space-y-3">
+          {group.issues.slice(0, shownRows).map((i) => <PriceCard key={i.id} issue={i} orgId={orgId} swapId={swapId} onDecided={onDecided} />)}
+        </div>
+      ) : (
+        <ul className="divide-y divide-gray-800">
+          {group.issues.slice(0, shownRows).map((i) => (
+            <IssueRow key={i.id} issue={i} orgId={orgId} swapId={swapId} sellers={sellers} onDecided={onDecided} />
+          ))}
+        </ul>
+      )}
       {group.issues.length > shownRows && (
         <button type="button" onClick={() => setShownRows((n) => n + PAGE)}
           className="w-full text-xs text-brand-500 hover:underline py-2 border-t border-gray-800">
@@ -226,19 +248,84 @@ function Group({ group, run, orgId, swapId, sellers, onChanged }: {
   );
 }
 
+/**
+ * Price differs as a card, laid out as Sales check's: Square's item and ours
+ * side by side, each with "Use this price", and a new price for both below.
+ */
+function PriceCard({ issue, orgId, swapId, onDecided }: {
+  issue: DiagnosticIssueResponse; orgId: string; swapId: string; onDecided: (updated: DiagnosticIssueResponse) => void;
+}) {
+  const [price, setPrice] = useState('');
+  const [invalid, setInvalid] = useState<string | null>(null);
+  /** Decided here: settles in, and a new price is remembered for the tombstone. */
+  const [done, setDone] = useState<{ cents?: number } | null>(null);
+  const apply = useMutation({
+    mutationFn: (body: { choice: DiagnosticChoice; priceCents?: number }) => api.skiSwap.applyDiagnosticChoice(orgId, swapId, issue.id, body),
+    onSuccess: (updated, body) => {
+      if (updated.state !== 'failed') setDone({ cents: body.priceCents });
+      onDecided(updated);
+    },
+  });
+  const held = isHeld(issue);
+  const sides = priceSides(issue);
+  const busy = apply.isPending;
+
+  if (!isOpen(issue)) return <Tombstone text={priceDecidedText(issue, done?.cents)} hint="" settle={!!done} />;
+
+  function setNew() {
+    const cents = centsOf(price);
+    if (cents === null) { setInvalid('Enter a price above $0, like 40 or 40.50.'); return; }
+    apply.mutate({ choice: 'set_price', priceCents: cents });
+  }
+
+  const use = (choice: 'use_square' | 'use_ours', enabled = true) => (held ? undefined : (
+    <button type="button" className={btn} disabled={busy || !enabled} onClick={() => apply.mutate({ choice })}>Use this price</button>
+  ));
+
+  return (
+    <div className={`border border-gray-800 rounded-lg overflow-hidden bg-surface-50 transition-opacity ${busy ? 'opacity-60' : ''}`} aria-busy={busy}>
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_1.75rem_minmax(0,1fr)]">
+        <SidePanel side={sides.square} icon="■" action={use('use_square', canUseSquarePrice(issue))} />
+        <div className="hidden md:flex items-center justify-center text-gray-600">≠</div>
+        <SidePanel side={sides.ours} icon="◆" className="border-t md:border-t-0 md:border-l border-gray-800" action={use('use_ours')} />
+      </div>
+      {held ? (
+        <p className="px-3 py-2 border-t border-gray-800 text-xs text-amber-300 bg-amber-900/20">
+          ⏸ {heldText(issue)}{' '}
+          <Link to="/dashboard/ski-swap/reports" className="underline hover:text-amber-200">Open Sales check</Link>
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40">
+          <label className="text-xs text-gray-400" htmlFor={`price-${issue.id}`}>New price for both</label>
+          <span className="text-sm text-gray-400">$</span>
+          <input id={`price-${issue.id}`} value={price} inputMode="decimal" placeholder="40.00"
+            onChange={(e) => { setPrice(e.target.value); setInvalid(null); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') setNew(); }}
+            className="w-24 bg-surface-100 px-2 py-1 rounded text-sm text-white" />
+          <button type="button" className={primary} disabled={busy} onClick={setNew}>Set new price</button>
+          {busy && <span className="text-xs text-gray-400">Working…</span>}
+          {invalid && <span className="text-xs text-red-400">{invalid}</span>}
+          {issue.state === 'failed' && issue.error && <span className="text-xs text-red-400">{issue.error}</span>}
+          {apply.error && <span className="text-xs text-red-400">{errorText(apply.error)}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** One issue: the SKU, both sides, and its choices; or what was chosen. */
-function IssueRow({ issue, orgId, swapId, sellers, onChanged }: {
+function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
   issue: DiagnosticIssueResponse;
   orgId: string;
   swapId: string;
   sellers: SellerResponse[];
-  onChanged: () => void;
+  onDecided: (updated: DiagnosticIssueResponse) => void;
 }) {
   const [seller, setSeller] = useState('');
   const apply = useMutation({
     mutationFn: (body: { choice: DiagnosticChoice; sellerId?: string; restoreItemId?: string; keepSquareItemId?: string; prefix?: string }) =>
       api.skiSwap.applyDiagnosticChoice(orgId, swapId, issue.id, body),
-    onSuccess: onChanged,
+    onSuccess: onDecided,
   });
   const held = isHeld(issue);
   // A held row shows what it is, and no choices (Plan 48): its sale comes first.
