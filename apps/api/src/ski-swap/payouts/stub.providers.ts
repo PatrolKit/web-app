@@ -246,6 +246,8 @@ class StubPosAdapter implements IPosAdapter {
     return new Map(variationIds.filter((id) => id in counts).map((id) => [id, counts[id]]));
   }
   setInitialInventory(): never { this.refuse(); }
+  /** Nothing is ever mid-sale in the stub. */
+  async stockChangedSince(): Promise<Set<string>> { return new Set(); }
   /** Into `SMOKE_INVENTORY_FILE` when a script gives one (Plan 48 D6: crediting marks an item sold). */
   async setInventoryPhysicalCount(variationId: string, _locationId: string, quantity: number): Promise<void> {
     const path = process.env.SMOKE_INVENTORY_FILE;

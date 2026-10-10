@@ -256,6 +256,17 @@ export class ItemBreakdownService {
     return { ...read, swap };
   }
 
+  /**
+   * Units sold per variation, after refunds and Sales check's decisions
+   * (Catalog check's stock). `fresh` skips the cache: a choice re-checks
+   * against Square as it is now.
+   */
+  async soldUnits(orgId: string, swapId: string, opts: { fresh?: boolean } = {}): Promise<Map<string, number>> {
+    const swap = await this.swapOf(orgId, swapId);
+    if (opts.fresh) this.forgetSales(swapId);
+    return soldByVariation((await this.sales(orgId, swap)).lines);
+  }
+
   /** Drops the cached read, after a decision, so every card reads afresh. */
   forgetSales(swapId: string): void {
     this.salesCache.delete(swapId);

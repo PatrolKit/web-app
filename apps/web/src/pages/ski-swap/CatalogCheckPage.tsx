@@ -10,7 +10,7 @@ import type { SkiSwapContext } from './SkiSwapLayout';
 import { SidePanel, Tombstone } from './ReportCard';
 import {
   CHOICE_LABEL, canUseSquarePrice, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
-  rowChoices, shown, squareCopies, squareSide, tookText, yearOf,
+  rowChoices, shown, squareCopies, squareSide, stockText, tookText, yearOf,
   type DiagnosticGroup,
 } from './swapDiagnosticsView';
 
@@ -361,6 +361,7 @@ function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
           {deleted && <> One of our deleted items had this SKU ({deleted.name}{deleted.sellerName ? `, ${deleted.sellerName}` : ''}).</>}
         </p>
       )}
+      {issue.kind === 'stock' && <p className="text-xs text-gray-400">{stockText(issue)}</p>}
       {issue.kind === 'only_ours' && ours && (
         <p className="text-xs text-gray-400">Ours: {shown('price', ours)}.</p>
       )}
@@ -438,7 +439,7 @@ function IssueRow({ issue, orgId, swapId, sellers, onDecided }: {
                 apply.mutate({ choice: c, ...(c === 'copy_to_patrolkit' ? { sellerId: seller } : {}) });
               }}
               className="bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-gray-200 px-2.5 py-1 rounded text-xs">
-              {c === 'copy_to_patrolkit' && deleted ? 'Copy to PatrolKit as new' : CHOICE_LABEL[c]}
+              {c === 'copy_to_patrolkit' && deleted ? 'Copy to PatrolKit as new' : c === 'set_stock' ? `Set Square’s stock to ${issue.ours?.stock ?? 0}` : CHOICE_LABEL[c]}
             </button>
           ))}
           {apply.isPending && <span className="text-xs text-gray-400">Working…</span>}

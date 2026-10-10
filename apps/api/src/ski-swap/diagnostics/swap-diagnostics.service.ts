@@ -8,6 +8,7 @@ import { SELLER_NAME_INCLUDE, sellerDisplayName } from '../seller.service';
 import { ticketNumberOf } from '../legacy-ticket.service';
 import { displayName } from '../../common/util/person';
 import { SalesCheckService } from '../sales-check.service';
+import { ItemBreakdownService } from '../item-breakdown.service';
 import { heldBy, type SalesHolds } from '../sales-check';
 import { squareItemUrl } from '../square-links';
 import {
@@ -19,13 +20,18 @@ import {
 } from '../../contracts/swap-diagnostics.contracts';
 import {
   diagnose, issueKey,
-  type FoundIssue, type IssueKind, type OurDeletedItem, type OurItem, type OurReturnedItem, type OurSide, type SquareSide,
+  type FoundIssue, type IssueKind, type OurDeletedItem, type OurItem, type OurReturnedItem, type OurSide, type SquareSide, type StockOf,
 } from './diagnose';
 
 /** A run still marked running this long after its last update was cut off (D9). */
 const STALE_MS = 10 * 60 * 1000;
 /** Runs kept per swap (D10). */
 const KEPT_RUNS = 30;
+/**
+ * Stock that moved in Square this recently isn't set (Plan 48): a sale's
+ * stock change can land before Square's order search shows the sale.
+ */
+const STOCK_SETTLE_MS = 2 * 60 * 1000;
 
 type Swap = { id: string; orgId: string; title: string; squareCategoryId: string; locationId: string };
 type IssueRow = Prisma.SwapDiagnosticIssueGetPayload<object>;
@@ -54,6 +60,7 @@ export class SwapDiagnosticsService {
     private readonly posFactory: PosAdapterFactory,
     private readonly items: ItemService,
     private readonly salesCheck: SalesCheckService,
+    private readonly breakdown: ItemBreakdownService,
   ) {}
 
   // ─── Runs ───────────────────────────────────────────────────────────────────
@@ -106,7 +113,8 @@ export class SwapDiagnosticsService {
 
     const { ours, deleted, returned } = await this.ourItems(swap.id);
     const { elsewhere, categoryNames } = await this.elsewhere(swap, pos, ours.map((o) => o.sku));
-    const found = diagnose({ ours, deleted, returned, square, elsewhere, categoryNames });
+    const stock = await this.stockFor(swap, pos, ours);
+    const found = diagnose({ ours, deleted, returned, square, elsewhere, categoryNames, stock });
     const hidden = await this.hiddenKeys(swap.id);
     const kept = found.filter((i) => !hidden.has(`${issueKey(i)}\u0000${i.fingerprint}`));
 
@@ -236,7 +244,7 @@ export class SwapDiagnosticsService {
     if (issues.length === 0) return tally;
 
     // Both sides, as they are now, for every SKU involved.
-    const current = await this.recheck(swap, [...new Set(issues.map((i) => i.sku))]);
+    const current = await this.recheck(swap, [...new Set(issues.map((i) => i.sku))], issues.some((i) => i.kind === 'stock'));
     const outcomes: { issue: IssueRow; state: 'applied' | 'fixed' | 'left' | 'failed'; error?: string }[] = [];
 
     if (choice === 'resolve') {
@@ -373,6 +381,21 @@ export class SwapDiagnosticsService {
         return [...out, ...(written.length ? await this.perform(swap, written, 'use_ours', extra) : [])];
       }
 
+      case 'set_stock': {
+        // Square's stock to what the item's sales leave, as the re-check just
+        // read them. Not one whose stock is still moving: a sale landing.
+        const pos = await this.posOrThrow(swap);
+        const ids = issues.map((i) => ourOf(i)?.squareVariationId).filter((v): v is string => !!v);
+        const moving = await pos.stockChangedSince(ids, swap.locationId, new Date(Date.now() - STOCK_SETTLE_MS));
+        await each(async (issue) => {
+          const o = ourOf(issue);
+          if (!o?.squareVariationId || o.stock === undefined) throw new BadRequestException('That item’s stock isn’t known. Run the checks again.');
+          if (moving.has(o.squareVariationId)) throw new ConflictException('Its stock just changed in Square, maybe a sale still landing. Run the checks again in a few minutes.');
+          await pos.setInventoryPhysicalCount(o.squareVariationId, swap.locationId, o.stock);
+        });
+        return out;
+      }
+
       case 'use_square':
         // Written straight to the item, not through the item edit: an edit
         // pushes to Square by the stored ids, and on an item not linked that
@@ -488,13 +511,38 @@ export class SwapDiagnosticsService {
   // ─── Reading both sides ────────────────────────────────────────────────────
 
   /** The issues these SKUs have right now, re-read from both sides, by key. */
-  private async recheck(swap: Swap, skus: string[]): Promise<Map<string, FoundIssue>> {
+  /** `withStock`: stock issues among them, re-read from Square's sales as they are now. */
+  private async recheck(swap: Swap, skus: string[], withStock = false): Promise<Map<string, FoundIssue>> {
     const pos = await this.posOrThrow(swap);
     const square = await pos.itemsBySku(swap.squareCategoryId, skus);
     const { ours, deleted, returned } = await this.ourItems(swap.id, skus);
     const { elsewhere, categoryNames } = await this.elsewhere(swap, pos, skus);
-    const found = diagnose({ ours, deleted, returned, square, elsewhere, categoryNames, onlySkus: new Set(skus) });
+    const stock = withStock ? await this.stockFor(swap, pos, ours, true) : undefined;
+    const found = diagnose({ ours, deleted, returned, square, elsewhere, categoryNames, stock, onlySkus: new Set(skus) });
     return new Map(found.map((i) => [issueKey(i), i]));
+  }
+
+  /**
+   * Stock for our linked items (Plan 48): what their sales leave (checked in,
+   * less sold after refunds and Sales check's decisions) against Square's
+   * count. Square's sales unreadable: not checked, rather than a failed run.
+   */
+  private async stockFor(swap: Swap, pos: IPosAdapter, ours: OurItem[], fresh = false): Promise<Map<string, StockOf> | undefined> {
+    const linked = ours.filter((o) => o.squareVariationId);
+    if (linked.length === 0) return new Map();
+    try {
+      const [sold, counts] = await Promise.all([
+        this.breakdown.soldUnits(swap.orgId, swap.id, { fresh }),
+        pos.getInventoryCounts(linked.map((o) => o.squareVariationId!), swap.locationId),
+      ]);
+      return new Map(linked.map((o) => {
+        const units = sold.get(o.squareVariationId!) ?? 0;
+        return [o.sku, { sold: units, expected: Math.max(0, (o.originalQuantity ?? 1) - units), square: counts.get(o.squareVariationId!) ?? 0 }];
+      }));
+    } catch (err) {
+      this.logger.warn({ err, swapId: swap.id }, 'Catalog check: stock not read');
+      return undefined;
+    }
   }
 
   /**
@@ -520,7 +568,7 @@ export class SwapDiagnosticsService {
     const rows = await this.prisma.swapItem.findMany({
       where: { swapId, ...(skus ? { sku: { in: skus } } : {}) },
       select: {
-        id: true, sku: true, name: true, description: true, priceCents: true, consignedAt: true, deletedAt: true, returnedAt: true,
+        id: true, sku: true, name: true, description: true, priceCents: true, consignedAt: true, deletedAt: true, returnedAt: true, originalQuantity: true,
         squareItemId: true, squareVariationId: true,
         seller: { include: SELLER_NAME_INCLUDE },
       },
@@ -539,6 +587,7 @@ export class SwapDiagnosticsService {
         ours.push({
           id: r.id, sku: r.sku, name: r.name, description: r.description, priceCents: r.priceCents,
           consigned: r.consignedAt !== null, squareItemId: r.squareItemId, squareVariationId: r.squareVariationId, sellerName,
+          originalQuantity: r.originalQuantity,
         });
       }
     }

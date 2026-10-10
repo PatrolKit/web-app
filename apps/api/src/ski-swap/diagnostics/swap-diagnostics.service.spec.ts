@@ -93,7 +93,16 @@ function harness() {
     auditLog: { createMany: async ({ data }: Row) => { db.audit.push(...data); } },
   };
 
+  // Stock (Plan 48): Square's counts and units sold, by variation. Unset: in stock, unsold.
+  const counts = new Map<string, number>();
+  const sold = new Map<string, number>();
+  const stockSets: [string, number][] = [];
+  let stockMoving = new Set<string>();
+  let salesUnreadable = false;
   const pos = {
+    getInventoryCounts: async (ids: string[]) => new Map(ids.map((id) => [id, counts.get(id) ?? 1])),
+    setInventoryPhysicalCount: async (id: string, _loc: string, n: number) => { stockSets.push([id, n]); counts.set(id, n); },
+    stockChangedSince: async (ids: string[]) => new Set(ids.filter((id) => stockMoving.has(id))),
     listCategoryItems: async (cat: string, onPage?: (n: number) => void) => {
       if (failListing) throw failListing;
       const rows = square.filter(() => cat === 'cat');
@@ -137,7 +146,12 @@ function harness() {
   let salesError: string | null = null;
   const salesCheck = { holds: async () => (salesError ? { error: salesError } : salesHolds(openSales)) };
 
-  const service = new SwapDiagnosticsService(prisma as never, { forOrg: async () => pos } as never, items as never, salesCheck as never);
+  const breakdown = {
+    soldUnits: async () => { if (salesUnreadable) throw new Error('Square is down'); return new Map(sold); },
+    forgetSales: () => {},
+  };
+
+  const service = new SwapDiagnosticsService(prisma as never, { forOrg: async () => pos } as never, items as never, salesCheck as never, breakdown as never);
 
   const run = async () => {
     const { runId } = await service.start('org', 'swap', 'staff');
@@ -146,13 +160,18 @@ function harness() {
   };
 
   return {
-    db, service, run, created, squareWrites, squareDeletes, renumbered, openSales,
+    db, service, run, created, squareWrites, squareDeletes, renumbered, openSales, stockSets,
+    /** Square's count for a variation, and units its sales leave sold. */
+    stock: (variationId: string, count: number, unitsSold = 0) => { counts.set(variationId, count); sold.set(variationId, unitsSold); },
+    sell: (variationId: string, units: number) => { sold.set(variationId, units); },
+    stockMoving: (ids: string[]) => { stockMoving = new Set(ids); },
+    salesUnreadable: (v: boolean) => { salesUnreadable = v; },
     /** An open Sales check sale rung up on this Square item, suggesting this ticket. */
     openSale: (key: string, sku: string, squareItemId: string) => openSales.push({
       key, ticket: null, rungUpAs: { name: `Swap Item ${sku}`, sku, variationId: `v-${key}`, itemId: squareItemId, category: '2025', archived: true },
       suggestion: { itemId: `our-${sku}`, sku, name: 'Red Skis', priceCents: null, sellerName: null, sellerId: null },
     }),
-    salesUnreadable: (err: string | null) => { salesError = err; },
+    holdsUnreadable: (err: string | null) => { salesError = err; },
     /** Another Square item with this SKU (Plan 48 D11): last year's archived copy by default. */
     elsewhere: (sku: string, over: Partial<PosCatalogItem> = {}) => {
       const entry: PosCatalogItem = { itemId: `old-${sku}`, variationId: `oldv-${sku}`, sku, name: `Swap Item ${sku}`, description: null, pricing: { type: 'variable' }, version: '1', updatedAt: null, categoryIds: ['old'], archived: true, ...over };
@@ -515,9 +534,62 @@ describe('open sales hold back their tickets (Plan 48)', () => {
     const h = harness();
     h.ours('73789'); h.square('73789'); h.elsewhere('73789');
     const run = await h.run();
-    h.salesUnreadable('Square is down');
+    h.holdsUnreadable('Square is down');
     expect((await h.service.latest('org', 'swap'))!.salesCheckError).toBe('Square is down');
     await expect(h.service.apply('org', 'swap', run.issues[0].id, 'delete_other', {}, 'staff')).rejects.toThrow('Couldn’t read Square’s sales');
     expect(h.squareDeletes).toEqual([]);
   });
 });
+
+describe('stock against what the sales leave (Plan 48)', () => {
+  it('finds a refund not put back in stock, and sets Square’s stock to what its sales leave', async () => {
+    const h = harness();
+    h.ours('74329'); h.square('74329');
+    h.stock('sv-74329', 0, 0); // sold once, refunded once: unsold, but Square says 0
+    const run = await h.run();
+    const issue = run.issues.find((i) => i.kind === 'stock')!;
+    expect(issue).toMatchObject({ sku: '74329', ours: { stock: 1, sold: 0 }, square: { stock: 0 } });
+    await h.service.apply('org', 'swap', issue.id, 'set_stock', {}, 'staff');
+    expect(h.stockSets).toEqual([['sv-74329', 1]]);
+    expect(open(await h.run())).toEqual([]);
+  });
+
+  it('finds stock below zero from a ticket scanned twice and one refunded', async () => {
+    const h = harness();
+    h.ours('74383'); h.square('74383');
+    h.stock('sv-74383', -1, 1);
+    const [issue] = (await h.run()).issues;
+    expect(issue).toMatchObject({ kind: 'stock', ours: { stock: 0, sold: 1 }, square: { stock: -1 } });
+    await h.service.apply('org', 'swap', issue.id, 'set_stock', {}, 'staff');
+    expect(h.stockSets).toEqual([['sv-74383', 0]]);
+  });
+
+  it('says nothing when the stock matches, sold or not', async () => {
+    const h = harness();
+    h.ours('1'); h.square('1'); h.stock('sv-1', 0, 1);
+    h.ours('2'); h.square('2'); h.stock('sv-2', 1, 0);
+    expect((await h.run()).issues).toEqual([]);
+  });
+
+  it('sets nothing when a sale has landed since the run, or the stock is still moving', async () => {
+    const h = harness();
+    h.ours('1'); h.square('1'); h.stock('sv-1', 0, 0);
+    h.ours('2'); h.square('2'); h.stock('sv-2', 0, 0);
+    const run = await h.run();
+    const [one, two] = run.issues;
+    h.sell('sv-1', 1); // its sale shows now: the stock was right
+    await expect(h.service.apply('org', 'swap', one.id, 'set_stock', {}, 'staff')).rejects.toThrow('changed since the check ran');
+    h.stockMoving(['sv-2']);
+    await expect(h.service.apply('org', 'swap', two.id, 'set_stock', {}, 'staff')).resolves.toMatchObject({ state: 'failed', error: expect.stringContaining('just changed in Square') });
+    expect(h.stockSets).toEqual([]);
+  });
+
+  it('runs without stock when Square’s sales can’t be read', async () => {
+    const h = harness();
+    h.ours('1'); h.square('1'); h.stock('sv-1', 0, 0);
+    h.salesUnreadable(true);
+    const run = await h.run();
+    expect([run.status, run.issues]).toEqual(['done', []]);
+  });
+});
+

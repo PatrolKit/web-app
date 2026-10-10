@@ -59,6 +59,8 @@ export interface DiagnosticSquareSide {
   sku?: string;
   category?: string | null;
   archived?: boolean;
+  /** Stock: Square's count in stock. */
+  stock?: number;
 }
 
 /** One of our items, on an issue. `deleted`: a deleted item with the same SKU. */
@@ -71,6 +73,9 @@ export interface DiagnosticOurSide {
   squareVariationId: string | null;
   sellerName: string | null;
   deleted?: boolean;
+  /** Stock: what its sales leave (checked in, less sold after refunds), and how many sold. */
+  stock?: number;
+  sold?: number;
 }
 
 export interface DiagnosticIssueResponse {

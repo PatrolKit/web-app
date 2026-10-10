@@ -478,6 +478,22 @@ class SquarePosAdapter implements IPosAdapter {
     return map;
   }
 
+  async stockChangedSince(variationIds: string[], locationId: string, since: Date): Promise<Set<string>> {
+    const out = new Set<string>();
+    for (let at = 0; at < variationIds.length; at += 500) {
+      const page = await this.client.inventory.batchGetChanges({
+        catalogObjectIds: variationIds.slice(at, at + 500),
+        locationIds: [locationId],
+        updatedAfter: since.toISOString(),
+      });
+      for await (const change of page) {
+        const id = change.adjustment?.catalogObjectId ?? change.physicalCount?.catalogObjectId;
+        if (id) out.add(id);
+      }
+    }
+    return out;
+  }
+
   /**
    * Completed orders in a window, flattened to one entry per line item.
    *

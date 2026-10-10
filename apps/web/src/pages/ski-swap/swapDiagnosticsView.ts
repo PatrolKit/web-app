@@ -33,6 +33,10 @@ const ORDER: { kind: DiagnosticIssueKind; field: DiagnosticField | null; title: 
     explain: 'Last year’s item, or an archived one: Square still scans archived items, so the register can ring a sale up on it, where PatrolKit can’t see it. Delete it, or re-number its SKU (e.g. 2025-73789) so it no longer scans.',
   },
   {
+    kind: 'stock', field: null, title: 'Stock doesn’t match sales',
+    explain: 'Square’s stock isn’t what the item’s sales leave (checked in, less sold after refunds): usually a refund not put back in stock, a ticket scanned twice, or a count changed by hand. At 0, PatrolKit shows the item as sold and the register as sold out; below 0 is never right.',
+  },
+  {
     kind: 'only_ours', field: null, title: 'In PatrolKit, not in Square',
     explain: 'The register can’t sell these. Usually a push to Square that failed, or a self check-in the seller never finished.',
   },
@@ -78,6 +82,7 @@ export const CHOICE_LABEL: Record<DiagnosticChoice, string> = {
   renumber_other: 'Re-number the other item',
   resolve: 'Mark resolved',
   set_price: 'Set a different price',
+  set_stock: 'Set Square’s stock',
 };
 
 /**
@@ -102,6 +107,7 @@ export function groupChoiceLabel(choice: DiagnosticChoice, n: number): string {
     case 'remove_from_square': return `Remove all ${count} from Square`;
     case 'delete_other': return `Delete all ${count} other items`;
     case 'renumber_other': return `Re-number all ${count} other items`;
+    case 'set_stock': return `Set Square’s stock for all ${count}`;
     case 'resolve': return `Mark all ${count} resolved`;
     default: return CHOICE_LABEL[choice];
   }
@@ -179,7 +185,8 @@ export function shown(field: DiagnosticField | null, value: { name: string; note
 export function decidedText(issue: DiagnosticIssueResponse): string {
   const what = issue.state === 'fixed' ? 'Resolved, fixed'
     : issue.state === 'left' ? 'Resolved, left as is'
-      : issue.choice ? CHOICE_LABEL[issue.choice] : 'Done';
+      : issue.choice === 'set_stock' ? `Set Square’s stock to ${issue.ours?.stock ?? 0}`
+        : issue.choice ? CHOICE_LABEL[issue.choice] : 'Done';
   return `${what}${byAt(issue)}`;
 }
 
@@ -249,5 +256,13 @@ export function centsOf(text: string): number | null {
   if (!m) return null;
   const cents = Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0') || 0);
   return cents > 0 ? cents : null;
+}
+
+/** Stock: "Square has 0 in stock; its sales leave 1 (1 checked in, 0 sold after refunds)." */
+export function stockText(issue: DiagnosticIssueResponse): string {
+  const sq = squareSide(issue)?.stock ?? 0;
+  const want = issue.ours?.stock ?? 0;
+  const sold = issue.ours?.sold ?? 0;
+  return `Square has ${sq} in stock; its sales leave ${want} (${want + sold} checked in, ${sold} sold after refunds).`;
 }
 

@@ -25,6 +25,8 @@ export interface OurItem {
   squareItemId: string | null;
   squareVariationId: string | null;
   sellerName: string | null;
+  /** Units checked in: stock starts here (Plan 48). */
+  originalQuantity?: number;
 }
 
 /** One of our deleted items: an "only in Square" SKU may be one of these. */
@@ -56,6 +58,8 @@ export interface SquareSide {
   sku?: string;
   category?: string | null;
   archived?: boolean;
+  /** Stock only: Square's count in stock at the swap's location. */
+  stock?: number;
 }
 
 /** Our side of one item, as stored on an issue. */
@@ -67,6 +71,16 @@ export interface OurSide {
   squareItemId: string | null;
   squareVariationId: string | null;
   sellerName: string | null;
+  /** Stock only: what its sales leave (checked in, less sold after refunds), and how many sold. */
+  stock?: number;
+  sold?: number;
+}
+
+/** Stock, for one linked item: what its sales leave, and what Square says. */
+export interface StockOf {
+  expected: number;
+  sold: number;
+  square: number;
 }
 
 export interface FoundIssue {
@@ -133,6 +147,8 @@ export function diagnose(input: {
   elsewhere?: PosCatalogItem[];
   /** Category names, to say where each copy is. */
   categoryNames?: Map<string, string>;
+  /** Stock by SKU, for linked items (Plan 48): absent, not checked. */
+  stock?: Map<string, StockOf>;
   /** Limit to these SKUs: a re-read of a few. Absent for a whole run. */
   onlySkus?: Set<string>;
 }): FoundIssue[] {
@@ -185,6 +201,14 @@ export function diagnose(input: {
     if (o.name !== sq.name) add(sku, 'differs', 'name', o, sq, { ours: o.name, square: sq.name });
     if (o.notes !== sq.notes) add(sku, 'differs', 'notes', o, sq, { ours: o.notes, square: sq.notes });
     if (o.priceCents !== sq.priceCents) add(sku, 'differs', 'price', o, sq, { ours: o.priceCents, square: sq.priceCents });
+
+    // Square's stock against what the sales leave: a refund not put back in
+    // stock, one scanned twice, or a count changed by hand. Linked items only.
+    const st = input.stock?.get(sku);
+    if (st && o.squareVariationId === sq.variationId && st.square !== st.expected) {
+      add(sku, 'stock', null, { ...o, stock: st.expected, sold: st.sold }, { ...sq, stock: st.square },
+        { expected: st.expected, square: st.square });
+    }
   }
 
   for (const [sku, our] of ourBySku) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DiagnosticIssueResponse, DiagnosticRunResponse } from '../../lib/api.types';
-import { centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, priceDecidedText, priceSides, rowChoices, shown } from './swapDiagnosticsView';
+import { centsOf, decidedText, stockText, groupChoiceLabel, groupsOf, heldText, isHeld, priceDecidedText, priceSides, rowChoices, shown } from './swapDiagnosticsView';
 
 const issue = (over: Partial<DiagnosticIssueResponse>): DiagnosticIssueResponse => ({
   id: 'i', sku: 'SP-0001', kind: 'only_ours', field: null, ours: null, square: null, state: 'open',
@@ -100,6 +100,16 @@ describe('Price differs as a card', () => {
 
   it('reads a typed price', () => {
     expect([centsOf('40'), centsOf('$40.5'), centsOf(' 40.50 '), centsOf('0'), centsOf('4o'), centsOf('40.555')]).toEqual([4000, 4050, 4050, null, null, null]);
+  });
+});
+
+describe('stock against sales', () => {
+  it('says what Square has and what the sales leave', () => {
+    const stock = issue({ kind: 'stock', sku: '74329', ours: { itemId: 'o', name: 'x', notes: null, priceCents: 7500, squareItemId: 's', squareVariationId: 'v', sellerName: null, stock: 1, sold: 0 }, square: { ...sq(7500), stock: 0 } });
+    expect(stockText(stock)).toBe('Square has 0 in stock; its sales leave 1 (1 checked in, 0 sold after refunds).');
+    expect(rowChoices(stock)).toEqual(['set_stock', 'resolve']);
+    expect(groupsOf(run([stock]))[0]).toMatchObject({ title: 'Stock doesn’t match sales', groupChoices: ['set_stock', 'resolve'] });
+    expect(decidedText({ ...stock, state: 'applied', choice: 'set_stock' })).toBe('Set Square’s stock to 1');
   });
 });
 

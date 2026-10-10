@@ -4,7 +4,7 @@
  * these, and the popover offers the same ones.
  */
 
-export const DIAGNOSTIC_ISSUE_KINDS = ['only_square', 'only_ours', 'differs', 'not_linked', 'twice', 'returned', 'elsewhere'] as const;
+export const DIAGNOSTIC_ISSUE_KINDS = ['only_square', 'only_ours', 'differs', 'not_linked', 'twice', 'returned', 'elsewhere', 'stock'] as const;
 export type DiagnosticIssueKind = (typeof DIAGNOSTIC_ISSUE_KINDS)[number];
 
 export const DIAGNOSTIC_FIELDS = ['name', 'notes', 'price'] as const;
@@ -12,7 +12,7 @@ export type DiagnosticField = (typeof DIAGNOSTIC_FIELDS)[number];
 
 export const DIAGNOSTIC_CHOICES = [
   'copy_to_patrolkit', 'copy_to_square', 'use_square', 'use_ours', 'link', 'keep', 'remove_from_square',
-  'delete_other', 'renumber_other', 'resolve', 'set_price',
+  'delete_other', 'renumber_other', 'resolve', 'set_price', 'set_stock',
 ] as const;
 export type DiagnosticChoice = (typeof DIAGNOSTIC_CHOICES)[number];
 
@@ -30,4 +30,6 @@ export const CHOICES_FOR: Record<DiagnosticIssueKind, readonly DiagnosticChoice[
   // (Plan 48 D11). Square still scans archived items, so the register can
   // ring the sale up on it.
   elsewhere: ['delete_other', 'renumber_other', 'resolve'],
+  // Square's stock isn't what the item's sales leave (Plan 48): set it to that.
+  stock: ['set_stock', 'resolve'],
 };

@@ -105,6 +105,8 @@ export interface IPosAdapter {
   getInventoryCounts(variationIds: string[], locationId: string): Promise<Map<string, number>>;
   setInitialInventory(variationId: string, locationId: string, quantity: number): Promise<void>;
   setInventoryPhysicalCount(variationId: string, locationId: string, quantity: number): Promise<void>;
+  /** Variations whose stock changed at the location since then (Catalog check's stock: a sale still landing). */
+  stockChangedSince(variationIds: string[], locationId: string, since: Date): Promise<Set<string>>;
   /**
    * Completed sales in a window, one entry per order line.
    *
