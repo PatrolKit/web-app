@@ -26,7 +26,7 @@ const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
   },
   {
     kind: 'oversold', title: 'Counted as sold more than once',
-    explain: 'An item is counted as sold more times than it has. Undo one of the credits below.',
+    explain: 'An item is counted as sold more times than it has. If a credit below caused it, undo that credit. Otherwise open the sale in Square: the ticket may have been scanned twice (refund the extra), or scanned in place of another ticket.',
   },
   {
     kind: 'unknown_ticket', title: 'A ticket PatrolKit doesn’t have',
