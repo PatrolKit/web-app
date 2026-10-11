@@ -2,11 +2,34 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
+
+/**
+ * This build's id: when it was built, and from which commit. Baked into the
+ * bundle as `__BUILD_ID__` and written beside it as `version.json`, so an open
+ * page can tell when the server has a newer build (the "new version" banner).
+ * `dev` under `vite` serve, where hot reload already keeps the page current.
+ */
+function buildId(): string {
+  let sha = 'nogit';
+  try { sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { /* not a checkout */ }
+  return `${new Date().toISOString()}-${sha}`;
+}
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => {
+  const BUILD_ID = command === 'build' ? buildId() : 'dev';
+  return {
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   plugins: [
     react(),
+    {
+      name: 'version-json',
+      apply: 'build',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ buildId: BUILD_ID }) });
+      },
+    },
     {
       name: 'root-landing-page',
       configureServer(server) {
@@ -56,4 +79,5 @@ export default defineConfig({
       '@patrolkit/contracts': path.resolve(__dirname, '../api/src/contracts'),
     },
   },
+  };
 });
