@@ -9,15 +9,15 @@ import type {
 import type { SkiSwapContext } from './SkiSwapLayout';
 import { BusyBanner, FoldHeader, NoteBox, SidePanel, Tombstone, useFolds, useJustDecided } from './ReportCard';
 import {
-  CHOICE_LABEL, canUseSquarePrice, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
+  CHOICE_LABEL, canUseSquarePrice, isSoldItem, priceButtons, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
   rowChoices, shown, squareCopies, squareSide, stockText, tookText,
   type DiagnosticGroup,
 } from './swapDiagnosticsView';
 
 const latestKey = (orgId: string, swapId: string) => ['ski-swap/diagnostics', orgId, swapId];
-/** Price differs' "Set different price…": bordered too, quieter than the two above. */
+/** Price differs' "Set different price…": bordered too, quieter than the two beside it. */
 const bordered = 'border border-gray-600 text-gray-200 hover:bg-surface-200 hover:border-gray-500 disabled:opacity-40 px-3 py-1.5 rounded text-xs font-medium';
-/** Price differs' "Use this price": outlined, so it reads as a button on the card. */
+/** Price differs' two "Set … price from …" buttons: outlined, so they read as buttons. */
 const outlined = 'border border-brand-500/70 text-brand-300 hover:bg-brand-600 hover:border-brand-600 hover:text-white disabled:opacity-40 disabled:hover:bg-transparent px-3 py-1.5 rounded text-xs font-medium';
 const PAGE = 100;
 
@@ -184,6 +184,7 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
         `${r.applied.toLocaleString('en-US')} done`,
         r.held ? `${r.held} left for their open sales in Sales check` : null,
         r.skipped ? `${r.skipped} changed since the check ran (run it again to see them)` : null,
+        r.sold ? `${r.sold} left flagged: sold, so Square’s price wasn’t changed` : null,
         r.failed ? `${r.failed} failed (see the rows)` : null,
       ].filter(Boolean).join(', '));
       onChanged();
@@ -292,28 +293,34 @@ function PriceCard({ issue, orgId, swapId, onDecided, note, onSaveNote }: {
 
   if (!isOpen(issue)) return <Tombstone text={`${issue.sku}: ${priceDecidedText(issue, done?.cents)}`} hint="" settle={!!done || justDecided} />;
 
-  /** Asks for the price, again until it's one, or until cancelled. */
+  const sold = isSoldItem(issue);
+  const labels = priceButtons(issue);
+
+  /** Asks for the price, again until it's one, or until cancelled. A sold item's goes to PatrolKit only. */
   function setDifferent() {
-    let ask = `A different price for ${issue.sku}, in both PatrolKit and Square:`;
+    let ask = sold
+      ? `${issue.sku} has sold. A different price for PatrolKit only (what its seller is paid); Square’s stays as it sold:`
+      : `A different price for ${issue.sku}, in both PatrolKit and Square:`;
     for (;;) {
       const typed = window.prompt(ask, '');
       if (typed === null) return;
       const cents = centsOf(typed);
-      if (cents !== null) { apply.mutate({ choice: 'set_price', priceCents: cents }); return; }
+      if (cents !== null) { apply.mutate({ choice: sold ? 'set_our_price' : 'set_price', priceCents: cents }); return; }
       ask = `“${typed}” isn’t a price. Enter one above $0, like 40 or 40.50:`;
     }
   }
 
-  const use = (choice: 'use_square' | 'use_ours', enabled = true) => (held ? undefined : (
-    <button type="button" className={outlined} disabled={busy || !enabled} onClick={() => apply.mutate({ choice })}>Use this price</button>
-  ));
-
   return (
-    <div className={`border border-gray-800 rounded-lg overflow-hidden bg-surface-50 transition-opacity ${busy ? 'opacity-60' : ''}`} aria-busy={busy}>
+    <div className={`border rounded-lg overflow-hidden bg-surface-50 transition-opacity ${sold ? 'border-amber-700/70' : 'border-gray-800'} ${busy ? 'opacity-60' : ''}`} aria-busy={busy}>
+      {sold && (
+        <p className="px-3 py-2 border-b border-amber-800/60 bg-amber-900/25 text-xs text-amber-200">
+          <span className="font-semibold text-amber-300">Sold.</span> Square’s price stays as it sold, so it can’t be changed here. PatrolKit’s price can; this stays flagged until it’s settled.
+        </p>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_1.75rem_minmax(0,1fr)]">
-        <SidePanel side={sides.square} icon="■" action={use('use_square', canUseSquarePrice(issue))} />
+        <SidePanel side={sides.square} icon="■" />
         <div className="hidden md:flex items-center justify-center text-gray-600">≠</div>
-        <SidePanel side={sides.ours} icon="◆" className="border-t md:border-t-0 md:border-l border-gray-800" action={use('use_ours')} />
+        <SidePanel side={sides.ours} icon="◆" className="border-t md:border-t-0 md:border-l border-gray-800" />
       </div>
       <div className="px-3 pb-2.5">
         <NoteBox note={note} canEdit onSave={onSaveNote} />
@@ -324,11 +331,21 @@ function PriceCard({ issue, orgId, swapId, onDecided, note, onSaveNote }: {
           <Link to="/dashboard/ski-swap/reports" className="underline hover:text-amber-200">Open Sales check</Link>
         </p>
       ) : (
-        <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40">
-          {issue.state === 'failed' && issue.error && <span className="text-xs text-red-400">{issue.error}</span>}
-          {apply.error && <span className="text-xs text-red-400">{errorText(apply.error)}</span>}
-          {busy && <span className="text-xs text-gray-400">Working…</span>}
-          <button type="button" className={`${bordered} ml-auto`} disabled={busy} onClick={setDifferent}>Set different price…</button>
+        <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40">
+          {issue.state === 'failed' && issue.error && <span className="text-xs text-red-400 mr-auto">{issue.error}</span>}
+          {apply.error && <span className="text-xs text-red-400 mr-auto">{errorText(apply.error)}</span>}
+          {busy && <span className="text-xs text-gray-400 mr-auto">Working…</span>}
+          {!sold && (
+            <button type="button" className={outlined} disabled={busy}
+              onClick={() => { if (window.confirm(`${labels.squareFromOurs}? Square’s price for ${issue.sku} becomes PatrolKit’s.`)) apply.mutate({ choice: 'use_ours' }); }}>
+              {labels.squareFromOurs}
+            </button>
+          )}
+          <button type="button" className={outlined} disabled={busy || !canUseSquarePrice(issue)}
+            onClick={() => { if (window.confirm(`${labels.oursFromSquare}? PatrolKit’s price for ${issue.sku} becomes Square’s, and its seller is paid that.`)) apply.mutate({ choice: 'use_square' }); }}>
+            {labels.oursFromSquare}
+          </button>
+          <button type="button" className={bordered} disabled={busy} onClick={setDifferent}>{labels.different}</button>
         </div>
       )}
     </div>

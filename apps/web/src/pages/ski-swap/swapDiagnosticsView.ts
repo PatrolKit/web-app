@@ -83,6 +83,7 @@ export const CHOICE_LABEL: Record<DiagnosticChoice, string> = {
   resolve: 'Mark resolved',
   set_price: 'Set a different price',
   set_stock: 'Set Square’s stock',
+  set_our_price: 'Set PatrolKit’s price',
 };
 
 /**
@@ -92,7 +93,7 @@ export const CHOICE_LABEL: Record<DiagnosticChoice, string> = {
  */
 function offered(c: DiagnosticChoice, kind: DiagnosticIssueKind, field: DiagnosticField | null): boolean {
   // Re-numbering another copy isn't offered: delete it, or leave it resolved.
-  if (c === 'keep' || c === 'set_price' || c === 'renumber_other') return false;
+  if (c === 'keep' || c === 'set_price' || c === 'set_our_price' || c === 'renumber_other') return false;
   return !(kind === 'differs' && field === 'price' && c === 'resolve');
 }
 
@@ -214,16 +215,29 @@ export function canUseSquarePrice(issue: DiagnosticIssueResponse): boolean {
 }
 
 /** Price differs as a card: Square's item on the left, ours on the right, the prices flagged. */
+/** The item has sold: Square's price stays as it sold, and only PatrolKit's can change. */
+export const isSoldItem = (issue: DiagnosticIssueResponse): boolean => issue.field === 'price' && issue.ours?.soldOut === true;
+
+/** Price differs' buttons, saying which way each price goes and what it is. */
+export function priceButtons(issue: DiagnosticIssueResponse): { squareFromOurs: string; oursFromSquare: string; different: string } {
+  return {
+    squareFromOurs: `Set Square price from PatrolKit (${shown('price', issue.ours)})`,
+    oursFromSquare: `Set PatrolKit price from Square (${shown('price', squareSide(issue))})`,
+    different: isSoldItem(issue) ? 'Set different PatrolKit price…' : 'Set different price…',
+  };
+}
+
 export function priceSides(issue: DiagnosticIssueResponse): { square: Side; ours: Side } {
   const sq = squareSide(issue);
   const ours = issue.ours && !issue.ours.deleted ? issue.ours : null;
+  const sold = isSoldItem(issue);
   return {
     square: {
       title: 'Square',
       fields: [
         { label: 'SKU', value: issue.sku, mono: true },
         { label: 'Name', value: sq?.name ?? '—' },
-        { label: 'Price', value: shown('price', sq), warn: true },
+        { label: 'Price', value: shown('price', sq), warn: true, ...(sold ? { tag: 'sold at this price' } : {}) },
       ],
       links: issue.squareUrl ? [{ label: 'Item', href: issue.squareUrl }] : [],
     },
@@ -234,6 +248,7 @@ export function priceSides(issue: DiagnosticIssueResponse): { square: Side; ours
         { label: 'Name', value: ours?.name ?? '—' },
         { label: 'Seller', value: ours?.sellerName ?? '—' },
         { label: 'Price', value: shown('price', ours), warn: true },
+        ...(sold ? [{ label: 'Status', value: (ours?.checkedIn ?? 1) > 1 ? `Sold · ${ours?.sold ?? 0} of ${ours?.checkedIn}` : 'Sold', warn: true }] : []),
       ],
       links: [{ label: 'Item', to: `/dashboard/ski-swap/items?q=${encodeURIComponent(issue.sku)}` }],
     },
@@ -247,7 +262,11 @@ export function priceDecidedText(issue: DiagnosticIssueResponse, setCents?: numb
   const now = issue.choice === 'use_square' ? shown('price', sq)
     : issue.choice === 'use_ours' ? shown('price', ours)
       : setCents !== undefined ? `$${(setCents / 100).toFixed(2)}` : null;
-  const where = issue.choice === 'use_square' ? 'Used Square’s price' : issue.choice === 'use_ours' ? 'Used PatrolKit’s price' : 'Set a different price';
+  if (issue.choice === 'set_our_price') {
+    return `Set PatrolKit’s price${now ? `: ${now}` : ''}; Square’s left as it sold${byAt(issue)}`;
+  }
+  const where = issue.choice === 'use_square' ? 'Set PatrolKit’s price from Square'
+    : issue.choice === 'use_ours' ? 'Set Square’s price from PatrolKit' : 'Set a different price';
   return `${where}${now ? `: ${now} in both` : ''}${byAt(issue)}`;
 }
 

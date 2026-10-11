@@ -75,7 +75,12 @@ export interface OurSide {
   stock?: number;
   sold?: number;
   checkedIn?: number;
+  /** Price differs only: sold (Square shows none left, or its sales cover it). */
+  soldOut?: boolean;
 }
+
+/** Sold: Square shows none left, or the sales cover every unit checked in. */
+export const isSoldOut = (s: StockOf) => s.square <= 0 || s.sold >= s.checkedIn;
 
 /** Stock, for one linked item: what its sales leave, and what Square says. */
 export interface StockOf {
@@ -151,6 +156,8 @@ export function diagnose(input: {
   categoryNames?: Map<string, string>;
   /** Stock by SKU, for linked items (Plan 48): absent, not checked. */
   stock?: Map<string, StockOf>;
+  /** Every linked item's sales and Square count, moving or not: whether it has sold. */
+  soldOf?: Map<string, StockOf>;
   /** Limit to these SKUs: a re-read of a few. Absent for a whole run. */
   onlySkus?: Set<string>;
 }): FoundIssue[] {
@@ -202,7 +209,13 @@ export function diagnose(input: {
     }
     if (o.name !== sq.name) add(sku, 'differs', 'name', o, sq, { ours: o.name, square: sq.name });
     if (o.notes !== sq.notes) add(sku, 'differs', 'notes', o, sq, { ours: o.notes, square: sq.notes });
-    if (o.priceCents !== sq.priceCents) add(sku, 'differs', 'price', o, sq, { ours: o.priceCents, square: sq.priceCents });
+    if (o.priceCents !== sq.priceCents) {
+      // Whether it has sold rides along (not in the fingerprint): Square's
+      // price of a sold item stays as it sold.
+      const s = input.soldOf?.get(sku);
+      const side = s ? { ...o, sold: s.sold, checkedIn: s.checkedIn, soldOut: isSoldOut(s) } : o;
+      add(sku, 'differs', 'price', side, sq, { ours: o.priceCents, square: sq.priceCents });
+    }
 
     // Square's stock against what the sales leave: a refund not put back in
     // stock, one scanned twice, or a count changed by hand. Linked items only.

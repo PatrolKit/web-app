@@ -113,8 +113,8 @@ export class SwapDiagnosticsService {
 
     const { ours, deleted, pickedUp } = await this.ourItems(swap.id);
     const { elsewhere, categoryNames } = await this.elsewhere(swap, pos, ours.map((o) => o.sku));
-    const stock = await this.stockFor(swap, pos, ours, true);
-    const found = diagnose({ ours, deleted, pickedUp, square, elsewhere, categoryNames, stock });
+    const { stock, soldOf } = await this.stockFor(swap, pos, ours, true, new Map(square.map((q) => [q.sku, q.variationId])));
+    const found = diagnose({ ours, deleted, pickedUp, square, elsewhere, categoryNames, stock, soldOf });
     const hidden = await this.hiddenKeys(swap.id);
     const kept = found.filter((i) => !hidden.has(`${issueKey(i)}\u0000${i.fingerprint}`));
 
@@ -192,7 +192,10 @@ export class SwapDiagnosticsService {
     if (!issue) throw new NotFoundException('That issue is gone. Run the checks again.');
     if (issue.state !== 'open' && issue.state !== 'failed') throw new ConflictException('That issue was already dealt with.');
 
-    const { skipped, held } = await this.applyTo(swap, [issue], choice, extra, userId);
+    const { skipped, held, sold } = await this.applyTo(swap, [issue], choice, extra, userId);
+    if (sold) {
+      throw new ConflictException(`${issue.sku} has sold, so Square’s price stays as it sold. Set PatrolKit’s price instead, or leave it flagged.`);
+    }
     if (held) {
       throw new ConflictException(`Ticket ${issue.sku} has ${held === 1 ? 'an open sale' : `${held} open sales`} in Sales check. Settle ${held === 1 ? 'it' : 'them'} there first.`);
     }
@@ -211,7 +214,7 @@ export class SwapDiagnosticsService {
   ): Promise<DiagnosticApplyAllResponse> {
     const swap = await this.swapOrThrow(orgId, swapId);
     if (choice === 'keep') throw new BadRequestException('Keep this copy is chosen one item at a time.');
-    if (choice === 'set_price') throw new BadRequestException('A new price is set one item at a time.');
+    if (choice === 'set_price' || choice === 'set_our_price') throw new BadRequestException('A new price is set one item at a time.');
     const issues = await this.prisma.swapDiagnosticIssue.findMany({
       where: {
         runId, swapId, kind: group.kind,
@@ -219,8 +222,8 @@ export class SwapDiagnosticsService {
         state: { in: ['open', 'failed'] },
       },
     });
-    const { applied, skipped, failed, held } = await this.applyTo(swap, issues, choice, extra, userId);
-    return { applied, skipped, failed, held };
+    const { applied, skipped, failed, held, sold } = await this.applyTo(swap, issues, choice, extra, userId);
+    return { applied, skipped, failed, held, sold };
   }
 
   /**
@@ -228,13 +231,13 @@ export class SwapDiagnosticsService {
    * many issues were left alone for them.
    */
   private async applyTo(swap: Swap, issues: IssueRow[], choice: DiagnosticChoice, extra: Extra, userId: string | null) {
-    const tally = { applied: 0, skipped: 0, failed: 0, held: 0 };
+    const tally = { applied: 0, skipped: 0, failed: 0, held: 0, sold: 0 };
     if (issues.length === 0) return tally;
     for (const issue of issues) {
       if (!CHOICES_FOR[issue.kind as IssueKind]?.includes(choice)) {
         throw new BadRequestException('That choice doesn’t apply to this issue.');
       }
-      if (choice === 'set_price' && (issue.field !== 'price' || !extra.priceCents)) {
+      if ((choice === 'set_price' || choice === 'set_our_price') && (issue.field !== 'price' || !extra.priceCents)) {
         throw new BadRequestException('A new price is set on Price differs, with the price.');
       }
     }
@@ -260,8 +263,25 @@ export class SwapDiagnosticsService {
     issues = issues.filter((_, n) => !holding[n]);
     if (issues.length === 0) return tally;
 
-    // Both sides, as they are now, for every SKU involved.
-    const current = await this.recheck(swap, [...new Set(issues.map((i) => i.sku))], issues.some((i) => i.kind === 'stock'));
+    // Both sides, as they are now, for every SKU involved. A choice that
+    // writes Square's price reads whether each item has sold, too.
+    const writesSquarePrice = (choice === 'use_ours' || choice === 'set_price') && issues.some((i) => i.field === 'price');
+    const current = await this.recheck(swap, [...new Set(issues.map((i) => i.sku))], issues.some((i) => i.kind === 'stock'), writesSquarePrice);
+
+    // A sold item's Square price stays as it sold: left flagged, untouched.
+    if (writesSquarePrice) {
+      const priced = issues.filter((i) => i.field === 'price');
+      // Square's stock or sales unreadable: nothing can be told, so nothing changes.
+      if (priced.every((i) => current.get(issueKey(i))?.ours?.soldOut === undefined)) {
+        throw new ConflictException('Couldn’t read Square’s stock and sales to check whether it has sold, so Square’s price wasn’t changed. Try again in a minute.');
+      }
+      // Not known for one: not changed either.
+      const soldOut = (i: IssueRow) => i.field === 'price' && current.get(issueKey(i))?.ours?.soldOut !== false;
+      const before = issues.length;
+      issues = issues.filter((i) => !soldOut(i));
+      tally.sold = before - issues.length;
+      if (issues.length === 0) return tally;
+    }
     const outcomes: { issue: IssueRow; state: 'applied' | 'fixed' | 'left' | 'failed'; error?: string }[] = [];
 
     if (choice === 'resolve') {
@@ -398,6 +418,15 @@ export class SwapDiagnosticsService {
         return [...out, ...(written.length ? await this.perform(swap, written, 'use_ours', extra) : [])];
       }
 
+      case 'set_our_price':
+        // PatrolKit's price only, for an item that has sold: Square's stays as
+        // it sold, and the seller is paid this. Straight to the item, as Use
+        // Square's is; `updatedAt` moves, so the iPads get it.
+        await each(async (issue) => {
+          await this.prisma.swapItem.update({ where: { id: ourOf(issue)!.itemId }, data: { priceCents: extra.priceCents! } });
+        });
+        return out;
+
       case 'set_stock': {
         // Square's stock to what the item's sales leave, as the re-check just
         // read them. Not one whose stock is still moving: a sale landing.
@@ -529,13 +558,16 @@ export class SwapDiagnosticsService {
 
   /** The issues these SKUs have right now, re-read from both sides, by key. */
   /** `withStock`: stock issues among them, re-read from Square's sales as they are now. */
-  private async recheck(swap: Swap, skus: string[], withStock = false): Promise<Map<string, FoundIssue>> {
+  private async recheck(swap: Swap, skus: string[], withStock = false, withSold = false): Promise<Map<string, FoundIssue>> {
     const pos = await this.posOrThrow(swap);
     const square = await pos.itemsBySku(swap.squareCategoryId, skus);
     const { ours, deleted, pickedUp } = await this.ourItems(swap.id, skus);
     const { elsewhere, categoryNames } = await this.elsewhere(swap, pos, skus);
-    const stock = withStock ? await this.stockFor(swap, pos, ours, true) : undefined;
-    const found = diagnose({ ours, deleted, pickedUp, square, elsewhere, categoryNames, stock, onlySkus: new Set(skus) });
+    const read = withStock || withSold ? await this.stockFor(swap, pos, ours, true, new Map(square.map((q) => [q.sku, q.variationId]))) : undefined;
+    const found = diagnose({
+      ours, deleted, pickedUp, square, elsewhere, categoryNames,
+      stock: withStock ? read?.stock : undefined, soldOf: read?.soldOf, onlySkus: new Set(skus),
+    });
     return new Map(found.map((i) => [issueKey(i), i]));
   }
 
@@ -550,23 +582,36 @@ export class SwapDiagnosticsService {
    * reached Square's order search yet (10/10, 73593 sold 21 s before a run,
    * and the run asked for it to be put back in stock).
    */
-  private async stockFor(swap: Swap, pos: IPosAdapter, ours: OurItem[], fresh = false): Promise<Map<string, StockOf> | undefined> {
-    const linked = ours.filter((o) => o.squareVariationId);
-    if (linked.length === 0) return new Map();
+  private async stockFor(
+    swap: Swap, pos: IPosAdapter, ours: OurItem[], fresh = false,
+    /** The Square item each SKU was compared with: an item not linked is judged sold by that one's stock and sales. */
+    squareVariationOf: Map<string, string> = new Map(),
+  ): Promise<{ stock?: Map<string, StockOf>; soldOf?: Map<string, StockOf> }> {
+    const variationOf = (o: OurItem) => o.squareVariationId ?? squareVariationOf.get(o.sku) ?? null;
+    const known = ours.filter((o) => variationOf(o));
+    if (known.length === 0) return { stock: new Map(), soldOf: new Map() };
     try {
-      const counts = await pos.getInventoryCounts(linked.map((o) => o.squareVariationId!), swap.locationId);
+      const counts = await pos.getInventoryCounts([...new Set(known.map((o) => variationOf(o)!))], swap.locationId);
       const sold = await this.breakdown.soldUnits(swap.orgId, swap.id, { fresh });
-      const stock = new Map(linked.map((o) => {
-        const units = sold.get(o.squareVariationId!) ?? 0;
+      const each = new Map(known.map((o) => {
+        const variationId = variationOf(o)!;
+        const units = sold.get(variationId) ?? 0;
         const checkedIn = o.originalQuantity ?? 1;
-        return [o.sku, { variationId: o.squareVariationId!, sold: units, checkedIn, expected: Math.max(0, checkedIn - units), square: counts.get(o.squareVariationId!) ?? 0 }];
+        return [o.sku, { variationId, linked: !!o.squareVariationId, sold: units, checkedIn, expected: Math.max(0, checkedIn - units), square: counts.get(variationId) ?? 0 }];
       }));
-      const off = [...stock.values()].filter((s) => s.square !== s.expected).map((s) => s.variationId);
+      // Stock is checked for linked items only.
+      const linked = [...each].filter(([, s]) => s.linked);
+      const off = linked.filter(([, s]) => s.square !== s.expected).map(([, s]) => s.variationId);
       const moving = off.length ? await pos.stockChangedSince(off, swap.locationId, new Date(Date.now() - STOCK_SETTLE_MS)) : new Set<string>();
-      return new Map([...stock].filter(([, s]) => !moving.has(s.variationId)).map(([sku, { variationId: _v, ...s }]) => [sku, s]));
+      const plain = ([sku, { variationId: _v, linked: _l, ...s }]: [string, StockOf & { variationId: string; linked: boolean }]): [string, StockOf] => [sku, s];
+      return {
+        stock: new Map(linked.filter(([, s]) => !moving.has(s.variationId)).map(plain)),
+        // Whether each has sold, moving or not: a sale landing is still a sale.
+        soldOf: new Map([...each].map(plain)),
+      };
     } catch (err) {
       this.logger.warn({ err, swapId: swap.id }, 'Catalog check: stock not read');
-      return undefined;
+      return {};
     }
   }
 

@@ -77,6 +77,11 @@ export interface DiagnosticOurSide {
   stock?: number;
   sold?: number;
   checkedIn?: number;
+  /**
+   * Price differs: the item has sold (Square shows none left, or its sales
+   * cover it), so Square's price stays as it sold. Absent when not known.
+   */
+  soldOut?: boolean;
 }
 
 export interface DiagnosticIssueResponse {
@@ -129,4 +134,6 @@ export interface DiagnosticApplyAllResponse {
   failed: number;
   /** Left alone: an open Sales check sale holds them back. */
   held: number;
+  /** Left flagged: sold, so Square's price isn't changed. */
+  sold?: number;
 }
