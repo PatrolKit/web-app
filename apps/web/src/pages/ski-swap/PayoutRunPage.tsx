@@ -840,6 +840,7 @@ function DiscountsTab({ orgId, runId }: { orgId: string; runId: string }) {
   }
 
   const zeroes = data.discounts.filter((d) => d.zeroCollected);
+  const exchanges = data.discounts.filter((d) => d.exchange);
 
   return (
     <div className="space-y-4">
@@ -849,6 +850,13 @@ function DiscountsTab({ orgId, runId }: { orgId: string; runId: string }) {
         <span className="text-white">{data.totalGapFormatted}</span>. Sellers were paid the listed
         price regardless.
       </p>
+
+      {exchanges.length > 0 && (
+        <p className="text-xs text-gray-400 bg-surface-100/40 border border-gray-800 rounded px-3 py-2">
+          {exchanges.length === 1 ? '1 is an exchange' : `${exchanges.length} are exchanges`}: the customer swapped for a
+          higher-priced item, and the patrol absorbed the difference. Not counted in the total; the Exchanges tab totals them.
+        </p>
+      )}
 
       {zeroes.length > 0 && (
         <p className="text-xs text-amber-300/90 bg-amber-500/5 border border-amber-800/50 rounded px-3 py-2">
@@ -872,7 +880,10 @@ function DiscountsTab({ orgId, runId }: { orgId: string; runId: string }) {
           <tbody>
             {data.discounts.map((d, i) => (
               <tr key={`${d.itemId ?? d.sku}-${i}`} className="border-b border-gray-800/60">
-                <td className="py-2 text-gray-200">{d.name}</td>
+                <td className="py-2 text-gray-200">
+                  {d.name}
+                  {d.exchange && <span className="ml-1.5 inline-block text-[11px] bg-sky-900/40 text-sky-300 rounded px-1.5 py-px">Exchange</span>}
+                </td>
                 <td className="py-2 text-gray-500 font-mono text-xs">{d.sku}</td>
                 <td className="py-2 text-gray-400">{d.sellerName}</td>
                 <td className="py-2 text-gray-300 text-right">{usd(d.listedCents)}</td>
@@ -880,7 +891,7 @@ function DiscountsTab({ orgId, runId }: { orgId: string; runId: string }) {
                   {usd(d.collectedCents)}
                   {d.zeroCollected && <span className="text-amber-400 ml-1.5">?</span>}
                 </td>
-                <td className="py-2 text-amber-400 text-right">−{usd(d.gapCents)}</td>
+                <td className={`py-2 text-right ${d.exchange ? 'text-gray-400' : 'text-amber-400'}`}>−{usd(d.gapCents)}</td>
               </tr>
             ))}
           </tbody>

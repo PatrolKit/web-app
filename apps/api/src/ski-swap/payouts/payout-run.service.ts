@@ -10,13 +10,13 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PosAdapterFactory } from '../pos/pos.adapter';
 import { sellerDisplayName, SELLER_NAME_INCLUDE } from '../seller.service';
 import { ItemService } from '../item.service';
-import { buildRun, discountsOf, type BuiltRun, type HeldSale, type RunItem, type RunSeller } from './build-run';
+import { buildRun, discountsOf, exchangedKeyOf, type BuiltRun, type HeldSale, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
 import { PayPalClient, PayPalError, type PayoutItemRequest } from './paypal.client';
 import { formatCents } from './money';
 import { checksToCsv, phoneForHumans, type CheckRow } from './checks-csv';
 import { TERMINAL_PAYOUT_STATUSES, type PayoutLineStatus } from '../../contracts/payouts.contracts';
-import { applyDecisions, type DecisionRef } from '../sales-check';
+import { attributeSales, type DecisionRef } from '../sales-check';
 
 /**
  * Payout runs: building them, approving them, and sending them (Plan 25 §4–§7).
@@ -91,6 +91,11 @@ export class PayoutRunService {
       where: { swapId, liveKey: { not: null } },
       select: { orderId: true, lineUid: true, decision: true, itemId: true },
     });
+    // Exchanges (Plan 49 D12): an exchanged sale pays the seller of the item that went out.
+    const exchanges = await this.prisma.swapExchange.findMany({
+      where: { swapId, liveKey: { not: null } },
+      select: { orderId: true, lineUid: true, replacementItemId: true },
+    });
 
     const itemRows = await this.prisma.swapItem.findMany({
       // Tombstones included, deliberately, and the only read in the codebase
@@ -109,9 +114,10 @@ export class PayoutRunService {
       },
     });
     const items: RunItem[] = itemRows;
-    const sales = applyDecisions(
+    const sales = attributeSales(
       read,
       decisions as DecisionRef[],
+      exchanges,
       new Set(itemRows.map((i) => i.squareVariationId).filter((v): v is string => !!v)),
       new Map(itemRows.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!])),
     );
@@ -350,7 +356,12 @@ export class PayoutRunService {
     });
     if (!run) throw new NotFoundException('Payout run not found');
 
-    const { discounts, totalGapCents } = discountsOf(run.lines);
+    // Exchanges (Plan 49 D6) are labelled, not counted as discounts.
+    const exchanges = await this.prisma.swapExchange.findMany({
+      where: { swapId: run.swapId, liveKey: { not: null } },
+      select: { replacementItemId: true, orderId: true },
+    });
+    const { discounts, totalGapCents } = discountsOf(run.lines, new Set(exchanges.map((e) => exchangedKeyOf(e.replacementItemId, e.orderId))));
     return { runId, discounts, totalGapCents, totalGapFormatted: formatCents(totalGapCents) };
   }
 

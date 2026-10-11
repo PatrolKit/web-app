@@ -7,7 +7,7 @@ import { ItemBreakdownService } from './item-breakdown.service';
 import { IssuedTicketService } from './issued-ticket.service';
 import { ItemService } from './item.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
-import { applyDecisions, classify, lineKeyOf, netUnits, salesHolds, type CheckItem, type DecisionRef, type SalesHolds } from './sales-check';
+import { attributeSales, classify, lineKeyOf, netUnits, salesHolds, type CheckItem, type DecisionRef, type ExchangeRef, type SalesHolds } from './sales-check';
 import { squareItemUrl, squareSaleUrl } from './square-links';
 import { FEE_LINE, feeCheck, feeKeyOf } from './fee-check';
 import type {
@@ -44,7 +44,7 @@ export class SalesCheckService {
   async list(orgId: string, swapId: string): Promise<SalesCheckResponse> {
     const read = await this.read(orgId, swapId);
     if ('error' in read) return { asOf: new Date().toISOString(), error: read.error ?? 'Square couldn’t be read.', issues: [], decided: [], ignoredCategories: [], missedFees: null };
-    const { swap, at, lines, fees, items, decisions, pos, env } = read;
+    const { swap, at, lines, fees, items, decisions, exchanges, pos, env } = read;
 
     const ourVariations = new Set(items.map((i) => i.squareVariationId).filter((v): v is string => !!v));
     const unknown = lines.filter((l) => l.variationId && !ourVariations.has(l.variationId)).map((l) => l.variationId);
@@ -53,7 +53,7 @@ export class SalesCheckService {
 
     const found = classify({
       lines, items, described, categoryNames, ignoredCategoryIds: ignored,
-      decisions: decisions.map(toRef),
+      decisions: decisions.map(toRef), exchanges,
     });
     const paymentOf = new Map(lines.map((l) => [lineKeyOf(l.orderId, l.lineUid ?? ''), l.paymentId ?? null]));
     const issues: SalesCheckIssue[] = found.map((i) => ({
@@ -195,7 +195,7 @@ export class SalesCheckService {
     const ctx = await this.context(orgId, swapId);
     const item = ctx.items.find((i) => i.id === itemId && !i.deleted);
     if (!item?.squareVariationId) throw new NotFoundException('That item isn’t in Square.');
-    const attributed = applyDecisions(ctx.lines, ctx.decisions.map(toRef), ctx.ourVariations, ctx.variationOfItem)
+    const attributed = attributeSales(ctx.lines, ctx.decisions.map(toRef), ctx.exchanges, ctx.ourVariations, ctx.variationOfItem)
       .filter((l) => l.variationId === item.squareVariationId)
       .reduce((n, l) => n + netUnits(l), 0);
     const stock = Math.max(0, item.originalQuantity - attributed);
@@ -291,7 +291,7 @@ export class SalesCheckService {
       if (ctx.decisions.some((d) => lineKeyOf(d.orderId, d.lineUid) === key)) return { key, ok: false, error: 'That sale was already decided.' };
       const units = netUnits(line);
       // The oversold guard: never count an item sold more times than it has units.
-      const already = applyDecisions(ctx.lines, ctx.decisions.map(toRef), ctx.ourVariations, ctx.variationOfItem)
+      const already = attributeSales(ctx.lines, ctx.decisions.map(toRef), ctx.exchanges, ctx.ourVariations, ctx.variationOfItem)
         .filter((x) => x.variationId === item.squareVariationId)
         .reduce((n, x) => n + netUnits(x), 0);
       if (already + units > item.originalQuantity) {
@@ -352,7 +352,7 @@ export class SalesCheckService {
     const pos = await this.pos.forOrg(orgId);
     if (!pos) return { error: 'Square isn’t connected.' };
     const swap = await this.swapOrThrow(orgId, swapId);
-    const [rows, decisions, config] = await Promise.all([
+    const [rows, decisions, exchanges, config] = await Promise.all([
       this.prisma.swapItem.findMany({
         // Withdrawn ones too, marked: a sale on an item since withdrawn is still that item's.
         where: { swapId },
@@ -362,13 +362,15 @@ export class SalesCheckService {
         },
       }),
       this.prisma.swapSaleDecision.findMany({ where: { swapId, liveKey: { not: null } }, orderBy: { decidedAt: 'desc' } }),
+      // Exchanges (Plan 49): an exchanged sale counts on the item that went out.
+      this.prisma.swapExchange.findMany({ where: { swapId, liveKey: { not: null } }, select: { orderId: true, lineUid: true, replacementItemId: true } }),
       this.prisma.squareConfig.findUnique({ where: { orgId }, select: { environment: true } }),
     ]);
     const items: CheckItem[] = rows.map((r) => ({
       id: r.id, sku: r.sku, name: r.name, priceCents: r.priceCents, squareVariationId: r.squareVariationId,
       originalQuantity: r.originalQuantity, deleted: r.deletedAt !== null, sellerName: r.seller ? sellerDisplayName(r.seller) : null, sellerId: r.seller?.id ?? null,
     }));
-    return { swap, at: raw.at, lines: raw.lines, fees: raw.fees ?? null, items, decisions, pos, env: config?.environment ?? 'production' };
+    return { swap, at: raw.at, lines: raw.lines, fees: raw.fees ?? null, items, decisions, exchanges: exchanges as ExchangeRef[], pos, env: config?.environment ?? 'production' };
   }
 
   private async context(orgId: string, swapId: string): Promise<Ctx> {
@@ -376,7 +378,7 @@ export class SalesCheckService {
     if ('error' in read) throw new BadRequestException(read.error);
     if (!read.swap.locationId) throw new BadRequestException('This swap has no Square location.');
     return {
-      orgId, swapId, locationId: read.swap.locationId, pos: read.pos, lines: read.lines, items: read.items, decisions: read.decisions,
+      orgId, swapId, locationId: read.swap.locationId, pos: read.pos, lines: read.lines, items: read.items, decisions: read.decisions, exchanges: read.exchanges,
       ourVariations: new Set(read.items.map((i) => i.squareVariationId).filter((v): v is string => !!v)),
       variationOfItem: new Map(read.items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!])),
     };
@@ -425,6 +427,7 @@ interface Ctx {
   lines: PosSaleLine[];
   items: CheckItem[];
   decisions: { id: string; orderId: string; lineUid: string; decision: string; itemId: string | null }[];
+  exchanges: ExchangeRef[];
   ourVariations: Set<string>;
   variationOfItem: Map<string, string>;
 }

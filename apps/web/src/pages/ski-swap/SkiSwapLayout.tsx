@@ -160,13 +160,14 @@ export default function SkiSwapLayout() {
 
       {/* Nav bar: swap-scoped tabs | org-scoped tabs, with swap picker on the right for swap tabs */}
       <nav className="flex items-center gap-1 border-b border-gray-800 pb-1">
-        <div className="flex items-center gap-1 flex-1">
+        <div className="flex flex-wrap items-center gap-1 flex-1">
           {/* Swap-scoped group */}
           {tabsDisabled ? (
             <>
               <span className={disabledTabClass}>Dashboard</span>
               <span className={disabledTabClass}>Items</span>
               <span className={disabledTabClass}>Payouts</span>
+              <span className={disabledTabClass}>Exchanges</span>
               <span className={disabledTabClass}>Reports</span>
             </>
           ) : (
@@ -174,6 +175,7 @@ export default function SkiSwapLayout() {
               {perms.has('ski_swap:report') && <NavLink to="" end className={navClass}>Dashboard</NavLink>}
               {perms.has('ski_swap:report') && <NavLink to="items" className={navClass}>Items</NavLink>}
               {perms.has('ski_swap:report') && <NavLink to="payouts" className={navClass}>Payouts</NavLink>}
+              {perms.has('ski_swap:report') && <NavLink to="exchanges" className={navClass}>Exchanges</NavLink>}
               {perms.has('ski_swap:report') && <NavLink to="reports" className={navClass}>Reports</NavLink>}
               {isSellerOnly && <NavLink to="my-items" className={navClass}>My Items</NavLink>}
               {isSellerOnly && <NavLink to="seller-profile" className={navClass}>Seller Profile</NavLink>}

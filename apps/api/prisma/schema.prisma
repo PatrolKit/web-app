@@ -474,6 +474,7 @@ model SkiSwap {
   diagnosticHidden SwapDiagnosticHidden[]
   saleDecisions    SwapSaleDecision[]
   issueNotes       SwapIssueNote[]
+  exchanges        SwapExchange[]
 
   @@unique([orgId, title])
   @@unique([orgId, activeSkuPrefix])
@@ -1758,6 +1759,47 @@ model SwapSaleDecision {
 /// found, for whoever decides. Keyed by the page and the issue's key, so a
 /// Catalog check note outlasts the run that found it. Its history is the
 /// audit log.
+/// Exchanges (Plan 49): a customer handed back an item they bought and left
+/// with another. The Square sale line stays as rung up; every reader counts it
+/// on the item that went out while the exchange is live. Never hard-deleted:
+/// a cancelled one keeps who, when and why.
+model SwapExchange {
+  id                    String    @id @default(cuid())
+  swapId                String
+  orgId                 String
+  /// The Square sale line exchanged.
+  orderId               String    @db.VarChar(64)
+  lineUid               String    @db.VarChar(64)
+  /// The sale's payment, for the receipt number and links.
+  paymentId             String?   @db.VarChar(64)
+  /// The item coming back, and the item going out.
+  returnedItemId        String
+  replacementItemId     String
+  /// Listed prices when recorded (null = unpriced).
+  returnedPriceCents    Int?
+  replacementPriceCents Int?
+  note                  String?   @db.VarChar(500)
+  /// False until both of Square's stock moves landed (D5).
+  stockSynced           Boolean   @default(false)
+  /// The exchange this one replaced in a chain (D10).
+  supersedesId          String?
+  recordedBy            String?
+  recordedAt            DateTime  @default(now())
+  cancelledBy           String?
+  cancelledAt           DateTime?
+  cancelReason          String?   @db.VarChar(500)
+  /// `orderId:lineUid` while live, null once superseded or cancelled: one
+  /// live exchange per line (as SwapSaleDecision's `liveKey`).
+  liveKey               String?   @db.VarChar(140)
+
+  swap SkiSwap @relation(fields: [swapId], references: [id], onDelete: Cascade)
+
+  @@unique([swapId, liveKey])
+  @@index([swapId, recordedAt])
+  @@index([returnedItemId])
+  @@index([replacementItemId])
+}
+
 model SwapIssueNote {
   id        String   @id @default(cuid())
   swapId    String

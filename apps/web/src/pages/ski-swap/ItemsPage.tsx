@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   faBarcodeRead as faBarcodeReadDuo,
@@ -14,7 +14,7 @@ import {
 import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import SwapItemsPanel from './SwapItemsPanel';
+import SwapItemsPanel, { itemState } from './SwapItemsPanel';
 import ProxyItemImportModal from './ProxyItemImportModal';
 import TicketFastEdit from './TicketFastEdit';
 import ReturnTicketsModal from './ReturnTicketsModal';
@@ -118,6 +118,10 @@ export default function ItemsPage() {
       queryKeyPrefix="ski-swap/items"
       labelsPerItem={labelsPerItem}
       batchPrint={canManage}
+      // Plan 49: an admin records an exchange of a sold item from its row.
+      rowAction={perms.has('ski_swap:admin') ? (item) => itemState(item).key === 'sold' && (
+        <Link to={`../exchanges?ticket=${encodeURIComponent(item.sku)}`} className="text-xs text-brand-500 hover:underline">Exchange…</Link>
+      ) : undefined}
       actions={canManage ? [
         // Where the swap takes legacy tickets, or has some waiting for a
         // price (Plan 37).

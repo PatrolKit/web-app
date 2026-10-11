@@ -172,6 +172,7 @@ function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Recor
         return { count: i ? 1 : 0 };
       },
     },
+    swapExchange: { findMany: async () => [] },
     swapSaleDecision: {
       findMany: async () => decisions.filter((d) => d.liveKey),
       findFirst: async ({ where }: { where: { id: string } }) => decisions.find((d) => d.id === where.id && d.liveKey) ?? null,

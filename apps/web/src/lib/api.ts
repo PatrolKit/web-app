@@ -920,6 +920,25 @@ export const api = {
       request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/issue-and-credit`, {
         method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
       }),
+    // ─── Exchanges (Plan 49): the list is report; everything else is admin ───
+    exchanges: (orgId: string, swapId: string) =>
+      request<import('./api.types').ExchangesResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/exchanges`),
+    exchangeLookup: (orgId: string, swapId: string, q: { receipt?: string; ticket?: string }) => {
+      const params = new URLSearchParams();
+      if (q.receipt) params.set('receipt', q.receipt);
+      if (q.ticket) params.set('ticket', q.ticket);
+      return request<import('./api.types').ExchangeLookupResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/exchanges/lookup?${params.toString()}`);
+    },
+    recordExchange: (orgId: string, swapId: string, body: { orderId: string; lineUid: string; returnedItemId: string; replacementItemId: string; priceCents?: number; note?: string }) =>
+      request<import('./api.types').RecordExchangeResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/exchanges`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
+      }),
+    editExchangeNote: (orgId: string, swapId: string, id: string, note: string) =>
+      request<import('./api.types').SwapExchangeResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/exchanges/${id}`, { method: 'PATCH', body: JSON.stringify({ note }) }),
+    cancelExchange: (orgId: string, swapId: string, id: string, reason: string) =>
+      request<import('./api.types').SwapExchangeResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/exchanges/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    retryExchangeStock: (orgId: string, swapId: string, id: string) =>
+      request<import('./api.types').SwapExchangeResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/exchanges/${id}/retry-stock`, { method: 'POST' }),
     startDiagnostics: (orgId: string, swapId: string) =>
       request<{ runId: string }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/diagnostics`, { method: 'POST' }),
     /** The latest run with its issues; null before the first. */

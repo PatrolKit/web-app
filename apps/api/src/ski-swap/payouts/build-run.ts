@@ -323,6 +323,12 @@ export interface Discount {
   gapCents: number;
   /** Collected nothing at all: a give-away, or a match against the wrong item. */
   zeroCollected: boolean;
+  /**
+   * An exchange (Plan 49 D6): the customer paid for the item that came back
+   * and left with this one, which lists higher. Not a discount, so not in the
+   * total; the Exchanges tab totals it.
+   */
+  exchange: boolean;
 }
 
 /**
@@ -341,6 +347,7 @@ export interface DiscountableLine {
     priceCents: number;
     quantity: number;
     collectedCents: number;
+    squareOrderId?: string;
   }[];
 }
 
@@ -351,7 +358,10 @@ export interface DiscountableLine {
  * them. Three rules, each of which would otherwise corrupt the total:
  * only downward, refunds excluded, and zero flagged rather than counted.
  */
-export function discountsOf(lines: DiscountableLine[]): { discounts: Discount[]; totalGapCents: number } {
+export const exchangedKeyOf = (itemId: string, orderId: string) => `${itemId}\u0000${orderId}`;
+
+/** `exchanged`: live exchanges' items going out, by `exchangedKeyOf(item, order)`. */
+export function discountsOf(lines: DiscountableLine[], exchanged: ReadonlySet<string> = new Set()): { discounts: Discount[]; totalGapCents: number } {
   const discounts: Discount[] = [];
 
   for (const line of lines) {
@@ -375,6 +385,7 @@ export function discountsOf(lines: DiscountableLine[]): { discounts: Discount[];
         collectedCents: item.collectedCents,
         gapCents,
         zeroCollected: item.collectedCents === 0,
+        exchange: !!item.itemId && !!item.squareOrderId && exchanged.has(exchangedKeyOf(item.itemId, item.squareOrderId)),
       });
     }
   }
@@ -384,7 +395,7 @@ export function discountsOf(lines: DiscountableLine[]): { discounts: Discount[];
   // bad catalog match as a deliberate give-away, and those want different
   // responses.
   const totalGapCents = discounts
-    .filter((d) => !d.zeroCollected)
+    .filter((d) => !d.zeroCollected && !d.exchange)
     .reduce((sum, d) => sum + d.gapCents, 0);
 
   return { discounts, totalGapCents };

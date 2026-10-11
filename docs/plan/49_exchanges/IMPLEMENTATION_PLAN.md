@@ -1,6 +1,6 @@
 # Plan 49: Exchanges
 
-**Status:** planned 2026-10-10. Not started.
+**Status:** built 2026-10-10, tested locally against the Square stand-in. Not yet deployed: the migration (one new table) waits for a yes.
 
 ## Goal
 

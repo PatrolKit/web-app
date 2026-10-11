@@ -871,6 +871,8 @@ export interface PayoutDiscount {
   gapCents: number;
   /** Collected nothing: a give-away, or a match against the wrong item. */
   zeroCollected: boolean;
+  /** An exchange for a higher-priced item (Plan 49): labelled, not counted in the total. */
+  exchange: boolean;
 }
 
 /**
@@ -1458,3 +1460,6 @@ export type {
 } from '@patrolkit/contracts/sales-check.contracts';
 // Notes on Reports issues (Plan 48).
 export type { IssueNote, IssueNotePage, IssueNotesResponse } from '@patrolkit/contracts/issue-notes.contracts';
+export type {
+  ExchangeItem, ExchangeStatus, SwapExchangeResponse, ExchangesResponse, ExchangeLookupLine, ExchangeLookupResponse, RecordExchangeResponse,
+} from '@patrolkit/contracts/exchanges.contracts';

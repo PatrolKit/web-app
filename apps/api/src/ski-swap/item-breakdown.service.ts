@@ -4,7 +4,7 @@ import { PosAdapterFactory, type PosOrderFees, type PosSaleLine } from './pos/po
 import { uncategorisedName } from './sku.util';
 import { salesHeatmap, soldByCategory, type SalesHeatmapData } from './sales-heatmap';
 import { checkoutTotals, sellerTotals } from './seller-checkout-totals';
-import { applyDecisions, type DecisionRef } from './sales-check';
+import { attributeSales, type DecisionRef } from './sales-check';
 import type { CheckoutTotals, SellerTotals } from '../contracts/ski-swap.contracts';
 
 /**
@@ -228,18 +228,25 @@ export class ItemBreakdownService {
 
   /**
    * Square's sales as every card counts them (Plan 48 D5): the cached read,
-   * with what Sales check decided applied. A line credited to an item counts
+   * with what Sales check decided and exchanges (Plan 49) applied. A line credited to an item counts
    * as that item's; one that isn't a swap sale is left out. Decisions are
    * read fresh each time, so a credit shows at once.
    */
   private async sales(orgId: string, swap: { id: string; createdAt: Date; locationId: string }): Promise<SalesRead> {
     const read = await this.rawRead(orgId, swap);
-    const decisions = await this.prisma.swapSaleDecision.findMany({
-      where: { swapId: swap.id, liveKey: { not: null } },
-      select: { orderId: true, lineUid: true, decision: true, itemId: true },
-    });
-    if (decisions.length === 0) return read;
-    const credited = [...new Set(decisions.map((d) => d.itemId).filter((x): x is string => !!x))];
+    const [decisions, exchanges] = await Promise.all([
+      this.prisma.swapSaleDecision.findMany({
+        where: { swapId: swap.id, liveKey: { not: null } },
+        select: { orderId: true, lineUid: true, decision: true, itemId: true },
+      }),
+      // Plan 49: an exchanged sale counts on the item that went out.
+      this.prisma.swapExchange.findMany({
+        where: { swapId: swap.id, liveKey: { not: null } },
+        select: { orderId: true, lineUid: true, replacementItemId: true },
+      }),
+    ]);
+    if (decisions.length === 0 && exchanges.length === 0) return read;
+    const credited = [...new Set([...decisions.map((d) => d.itemId), ...exchanges.map((e) => e.replacementItemId)].filter((x): x is string => !!x))];
     const items = credited.length
       // Deleted ones too: a credited sale stays a sale after its item goes.
       ? await this.prisma.swapItem.findMany({ where: { id: { in: credited } }, select: { id: true, squareVariationId: true } })
@@ -247,7 +254,7 @@ export class ItemBreakdownService {
     const variationOfItem = new Map(items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
     return {
       at: read.at,
-      lines: applyDecisions(read.lines, decisions as DecisionRef[], new Set(), variationOfItem),
+      lines: attributeSales(read.lines, decisions as DecisionRef[], exchanges, new Set(), variationOfItem),
     };
   }
 

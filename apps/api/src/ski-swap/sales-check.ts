@@ -54,6 +54,42 @@ export function applyDecisions(
   return out;
 }
 
+/** A live exchange as attribution needs it (Plan 49): the line, and the item that went out. */
+export interface ExchangeRef {
+  orderId: string;
+  lineUid: string;
+  replacementItemId: string;
+}
+
+/**
+ * Exchanges (Plan 49 D4): a line with a live exchange counts for the item
+ * that went out, by pointing it at that item's variation. A line has at most
+ * one live exchange (the latest of a chain), so there's nothing to resolve.
+ */
+export function applyExchanges(lines: PosSaleLine[], exchanges: ExchangeRef[], variationOfItem: Map<string, string>): PosSaleLine[] {
+  if (exchanges.length === 0) return lines;
+  const byKey = new Map(exchanges.map((e) => [lineKeyOf(e.orderId, e.lineUid), e]));
+  return lines.map((line) => {
+    const e = line.lineUid ? byKey.get(lineKeyOf(line.orderId, line.lineUid)) : undefined;
+    const variation = e ? variationOfItem.get(e.replacementItemId) : undefined;
+    return variation ? { ...line, variationId: variation } : line;
+  });
+}
+
+/**
+ * The sale lines as every reader counts them: Sales check's decisions, then
+ * exchanges. The one way in, so no reader can skip a step.
+ */
+export function attributeSales(
+  lines: PosSaleLine[],
+  decisions: DecisionRef[],
+  exchanges: ExchangeRef[],
+  ourVariations: Set<string>,
+  variationOfItem: Map<string, string>,
+): PosSaleLine[] {
+  return applyExchanges(applyDecisions(lines, decisions, ourVariations, variationOfItem), exchanges, variationOfItem);
+}
+
 /** One of our items, as Sales check needs it. */
 export interface CheckItem {
   id: string;
@@ -110,6 +146,8 @@ export interface ClassifyInput {
   items: CheckItem[];
   /** Live decisions only. */
   decisions: DecisionRef[];
+  /** Live exchanges only (Plan 49). */
+  exchanges?: ExchangeRef[];
   described: Map<string, PosVariationInfo>;
   categoryNames: Map<string, string>;
   ignoredCategoryIds: Set<string>;
@@ -128,6 +166,7 @@ export function ticketNumbersIn(text: string): string[] {
 /** Every open issue, in the order the page groups them. */
 export function classify(input: ClassifyInput): SalesCheckIssue[] {
   const ours = new Map(input.items.filter((i) => i.squareVariationId).map((i) => [i.squareVariationId!, i]));
+  const variationOfItem = new Map(input.items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
   const liveBySku = new Map(input.items.filter((i) => !i.deleted).map((i) => [i.sku, i]));
   const decided = new Set(input.decisions.map((d) => lineKeyOf(d.orderId, d.lineUid)));
   const issues: SalesCheckIssue[] = [];
@@ -141,18 +180,16 @@ export function classify(input: ClassifyInput): SalesCheckIssue[] {
     const k = `${orderId}\u0000${itemId}`;
     soldInOrder.set(k, (soldInOrder.get(k) ?? 0) + units);
   };
-  for (const l of input.lines) {
+  const attributed = attributeSales(input.lines, input.decisions, input.exchanges ?? [], new Set(ours.keys()), variationOfItem);
+  for (const l of attributed) {
     const our = ours.get(l.variationId);
     if (our) addSold(l.orderId, our.id, netUnits(l));
-  }
-  const unitsByLine = new Map(input.lines.map((l) => [lineKeyOf(l.orderId, l.lineUid ?? ''), netUnits(l)]));
-  for (const d of input.decisions) {
-    if (d.decision === 'CREDIT' && d.itemId) addSold(d.orderId, d.itemId, unitsByLine.get(lineKeyOf(d.orderId, d.lineUid)) ?? 1);
   }
   const alreadySold = (orderId: string, item: CheckItem) => (soldInOrder.get(`${orderId}\u0000${item.id}`) ?? 0) >= item.originalQuantity;
   const suggest = (i: CheckItem) => ({ itemId: i.id, sku: i.sku, name: i.name, priceCents: i.priceCents, sellerName: i.sellerName, sellerId: i.sellerId });
 
-  for (const line of input.lines) {
+  // Exchanged lines are ours either way: on the item that came back, or the one that went out.
+  for (const line of applyExchanges(input.lines, input.exchanges ?? [], variationOfItem)) {
     if (ours.has(line.variationId)) continue;                      // ours: nothing to check
     if (!line.lineUid) continue;                                    // can't be decided about
     const key = lineKeyOf(line.orderId, line.lineUid);
@@ -208,7 +245,7 @@ export function classify(input: ClassifyInput): SalesCheckIssue[] {
 function oversold(input: ClassifyInput): SalesCheckIssue[] {
   const ourVariations = new Set(input.items.map((i) => i.squareVariationId).filter((v): v is string => !!v));
   const variationOfItem = new Map(input.items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
-  const attributed = applyDecisions(input.lines, input.decisions, ourVariations, variationOfItem);
+  const attributed = attributeSales(input.lines, input.decisions, input.exchanges ?? [], ourVariations, variationOfItem);
   const byVariation = new Map<string, PosSaleLine[]>();
   for (const l of attributed) if (ourVariations.has(l.variationId) && netUnits(l) > 0) byVariation.set(l.variationId, [...(byVariation.get(l.variationId) ?? []), l]);
   const out: SalesCheckIssue[] = [];

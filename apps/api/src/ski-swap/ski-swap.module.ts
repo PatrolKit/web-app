@@ -77,6 +77,8 @@ import { IdentityModule } from '../common/identity/identity.module';
 import { SwapDiagnosticsController } from './diagnostics/swap-diagnostics.controller';
 import { SalesCheckController } from './sales-check.controller';
 import { IssueNotesController } from './issue-notes.controller';
+import { ExchangesController } from './exchanges.controller';
+import { ExchangesService } from './exchanges.service';
 import { IssueNotesService } from './issue-notes.service';
 import { SalesCheckService } from './sales-check.service';
 import { SwapDiagnosticsService } from './diagnostics/swap-diagnostics.service';
@@ -119,6 +121,7 @@ import { IndemnificationImportService } from './indemnification/indemnification-
     SwapDiagnosticsController,
     SalesCheckController,
     IssueNotesController,
+    ExchangesController,
     IndemnificationController,
     IndemnificationAdminController,
   ],
@@ -153,6 +156,7 @@ import { IndemnificationImportService } from './indemnification/indemnification-
     ItemBreakdownService,
     SalesCheckService,
     IssueNotesService,
+    ExchangesService,
     PublicLookupService,
     PublicStatusService,
     PublicSellerService,
