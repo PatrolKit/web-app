@@ -108,7 +108,7 @@ describe('the fee check', () => {
   it('shows the sale’s fees, and the Shop Fee to refund', () => {
     expect(squareSide(both).fields.map((f) => [f.label, f.value])).toEqual([['Paid', '$310.54 by card'], ['Shop Fee', '$7.67'], ['Surcharge', '$7.87']]);
     expect(patrolKitSide(both)).toEqual({
-      title: 'To refund', fields: [{ label: 'Refund', value: '$7.67 (the Shop Fee)', warn: true }], links: [{ label: 'Refund in Square', href: 'https://sq/sale' }],
+      title: 'To refund', fields: [{ label: 'Refund', value: '$7.67 (the Shop Fee)', warn: true }], links: [],
     });
   });
 
@@ -147,10 +147,10 @@ describe('a ticket scanned twice in one sale', () => {
     suggestion: { itemId: 'it', sku: '73475', name: 'Poles', priceCents: 2200, sellerName: 'Karen Beckwith', sellerId: 's-1' },
   });
 
-  it('shows the item as already sold in this sale, with a refund link', () => {
+  it('shows the item as already sold in this sale, with no refund link', () => {
     const side = patrolKitSide(twice);
     expect(side.title).toBe('Already sold in this sale');
-    expect(side.links).toEqual([{ label: 'Item', to: '/dashboard/ski-swap/items?q=73475' }, { label: 'Refund in Square', href: 'https://sq/sale' }]);
+    expect(side.links).toEqual([{ label: 'Item', to: '/dashboard/ski-swap/items?q=73475' }]);
     expect(groupsOf([twice])[0].title).toBe('Scanned twice in one sale');
   });
 
@@ -160,9 +160,10 @@ describe('a ticket scanned twice in one sale', () => {
 });
 
 describe('the receipt number', () => {
-  it('is on each sale’s Square side, to look it up on the POS, and links to the sale in Square', () => {
+  it('is on each sale’s Square side, to look it up on the POS, then "View in Square" in place of the Sale link', () => {
     const twice = issue({ kind: 'scanned_twice', receipt: 'Gq00', links: { sale: 'https://sq/Gq00', item: null }, rungUpAs: { name: 'Swap Item 73475', sku: '73475', variationId: 'v', itemId: 'i', category: '2025', archived: true } });
-    expect(squareSide(twice).fields.find((f) => f.label === 'Receipt')).toEqual({ label: 'Receipt', value: '#Gq00', mono: true, href: 'https://sq/Gq00' });
+    expect(squareSide(twice).fields.find((f) => f.label === 'Receipt')).toEqual({ label: 'Receipt', value: '#Gq00', mono: true, link: { label: 'View in Square', href: 'https://sq/Gq00' } });
+    expect(squareSide(twice).links).toEqual([]);
     const fee = issue({ kind: 'double_fee', receipt: 'Ab12', fee: { shopFeeName: 'Shop Fee', shopFeeCents: 767, surchargeCents: 787, cardCents: 31054, cashCents: 0, refundCents: 767 } });
     expect(squareSide(fee).fields[0]).toEqual({ label: 'Receipt', value: '#Ab12', mono: true });
     expect(squareSide(issue({})).fields.some((f) => f.label === 'Receipt')).toBe(false);
@@ -178,26 +179,26 @@ describe('a ticket rung up more times than it has units', () => {
     },
   });
 
-  it('lists each line of the one sale, its receipt, and one refund link', () => {
+  it('lists each line of the one sale, and its receipt to view in Square', () => {
     const side = squareSide(repeat('scanned_twice', [
       { orderId: 'WE', receipt: 'WErn', soldAt: '2026-10-09T19:19:00Z', quantity: 1, collectedCents: 1000 },
       { orderId: 'WE', receipt: 'WErn', soldAt: '2026-10-09T19:19:00Z', quantity: 1, collectedCents: 2000 },
     ]));
     expect(side.title).toBe('Rung up in one sale');
     expect(side.fields.map((f) => [f.label, f.value]).filter(([l]) => l !== 'When')).toEqual([['Receipt', '#WErn'], ['Line 1', '$10.00'], ['Line 2', '$20.00']]);
-    expect(side.fields[0].href).toBe('https://sq/WE');
-    expect(side.links).toEqual([{ label: 'Refund in Square', href: 'https://sq/WE' }]);
+    expect(side.fields[0].link).toEqual({ label: 'View in Square', href: 'https://sq/WE' });
+    expect(side.links).toEqual([]);
   });
 
-  it('lists each sale across sales by receipt, with a link to each', () => {
+  it('lists each sale across sales by receipt, each to view in Square', () => {
     const side = squareSide(repeat('oversold', [
       { orderId: 'l5', receipt: '8pWs', soldAt: '2026-10-09T18:17:00Z', quantity: 1, collectedCents: 8900 },
       { orderId: '3A', receipt: 'mYLC', soldAt: '2026-10-10T19:03:00Z', quantity: 1, collectedCents: 8900 },
     ]));
     expect(side.title).toBe('Sold in different sales');
     expect(side.fields.map((f) => f.label)).toEqual(['#8pWs', '#mYLC']);
-    expect(side.fields.map((f) => f.labelHref)).toEqual(['https://sq/l5', 'https://sq/3A']);
-    expect(side.links.map((l) => l.label)).toEqual(['Sale #8pWs', 'Sale #mYLC']);
+    expect(side.fields.map((f) => f.link?.href)).toEqual(['https://sq/l5', 'https://sq/3A']);
+    expect(side.links).toEqual([]);
   });
 
   it('shows the item with its seller, price and quantity checked in', () => {

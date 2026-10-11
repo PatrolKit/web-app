@@ -110,11 +110,12 @@ export interface Field {
   tag?: string;
   /** Worth a second look, such as a price that differs from what Square charged. */
   warn?: boolean;
-  /** The value links here, e.g. a receipt to its sale in Square. */
-  href?: string;
-  /** The label links here instead, where the label is the receipt. */
-  labelHref?: string;
+  /** A link after the value, e.g. a receipt's "View in Square". */
+  link?: { label: string; href: string };
 }
+
+/** A receipt's sale in Square: shown after the number, never as a refund. */
+const viewInSquare = (href: string | null | undefined) => (href ? { link: { label: 'View in Square', href } } : {});
 
 /** `href` leaves for Square; `to` stays in PatrolKit. */
 export type SideLink = { label: string; href: string } | { label: string; to: string };
@@ -134,16 +135,17 @@ export function squareSide(i: SalesCheckIssue): Side {
     return {
       title: 'Sale in Square',
       fields: [
-        ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true, ...(i.links.sale ? { href: i.links.sale } : {}) }] : []),
+        ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true, ...viewInSquare(i.links.sale) }] : []),
         { label: 'Paid', value: paid || '—' },
         { label: i.fee.shopFeeName, value: money(i.fee.shopFeeCents) },
         ...(i.fee.surchargeCents !== null ? [{ label: 'Surcharge', value: money(i.fee.surchargeCents) }] : []),
       ],
-      links: i.links.sale ? [{ label: 'Sale', href: i.links.sale }] : [],
+      // The receipt's "View in Square" is the link; without one, the sale's.
+      links: i.links.sale && !i.receipt ? [{ label: 'Sale', href: i.links.sale }] : [],
     };
   }
   const links: SideLink[] = [];
-  if (i.links.sale) links.push({ label: 'Sale', href: i.links.sale });
+  if (i.links.sale && !i.receipt) links.push({ label: 'Sale', href: i.links.sale });
   if (i.links.item) links.push({ label: 'Item', href: i.links.item });
 
   if (i.oversold) return repeatSales(i.kind, i.oversold);
@@ -158,7 +160,7 @@ export function squareSide(i: SalesCheckIssue): Side {
       { label: 'SKU', value: r?.sku || '—', mono: true },
       { label: 'Name', value: i.kind === 'custom_amount' ? 'Custom amount' : r?.name ?? '—', ...(tag ? { tag } : {}) },
       { label: 'Sold for', value: `${money(i.collectedCents)}${each}${refunded}` },
-      ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true, ...(i.links.sale ? { href: i.links.sale } : {}) }] : []),
+      ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true, ...viewInSquare(i.links.sale) }] : []),
     ],
     links,
   };
@@ -172,7 +174,7 @@ export function patrolKitSide(i: SalesCheckIssue): Side {
     return {
       title: 'To refund',
       fields: [{ label: 'Refund', value: `${money(i.fee.refundCents)} (the ${i.fee.shopFeeName})`, warn: true }],
-      links: i.links.sale ? [{ label: 'Refund in Square', href: i.links.sale }] : [],
+      links: [],
     };
   }
   if (i.oversold) {
@@ -198,7 +200,7 @@ export function patrolKitSide(i: SalesCheckIssue): Side {
         { label: 'Seller', value: s.sellerName ?? '—' },
         { label: 'Price', value: s.priceCents === null ? 'unpriced' : money(s.priceCents) },
       ],
-      links: [itemLink(s.sku), ...(i.links.sale ? [{ label: 'Refund in Square', href: i.links.sale }] : [])],
+      links: [itemLink(s.sku)],
     };
   }
   if (!s) {
@@ -278,7 +280,7 @@ type Repeat = NonNullable<SalesCheckIssue['oversold']>;
 
 /**
  * A ticket rung up more times than it has units: each sale that counts it,
- * with its receipt, as Square has them, and a link to refund each.
+ * with its receipt and a link to view it in Square.
  */
 function repeatSales(kind: SalesCheckIssue['kind'], o: Repeat): Side {
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -287,20 +289,12 @@ function repeatSales(kind: SalesCheckIssue['kind'], o: Repeat): Side {
     label: one ? `Line ${n + 1}` : s.receipt ? `#${s.receipt}` : `Sale ${n + 1}`,
     value: `${money(s.collectedCents)}${s.quantity > 1 ? ` (×${s.quantity})` : ''}${one ? '' : ` · ${when(s.soldAt)}`}`,
     warn: true,
-    ...(!one && s.receipt && s.link ? { labelHref: s.link } : {}),
+    ...(one ? {} : viewInSquare(s.link)),
   }));
   const first = o.sales[0];
   const head: Field[] = one && first
-    ? [{ label: 'Receipt', value: first.receipt ? `#${first.receipt}` : '—', mono: true, ...(first.receipt && first.link ? { href: first.link } : {}) }, { label: 'When', value: when(first.soldAt) }]
+    ? [{ label: 'Receipt', value: first.receipt ? `#${first.receipt}` : '—', mono: true, ...viewInSquare(first.link) }, { label: 'When', value: when(first.soldAt) }]
     : [];
-  // One link per sale (one, for a sale that rang it up twice).
-  const seen = new Set<string>();
-  const links: SideLink[] = [];
-  for (const s of o.sales) {
-    if (!s.link || seen.has(s.orderId)) continue;
-    seen.add(s.orderId);
-    links.push({ label: one ? 'Refund in Square' : `Sale ${s.receipt ? `#${s.receipt}` : links.length + 1}`, href: s.link });
-  }
-  return { title: one ? 'Rung up in one sale' : 'Sold in different sales', fields: [...head, ...fields], links };
+  return { title: one ? 'Rung up in one sale' : 'Sold in different sales', fields: [...head, ...fields], links: [] };
 }
 
