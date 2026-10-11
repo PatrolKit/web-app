@@ -1,5 +1,5 @@
 import {
-  BadRequestException,
+  BadRequestException, ForbiddenException,
   Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param,
   Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
@@ -22,6 +22,7 @@ import { BatchTicketsDto, CategorizeItemsDto, CreateItemDto, EmailItemsExportDto
 import { ItemCategorizeService } from './item-categorize.service';
 import { ItemPickupService, type PickupActor } from './item-pickup.service';
 import { ItemExportService } from './item-export.service';
+import { PublicStatusService } from './public-status.service';
 import type { Request, Response } from 'express';
 import { isImportGuideFile } from './import-guide';
 
@@ -39,7 +40,29 @@ export class ItemController {
     private readonly pickups: ItemPickupService,
     private readonly categorizer: ItemCategorizeService,
     private readonly exports: ItemExportService,
+    private readonly status: PublicStatusService,
   ) {}
+
+  /**
+   * One tag's status, for the iPad's Item Status Kiosk: `not_received`,
+   * `for_sale`, `sold`, `picked_up` or `unknown`, as the public SKU Lookup
+   * says it, read live from Square. The patrol's devices only (a staff
+   * check-in iPad's token): no name, price or seller, since a kiosk faces the
+   * public, and not behind the SKU Lookup switch. The usual per-device limit
+   * (600 a minute) applies; nothing is keyed by IP.
+   */
+  @Get('sku-status')
+  @RequirePermissions('ski_swap:report')
+  skuStatus(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Req() req: Request & { device?: { deviceId: string } },
+    @Query('sku') sku?: string,
+  ) {
+    if (!req.device) throw new ForbiddenException('This is for the patrol’s devices.');
+    if (!sku?.trim()) throw new BadRequestException('sku is required');
+    return this.status.deviceSku(orgId, swapId, sku);
+  }
 
   /**
    * The Items export: every item matching the page's filters (not one page),

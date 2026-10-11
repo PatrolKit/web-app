@@ -40,23 +40,9 @@ export class PublicStatusService {
 
   async sku(orgSlug: string, swapSlug: string, rawSku: string): Promise<PublicSkuStatus> {
     const { org, swap } = await this.openSwap(orgSlug, swapSlug);
-    const sku = rawSku.trim();
-    const item = sku
-      ? await this.prisma.swapItem.findFirst({
-          where: { orgId: org.id, swapId: swap.id, sku, deletedAt: null },
-          select: { sku: true, name: true, consignedAt: true, squareVariationId: true, originalQuantity: true, pickedUpAt: true },
-        })
-      : null;
-    if (!item) throw notFound();
-
-    // A failed or impossible read is null, which the helper reports as unknown.
-    let counts: Map<string, number> | null = null;
-    if (item.consignedAt && !item.pickedUpAt && item.squareVariationId && swap.locationId) {
-      const pos = await this.posFactory.forOrg(org.id).catch(() => null);
-      counts = pos ? await pos.getInventoryCounts([item.squareVariationId], swap.locationId).catch(() => null) : null;
-    }
-
-    const { status, soldCount, quantity } = publicItemStatus(item, counts);
+    const found = await this.lookUp(org.id, swap, rawSku);
+    if (!found) throw notFound();
+    const { item, status, soldCount, quantity } = found;
     return {
       sku: item.sku,
       name: item.name,
@@ -64,6 +50,40 @@ export class PublicStatusService {
       // Only where there's something to count; "1 of 1" says nothing "Sold" doesn't.
       ...(quantity > 1 && soldCount !== null ? { soldCount, quantity } : {}),
     };
+  }
+
+  /**
+   * The patrol's own devices' answer (the iPad's Item Status Kiosk): the same
+   * status as the public lookup, by the same lookup, but for a device token,
+   * whatever the SKU Lookup switch says, and with only the verdict and the
+   * tag, since a kiosk faces the public. 404 `ITEM_NOT_FOUND` for no such tag.
+   */
+  async deviceSku(orgId: string, swapId: string, rawSku: string): Promise<{ sku: string; status: PublicItemStatus }> {
+    const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { id: true, locationId: true } });
+    if (!swap) throw new NotFoundException('Swap not found');
+    const found = await this.lookUp(orgId, swap, rawSku);
+    if (!found) throw new NotFoundException({ code: 'ITEM_NOT_FOUND', message: 'No item with that SKU in this swap.' });
+    return { sku: found.item.sku, status: found.status };
+  }
+
+  /** One live item by its tag, and its status from Square's count read now. Null when there's no such item. */
+  private async lookUp(orgId: string, swap: { id: string; locationId: string | null }, rawSku: string) {
+    const sku = rawSku.trim();
+    const item = sku
+      ? await this.prisma.swapItem.findFirst({
+          where: { orgId, swapId: swap.id, sku, deletedAt: null },
+          select: { sku: true, name: true, consignedAt: true, squareVariationId: true, originalQuantity: true, pickedUpAt: true },
+        })
+      : null;
+    if (!item) return null;
+
+    // A failed or impossible read is null, which the helper reports as unknown.
+    let counts: Map<string, number> | null = null;
+    if (item.consignedAt && !item.pickedUpAt && item.squareVariationId && swap.locationId) {
+      const pos = await this.posFactory.forOrg(orgId).catch(() => null);
+      counts = pos ? await pos.getInventoryCounts([item.squareVariationId], swap.locationId).catch(() => null) : null;
+    }
+    return { item, ...publicItemStatus(item, counts) };
   }
 
   private async openSwap(orgSlug: string, swapSlug: string) {
