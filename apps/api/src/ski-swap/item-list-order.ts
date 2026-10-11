@@ -101,17 +101,26 @@ export function searchedField(
   return 'seller';
 }
 
+/** Business sellers (a shop: `businessName` set), or individuals. */
+export const SELLER_KINDS = ['business', 'individual'] as const;
+export type SellerKind = (typeof SELLER_KINDS)[number];
+
 /** The Items page's filters and sort, as the list takes them. */
 export interface ItemListView {
   status?: ItemListStatus;
+  /** Only items whose seller is a business, or an individual. */
+  sellerKind?: SellerKind;
   printed?: boolean;
   sort?: ItemSort;
   dir?: SortDir;
 }
 
-/** Reads and checks the query string's `status`, `printed`, `sort` and `dir`. */
-export function parseItemListView(q: { status?: string; printed?: string; sort?: string; dir?: string }): ItemListView {
-  const { status, printed, sort, dir } = q;
+/** Reads and checks the query string's `status`, `sellerKind`, `printed`, `sort` and `dir`. */
+export function parseItemListView(q: { status?: string; sellerKind?: string; printed?: string; sort?: string; dir?: string }): ItemListView {
+  const { status, sellerKind, printed, sort, dir } = q;
+  if (sellerKind !== undefined && !(SELLER_KINDS as readonly string[]).includes(sellerKind)) {
+    throw new BadRequestException(`sellerKind must be one of ${SELLER_KINDS.join(', ')}`);
+  }
   if (status !== undefined && !(ITEM_LIST_STATUSES as readonly string[]).includes(status)) {
     throw new BadRequestException(`status must be one of ${ITEM_LIST_STATUSES.join(', ')}`);
   }
@@ -124,6 +133,7 @@ export function parseItemListView(q: { status?: string; printed?: string; sort?:
   }
   return {
     ...(status ? { status: status as ItemListStatus } : {}),
+    ...(sellerKind ? { sellerKind: sellerKind as SellerKind } : {}),
     ...(printed ? { printed: printed === 'true' } : {}),
     ...(sort ? { sort: sort as ItemSort, dir: (dir ?? 'asc') as SortDir } : {}),
   };

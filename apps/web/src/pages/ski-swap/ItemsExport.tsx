@@ -70,6 +70,7 @@ function EmailExport({ orgId, swapId, filters, defaultEmail, onClose, onSent }: 
         ...(filters.query ? { query: filters.query } : {}),
         ...(filters.sellerId ? { sellerId: filters.sellerId } : {}),
         ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.sellerKind ? { sellerKind: filters.sellerKind } : {}),
         ...(filters.printed !== undefined ? { printed: filters.printed ? 'true' as const : 'false' as const } : {}),
         ...(filters.sort ? { sort: filters.sort, dir: filters.dir ?? 'asc' } : {}),
       });

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheckDouble as faCheckDoubleDuo, faPlus as faPlusDuo, faTicket as faTicketDuo, faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
-import type { ItemAttributeInput, ItemListSort, ItemListStatus, ItemListView, ItemResponse, SellerResponse } from '../../lib/api.types';
+import type { ItemAttributeInput, ItemListSort, ItemListStatus, ItemListView, ItemResponse, SellerKind, SellerResponse } from '../../lib/api.types';
 import SearchableSelect from '../../components/SearchableSelect';
 import ActionsMenu, { type MenuAction } from '../../components/ActionsMenu';
 import BatchPrintModal from './BatchPrintModal';
@@ -208,6 +208,12 @@ export const ITEM_STATE_FILTERS: { value: ItemListStatus; label: string }[] = [
   { value: 'picked_up', label: 'Picked up' },
 ];
 
+/** The seller filter's broader choices: every business seller (a shop), or every individual. */
+export const SELLER_KIND_FILTERS: { kind: SellerKind; label: string }[] = [
+  { kind: 'business', label: 'All business sellers' },
+  { kind: 'individual', label: 'All individual sellers' },
+];
+
 /** Rows per page (Plan 39 D1). */
 export const ITEMS_PAGE = 50;
 
@@ -319,6 +325,8 @@ export default function SwapItemsPanel({
   };
   const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1);
   const sellerFilter = params.get('seller') ?? '';
+  /** Business or individual sellers: a broader seller filter, one at a time with a single seller. */
+  const sellerKind = !sellerFilter ? SELLER_KIND_FILTERS.find((k) => k.kind === params.get('sellerKind'))?.kind : undefined;
   const [query, setQuery] = useState(params.get('q') ?? '');
   /** Only tickets still waiting for a price, to work through before sales start (Plan 32). */
   const [showForm, setShowForm] = useState(false);
@@ -346,6 +354,7 @@ export default function SwapItemsPanel({
 
   const view: ItemListView = {
     ...(stateFilter ? { status: stateFilter } : {}),
+    ...(sellerKind ? { sellerKind } : {}),
     ...(printFilter ? { printed: printFilter === 'printed' } : {}),
     ...(sort ? { sort: sort.key, dir: sort.dir } : {}),
   };
@@ -668,8 +677,12 @@ export default function SwapItemsPanel({
           </select>
           {sellers && (
             <SearchableSelect
-              value={sellerFilter}
-              onChange={(v) => setView({ seller: v || null })}
+              value={sellerFilter || (sellerKind ? `kind:${sellerKind}` : '')}
+              onChange={(v) => {
+                const kind = SELLER_KIND_FILTERS.find((k) => `kind:${k.kind}` === v)?.kind;
+                setView({ seller: kind ? null : v || null, sellerKind: kind ?? null });
+              }}
+              groups={SELLER_KIND_FILTERS.map((k) => ({ value: `kind:${k.kind}`, label: k.label }))}
               options={sellers.map((sl) => ({ value: sl.id, label: sl.displayName, keywords: [sl.phone, sl.email].filter(Boolean).join(' ') }))}
               placeholder="All sellers"
               clearLabel="All sellers"

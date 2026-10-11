@@ -1474,6 +1474,7 @@ export const EmailItemsExportSchema = z.object({
   query: z.string().max(200).optional(),
   sellerId: z.string().max(64).optional(),
   status: z.string().max(32).optional(),
+  sellerKind: z.enum(['business', 'individual']).optional(),
   printed: z.enum(['true', 'false']).optional(),
   sort: z.string().max(16).optional(),
   dir: z.string().max(4).optional(),

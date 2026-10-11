@@ -219,6 +219,8 @@ export class ItemService {
       swapId, orgId,
       ...(opts.updatedSince ? {} : { deletedAt: null }),
       ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
+      // A business seller is one with a business name; an item with no seller is neither.
+      ...(opts.sellerKind ? { seller: { is: { businessName: opts.sellerKind === 'business' ? { not: null } : null } } } : {}),
       ...(opts.updatedSince ? { updatedAt: { gt: new Date(opts.updatedSince) } } : {}),
       // The `OR`s (the search's, the cursor's, "not in Square"'s) each their
       // own entry in `AND`, so none replaces another.

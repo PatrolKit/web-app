@@ -584,8 +584,11 @@ export interface AwaitingPickupItems {
   squareChecked: boolean;
 }
 export type ItemListSort = 'sku' | 'name' | 'price' | 'seller' | 'tag';
+export type SellerKind = 'business' | 'individual';
 export interface ItemListView {
   status?: ItemListStatus;
+  /** Only items whose seller is a business (a shop), or an individual. */
+  sellerKind?: SellerKind;
   printed?: boolean;
   sort?: ItemListSort;
   dir?: 'asc' | 'desc';

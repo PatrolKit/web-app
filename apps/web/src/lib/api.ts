@@ -37,6 +37,7 @@ async function silentRefresh(): Promise<boolean> {
 /** The Items page's filters and sort, onto a query string (Plan 39). */
 function setListView(params: URLSearchParams, view?: import('./api.types').ItemListView) {
   if (view?.status) params.set('status', view.status);
+  if (view?.sellerKind) params.set('sellerKind', view.sellerKind);
   if (view?.printed !== undefined) params.set('printed', String(view.printed));
   if (view?.sort) {
     params.set('sort', view.sort);
@@ -947,7 +948,7 @@ export const api = {
       const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'items.xlsx';
       return { blob: await res.blob(), filename: name };
     },
-    emailItemsExport: (orgId: string, swapId: string, body: { to: string; query?: string; sellerId?: string; status?: string; printed?: 'true' | 'false'; sort?: string; dir?: string }) =>
+    emailItemsExport: (orgId: string, swapId: string, body: { to: string; query?: string; sellerId?: string; status?: string; sellerKind?: 'business' | 'individual'; printed?: 'true' | 'false'; sort?: string; dir?: string }) =>
       request<{ to: string; items: number; status: string }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/export/email`, { method: 'POST', body: JSON.stringify(body) }),
     // ─── Exchanges (Plan 49): the list is report; everything else is admin ───
     exchanges: (orgId: string, swapId: string) =>

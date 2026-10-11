@@ -24,6 +24,11 @@ export interface SearchableSelectProps {
   inputClassName?: string;
   /** Names the field for assistive tech when there's no visible label. */
   ariaLabel?: string;
+  /**
+   * Broader choices in their own quiet section under the clear row, such as
+   * "Business sellers". Hidden while searching, which looks for one option.
+   */
+  groups?: SearchableSelectOption[];
 }
 
 function normalize(s: string): string {
@@ -40,6 +45,7 @@ export default function SearchableSelect({
   className = '',
   inputClassName = 'bg-surface-100 px-3 py-2',
   ariaLabel,
+  groups = [],
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -48,7 +54,7 @@ export default function SearchableSelect({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  const selected = options.find((o) => o.value === value) ?? null;
+  const selected = options.find((o) => o.value === value) ?? groups.find((o) => o.value === value) ?? null;
 
   const searchable = useMemo(
     () => options.map((o) => ({ option: o, haystack: normalize(`${o.label} ${o.sublabel ?? ''} ${o.keywords ?? ''}`) })),
@@ -67,7 +73,9 @@ export default function SearchableSelect({
     return searchable.reduce((n, s) => (s.haystack.includes(needle) ? n + 1 : n), 0);
   }, [search, options, searchable]);
 
-  const rowCount = filtered.length + 1; // +1 for the clear/none row
+  /** The groups, while not searching: rows 1… after the clear row. */
+  const shownGroups = search.trim() ? [] : groups;
+  const rowCount = 1 + shownGroups.length + filtered.length; // +1 for the clear/none row
 
   useEffect(() => { setHighlight(0); }, [search, open]);
 
@@ -100,7 +108,8 @@ export default function SearchableSelect({
 
   function selectRow(index: number) {
     if (index === 0) { commit(''); return; }
-    const option = filtered[index - 1];
+    if (index <= shownGroups.length) { commit(shownGroups[index - 1].value); return; }
+    const option = filtered[index - 1 - shownGroups.length];
     if (option) commit(option.value);
   }
 
@@ -177,12 +186,31 @@ export default function SearchableSelect({
             {clearLabel}
           </li>
 
+          {shownGroups.map((o, i) => {
+            const rowIndex = i + 1;
+            return (
+              <li
+                key={o.value}
+                role="option"
+                aria-selected={o.value === value}
+                data-highlighted={highlight === rowIndex}
+                onMouseEnter={() => setHighlight(rowIndex)}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => selectRow(rowIndex)}
+                className={`px-3 py-1 cursor-pointer text-xs ${highlight === rowIndex ? 'bg-surface-100 text-white' : ''} ${
+                  o.value === value ? 'text-brand-400' : 'text-gray-400'} ${i === shownGroups.length - 1 ? 'border-b border-gray-800 pb-1.5 mb-1' : ''}`}
+              >
+                {o.label}
+              </li>
+            );
+          })}
+
           {filtered.length === 0 && (
             <li className="px-3 py-2 text-gray-500">{emptyMessage}</li>
           )}
 
           {filtered.map((o, i) => {
-            const rowIndex = i + 1;
+            const rowIndex = i + 1 + shownGroups.length;
             return (
               <li
                 key={o.value}

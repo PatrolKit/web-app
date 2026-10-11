@@ -80,11 +80,12 @@ export class ItemController {
     @Query('query') query?: string,
     @Query('sellerId') sellerId?: string,
     @Query('status') status?: string,
+    @Query('sellerKind') sellerKind?: string,
     @Query('printed') printed?: string,
     @Query('sort') sort?: string,
     @Query('dir') dir?: string,
   ) {
-    const view = parseItemListView({ status, printed, sort, dir });
+    const view = parseItemListView({ status, sellerKind, printed, sort, dir });
     const file = await this.exports.download(orgId, swapId, { query, sellerId, ...view }, user.userId);
     res.setHeader('Content-Type', file.contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
@@ -103,8 +104,8 @@ export class ItemController {
     @Body() body: EmailItemsExportDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    const { to, query, sellerId, status, printed, sort, dir } = body;
-    const view = parseItemListView({ status, printed, sort, dir });
+    const { to, query, sellerId, status, sellerKind, printed, sort, dir } = body;
+    const view = parseItemListView({ status, sellerKind, printed, sort, dir });
     return this.exports.email(orgId, swapId, { query, sellerId, ...view }, to, user.userId);
   }
 
@@ -132,13 +133,14 @@ export class ItemController {
     @Query('after') after?: string,
     /** The Items page's filters and sort (Plan 39). */
     @Query('status') status?: string,
+    @Query('sellerKind') sellerKind?: string,
     @Query('printed') printed?: string,
     @Query('sort') sort?: string,
     @Query('dir') dir?: string,
   ) {
     const cursor = after ? decodeCursor(after) : null;
     if (after && !cursor) throw new BadRequestException('That page cursor is not one of ours.');
-    const view = parseItemListView({ status, printed, sort, dir });
+    const view = parseItemListView({ status, sellerKind, printed, sort, dir });
 
     return this.itemService.list(orgId, swapId, {
       query,

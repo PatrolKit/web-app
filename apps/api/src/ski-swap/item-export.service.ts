@@ -121,6 +121,7 @@ export class ItemExportService {
   private async describeFilters(f: ExportFilters): Promise<string> {
     const parts: string[] = [];
     if (f.status) parts.push(STATUS_LABEL[f.status] ?? f.status);
+    if (f.sellerKind) parts.push(f.sellerKind === 'business' ? 'business sellers' : 'individual sellers');
     if (f.printed !== undefined) parts.push(f.printed ? 'tag printed' : 'tag not printed');
     if (f.query?.trim()) parts.push(`search “${f.query.trim()}”`);
     if (f.sellerId) {

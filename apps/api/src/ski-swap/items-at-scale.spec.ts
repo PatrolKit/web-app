@@ -69,6 +69,14 @@ describe('the Items list (Plan 39)', () => {
     expect(wheres[2]).toMatchObject({ consignedAt: null });
   });
 
+  it('filters by the kind of seller: a business has a business name; an item with no seller is neither', async () => {
+    const { service, wheres } = harness(rows);
+    await service.list('org-1', 'swap-1', { sellerKind: 'business' });
+    await service.list('org-1', 'swap-1', { sellerKind: 'individual' });
+    expect(wheres[0]).toMatchObject({ seller: { is: { businessName: { not: null } } } });
+    expect(wheres[1]).toMatchObject({ seller: { is: { businessName: null } } });
+  });
+
   it('filters Sold by the swap’s sales, reading Square’s stock for the page only', async () => {
     const { service, wheres, squareReads } = harness(rows);
     (service as unknown as { breakdown: unknown }).breakdown = { soldUnits: async () => new Map([['var-9', 1], ['var-100', 1]]) };
@@ -102,6 +110,8 @@ describe('the Items list (Plan 39)', () => {
     expect(parseItemListView({ status: 'sold' })).toEqual({ status: 'sold' });
     expect(() => parseItemListView({ status: 'gone' })).toThrow(/status must be one of/);
     expect(() => parseItemListView({ sort: 'status' })).toThrow(/sort must be one of/);
+    expect(parseItemListView({ sellerKind: 'business' })).toEqual({ sellerKind: 'business' });
+    expect(() => parseItemListView({ sellerKind: 'shop' })).toThrow(/sellerKind must be one of/);
   });
 });
 
