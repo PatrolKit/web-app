@@ -36,25 +36,32 @@ export default function ExchangesPage() {
 }
 
 function Exchanges({ orgId, swapId, isAdmin }: { orgId: string; swapId: string; isAdmin: boolean }) {
+  const [params, setParams] = useSearchParams();
+  // The Items page's "Exchange…" lands here with `?ticket=`, and opens the popup on it.
+  const [recording, setRecording] = useState(() => isAdmin && params.has('ticket'));
+  function close() {
+    setRecording(false);
+    if (params.has('ticket')) { params.delete('ticket'); setParams(params, { replace: true }); }
+  }
   return (
     <div className="space-y-5">
       <p className="text-sm text-gray-300 bg-sky-950/30 border border-sky-800/60 rounded-lg px-4 py-3">
         Exchanges in Square are preferred, but they need Square Plus and the Square for Retail POS app.
         Record an exchange here when Square can’t.
       </p>
-      {isAdmin && <RecordPanel orgId={orgId} swapId={swapId} />}
-      <ExchangeList orgId={orgId} swapId={swapId} isAdmin={isAdmin} />
+      <ExchangeList orgId={orgId} swapId={swapId} isAdmin={isAdmin} onRecord={isAdmin ? () => setRecording(true) : undefined} />
+      {recording && <RecordModal orgId={orgId} swapId={swapId} ticket={params.get('ticket') ?? ''} onClose={close} />}
     </div>
   );
 }
 
 // ─── Record an exchange ──────────────────────────────────────────────────────
 
-function RecordPanel({ orgId, swapId }: { orgId: string; swapId: string }) {
+/** The popup "Record exchange" opens: find the sale, pick the item going out, record. */
+function RecordModal({ orgId, swapId, ticket, onClose }: { orgId: string; swapId: string; ticket: string; onClose: () => void }) {
   const qc = useQueryClient();
-  const [params, setParams] = useSearchParams();
-  const [typed, setTyped] = useState(() => params.get('ticket') ?? '');
-  const [query, setQuery] = useState<{ receipt?: string; ticket?: string } | null>(() => lookupQuery(params.get('ticket') ?? ''));
+  const [typed, setTyped] = useState(ticket);
+  const [query, setQuery] = useState<{ receipt?: string; ticket?: string } | null>(() => lookupQuery(ticket));
   const [line, setLine] = useState<ExchangeLookupLine | null>(null);
   const [out, setOut] = useState<ExchangeItem | null>(null);
   const [price, setPrice] = useState('');
@@ -85,13 +92,13 @@ function RecordPanel({ orgId, swapId }: { orgId: string; swapId: string }) {
     const q = lookupQuery(typed);
     setLine(null); setOut(null); setPrice(''); setDone(null); record.reset();
     setQuery(q);
-    if (params.has('ticket')) { params.delete('ticket'); setParams(params, { replace: true }); }
   }
 
   function startOver() {
     setTyped(''); setQuery(null); setLine(null); setOut(null); setPrice(''); setNote(''); setDone(null); record.reset();
-    if (params.has('ticket')) { params.delete('ticket'); setParams(params, { replace: true }); }
   }
+  /** Not while it's saving: the answer would have nowhere to land. */
+  const close = () => { if (!record.isPending) onClose(); };
 
   const unpriced = out?.priceCents === null;
   const priceCents = unpriced ? centsOf(price) : out?.priceCents ?? null;
@@ -99,13 +106,22 @@ function RecordPanel({ orgId, swapId }: { orgId: string; swapId: string }) {
   const typedBad = typed.trim() !== '' && !lookupQuery(typed);
 
   return (
-    <section className="bg-surface-50 border border-gray-800 rounded-lg p-4 space-y-4">
-      <div>
-        <h3 className="text-white font-medium">Record an exchange</h3>
-        <p className="text-xs text-gray-500">
-          Find the sale, pick the item the customer is leaving with, and record it. The item coming back goes back on sale in Square,
-          and the one going out is marked sold. No money changes hands.
-        </p>
+    <div className="fixed inset-0 bg-black/60 flex items-start justify-center p-4 pt-[5vh] z-50" onClick={close}>
+      <div role="dialog" aria-modal="true" aria-label="Record an exchange"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => { if (e.key === 'Escape') close(); }}
+        className="bg-surface-50 border border-gray-700 rounded-lg w-full max-w-3xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-white font-medium">Record an exchange</h3>
+          <p className="text-xs text-gray-500">
+            Find the sale, pick the item the customer is leaving with, and record it. The item coming back goes back on sale in Square,
+            and the one going out is marked sold. No money changes hands.
+          </p>
+        </div>
+        <button type="button" onClick={close} disabled={record.isPending} className="shrink-0 bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-gray-200 px-3 py-1.5 rounded text-sm">
+          {done ? 'Done' : 'Close'}
+        </button>
       </div>
 
       {done ? (
@@ -114,7 +130,7 @@ function RecordPanel({ orgId, swapId }: { orgId: string; swapId: string }) {
           {done.result.pricedCents !== null && <p className="text-xs text-gray-400">{out?.sku} priced at {money(done.result.pricedCents)}.</p>}
           {done.result.stockError && (
             <p className="text-xs text-amber-400">
-              Saved, but Square’s stock wasn’t updated: {done.result.stockError} Use Retry on the exchange below.
+              Saved, but Square’s stock wasn’t updated: {done.result.stockError} Use Retry stock on the exchange in the list.
             </p>
           )}
           <button type="button" className={btn} onClick={startOver}>Record another</button>
@@ -124,7 +140,7 @@ function RecordPanel({ orgId, swapId }: { orgId: string; swapId: string }) {
           {/* 1. Find the sale */}
           <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); find(); }}>
             <label htmlFor="exchange-find" className="text-sm text-gray-300">Receipt # or the ticket coming back</label>
-            <input id="exchange-find" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Receipt # or SKU" className={`${input} w-44 font-mono`} />
+            <input id="exchange-find" autoFocus value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Receipt # or SKU" className={`${input} w-44 font-mono`} />
             <button type="submit" className={btn} disabled={!lookupQuery(typed) || lookup.isFetching}>{lookup.isFetching ? 'Finding…' : 'Find'}</button>
             {typedBad && <span className="text-xs text-amber-400">A receipt is 4 letters and digits; a ticket is its number.</span>}
           </form>
@@ -181,7 +197,8 @@ function RecordPanel({ orgId, swapId }: { orgId: string; swapId: string }) {
           )}
         </>
       )}
-    </section>
+      </div>
+    </div>
   );
 }
 
@@ -252,7 +269,7 @@ function ItemPicker({ orgId, swapId, exclude, picked, onPick }: {
 
 // ─── Exchanges so far ────────────────────────────────────────────────────────
 
-function ExchangeList({ orgId, swapId, isAdmin }: { orgId: string; swapId: string; isAdmin: boolean }) {
+function ExchangeList({ orgId, swapId, isAdmin, onRecord }: { orgId: string; swapId: string; isAdmin: boolean; onRecord?: () => void }) {
   const { data, isLoading, error } = useQuery({
     queryKey: listKey(orgId, swapId),
     queryFn: () => api.skiSwap.exchanges(orgId, swapId),
@@ -267,16 +284,19 @@ function ExchangeList({ orgId, swapId, isAdmin }: { orgId: string; swapId: strin
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h3 className="text-white font-medium">Exchanges so far</h3>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <h3 className="text-white font-medium">Exchanges</h3>
         <span className="text-xs text-gray-400">
           {totals.live} live
           {totals.absorbedCents > 0 && <> · patrol absorbed <span className="text-gray-200">{money(totals.absorbedCents)}</span></>}
           {totals.keptCents > 0 && <> · patrol kept <span className="text-gray-200">{money(totals.keptCents)}</span></>}
         </span>
-        {data.exchanges.length > 0 && (
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ticket, receipt or seller" className={`${input} ml-auto w-64`} />
-        )}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {data.exchanges.length > 0 && (
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ticket, receipt or seller" className={`${input} w-64`} />
+          )}
+          {onRecord && <button type="button" className={primary} onClick={onRecord}>+ Record exchange</button>}
+        </div>
       </div>
       {data.exchanges.length === 0 ? (
         <p className="text-sm text-gray-500">No exchanges yet.</p>
