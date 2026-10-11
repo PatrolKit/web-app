@@ -124,7 +124,7 @@ function RecordPanel({ orgId, swapId }: { orgId: string; swapId: string }) {
           {/* 1. Find the sale */}
           <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); find(); }}>
             <label htmlFor="exchange-find" className="text-sm text-gray-300">Receipt # or the ticket coming back</label>
-            <input id="exchange-find" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Gq00 or 87344" className={`${input} w-40 font-mono`} />
+            <input id="exchange-find" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Receipt # or SKU" className={`${input} w-44 font-mono`} />
             <button type="submit" className={btn} disabled={!lookupQuery(typed) || lookup.isFetching}>{lookup.isFetching ? 'Finding…' : 'Find'}</button>
             {typedBad && <span className="text-xs text-amber-400">A receipt is 4 letters and digits; a ticket is its number.</span>}
           </form>
