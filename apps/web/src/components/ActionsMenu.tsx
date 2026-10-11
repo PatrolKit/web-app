@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 
@@ -24,7 +24,12 @@ export default function ActionsMenu({ actions, label = 'Actions', align = 'left'
   align?: 'left' | 'right';
 }) {
   const [open, setOpen] = useState(false);
+  /** The edge it opens from: `align`, unless that would run it off the page's content (a wrapped toolbar). */
+  const [side, setSide] = useState(align);
   const root = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  /** Once per opening, so a menu too wide for either side can't flip back and forth. */
+  const flipped = useRef(false);
   const items = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
@@ -35,6 +40,19 @@ export default function ActionsMenu({ actions, label = 'Actions', align = 'left'
     items.current.find((b) => b && !b.disabled)?.focus();
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
+
+  // Measured as it opens, before it's seen: under the sidebar or past the
+  // window's edge, it opens from the other side instead.
+  useLayoutEffect(() => {
+    if (!open) { setSide(align); flipped.current = false; return; }
+    const box = menu.current?.getBoundingClientRect();
+    if (!box || flipped.current) return;
+    const area = root.current?.closest('main')?.getBoundingClientRect();
+    const left = area?.left ?? 0;
+    const right = area?.right ?? window.innerWidth;
+    if (side === 'right' && box.left < left) { flipped.current = true; setSide('left'); }
+    else if (side === 'left' && box.right > right) { flipped.current = true; setSide('right'); }
+  }, [open, side, align]);
 
   if (actions.length === 0) return null;
 
@@ -68,8 +86,9 @@ export default function ActionsMenu({ actions, label = 'Actions', align = 'left'
       </button>
       {open && (
         <div
+          ref={menu}
           role="menu"
-          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} z-20 mt-1 min-w-56 bg-surface-50 border border-gray-700 rounded-lg shadow-lg py-1`}
+          className={`absolute ${side === 'right' ? 'right-0' : 'left-0'} z-20 mt-1 min-w-56 bg-surface-50 border border-gray-700 rounded-lg shadow-lg py-1`}
         >
           {actions.map((a, i) => (
             <button

@@ -1464,3 +1464,18 @@ export interface CheckoutTotals {
   /** Square couldn't be read; there are no checkouts. */
   error: string | null;
 }
+
+/**
+ * The Items export by email: the page's filters, and who to send it to (any
+ * address the staff member types).
+ */
+export const EmailItemsExportSchema = z.object({
+  to: z.string().trim().email().max(254),
+  query: z.string().max(200).optional(),
+  sellerId: z.string().max(64).optional(),
+  status: z.string().max(32).optional(),
+  printed: z.enum(['true', 'false']).optional(),
+  sort: z.string().max(16).optional(),
+  dir: z.string().max(4).optional(),
+}).strict();
+export class EmailItemsExportDto extends createZodDto(EmailItemsExportSchema) {}

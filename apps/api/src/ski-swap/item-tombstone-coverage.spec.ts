@@ -63,6 +63,13 @@ describe('item tombstone coverage', () => {
         'sale on an item since withdrawn is still that item\'s, and is never ' +
         'listed as a stray. Credits go to live items only.',
     },
+    'ski-swap/item-export.service.ts': {
+      count: 1,
+      because:
+        'The Items export reads every item\'s variation, withdrawn ones too, ' +
+        'to put each sale on the item it belongs to. The rows it lists are ' +
+        'live items only.',
+    },
     'ski-swap/payouts/payout-run.service.ts': {
       count: 1,
       because:

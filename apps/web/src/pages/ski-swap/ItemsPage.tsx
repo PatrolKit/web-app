@@ -15,6 +15,7 @@ import { api } from '../../lib/api';
 import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SwapItemsPanel from './SwapItemsPanel';
+import { useAuth } from '../../contexts/AuthContext';
 import ProxyItemImportModal from './ProxyItemImportModal';
 import TicketFastEdit from './TicketFastEdit';
 import ReturnTicketsModal from './ReturnTicketsModal';
@@ -26,6 +27,7 @@ import TicketSquareModal, { useTicketPushStatus } from './TicketSquareModal';
 
 export default function ItemsPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
+  const { user } = useAuth();
   const labelsPerItem = selectedSwap?.labelsPerItem ?? 1;
   const canManage = perms.has('ski_swap:manage');
   const swapId = selectedSwap?.id ?? null;
@@ -118,6 +120,7 @@ export default function ItemsPage() {
       queryKeyPrefix="ski-swap/items"
       labelsPerItem={labelsPerItem}
       batchPrint={canManage}
+      exportTo={{ defaultEmail: user?.email ?? '' }}
       actions={canManage ? [
         // Where the swap takes legacy tickets, or has some waiting for a
         // price (Plan 37).

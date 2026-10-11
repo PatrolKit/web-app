@@ -14,6 +14,7 @@ import { usePrinter } from '../../contexts/PrinterContext';
 import { isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
 import { priceInput, priceInputCents } from '../../lib/money';
 import { canUndoPickup } from './pickupLogic';
+import ItemsExport from './ItemsExport';
 
 // ─── API adapter interface ────────────────────────────────────────────────────
 
@@ -122,6 +123,8 @@ export interface SwapItemsPanelProps {
   actions?: MenuAction[];
   /** A line at the end of the toolbar, for a page that has nothing to add. */
   toolbarNote?: ReactNode;
+  /** Offer Export (every matching item, as a spreadsheet): staff's Items page. Emails default to this address. */
+  exportTo?: { defaultEmail: string };
 }
 
 // ─── Form state ───────────────────────────────────────────────────────────────
@@ -285,7 +288,7 @@ export function itemState(item: ItemResponse): {
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService,
   showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1, batchPrint = false,
-  tickets, actions = [], toolbarNote, addBlockedBecause,
+  tickets, actions = [], toolbarNote, addBlockedBecause, exportTo,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
   /**
@@ -689,6 +692,10 @@ export default function SwapItemsPanel({
         </div>
         <div className="flex gap-2 items-center">
           {toolbarNote}
+          {exportTo && swapId && (
+            <ItemsExport orgId={orgId} swapId={swapId} defaultEmail={exportTo.defaultEmail}
+              filters={{ ...(searchTerm ? { query: searchTerm } : {}), ...(sellerFilter ? { sellerId: sellerFilter } : {}), ...view }} />
+          )}
           <ActionsMenu actions={menu} align="right" />
         </div>
       </div>

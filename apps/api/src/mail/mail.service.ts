@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer from 'nodemailer';
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { SESClient, SendEmailCommand, SendRawEmailCommand } from '@aws-sdk/client-ses';
 import type { SendOutcome } from '../common/messaging/send-outcome';
 import { emailShell } from './email-shell';
 import { plainText } from './plain-text';
@@ -12,6 +12,13 @@ import { normalizeEmail } from '../common/util/person';
 /** An address on the `.invalid` domain, which is reserved for tests and can never receive mail. */
 export function isReservedTestAddress(to: string): boolean {
   return /\.invalid\.?$/i.test(to.trim().split('@').pop() ?? '');
+}
+
+/** A file sent with a message, e.g. an exported spreadsheet. */
+export interface MailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
 }
 
 /** Whose sign-in this is, when the person belongs to exactly one org. */
@@ -273,6 +280,27 @@ export class MailService {
     return this.send(to, `Your ${orgName} ski swap receipt`, html);
   }
 
+  /**
+   * An Items export (spreadsheet attached), sent by a staff member to any
+   * address they typed. Says who sent it and what it holds, since the
+   * recipient may not be the sender.
+   */
+  async sendItemsExport(to: string, o: { orgName: string; swapTitle: string; senderName: string; items: number; filters: string; file: MailAttachment }): Promise<SendOutcome> {
+    const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+    const html = emailShell({
+      title: `${o.swapTitle}: items`,
+      brand: { name: o.orgName },
+      heading: `${o.swapTitle}: items spreadsheet`,
+      body: [
+        `${esc(o.senderName)} sent you the items of ${esc(o.swapTitle)} as a spreadsheet: <strong>${o.items.toLocaleString('en-US')}</strong> item${o.items === 1 ? '' : 's'}${o.filters ? ` (${esc(o.filters)})` : ''}.`,
+        `It's attached: <strong>${esc(o.file.filename)}</strong>. Sales are as Square had them when it was sent.`,
+      ],
+      footnote: 'It holds sellers’ names, phone numbers and email addresses. Please keep it to the people who need it.',
+      poweredByUrl: this.brandMarkUrl(),
+    });
+    return this.send(to, `${o.orgName}: ${o.swapTitle} items spreadsheet`, html, [o.file]);
+  }
+
   async sendPayoutNudge(to: string, nudge: PayoutNudge): Promise<SendOutcome> {
     // The amount is in the subject on purpose. This is a message about money
     // the reader is owed, and it competes for attention with everything else in
@@ -281,7 +309,7 @@ export class MailService {
     return this.send(to, subject, payoutNudgeTemplate(nudge, this.brandMarkUrl()));
   }
 
-  private async send(to: string, subject: string, html: string): Promise<SendOutcome> {
+  private async send(to: string, subject: string, html: string, attachments: MailAttachment[] = []): Promise<SendOutcome> {
     // `.invalid` is reserved for tests (RFC 2606) and can never receive mail:
     // the test org's accounts use it. Sending would only bounce, and bounces
     // count against the sending account.
@@ -300,8 +328,8 @@ export class MailService {
     try {
       const providerRef =
         transport === 'ses'
-          ? await this.sendViaSes(from, to, subject, html, text)
-          : await this.sendViaSmtp(from, to, subject, html, text);
+          ? await this.sendViaSes(from, to, subject, html, text, attachments)
+          : await this.sendViaSmtp(from, to, subject, html, text, attachments);
       this.logger.log({ to, subject, providerRef }, 'Email sent');
       return providerRef ? { status: 'sent', providerRef } : { status: 'sent' };
     } catch (err) {
@@ -348,9 +376,20 @@ export class MailService {
     subject: string,
     html: string,
     text: string,
+    attachments: MailAttachment[] = [],
   ): Promise<string | undefined> {
     const region = this.config.get<string>('app.sesRegion', 'us-east-2');
     const ses = new SESClient({ region });
+    if (attachments.length) {
+      // SES's simple send can't carry a file: the whole message, MIME and all,
+      // is built here and sent raw.
+      const built = await nodemailer.createTransport({ streamTransport: true, buffer: true })
+        .sendMail({ from, to, subject, html, text, attachments });
+      const raw = await ses.send(new SendRawEmailCommand({
+        Source: from, Destinations: [to], RawMessage: { Data: built.message as Buffer },
+      }));
+      return raw.MessageId;
+    }
     const res = await ses.send(
       new SendEmailCommand({
         Source: from,
@@ -373,13 +412,14 @@ export class MailService {
     subject: string,
     html: string,
     text: string,
+    attachments: MailAttachment[] = [],
   ): Promise<string | undefined> {
     const transporter = nodemailer.createTransport({
       host: this.config.get<string>('app.smtpHost', 'localhost'),
       port: this.config.get<number>('app.smtpPort', 1025),
       secure: false,
     });
-    const info = await transporter.sendMail({ from, to, subject, html, text });
+    const info = await transporter.sendMail({ from, to, subject, html, text, ...(attachments.length ? { attachments } : {}) });
     return info.messageId;
   }
 }

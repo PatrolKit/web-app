@@ -920,6 +920,25 @@ export const api = {
       request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/issue-and-credit`, {
         method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
       }),
+    // ─── The Items export: every item matching the page's filters ───
+    /** The spreadsheet, with the name the server gave it. */
+    exportItems: async (orgId: string, swapId: string, filters: { query?: string; sellerId?: string } & import('./api.types').ItemListView) => {
+      const params = new URLSearchParams();
+      if (filters.query) params.set('query', filters.query);
+      if (filters.sellerId) params.set('sellerId', filters.sellerId);
+      setListView(params, filters);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      const res = await fetch(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/export?${params.toString()}`, { credentials: 'include', headers });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? body?.message ?? 'The spreadsheet couldn’t be made. Try again.');
+      }
+      const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'items.xlsx';
+      return { blob: await res.blob(), filename: name };
+    },
+    emailItemsExport: (orgId: string, swapId: string, body: { to: string; query?: string; sellerId?: string; status?: string; printed?: 'true' | 'false'; sort?: string; dir?: string }) =>
+      request<{ to: string; items: number; status: string }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/export/email`, { method: 'POST', body: JSON.stringify(body) }),
     // ─── Exchanges (Plan 49): the list is report; everything else is admin ───
     exchanges: (orgId: string, swapId: string) =>
       request<import('./api.types').ExchangesResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/exchanges`),

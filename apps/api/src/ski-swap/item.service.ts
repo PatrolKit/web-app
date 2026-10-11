@@ -131,88 +131,14 @@ export class ItemService {
      * phone matches. The sellers are found first, in one small query, so the
      * item filter is an id list rather than a join per row (Plan 39).
      */
-    const searchSellerIds = opts.query ? await this.sellersMatching(orgId, opts.query) : [];
-    const salesIds = opts.status === 'sold' || opts.status === 'for_sale' ? await this.idsBySales(orgId, swapId, opts.status) : null;
-    const where = {
-      swapId, orgId,
-      ...(opts.updatedSince ? {} : { deletedAt: null }),
-      ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
-      ...(opts.updatedSince ? { updatedAt: { gt: new Date(opts.updatedSince) } } : {}),
-      // The `OR`s (the search's, the cursor's, "not in Square"'s) each their
-      // own entry in `AND`, so none replaces another.
-      AND: [
-        // Missing either id (Plan 41 D14): the same test as the row's badge.
-        ...(opts.status === 'not_in_square' ? [{ OR: [{ squareItemId: null }, { squareVariationId: null }] }] : []),
-        // Sold / For sale: by the swap's sales, worked out above.
-        ...(salesIds ? [{ id: { in: salesIds } }] : []),
-        ...(opts.query ? [{ OR: [
-          { name: { contains: opts.query } },
-          { sku: { contains: opts.query } },
-          ...(searchSellerIds.length ? [{ sellerId: { in: searchSellerIds } }] : []),
-        ] }] : []),
-        /*
-         * Keyset paging for the full pass (iOS Plan 17 E).
-         *
-         * `skip`/`take` walks a moving list: an item inserted by another station
-         * between two pages shifts a live one off the end of a page, and the
-         * client — which deletes whatever did not come back — deletes it. A
-         * cursor of `(updatedAt, id)` cannot skip a row that way, because it
-         * names where it got to rather than how far along it was.
-         *
-         * `id` breaks the tie: `updatedAt` is not unique, and a cursor on it
-         * alone would either repeat or skip the rows sharing a millisecond.
-         */
-        ...(opts.after
-          ? [{
-              OR: [
-                { updatedAt: { gt: opts.after.updatedAt } },
-                { updatedAt: opts.after.updatedAt, id: { gt: opts.after.id } },
-              ],
-            }]
-          : []),
-      ],
-      // What a staff member still has to look through, or what has been taken.
-      ...(opts.consigned === undefined
-        ? {}
-        : opts.consigned
-          ? { consignedAt: { not: null } }
-          : { consignedAt: null }),
-      ...(opts.printed === undefined ? {} : { hasPrintedTag: opts.printed }),
-      // Each is a fact about our own row (D2): never a Square read.
-      ...(opts.status === 'not_received' ? { consignedAt: null } : {}),
-      ...(opts.status === 'not_in_square' ? { consignedAt: { not: null }, pickedUpAt: null } : {}),
-      ...(opts.status === 'picked_up' ? { pickedUpAt: { not: null } } : {}),
-      ...(opts.status === 'needs_price' ? { priceCents: null } : {}),
-    };
+    const where = await this.whereOf(orgId, swapId, opts);
 
     // Sorted (D3), or searched with no sort asked for (best matches first):
     // every matching row, light, ordered here, then the page cut from it and
     // read in full. See `item-list-order.ts` for why not SQL.
     const searchOrder = !opts.sort && !!opts.query?.trim() && !opts.updatedSince;
     if ((opts.sort || searchOrder) && !opts.walk) {
-      const light = await this.prisma.swapItem.findMany({
-        // A screen's read, never the delta: no tombstones.
-        where: { ...where, deletedAt: null },
-        select: { id: true, sku: true, name: true, priceCents: true, hasPrintedTag: true, sellerId: true },
-      });
-      // A search sorts by the field it searched, ascending, unless a sort was asked for.
-      const sortBy: ItemSort = opts.sort ?? searchedField(light, opts.query!);
-      const dir = opts.sort ? opts.dir ?? 'asc' : 'asc';
-      // Sellers' names once each, for the sort that reads them, not a join per row.
-      const sellerNames = new Map<string, string | null>();
-      if (sortBy === 'seller') {
-        const ids = [...new Set(light.map((r) => r.sellerId).filter((id): id is string => !!id))];
-        const sellers = await this.prisma.sellerProfile.findMany({
-          where: { id: { in: ids } },
-          select: { id: true, businessName: true, ...SELLER_NAME_INCLUDE },
-        });
-        for (const sl of sellers) sellerNames.set(sl.id, sellerDisplayName(sl));
-      }
-      const ordered = sortRows(
-        light.map((r) => ({ ...r, sellerName: r.sellerId ? sellerNames.get(r.sellerId) ?? null : null })),
-        sortBy,
-        dir,
-      );
+      const { ordered, sortBy } = await this.ordered(where, opts);
       const skip = opts.skip ?? 0;
       const pageIds = ordered.slice(skip, skip + (opts.take ?? 50)).map((r) => r.id);
       const rows = await this.prisma.swapItem.findMany({
@@ -279,6 +205,112 @@ export class ItemService {
    * The org's sellers whose business name, first or last name, email or phone
    * contains the search: what the Items search matches a seller by.
    */
+  /**
+   * The Items page's filters as one `where`: the search, the seller, the
+   * status (Sold and For sale by the swap's sales), the tag, and, for a
+   * device's delta, what changed since its cursor.
+   */
+  private async whereOf(orgId: string, swapId: string, opts: {
+    query?: string; sellerId?: string; updatedSince?: string; consigned?: boolean; after?: { updatedAt: Date; id: string };
+  } & ItemListView) {
+    const searchSellerIds = opts.query ? await this.sellersMatching(orgId, opts.query) : [];
+    const salesIds = opts.status === 'sold' || opts.status === 'for_sale' ? await this.idsBySales(orgId, swapId, opts.status) : null;
+    return {
+      swapId, orgId,
+      ...(opts.updatedSince ? {} : { deletedAt: null }),
+      ...(opts.sellerId ? { sellerId: opts.sellerId } : {}),
+      ...(opts.updatedSince ? { updatedAt: { gt: new Date(opts.updatedSince) } } : {}),
+      // The `OR`s (the search's, the cursor's, "not in Square"'s) each their
+      // own entry in `AND`, so none replaces another.
+      AND: [
+        // Missing either id (Plan 41 D14): the same test as the row's badge.
+        ...(opts.status === 'not_in_square' ? [{ OR: [{ squareItemId: null }, { squareVariationId: null }] }] : []),
+        // Sold / For sale: by the swap's sales, worked out above.
+        ...(salesIds ? [{ id: { in: salesIds } }] : []),
+        ...(opts.query ? [{ OR: [
+          { name: { contains: opts.query } },
+          { sku: { contains: opts.query } },
+          ...(searchSellerIds.length ? [{ sellerId: { in: searchSellerIds } }] : []),
+        ] }] : []),
+        /*
+         * Keyset paging for the full pass (iOS Plan 17 E).
+         *
+         * `skip`/`take` walks a moving list: an item inserted by another station
+         * between two pages shifts a live one off the end of a page, and the
+         * client — which deletes whatever did not come back — deletes it. A
+         * cursor of `(updatedAt, id)` cannot skip a row that way, because it
+         * names where it got to rather than how far along it was.
+         *
+         * `id` breaks the tie: `updatedAt` is not unique, and a cursor on it
+         * alone would either repeat or skip the rows sharing a millisecond.
+         */
+        ...(opts.after
+          ? [{
+              OR: [
+                { updatedAt: { gt: opts.after.updatedAt } },
+                { updatedAt: opts.after.updatedAt, id: { gt: opts.after.id } },
+              ],
+            }]
+          : []),
+      ],
+      // What a staff member still has to look through, or what has been taken.
+      ...(opts.consigned === undefined
+        ? {}
+        : opts.consigned
+          ? { consignedAt: { not: null } }
+          : { consignedAt: null }),
+      ...(opts.printed === undefined ? {} : { hasPrintedTag: opts.printed }),
+      // Each is a fact about our own row (D2): never a Square read.
+      ...(opts.status === 'not_received' ? { consignedAt: null } : {}),
+      ...(opts.status === 'not_in_square' ? { consignedAt: { not: null }, pickedUpAt: null } : {}),
+      ...(opts.status === 'picked_up' ? { pickedUpAt: { not: null } } : {}),
+      ...(opts.status === 'needs_price' ? { priceCents: null } : {}),
+    };
+  }
+
+  /**
+   * Every matching row, light, in the order asked for (D3), or by the field a
+   * search matched. See `item-list-order.ts` for why not SQL.
+   */
+  private async ordered(where: Awaited<ReturnType<ItemService['whereOf']>>, opts: { query?: string } & ItemListView) {
+    const light = await this.prisma.swapItem.findMany({
+      // A screen's read, never the delta: no tombstones.
+      where: { ...where, deletedAt: null },
+      select: { id: true, sku: true, name: true, priceCents: true, hasPrintedTag: true, sellerId: true },
+    });
+    // A search sorts by the field it searched, ascending, unless a sort was asked for.
+    const sortBy: ItemSort = opts.sort ?? searchedField(light, opts.query!);
+    const dir = opts.sort ? opts.dir ?? 'asc' : 'asc';
+    // Sellers' names once each, for the sort that reads them, not a join per row.
+    const sellerNames = new Map<string, string | null>();
+    if (sortBy === 'seller') {
+      const ids = [...new Set(light.map((r) => r.sellerId).filter((id): id is string => !!id))];
+      const sellers = await this.prisma.sellerProfile.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, businessName: true, ...SELLER_NAME_INCLUDE },
+      });
+      for (const sl of sellers) sellerNames.set(sl.id, sellerDisplayName(sl));
+    }
+    const ordered = sortRows(
+      light.map((r) => ({ ...r, sellerName: r.sellerId ? sellerNames.get(r.sellerId) ?? null : null })),
+      sortBy,
+      dir,
+    );
+    return { ordered, sortBy };
+  }
+
+  /**
+   * The ids of every item the Items page would list with these filters, in its
+   * order, not one page of them: the export's rows (no tombstones).
+   */
+  async matchingIds(orgId: string, swapId: string, opts: { query?: string; sellerId?: string; consigned?: boolean } & ItemListView): Promise<string[]> {
+    await this.findSwapOrThrow(orgId, swapId);
+    const where = await this.whereOf(orgId, swapId, opts);
+    if (opts.sort || opts.query?.trim()) return (await this.ordered(where, opts)).ordered.map((r) => r.id);
+    const rows = await this.prisma.swapItem.findMany({ where: { ...where, deletedAt: null }, select: { id: true }, orderBy: [{ createdAt: 'desc' }] });
+    return rows.map((r) => r.id);
+  }
+
   /**
    * The Items page's Sold and For sale filters: the swap's items whose sales
    * cover them, or don't. From the sales every card reads (cached two
@@ -1585,18 +1617,18 @@ export class ItemService {
   private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number | null; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; pickedUpAt?: Date | null; pickedUpByName?: string | null; pickedUpUnits?: number | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number> | null, descriptions?: Map<string, ItemDescription>): ItemResponse {
     // Only an item in Square has stock to not know about. For everything else
     // the answer is a fact about our own row, whatever Square is doing.
-    // A returned item (Plan 43) is out of Square, whose count of it then says
-    // nothing: none in stock, and sold is what didn't go back.
-    const returned = !!item.pickedUpAt;
-    const inventoryKnown = returned || inventoryMap !== null || !item.squareVariationId;
+    // A picked-up item (Plan 43) is out of Square, whose count of it then says
+    // nothing: none in stock, and sold is what didn't go home.
+    const pickedUp = !!item.pickedUpAt;
+    const inventoryKnown = pickedUp || inventoryMap !== null || !item.squareVariationId;
     // Unknown reads as unsold, not as sold out. Both are guesses; the first
     // sends a buyer to the floor to look, the second sends them home.
-    const inStock = returned
+    const inStock = pickedUp
       ? 0
       : !inventoryKnown
         ? item.originalQuantity
         : item.squareVariationId ? (inventoryMap!.get(item.squareVariationId) ?? 0) : 0;
-    const soldCount = returned
+    const soldCount = pickedUp
       ? Math.max(0, item.originalQuantity - (item.pickedUpUnits ?? item.originalQuantity))
       : Math.max(0, item.originalQuantity - inStock);
     return {

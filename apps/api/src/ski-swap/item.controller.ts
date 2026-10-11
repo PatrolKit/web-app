@@ -18,9 +18,10 @@ import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ItemService, decodeCursor } from './item.service';
 import { LegacyTicketService } from './legacy-ticket.service';
 import { IssuedTicketService } from './issued-ticket.service';
-import { BatchTicketsDto, CategorizeItemsDto, CreateItemDto, PatchItemDto, PickUpBySkuDto, PickUpItemDto, UncategorizeItemDto } from '../contracts/ski-swap.contracts';
+import { BatchTicketsDto, CategorizeItemsDto, CreateItemDto, EmailItemsExportDto, PatchItemDto, PickUpBySkuDto, PickUpItemDto, UncategorizeItemDto } from '../contracts/ski-swap.contracts';
 import { ItemCategorizeService } from './item-categorize.service';
 import { ItemPickupService, type PickupActor } from './item-pickup.service';
+import { ItemExportService } from './item-export.service';
 import type { Request, Response } from 'express';
 import { isImportGuideFile } from './import-guide';
 
@@ -37,7 +38,52 @@ export class ItemController {
     private readonly issued: IssuedTicketService,
     private readonly pickups: ItemPickupService,
     private readonly categorizer: ItemCategorizeService,
+    private readonly exports: ItemExportService,
   ) {}
+
+  /**
+   * The Items export: every item matching the page's filters (not one page),
+   * as a spreadsheet, with sales read fresh from Square. Anyone who can read
+   * the Items page; staff on the web only.
+   */
+  @Get('export')
+  @RequirePermissions('ski_swap:report')
+  @NoDeviceAccess()
+  async exportItems(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+    @Query('query') query?: string,
+    @Query('sellerId') sellerId?: string,
+    @Query('status') status?: string,
+    @Query('printed') printed?: string,
+    @Query('sort') sort?: string,
+    @Query('dir') dir?: string,
+  ) {
+    const view = parseItemListView({ status, printed, sort, dir });
+    const file = await this.exports.download(orgId, swapId, { query, sellerId, ...view }, user.userId);
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(file.content);
+  }
+
+  /** The same spreadsheet, emailed to the address typed. */
+  @Post('export/email')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:report')
+  @NoDeviceAccess()
+  emailItems(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Body() body: EmailItemsExportDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const { to, query, sellerId, status, printed, sort, dir } = body;
+    const view = parseItemListView({ status, printed, sort, dir });
+    return this.exports.email(orgId, swapId, { query, sellerId, ...view }, to, user.userId);
+  }
 
   @Get()
   @RequirePermissions('ski_swap:report')
