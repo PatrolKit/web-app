@@ -136,4 +136,6 @@ export interface DiagnosticApplyAllResponse {
   held: number;
   /** Left flagged: sold, so Square's price isn't changed. */
   sold?: number;
+  /** Closed by themselves: gone since the run (picked up, deleted, or the sides now agree). */
+  closed?: number;
 }

@@ -185,11 +185,20 @@ export function shown(field: DiagnosticField | null, value: { name: string; note
 
 /** What a decided row says it was. */
 export function decidedText(issue: DiagnosticIssueResponse): string {
+  if (closedText(issue)) return `${closedText(issue)}${byAt(issue)}`;
   const what = issue.state === 'fixed' ? 'Resolved, fixed'
     : issue.state === 'left' ? 'Resolved, left as is'
       : issue.choice === 'set_stock' ? `Set Square’s stock to ${issue.ours?.stock ?? 0}`
         : issue.choice ? CHOICE_LABEL[issue.choice] : 'Done';
   return `${what}${byAt(issue)}`;
+}
+
+/**
+ * An issue gone by the time it was applied (picked up, deleted, or the two
+ * sides agreeing): it closed itself, and the server says why.
+ */
+export function closedText(issue: DiagnosticIssueResponse): string | null {
+  return issue.state === 'fixed' && issue.error?.startsWith('No longer applies') ? issue.error : null;
 }
 
 /** " by Dana, Oct 10, 9:42 PM". */
@@ -262,6 +271,7 @@ export function priceDecidedText(issue: DiagnosticIssueResponse, setCents?: numb
   const now = issue.choice === 'use_square' ? shown('price', sq)
     : issue.choice === 'use_ours' ? shown('price', ours)
       : setCents !== undefined ? `$${(setCents / 100).toFixed(2)}` : null;
+  if (closedText(issue)) return `${closedText(issue)}${byAt(issue)}`;
   if (issue.choice === 'resolve') return `Marked resolved: PatrolKit ${shown('price', ours)}, Square ${shown('price', sq)}, as they were${byAt(issue)}`;
   if (issue.choice === 'set_our_price') {
     return `Set PatrolKit’s price${now ? `: ${now}` : ''}; Square’s left as it sold${byAt(issue)}`;

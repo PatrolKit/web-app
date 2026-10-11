@@ -184,6 +184,7 @@ function harness() {
       suggestion: { itemId: `our-${sku}`, sku, name: 'Red Skis', priceCents: null, sellerName: null, sellerId: null },
     }),
     holdsUnreadable: (err: string | null) => { salesError = err; },
+    removeElsewhere: (sku: string) => { for (let i = elsewhere.length - 1; i >= 0; i--) if (elsewhere[i].sku === sku) elsewhere.splice(i, 1); },
     /** Another Square item with this SKU (Plan 48 D11): last year's archived copy by default. */
     elsewhere: (sku: string, over: Partial<PosCatalogItem> = {}) => {
       const entry: PosCatalogItem = { itemId: `old-${sku}`, variationId: `oldv-${sku}`, sku, name: `Swap Item ${sku}`, description: null, pricing: { type: 'variable' }, version: '1', updatedAt: null, categoryIds: ['old'], archived: true, ...over };
@@ -301,7 +302,7 @@ describe('Mark resolved (D5)', () => {
     const run = await h.run();
     h.setSquarePrice('1', 5000);
     expect(await h.service.applyAll('org', 'swap', run.id, { kind: 'differs', field: 'price' }, 'resolve', {}, 'staff'))
-      .toEqual({ applied: 2, skipped: 0, failed: 0, held: 0, sold: 0 });
+      .toEqual({ applied: 2, skipped: 0, failed: 0, held: 0, sold: 0, closed: 0 });
   });
 });
 
@@ -424,7 +425,7 @@ describe('the other choices (D3, D4, D6)', () => {
     await h.service.apply('org', 'swap', run.issues[0].id, 'resolve', {}, 'staff');
     h.db.items.find((r) => r.sku === '2')!.name = 'Changed';
     expect(await h.service.applyAll('org', 'swap', run.id, { kind: 'only_ours' }, 'copy_to_square', {}, 'staff'))
-      .toEqual({ applied: 1, skipped: 1, failed: 0, held: 0, sold: 0 });
+      .toEqual({ applied: 1, skipped: 1, failed: 0, held: 0, sold: 0, closed: 0 });
   });
 
   it('audits every choice with both values', async () => {
@@ -490,7 +491,8 @@ describe('another Square item with our ticket number (Plan 48 D11)', () => {
     expect(h.squareDeletes).toEqual([['old-73789']]);
     // Linked since the run, by a withdrawn item of ours.
     h.db.items.push({ id: 'gone', orgId: 'org', swapId: 'swap', sku: 'x', deletedAt: new Date(), squareItemId: 'old-73790' });
-    await expect(h.service.apply('org', 'swap', second.id, 'delete_other', {}, 'staff')).rejects.toThrow();
+    // No longer another copy, so nothing to delete: the issue closes itself.
+    await expect(h.service.apply('org', 'swap', second.id, 'delete_other', {}, 'staff')).resolves.toMatchObject({ state: 'fixed', error: expect.stringMatching(/^No longer applies/) });
     expect(h.squareDeletes).toEqual([['old-73789']]);
   });
 });
@@ -537,7 +539,7 @@ describe('open sales hold back their tickets (Plan 48)', () => {
     h.openSale('o1:l1', '73790', 'old-73790');
     const run = await h.run();
     const res = await h.service.applyAll('org', 'swap', run.id, { kind: 'elsewhere' }, 'delete_other', {}, 'staff');
-    expect(res).toEqual({ applied: 2, skipped: 0, failed: 0, held: 1, sold: 0 });
+    expect(res).toEqual({ applied: 2, skipped: 0, failed: 0, held: 1, sold: 0, closed: 0 });
     expect(h.squareDeletes.flat().sort()).toEqual(['old-73789', 'old-73791']);
     expect((await h.service.latest('org', 'swap'))!.issues.find((i) => i.sku === '73790')).toMatchObject({ state: 'open', heldBySales: 1 });
   });
@@ -583,17 +585,52 @@ describe('stock against what the sales leave (Plan 48)', () => {
     expect((await h.run()).issues).toEqual([]);
   });
 
-  it('sets nothing when a sale has landed since the run, or the stock is still moving', async () => {
+  it('sets nothing when a sale has landed since the run (it closes itself), or the stock is still moving (refused)', async () => {
     const h = harness();
     h.ours('1'); h.square('1'); h.stock('sv-1', 0, 0);
     h.ours('2'); h.square('2'); h.stock('sv-2', 0, 0);
+    h.ours('3'); h.square('3'); h.stock('sv-3', 0, 0);
     const run = await h.run();
-    const [one, two] = run.issues;
+    const [one, two, three] = run.issues;
     h.sell('sv-1', 1); // its sale shows now: the stock was right
-    await expect(h.service.apply('org', 'swap', one.id, 'set_stock', {}, 'staff')).rejects.toThrow('1’s sales or stock changed since the check ran; it may have just sold');
+    await expect(h.service.apply('org', 'swap', one.id, 'set_stock', {}, 'staff'))
+      .resolves.toMatchObject({ state: 'fixed', error: 'No longer applies: PatrolKit and Square now agree' });
     h.stockMoving(['sv-2']);
-    await expect(h.service.apply('org', 'swap', two.id, 'set_stock', {}, 'staff')).rejects.toThrow('may have just sold');
+    await expect(h.service.apply('org', 'swap', two.id, 'set_stock', {}, 'staff')).rejects.toThrow('2’s stock just changed in Square, or couldn’t be read');
+    h.stock('sv-3', -1, 0); // changed, still wrong: a fresh look first
+    await expect(h.service.apply('org', 'swap', three.id, 'set_stock', {}, 'staff')).rejects.toThrow('3’s stock or sales changed since the check ran');
     expect(h.stockSets).toEqual([]);
+    expect(h.db.issues.find((i) => i.id === two.id)!.state).toBe('open');
+  });
+
+  it('closes an issue whose item was picked up since the run, saying when, and changes nothing', async () => {
+    const h = harness();
+    const one: Row = h.ours('59751'); h.square('59751'); h.stock('sv-59751', 0, 0);
+    h.ours('2', { squareItemId: null, squareVariationId: null });
+    const run = await h.run();
+    one.pickedUpAt = new Date('2026-10-11T19:32:35Z');
+    const stock = run.issues.find((i) => i.kind === 'stock')!;
+    await expect(h.service.apply('org', 'swap', stock.id, 'set_stock', {}, 'staff'))
+      .resolves.toMatchObject({ state: 'fixed', error: 'No longer applies: picked up at 3:32 PM', decidedByName: expect.stringContaining('Dana') });
+    expect(h.stockSets).toEqual([]);
+    // A group choice counts what closed apart from what it did.
+    h.db.items.find((r) => r.sku === '2')!.deletedAt = new Date('2026-10-11T19:40:00Z') as never;
+    expect(await h.service.applyAll('org', 'swap', run.id, { kind: 'only_ours' }, 'copy_to_square', {}, 'staff'))
+      .toEqual({ applied: 0, skipped: 0, failed: 0, held: 0, sold: 0, closed: 1 });
+    expect(h.squareWrites).toEqual([]);
+    expect(h.db.issues.find((i) => i.kind === 'only_ours')!.error).toBe('No longer applies: deleted at 3:40 PM');
+  });
+
+  it('closes another copy’s issue once that copy is gone from Square, deleting nothing', async () => {
+    const h = harness();
+    h.ours('59748'); h.square('59748');
+    h.elsewhere('59748');
+    const run = await h.run();
+    const copy = run.issues.find((i) => i.kind === 'elsewhere')!;
+    h.removeElsewhere('59748');
+    await expect(h.service.apply('org', 'swap', copy.id, 'delete_other', {}, 'staff'))
+      .resolves.toMatchObject({ state: 'fixed', error: 'No longer applies: PatrolKit and Square now agree' });
+    expect(h.squareDeletes).toEqual([]);
   });
 
   it('reads sales fresh for a run, and leaves out an item whose stock just moved (10/10, 73593)', async () => {
@@ -688,7 +725,7 @@ describe('Price differs on a sold item', () => {
     h.stock('sv-1', 0, 1);
     const run = await h.run();
     expect(await h.service.applyAll('org', 'swap', run.id, { kind: 'differs', field: 'price' }, 'use_ours', {}, 'staff'))
-      .toEqual({ applied: 1, skipped: 0, failed: 0, held: 0, sold: 1 });
+      .toEqual({ applied: 1, skipped: 0, failed: 0, held: 0, sold: 1, closed: 0 });
     expect(h.squareWrites.flat().map((w) => w.sku)).toEqual(['2']);
     expect(open(await h.run())).toEqual([['1', 'differs', 'price']]);
   });

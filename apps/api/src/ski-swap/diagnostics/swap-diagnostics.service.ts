@@ -10,6 +10,7 @@ import { displayName } from '../../common/util/person';
 import { SalesCheckService } from '../sales-check.service';
 import { ItemBreakdownService } from '../item-breakdown.service';
 import { heldBy, type SalesHolds } from '../sales-check';
+import { DEFAULT_SWAP_TIME_ZONE, isTimeZone } from '../swap-time-zone';
 import { squareItemUrl } from '../square-links';
 import {
   CHOICES_FOR,
@@ -33,7 +34,7 @@ const KEPT_RUNS = 30;
  */
 const STOCK_SETTLE_MS = 2 * 60 * 1000;
 
-type Swap = { id: string; orgId: string; title: string; squareCategoryId: string; locationId: string };
+type Swap = { id: string; orgId: string; title: string; squareCategoryId: string; locationId: string; timeZone?: string };
 type IssueRow = Prisma.SwapDiagnosticIssueGetPayload<object>;
 type Performed = { issue: IssueRow; state: 'applied' | 'failed'; error?: string };
 type Extra = { sellerId?: string; restoreItemId?: string; keepSquareItemId?: string; prefix?: string; priceCents?: number };
@@ -192,17 +193,20 @@ export class SwapDiagnosticsService {
     if (!issue) throw new NotFoundException('That issue is gone. Run the checks again.');
     if (issue.state !== 'open' && issue.state !== 'failed') throw new ConflictException('That issue was already dealt with.');
 
-    const { skipped, held, sold } = await this.applyTo(swap, [issue], choice, extra, userId);
+    const { skipped, held, sold, unsettled } = await this.applyTo(swap, [issue], choice, extra, userId);
     if (sold) {
       throw new ConflictException(`${issue.sku} has sold, so Square’s price stays as it sold. Set PatrolKit’s price instead, or leave it flagged.`);
     }
     if (held) {
       throw new ConflictException(`Ticket ${issue.sku} has ${held === 1 ? 'an open sale' : `${held} open sales`} in Sales check. Settle ${held === 1 ? 'it' : 'them'} there first.`);
     }
-    if (skipped && issue.kind === 'stock') {
-      throw new ConflictException(`${issue.sku}’s sales or stock changed since the check ran; it may have just sold. Run the checks again.`);
+    if (skipped && unsettled) {
+      throw new ConflictException(`${issue.sku}’s stock just changed in Square, or couldn’t be read. Try again in a couple of minutes.`);
     }
-    if (skipped) throw new ConflictException('This changed since the check ran. Run the checks again.');
+    if (skipped && issue.kind === 'stock') {
+      throw new ConflictException(`${issue.sku}’s stock or sales changed since the check ran. Run the checks again to see them as they are now.`);
+    }
+    if (skipped) throw new ConflictException(`${issue.sku} changed since the check ran. Run the checks again to see it as it is now.`);
     const updated = await this.prisma.swapDiagnosticIssue.findUniqueOrThrow({ where: { id: issueId } });
     return toIssueResponse(updated, await this.userNames([updated.decidedBy]));
   }
@@ -222,8 +226,8 @@ export class SwapDiagnosticsService {
         state: { in: ['open', 'failed'] },
       },
     });
-    const { applied, skipped, failed, held, sold } = await this.applyTo(swap, issues, choice, extra, userId);
-    return { applied, skipped, failed, held, sold };
+    const { applied, skipped, failed, held, sold, closed } = await this.applyTo(swap, issues, choice, extra, userId);
+    return { applied, skipped, failed, held, sold, closed };
   }
 
   /**
@@ -231,7 +235,7 @@ export class SwapDiagnosticsService {
    * many issues were left alone for them.
    */
   private async applyTo(swap: Swap, issues: IssueRow[], choice: DiagnosticChoice, extra: Extra, userId: string | null) {
-    const tally = { applied: 0, skipped: 0, failed: 0, held: 0, sold: 0 };
+    const tally = { applied: 0, skipped: 0, failed: 0, held: 0, sold: 0, closed: 0, unsettled: 0 };
     if (issues.length === 0) return tally;
     for (const issue of issues) {
       if (!CHOICES_FOR[issue.kind as IssueKind]?.includes(choice)) {
@@ -266,13 +270,26 @@ export class SwapDiagnosticsService {
     // Both sides, as they are now, for every SKU involved. A choice that
     // writes Square's price reads whether each item has sold, too.
     const writesSquarePrice = (choice === 'use_ours' || choice === 'set_price') && issues.some((i) => i.field === 'price');
-    const current = await this.recheck(swap, [...new Set(issues.map((i) => i.sku))], issues.some((i) => i.kind === 'stock'), writesSquarePrice);
+    const { found: current, unsettled } = await this.recheck(swap, [...new Set(issues.map((i) => i.sku))], issues.some((i) => i.kind === 'stock'), writesSquarePrice);
+    const outcomes: { issue: IssueRow; state: 'applied' | 'fixed' | 'left' | 'failed'; error?: string }[] = [];
+
+    // Gone now (picked up, deleted, or the two sides agree): nothing is left to
+    // do, so it closes itself and says why, whatever was chosen. Never a stock
+    // issue whose stock couldn't be settled just now: that is unknown, not gone.
+    if (choice !== 'resolve') {
+      const gone = issues.filter((i) => !current.has(issueKey(i)) && !(i.kind === 'stock' && unsettled.has(i.sku)));
+      if (gone.length) {
+        const why = await this.goneBecause(swap, gone.map((i) => i.sku));
+        for (const issue of gone) outcomes.push({ issue, state: 'fixed', error: `No longer applies: ${why.get(issue.sku) ?? 'PatrolKit and Square now agree'}` });
+        issues = issues.filter((i) => !gone.includes(i));
+      }
+    }
 
     // A sold item's Square price stays as it sold: left flagged, untouched.
     if (writesSquarePrice) {
       const priced = issues.filter((i) => i.field === 'price');
       // Square's stock or sales unreadable: nothing can be told, so nothing changes.
-      if (priced.every((i) => current.get(issueKey(i))?.ours?.soldOut === undefined)) {
+      if (priced.length && priced.every((i) => current.get(issueKey(i))?.ours?.soldOut === undefined)) {
         throw new ConflictException('Couldn’t read Square’s stock and sales to check whether it has sold, so Square’s price wasn’t changed. Try again in a minute.');
       }
       // Not known for one: not changed either.
@@ -280,9 +297,7 @@ export class SwapDiagnosticsService {
       const before = issues.length;
       issues = issues.filter((i) => !soldOut(i));
       tally.sold = before - issues.length;
-      if (issues.length === 0) return tally;
     }
-    const outcomes: { issue: IssueRow; state: 'applied' | 'fixed' | 'left' | 'failed'; error?: string }[] = [];
 
     if (choice === 'resolve') {
       // Mark resolved changes nothing (D5): it records whether the sides now
@@ -302,6 +317,7 @@ export class SwapDiagnosticsService {
       // Anything else only on the data the run saw (D6).
       const fresh = issues.filter((i) => current.get(issueKey(i))?.fingerprint === i.fingerprint);
       tally.skipped = issues.length - fresh.length;
+      tally.unsettled = issues.filter((i) => !fresh.includes(i) && i.kind === 'stock' && unsettled.has(i.sku)).length;
       if (fresh.length) outcomes.push(...(await this.perform(swap, fresh, choice, extra)));
     }
 
@@ -312,6 +328,7 @@ export class SwapDiagnosticsService {
         data: { state: o.state, choice, decidedBy: userId, decidedAt: now, error: o.error ?? null },
       });
       if (o.state === 'failed') tally.failed++;
+      else if (o.state === 'fixed' && o.error) tally.closed++;
       else tally.applied++;
     }
     const done = outcomes.filter((o) => o.state !== 'failed');
@@ -558,7 +575,12 @@ export class SwapDiagnosticsService {
 
   /** The issues these SKUs have right now, re-read from both sides, by key. */
   /** `withStock`: stock issues among them, re-read from Square's sales as they are now. */
-  private async recheck(swap: Swap, skus: string[], withStock = false, withSold = false): Promise<Map<string, FoundIssue>> {
+  /**
+   * `unsettled`: with `withStock`, the SKUs whose stock couldn't be judged just
+   * now (it moved in the last couple of minutes, or couldn't be read), so a
+   * stock issue missing for them is unknown rather than gone.
+   */
+  private async recheck(swap: Swap, skus: string[], withStock = false, withSold = false): Promise<{ found: Map<string, FoundIssue>; unsettled: Set<string> }> {
     const pos = await this.posOrThrow(swap);
     const square = await pos.itemsBySku(swap.squareCategoryId, skus);
     const { ours, deleted, pickedUp } = await this.ourItems(swap.id, skus);
@@ -568,7 +590,29 @@ export class SwapDiagnosticsService {
       ours, deleted, pickedUp, square, elsewhere, categoryNames,
       stock: withStock ? read?.stock : undefined, soldOf: read?.soldOf, onlySkus: new Set(skus),
     });
-    return new Map(found.map((i) => [issueKey(i), i]));
+    const unsettled = new Set(withStock
+      ? ours.filter((o) => o.squareVariationId && !read?.stock?.has(o.sku)).map((o) => o.sku)
+      : []);
+    return { found: new Map(found.map((i) => [issueKey(i), i])), unsettled };
+  }
+
+  /** Why issues on these tickets went away since the run: picked up, or deleted. */
+  private async goneBecause(swap: Swap, skus: string[]): Promise<Map<string, string>> {
+    const rows = await this.prisma.swapItem.findMany({
+      where: { swapId: swap.id, sku: { in: skus } },
+      select: { sku: true, pickedUpAt: true, deletedAt: true },
+    });
+    const zone = swap.timeZone && isTimeZone(swap.timeZone) ? swap.timeZone : DEFAULT_SWAP_TIME_ZONE;
+    // A plain space before AM/PM: some ICU versions put a narrow no-break one.
+    const at = (d: Date) => d.toLocaleTimeString('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).replace(/[\u202f\u00a0]/g, ' ');
+    const out = new Map<string, string>();
+    // The ticket's live item says why; an old deleted one only when there's no live one.
+    const live = new Set(rows.filter((r) => !r.deletedAt).map((r) => r.sku));
+    for (const r of rows) {
+      if (!r.deletedAt && r.pickedUpAt) out.set(r.sku, `picked up at ${at(r.pickedUpAt)}`);
+      else if (r.deletedAt && !live.has(r.sku)) out.set(r.sku, `deleted at ${at(r.deletedAt)}`);
+    }
+    return out;
   }
 
   /**
@@ -706,7 +750,7 @@ export class SwapDiagnosticsService {
   private async swapOrThrow(orgId: string, swapId: string): Promise<Swap> {
     const swap = await this.prisma.skiSwap.findFirst({
       where: { id: swapId, orgId },
-      select: { id: true, orgId: true, title: true, squareCategoryId: true, locationId: true },
+      select: { id: true, orgId: true, title: true, squareCategoryId: true, locationId: true, timeZone: true },
     });
     if (!swap) throw new NotFoundException('Swap not found');
     return swap;

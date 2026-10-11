@@ -183,6 +183,7 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
       setResult([
         `${r.applied.toLocaleString('en-US')} done`,
         r.held ? `${r.held} left for their open sales in Sales check` : null,
+        r.closed ? `${r.closed} no longer applied (picked up, deleted, or already fixed)` : null,
         r.skipped ? `${r.skipped} changed since the check ran (run it again to see them)` : null,
         r.sold ? `${r.sold} left flagged: sold, so Square’s price wasn’t changed` : null,
         r.failed ? `${r.failed} failed (see the rows)` : null,
