@@ -160,9 +160,9 @@ describe('a ticket scanned twice in one sale', () => {
 });
 
 describe('the receipt number', () => {
-  it('is on each sale’s Square side, to look it up on the POS', () => {
-    const twice = issue({ kind: 'scanned_twice', receipt: 'Gq00', rungUpAs: { name: 'Swap Item 73475', sku: '73475', variationId: 'v', itemId: 'i', category: '2025', archived: true } });
-    expect(squareSide(twice).fields.find((f) => f.label === 'Receipt')).toEqual({ label: 'Receipt', value: '#Gq00', mono: true });
+  it('is on each sale’s Square side, to look it up on the POS, and links to the sale in Square', () => {
+    const twice = issue({ kind: 'scanned_twice', receipt: 'Gq00', links: { sale: 'https://sq/Gq00', item: null }, rungUpAs: { name: 'Swap Item 73475', sku: '73475', variationId: 'v', itemId: 'i', category: '2025', archived: true } });
+    expect(squareSide(twice).fields.find((f) => f.label === 'Receipt')).toEqual({ label: 'Receipt', value: '#Gq00', mono: true, href: 'https://sq/Gq00' });
     const fee = issue({ kind: 'double_fee', receipt: 'Ab12', fee: { shopFeeName: 'Shop Fee', shopFeeCents: 767, surchargeCents: 787, cardCents: 31054, cashCents: 0, refundCents: 767 } });
     expect(squareSide(fee).fields[0]).toEqual({ label: 'Receipt', value: '#Ab12', mono: true });
     expect(squareSide(issue({})).fields.some((f) => f.label === 'Receipt')).toBe(false);
@@ -185,6 +185,7 @@ describe('a ticket rung up more times than it has units', () => {
     ]));
     expect(side.title).toBe('Rung up in one sale');
     expect(side.fields.map((f) => [f.label, f.value]).filter(([l]) => l !== 'When')).toEqual([['Receipt', '#WErn'], ['Line 1', '$10.00'], ['Line 2', '$20.00']]);
+    expect(side.fields[0].href).toBe('https://sq/WE');
     expect(side.links).toEqual([{ label: 'Refund in Square', href: 'https://sq/WE' }]);
   });
 
@@ -195,6 +196,7 @@ describe('a ticket rung up more times than it has units', () => {
     ]));
     expect(side.title).toBe('Sold in different sales');
     expect(side.fields.map((f) => f.label)).toEqual(['#8pWs', '#mYLC']);
+    expect(side.fields.map((f) => f.labelHref)).toEqual(['https://sq/l5', 'https://sq/3A']);
     expect(side.links.map((l) => l.label)).toEqual(['Sale #8pWs', 'Sale #mYLC']);
   });
 

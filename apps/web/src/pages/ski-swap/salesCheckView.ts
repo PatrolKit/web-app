@@ -110,6 +110,10 @@ export interface Field {
   tag?: string;
   /** Worth a second look, such as a price that differs from what Square charged. */
   warn?: boolean;
+  /** The value links here, e.g. a receipt to its sale in Square. */
+  href?: string;
+  /** The label links here instead, where the label is the receipt. */
+  labelHref?: string;
 }
 
 /** `href` leaves for Square; `to` stays in PatrolKit. */
@@ -130,7 +134,7 @@ export function squareSide(i: SalesCheckIssue): Side {
     return {
       title: 'Sale in Square',
       fields: [
-        ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true }] : []),
+        ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true, ...(i.links.sale ? { href: i.links.sale } : {}) }] : []),
         { label: 'Paid', value: paid || '—' },
         { label: i.fee.shopFeeName, value: money(i.fee.shopFeeCents) },
         ...(i.fee.surchargeCents !== null ? [{ label: 'Surcharge', value: money(i.fee.surchargeCents) }] : []),
@@ -154,7 +158,7 @@ export function squareSide(i: SalesCheckIssue): Side {
       { label: 'SKU', value: r?.sku || '—', mono: true },
       { label: 'Name', value: i.kind === 'custom_amount' ? 'Custom amount' : r?.name ?? '—', ...(tag ? { tag } : {}) },
       { label: 'Sold for', value: `${money(i.collectedCents)}${each}${refunded}` },
-      ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true }] : []),
+      ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true, ...(i.links.sale ? { href: i.links.sale } : {}) }] : []),
     ],
     links,
   };
@@ -279,13 +283,16 @@ type Repeat = NonNullable<SalesCheckIssue['oversold']>;
 function repeatSales(kind: SalesCheckIssue['kind'], o: Repeat): Side {
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const one = kind === 'scanned_twice';
-  const fields = o.sales.map((s, n) => ({
+  const fields: Field[] = o.sales.map((s, n) => ({
     label: one ? `Line ${n + 1}` : s.receipt ? `#${s.receipt}` : `Sale ${n + 1}`,
     value: `${money(s.collectedCents)}${s.quantity > 1 ? ` (×${s.quantity})` : ''}${one ? '' : ` · ${when(s.soldAt)}`}`,
     warn: true,
+    ...(!one && s.receipt && s.link ? { labelHref: s.link } : {}),
   }));
   const first = o.sales[0];
-  const head = one && first ? [{ label: 'Receipt', value: first.receipt ? `#${first.receipt}` : '—', mono: true }, { label: 'When', value: when(first.soldAt) }] : [];
+  const head: Field[] = one && first
+    ? [{ label: 'Receipt', value: first.receipt ? `#${first.receipt}` : '—', mono: true, ...(first.receipt && first.link ? { href: first.link } : {}) }, { label: 'When', value: when(first.soldAt) }]
+    : [];
   // One link per sale (one, for a sale that rang it up twice).
   const seen = new Set<string>();
   const links: SideLink[] = [];

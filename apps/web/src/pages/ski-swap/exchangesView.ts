@@ -52,7 +52,7 @@ export function comingBackSide(line: ExchangeLookupLine): Side {
       { label: 'Item', value: line.item.name },
       { label: 'Seller', value: line.item.sellerName ?? '—' },
       { label: 'Price', value: priceOf(line.item.priceCents) },
-      ...(line.receipt ? [{ label: 'Receipt', value: `#${line.receipt}`, mono: true }] : []),
+      ...(line.receipt ? [{ label: 'Receipt', value: `#${line.receipt}`, mono: true, ...(line.links.sale ? { href: line.links.sale } : {}) }] : []),
       { label: 'Sold', value: `${when(line.soldAt)} · paid ${money(line.collectedCents)}` },
     ],
     links: line.links.sale ? [{ label: 'Sale in Square', href: line.links.sale }] : [],

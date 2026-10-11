@@ -165,9 +165,15 @@ export function SidePanel({ side, icon, className = '', action }: { side: Side; 
         <dl className="grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-0.5 text-sm">
           {side.fields.map((f) => (
             <Fragment key={f.label}>
-              <dt className="text-xs text-gray-500 pt-0.5">{f.label}</dt>
+              <dt className="text-xs text-gray-500 pt-0.5">
+                {f.labelHref
+                  ? <a href={f.labelHref} target="_blank" rel="noreferrer" className="font-mono text-brand-500 hover:underline" title="Open this sale in Square">{f.label} ↗</a>
+                  : f.label}
+              </dt>
               <dd className={`min-w-0 break-words ${f.mono ? 'font-mono' : ''} ${f.warn ? 'text-amber-400' : 'text-gray-200'}`}>
-                {f.value}
+                {f.href
+                  ? <a href={f.href} target="_blank" rel="noreferrer" className="text-brand-500 hover:underline" title="Open this sale in Square">{f.value} ↗</a>
+                  : f.value}
                 {f.tag && <span className="ml-1.5 inline-block whitespace-nowrap text-[11px] bg-amber-900/40 text-amber-300 rounded px-1.5 py-px font-sans">{f.tag}</span>}
               </dd>
             </Fragment>
