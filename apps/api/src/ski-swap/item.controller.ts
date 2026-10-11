@@ -286,10 +286,14 @@ export class ItemController {
     return this.pickups.pickUpBySku(orgId, swapId, body.sku, { type: 'user', id: user.userId }, { sellerId: body.sellerId });
   }
 
-  /** A locked session's list (D5): the seller's items still out. */
+  /**
+   * A locked session's list (D5): the seller's items still out, unsold, read
+   * from Square here. Staff on the web, and the staff check-in iPad's End-of-Swap
+   * Pickup screen (iOS Plan 37), which holds no stock of its own: `units` is
+   * this answer's own field, so the device interceptor leaves it.
+   */
   @Get('awaiting-pickup')
   @RequirePermissions('ski_swap:manage')
-  @NoDeviceAccess()
   awaitingPickup(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @Query('sellerId') sellerId?: string) {
     if (!sellerId) throw new BadRequestException('sellerId is required');
     return this.pickups.awaitingPickup(orgId, swapId, sellerId);

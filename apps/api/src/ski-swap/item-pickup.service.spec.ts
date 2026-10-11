@@ -1,3 +1,8 @@
+import { lastValueFrom, of } from 'rxjs';
+import { Reflector } from '@nestjs/core';
+import { DEVICE_ROLES_KEY } from '../common/decorators/require-device-role.decorator';
+import { DeviceStockInterceptor, deviceRequest } from './device-stock.interceptor';
+import { ItemController } from './item.controller';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemPickupService, type PickupActor } from './item-pickup.service';
 
@@ -195,5 +200,26 @@ describe('a locked session’s list (Plan 43 D5)', () => {
     expect(squareChecked).toBe(true);
     // 67170 sold; 67171 Square couldn't count, so it's still listed.
     expect(items.map((i) => i.sku)).toEqual(['67169', '67171']);
+  });
+
+  it('reads Square for the check-in iPad too, and the device interceptor keeps units (iOS Plan 37)', async () => {
+    const t = harness([item(), item({ id: 'i2', sku: '67170', squareVariationId: 'sv-2' })], { stock: new Map([['sv-1', 1], ['sv-2', 0]]) });
+    const answer = await deviceRequest.run(true, () => t.service.awaitingPickup('org', 'swap', 's1'));
+    expect(answer.squareChecked).toBe(true);
+    expect(answer.items.map((i) => i.sku)).toEqual(['67169']);
+    const interceptor = new DeviceStockInterceptor();
+    const ctx = { switchToHttp: () => ({ getRequest: () => ({ device: { deviceId: 'ipad' } }) }) } as never;
+    const sent = await lastValueFrom(interceptor.intercept(ctx, { handle: () => of(answer) }));
+    // Unchanged: no stock fields to strip, and `units` (Square's count, read on the server) kept.
+    expect(sent).toEqual(answer);
+    expect((sent as typeof answer).items[0].units).toBe(1);
+  });
+});
+
+describe('the awaiting-pickup route (iOS Plan 37)', () => {
+  it('lets a staff check-in iPad in, as the pickup route does', () => {
+    const reflector = new Reflector();
+    expect(reflector.getAllAndOverride(DEVICE_ROLES_KEY, [ItemController.prototype.awaitingPickup, ItemController])).toEqual(['ski_swap.staff_check_in']);
+    expect(reflector.getAllAndOverride(DEVICE_ROLES_KEY, [ItemController.prototype.pickUp, ItemController])).toEqual(['ski_swap.staff_check_in']);
   });
 });
