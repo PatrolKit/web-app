@@ -10,14 +10,18 @@ import { ticketNumberOf } from './legacy-ticket.service';
  * read, and only a person's choice, through the service, changes anything.
  */
 
-export type SalesCheckKind = 'other_copy' | 'register_item' | 'scanned_twice' | 'unknown_ticket' | 'custom_amount' | 'other_item' | 'oversold' | 'double_fee' | 'cash_fee';
+export type SalesCheckKind = 'other_copy' | 'register_item' | 'scanned_twice' | 'unknown_ticket' | 'custom_amount' | 'other_item' | 'oversold' | 'price_paid' | 'double_fee' | 'cash_fee';
 
 /** A decision as attribution needs it: the line, and what it was decided to be. */
 export interface DecisionRef {
   orderId: string;
   lineUid: string;
-  /** FEE_HANDLED: a fee check marked handled; its line (`#fee`) is no sale line. */
-  decision: 'CREDIT' | 'NOT_SWAP' | 'FEE_HANDLED';
+  /**
+   * FEE_HANDLED: a fee check marked handled; its line (`#fee`) is no sale line.
+   * PRICE_KEPT: PatrolKit's price kept on a sale paid at another; its line is
+   * `#price:` and the sale line's, so it never matches a sale line itself.
+   */
+  decision: 'CREDIT' | 'NOT_SWAP' | 'FEE_HANDLED' | 'PRICE_KEPT';
   itemId: string | null;
 }
 

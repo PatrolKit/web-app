@@ -10,6 +10,7 @@ import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
 import { attributeSales, classify, lineKeyOf, netUnits, salesHolds, type CheckItem, type DecisionRef, type ExchangeRef, type SalesHolds } from './sales-check';
 import { squareItemUrl, squareSaleUrl } from './square-links';
 import { FEE_LINE, feeCheck, feeKeyOf } from './fee-check';
+import { PRICE_LINE as PRICE_PREFIX, paidPriceCheck, priceKeyOf, priceLineOf } from './paid-price-check';
 import type {
   SalesCheckCount, SalesCheckDecided, SalesCheckIssue, SalesCheckOutcome, SalesCheckResponse,
 } from '../contracts/sales-check.contracts';
@@ -86,6 +87,21 @@ export class SalesCheckService {
       });
     }
 
+    // The paid-price check: a sale of ours at another price than PatrolKit's.
+    for (const p of this.paidPrices(read)) {
+      issues.push({
+        key: p.key, kind: 'price_paid', orderId: p.orderId, lineUid: p.lineUid, soldAt: p.soldAt.toISOString(),
+        quantity: p.quantity, refundedQuantity: p.refundedQuantity, collectedCents: p.collectedCents, unitPriceCents: p.rungCents,
+        rungUpAs: null, suggestion: null, ticket: null, categoryIds: [],
+        links: { sale: squareSaleUrl(env, p.orderId, p.paymentId), item: null },
+        receipt: receiptOf(p.paymentId),
+        paid: {
+          itemId: p.item.id, sku: p.item.sku, name: p.item.name, sellerName: p.item.sellerName, sellerId: p.item.sellerId,
+          priceCents: p.item.priceCents, rungCents: p.rungCents, paidCents: p.paidCents,
+        },
+      });
+    }
+
     const byId = new Map(items.map((i) => [i.id, i]));
     const names = await this.userNames(decisions.map((d) => d.decidedBy));
     const decided: SalesCheckDecided[] = decisions.map((d) => {
@@ -96,7 +112,7 @@ export class SalesCheckService {
         item: item ? { id: item.id, sku: item.sku, name: item.name } : null,
         note: d.note, markedSold: d.markedSold, decidedBy: d.decidedBy ? names.get(d.decidedBy) ?? null : null,
         decidedAt: d.decidedAt.toISOString(),
-        links: { sale: squareSaleUrl(env, d.orderId, paymentOf.get(lineKeyOf(d.orderId, d.lineUid)) ?? null) },
+        links: { sale: squareSaleUrl(env, d.orderId, paymentOf.get(lineKeyOf(d.orderId, d.lineUid.replace(PRICE_PREFIX, ''))) ?? null) },
       };
     });
 
@@ -230,6 +246,63 @@ export class SalesCheckService {
       }
       await this.audit(orgId, userId, 'ski_swap.sales_check.fee_handled', { swapId, orderId: body.orderId, kind: issue.kind, refundCents: issue.refundCents });
       return { key: feeKey, ok: true };
+    });
+  }
+
+  /**
+   * A sale paid at another price than PatrolKit's: PatrolKit's price kept, so
+   * the seller is still paid it. It leaves the list; undone like any decision.
+   */
+  async keepPrice(orgId: string, swapId: string, body: Line, userId: string, key?: string): Promise<SalesCheckOutcome> {
+    return this.once(orgId, swapId, 'price-kept', key, async () => {
+      const read = await this.read(orgId, swapId);
+      if ('error' in read) throw new BadRequestException(read.error);
+      const outKey = priceKeyOf(body.orderId, body.lineUid);
+      const issue = this.paidPrices(read).find((p) => p.key === outKey);
+      if (!issue) return { key: outKey, ok: false, error: 'That sale isn’t waiting any more: its price now matches, or it was already decided.' };
+      if (priceLineOf(body.lineUid).length > 64) return { key: outKey, ok: false, error: 'Square’s line for that sale is too long to note. Set the price instead.' };
+      try {
+        await this.prisma.swapSaleDecision.create({
+          data: {
+            swapId, orgId, orderId: body.orderId, lineUid: priceLineOf(body.lineUid), decision: 'PRICE_KEPT', itemId: issue.item.id,
+            collectedCents: issue.collectedCents, variationId: issue.item.squareVariationId, note: null, decidedBy: userId, liveKey: outKey,
+          },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return { key: outKey, ok: false, error: 'That sale was already decided.' };
+        throw err;
+      }
+      await this.audit(orgId, userId, 'ski_swap.sales_check.price_kept', {
+        swapId, orderId: body.orderId, lineUid: body.lineUid, itemId: issue.item.id, sku: issue.item.sku, priceCents: issue.item.priceCents, paidCents: issue.paidCents,
+      });
+      return { key: outKey, ok: true };
+    });
+  }
+
+  /**
+   * A sale paid at another price than PatrolKit's, and the price paid was
+   * right: PatrolKit's price becomes it, so the seller is paid that. PatrolKit
+   * only, as Catalog check's for a sold item: Square's stays as it sold.
+   * Straight to the item; `updatedAt` moves, so the iPads get it.
+   */
+  async priceFromSale(orgId: string, swapId: string, body: Line, userId: string, key?: string): Promise<SalesCheckOutcome> {
+    return this.once(orgId, swapId, 'price-from-sale', key, async () => {
+      const read = await this.read(orgId, swapId);
+      if ('error' in read) throw new BadRequestException(read.error);
+      const outKey = priceKeyOf(body.orderId, body.lineUid);
+      const issue = this.paidPrices(read).find((p) => p.key === outKey);
+      if (!issue) return { key: outKey, ok: false, error: 'That sale isn’t waiting any more: its price now matches, or it was already decided.' };
+      if (issue.paidCents <= 0) return { key: outKey, ok: false, error: 'Nothing was paid for it, so that can’t be its price.' };
+      const done = await this.prisma.swapItem.updateMany({
+        where: { id: issue.item.id, swapId, deletedAt: null, priceCents: issue.item.priceCents },
+        data: { priceCents: issue.paidCents },
+      });
+      if (done.count === 0) return { key: outKey, ok: false, error: `${issue.item.sku}’s price changed meanwhile. Reload and check it.` };
+      await this.audit(orgId, userId, 'ski_swap.sales_check.priced_from_sale', {
+        swapId, orderId: body.orderId, lineUid: body.lineUid, itemId: issue.item.id, sku: issue.item.sku, from: issue.item.priceCents, to: issue.paidCents,
+      });
+      this.breakdown.forgetSales(swapId);
+      return { key: outKey, ok: true, pricedCents: issue.paidCents };
     });
   }
 
@@ -382,6 +455,15 @@ export class SalesCheckService {
       ourVariations: new Set(read.items.map((i) => i.squareVariationId).filter((v): v is string => !!v)),
       variationOfItem: new Map(read.items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!])),
     };
+  }
+
+  /** Sales of ours paid at another price than PatrolKit's, as every reader counts sales. */
+  private paidPrices(read: { lines: PosSaleLine[]; items: CheckItem[]; decisions: { orderId: string; lineUid: string; decision: string; itemId: string | null }[]; exchanges: ExchangeRef[] }) {
+    const ourVariations = new Set(read.items.map((i) => i.squareVariationId).filter((v): v is string => !!v));
+    const variationOfItem = new Map(read.items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
+    const kept = new Set(read.decisions.filter((d) => d.decision === 'PRICE_KEPT').map((d) => lineKeyOf(d.orderId, d.lineUid)));
+    const lines = attributeSales(read.lines, read.decisions.map(toRef), read.exchanges, ourVariations, variationOfItem);
+    return paidPriceCheck(lines, read.items, kept);
   }
 
   /** A choice made once per `Idempotency-Key`: a retry answers as the first did. */

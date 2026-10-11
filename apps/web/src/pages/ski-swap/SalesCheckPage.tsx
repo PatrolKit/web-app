@@ -8,7 +8,7 @@ import type { SkiSwapContext } from './SkiSwapLayout';
 import { BusyBanner, FoldHeader, NoteBox, SidePanel, Tombstone, useFolds } from './ReportCard';
 import { centsOf } from './swapDiagnosticsView';
 import {
-  acceptedText, byCategory, groupsOf, missedFeesText, money, patrolKitSide, squarePriceOf, squareSide, suggestedLines, withDecided, type CategoryGroup, type SalesCheckGroup,
+  acceptedText, byCategory, groupsOf, missedFeesText, money, paidPriceButtons, paidPriceDoneText, patrolKitSide, squarePriceOf, squareSide, suggestedLines, withDecided, type CategoryGroup, type SalesCheckGroup,
 } from './salesCheckView';
 
 const key = (orgId: string, swapId: string) => ['ski-swap/sales-check', orgId, swapId];
@@ -329,8 +329,13 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
     onMutate: () => setRefused(null),
     onSuccess: (r) => settle(r, `Marked refunded: ${money(issue.fee?.refundCents ?? issue.collectedCents)} ${issue.fee?.shopFeeName ?? 'fee'}.`),
   });
-  const busy = credit.isPending || notSwap.isPending || issue_.isPending || feeHandled.isPending;
-  const failed = credit.error ?? notSwap.error ?? issue_.error ?? feeHandled.error;
+  const paidPrice = useMutation({
+    mutationFn: (choice: 'keep' | 'use') => choice === 'keep' ? api.skiSwap.keepSalePrice(orgId, swapId, line) : api.skiSwap.priceFromSale(orgId, swapId, line),
+    onMutate: () => setRefused(null),
+    onSuccess: (r, choice) => settle(r, paidPriceDoneText(issue.paid!, choice)),
+  });
+  const busy = credit.isPending || notSwap.isPending || issue_.isPending || feeHandled.isPending || paidPrice.isPending;
+  const failed = credit.error ?? notSwap.error ?? issue_.error ?? feeHandled.error ?? paidPrice.error;
   const err = refused ?? (failed ? errorText(failed) : null);
   const when = new Date(issue.soldAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -354,7 +359,18 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
             Mark refunded…
           </button>
         )}
-        {canFix && !issue.oversold && !issue.fee && (
+        {canFix && issue.paid && (
+          <>
+            <button type="button" className={btn} disabled={busy} onClick={() => paidPrice.mutate('keep')}>
+              {paidPriceButtons(issue.paid).keep}
+            </button>
+            <button type="button" className={primary} disabled={busy}
+              onClick={() => { if (window.confirm(`Set ${issue.paid!.sku}’s PatrolKit price from ${money(issue.paid!.priceCents)} to ${money(issue.paid!.paidCents)}? The seller is paid that. Square’s price is left as it sold.`)) paidPrice.mutate('use'); }}>
+              {paidPrice.isPending ? 'Setting…' : paidPriceButtons(issue.paid).use}
+            </button>
+          </>
+        )}
+        {canFix && !issue.oversold && !issue.fee && !issue.paid && (
           <>
             <button type="button" className={btn} disabled={busy}
               onClick={() => { const note = window.prompt('Not a swap sale. A note, if you like (e.g. “swag”):', ''); if (note !== null) notSwap.mutate(note.trim() || undefined); }}>
@@ -451,6 +467,7 @@ function Decided({ d, orgId, swapId, canFix, onUndone }: {
       <span className="text-gray-200">
         {d.decision === 'CREDIT' ? `${money(d.collectedCents)} sale put on ${d.item ? `${d.item.sku} ${d.item.name}` : 'an item'}`
           : d.decision === 'FEE_HANDLED' ? `${money(d.collectedCents)} fee marked refunded`
+            : d.decision === 'PRICE_KEPT' ? `PatrolKit price kept on ${d.item ? `${d.item.sku} ${d.item.name}` : 'an item'}, sold for ${money(d.collectedCents)}`
             : `Not a swap sale (${money(d.collectedCents)})`}
       </span>
       {d.note && <span>“{d.note}”</span>}

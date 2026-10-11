@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedText, byCategory, groupsOf, missedFeesText, squarePriceOf, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
+import { acceptedText, byCategory, groupsOf, missedFeesText, paidPriceButtons, paidPriceDoneText, squarePriceOf, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
 import type { SalesCheckIssue } from '../../lib/api.types';
 
 const issue = (over: Partial<SalesCheckIssue>): SalesCheckIssue => ({
@@ -96,6 +96,33 @@ describe('sales decided on the page', () => {
   it('says where the sale went', () => {
     expect(acceptedText(a, { sku: '73308', name: 'Item #73308', sellerName: 'Karen Beckwith' }, true))
       .toBe('$10.00 sale put on 73308 Item #73308 · Karen Beckwith · marked sold in Square');
+  });
+});
+
+describe('a sale paid at another price', () => {
+  const paid = { itemId: 'it', sku: '59420', name: 'Poles', sellerName: 'Kevin', sellerId: 's1', priceCents: 600, rungCents: 700, paidCents: 700 };
+  const typed = issue({ key: 'o1:#price:u', kind: 'price_paid', receipt: 'Gq00', links: { sale: 'https://sq/sale', item: null }, collectedCents: 700, unitPriceCents: 700, paid });
+
+  it('is its own group, sorted by its ticket', () => {
+    expect(groupsOf([typed]).map((g) => g.title)).toEqual(['Sold for a different price']);
+  });
+
+  it('shows what was paid against PatrolKit’s price, and that the seller is paid PatrolKit’s', () => {
+    expect(squareSide(typed).fields.map((f) => [f.label, f.value, f.warn ?? false])).toEqual([['Receipt', '#Gq00', false], ['Paid', '$7.00', true]]);
+    expect(patrolKitSide(typed).fields.map((f) => [f.label, f.value, f.tag ?? null])).toEqual([
+      ['SKU', '59420', null], ['Name', 'Poles', null], ['Seller', 'Kevin', null], ['Price', '$6.00', 'the seller is paid this'],
+    ]);
+  });
+
+  it('says when it was a discount', () => {
+    const off = { ...typed, paid: { ...paid, priceCents: 4000, rungCents: 4000, paidCents: 3600 } };
+    expect(squareSide(off).fields.map((f) => [f.label, f.value, f.tag ?? null])).toEqual([['Receipt', '#Gq00', null], ['Rung up at', '$40.00', null], ['Paid', '$36.00', 'after a discount']]);
+  });
+
+  it('names each button with its price, and says what was done', () => {
+    expect(paidPriceButtons(paid)).toEqual({ keep: 'Keep PatrolKit price ($6.00)', use: 'Set PatrolKit price to $7.00' });
+    expect(paidPriceDoneText(paid, 'keep')).toBe('Kept PatrolKit’s price for 59420: $6.00, though it sold for $7.00.');
+    expect(paidPriceDoneText(paid, 'use')).toBe('Set 59420’s PatrolKit price to $7.00, what it sold for; Square’s left as it sold.');
   });
 });
 

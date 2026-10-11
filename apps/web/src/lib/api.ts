@@ -898,6 +898,16 @@ export const api = {
       request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/fee-handled`, {
         method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
       }),
+    /** A sale paid at another price than PatrolKit's: keep PatrolKit's price. */
+    keepSalePrice: (orgId: string, swapId: string, body: { orderId: string; lineUid: string }) =>
+      request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/price-kept`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
+      }),
+    /** A sale paid at another price than PatrolKit's: PatrolKit's price set to what was paid (PatrolKit only). */
+    priceFromSale: (orgId: string, swapId: string, body: { orderId: string; lineUid: string }) =>
+      request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/price-from-sale`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
+      }),
     creditSale: (orgId: string, swapId: string, body: { orderId: string; lineUid: string; itemId: string; markSold: boolean; priceCents?: number; replacePrice?: boolean }) =>
       request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/credit`, {
         method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },

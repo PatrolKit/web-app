@@ -7,7 +7,7 @@ import { createZodDto } from 'nestjs-zod';
  * decision below is a person's choice, made by an admin.
  */
 
-export const SALES_CHECK_KINDS = ['other_copy', 'register_item', 'scanned_twice', 'unknown_ticket', 'custom_amount', 'other_item', 'oversold', 'double_fee', 'cash_fee'] as const;
+export const SALES_CHECK_KINDS = ['other_copy', 'register_item', 'scanned_twice', 'unknown_ticket', 'custom_amount', 'other_item', 'oversold', 'price_paid', 'double_fee', 'cash_fee'] as const;
 export type SalesCheckKind = (typeof SALES_CHECK_KINDS)[number];
 
 const line = { orderId: z.string().min(1).max(64), lineUid: z.string().min(1).max(64) };
@@ -30,6 +30,10 @@ export class NotSwapSaleDto extends createZodDto(NotSwapSaleSchema) {}
 /** A fee check refunded some way Square doesn't show (Plan 48 fee check). */
 export const FeeHandledSchema = z.object({ orderId: z.string().min(1).max(64) }).strict();
 export class FeeHandledDto extends createZodDto(FeeHandledSchema) {}
+
+/** A sale of one of our items paid at another price than PatrolKit's: the line it was. */
+export const PaidPriceSchema = z.object(line).strict();
+export class PaidPriceDto extends createZodDto(PaidPriceSchema) {}
 
 export const IgnoreCategorySchema = z.object({ categoryId: z.string().min(1).max(64), ignore: z.boolean() }).strict();
 export class IgnoreCategoryDto extends createZodDto(IgnoreCategorySchema) {}
@@ -94,12 +98,26 @@ export interface SalesCheckIssue {
     cashCents: number;
     refundCents: number;
   };
+  /**
+   * price_paid: a sale of one of our items paid at another price than
+   * PatrolKit's, which is what the seller is paid. `key` is `order:#price:line`;
+   * `lineUid` is the sale line's own.
+   */
+  paid?: {
+    itemId: string; sku: string; name: string; sellerName: string | null; sellerId: string | null;
+    /** PatrolKit's price: what the seller is paid. */
+    priceCents: number;
+    /** One unit as rung up, before discounts. */
+    rungCents: number | null;
+    /** One unit as paid, after discounts. */
+    paidCents: number;
+  };
 }
 
 export interface SalesCheckDecided {
   id: string;
   key: string;
-  decision: 'CREDIT' | 'NOT_SWAP' | 'FEE_HANDLED';
+  decision: 'CREDIT' | 'NOT_SWAP' | 'FEE_HANDLED' | 'PRICE_KEPT';
   orderId: string;
   lineUid: string;
   collectedCents: number;

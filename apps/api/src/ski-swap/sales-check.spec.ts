@@ -166,8 +166,8 @@ function harness(opts: { lines: PosSaleLine[]; items: CheckItem[]; stock?: Recor
         const i = opts.items.find((x) => x.sku === where.sku && !x.deleted);
         return i ? { id: i.id } : null;
       },
-      updateMany: async ({ where, data }: { where: { id: string; priceCents?: null }; data: { priceCents: number } }) => {
-        const i = opts.items.find((x) => x.id === where.id && (where.priceCents !== null || x.priceCents === null));
+      updateMany: async ({ where, data }: { where: { id: string; priceCents?: number | null }; data: { priceCents: number } }) => {
+        const i = opts.items.find((x) => x.id === where.id && (where.priceCents === undefined || x.priceCents === where.priceCents));
         if (i) i.priceCents = data.priceCents;
         return { count: i ? 1 : 0 };
       },
@@ -308,7 +308,7 @@ describe('the Sales check routes (D1, D13)', () => {
 
   it('make every change a POST that needs an admin', () => {
     const changes = handlers.filter((n) => n !== 'list' && n !== 'count');
-    expect(changes.sort()).toEqual(['credit', 'creditSuggested', 'feeHandled', 'ignoreCategory', 'issueAndCredit', 'notSwap', 'restock', 'undo']);
+    expect(changes.sort()).toEqual(['credit', 'creditSuggested', 'feeHandled', 'ignoreCategory', 'issueAndCredit', 'notSwap', 'priceFromSale', 'priceKept', 'restock', 'undo']);
     for (const name of changes) {
       expect(Reflect.getMetadata(METHOD_METADATA, SalesCheckController.prototype[name])).toBe(RequestMethod.POST);
       expect(reflector.get(PERMISSIONS_KEY, SalesCheckController.prototype[name])).toEqual(['ski_swap:admin']);
@@ -369,6 +369,70 @@ describe('the fee check in Sales check', () => {
     await expect(h.service.feeHandled('org', 'swap', { orderId: 'f1' }, 'staff')).resolves.toMatchObject({ ok: false });
     await h.service.undo('org', 'swap', 'd1', 'staff');
     expect((await h.service.list('org', 'swap')).issues.map((i) => i.key)).toEqual(['f1:#fee']);
+  });
+});
+
+describe('a sale paid at another price than PatrolKit’s', () => {
+  // 59420: PatrolKit says $6, and the clerk typed $7 at the register.
+  const typed = () => harness({ items: [item('59420', { priceCents: 600 })], lines: [line('o1', 'v-59420', { collectedCents: 700, unitPriceCents: 700 })] });
+
+  it('is flagged with both prices, linked, without writing', async () => {
+    const h = typed();
+    const res = await h.readOnlyService.list('org', 'swap');
+    expect(res.issues).toEqual([expect.objectContaining({
+      key: 'o1:#price:o1-u', kind: 'price_paid', lineUid: 'o1-u', collectedCents: 700, links: expect.objectContaining({ sale: expect.stringContaining('pay-o1') }),
+      paid: { itemId: 'it-59420', sku: '59420', name: 'Item #59420', sellerName: null, sellerId: null, priceCents: 600, rungCents: 700, paidCents: 700 },
+    })]);
+  });
+
+  it('flags a discount, but not a sale at PatrolKit’s price, an unpriced item, a refunded one, or a part refund', async () => {
+    const h = harness({
+      items: [item('1', { priceCents: 4000 }), item('2', { priceCents: 4000 }), item('3'), item('4', { priceCents: 4000 }), item('5', { priceCents: 2000, originalQuantity: 2 })],
+      lines: [
+        line('a', 'v-1', { collectedCents: 3600 }),                       // 10% off at the register
+        line('b', 'v-2'),
+        line('c', 'v-3', { collectedCents: 700, unitPriceCents: 700 }),
+        line('d', 'v-4', { collectedCents: 3000, unitPriceCents: 3000, refundedQuantity: 1 }),
+        line('e', 'v-5', { quantity: 2, collectedCents: 4000, unitPriceCents: 2000, refundedQuantity: 1 }),
+      ],
+    });
+    expect((await h.service.list('org', 'swap')).issues.map((i) => [i.key, i.paid?.rungCents, i.paid?.paidCents])).toEqual([['a:#price:a-u', 4000, 3600]]);
+  });
+
+  it('keeps PatrolKit’s price once, and undoes', async () => {
+    const h = typed();
+    await expect(h.service.keepPrice('org', 'swap', { orderId: 'o1', lineUid: 'o1-u' }, 'staff')).resolves.toEqual({ key: 'o1:#price:o1-u', ok: true });
+    expect(h.decisions[0]).toMatchObject({ decision: 'PRICE_KEPT', lineUid: '#price:o1-u', itemId: 'it-59420', collectedCents: 700, liveKey: 'o1:#price:o1-u' });
+    expect(h.audits).toEqual(['ski_swap.sales_check.price_kept']);
+    const after = await h.service.list('org', 'swap');
+    expect([after.issues, after.decided.map((d) => [d.decision, d.key, d.links.sale])]).toEqual([[], [['PRICE_KEPT', 'o1:#price:o1-u', expect.stringContaining('pay-o1')]]]);
+    await expect(h.service.keepPrice('org', 'swap', { orderId: 'o1', lineUid: 'o1-u' }, 'staff')).resolves.toMatchObject({ ok: false });
+    await h.service.undo('org', 'swap', 'd1', 'staff');
+    expect((await h.service.list('org', 'swap')).issues.map((i) => i.key)).toEqual(['o1:#price:o1-u']);
+  });
+
+  it('keeping a price changes no sale: payouts still pay PatrolKit’s', async () => {
+    const h = typed();
+    await h.service.keepPrice('org', 'swap', { orderId: 'o1', lineUid: 'o1-u' }, 'staff');
+    const { applyDecisions: apply } = await import('./sales-check');
+    const lines = [line('o1', 'v-59420', { collectedCents: 700, unitPriceCents: 700 })];
+    expect(apply(lines, h.decisions.map((d) => d as never), new Set(['v-59420']), new Map())).toEqual(lines);
+  });
+
+  it('sets PatrolKit’s price to what was paid, in PatrolKit only, which clears it', async () => {
+    const h = typed();
+    await expect(h.service.priceFromSale('org', 'swap', { orderId: 'o1', lineUid: 'o1-u' }, 'staff')).resolves.toEqual({ key: 'o1:#price:o1-u', ok: true, pricedCents: 700 });
+    expect(h.patches).toEqual([]);                         // never the item edit, which would write Square
+    expect(h.audits).toEqual(['ski_swap.sales_check.priced_from_sale']);
+    expect((await h.service.list('org', 'swap')).issues).toEqual([]);
+    expect(h.decisions).toEqual([]);
+  });
+
+  it('refuses a price that changed meanwhile, or a sale no longer waiting', async () => {
+    const h = typed();
+    const issue = (await h.service.list('org', 'swap')).issues[0];
+    expect(issue.paid?.priceCents).toBe(600);
+    await expect(h.service.priceFromSale('org', 'swap', { orderId: 'o1', lineUid: 'nope' }, 'staff')).resolves.toMatchObject({ ok: false, error: expect.stringMatching(/isn’t waiting/) });
   });
 });
 

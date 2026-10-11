@@ -44,6 +44,10 @@ const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
     explain: 'The ticket sold in two different sales, but each ticket is one item: one sale was really another ticket, or the first was returned without a refund in Square. Check the receipts and stubs, and note what you find. If an accepted suggestion caused it, undo that below.',
   },
   {
+    kind: 'price_paid', title: 'Sold for a different price',
+    explain: 'Rung up at another price than PatrolKit’s, typed at the register or discounted. The seller is paid PatrolKit’s price, so the difference is the patrol’s. If the price paid was right, set PatrolKit’s price to it and the seller is paid that; if not, keep PatrolKit’s.',
+  },
+  {
     kind: 'unknown_ticket', title: 'A ticket PatrolKit doesn’t have',
     explain: 'The number isn’t one of this swap’s tickets. Find its seller from the stub, then issue it to them: the new item is priced at what Square sold it for, in PatrolKit and Square, and the sale goes on it.',
   },
@@ -63,7 +67,7 @@ export function money(cents: number): string {
 
 /** The SKU an issue is about: the suggested item's, else the ticket's, else what Square rang up. */
 export function skuOf(i: SalesCheckIssue): string | null {
-  return i.suggestion?.sku ?? i.oversold?.sku ?? i.ticket ?? (i.rungUpAs?.sku || null);
+  return i.suggestion?.sku ?? i.oversold?.sku ?? i.paid?.sku ?? i.ticket ?? (i.rungUpAs?.sku || null);
 }
 
 /** By SKU, as numbers read (9001 before 73338); those with none last, by when they sold. */
@@ -148,6 +152,20 @@ export function squareSide(i: SalesCheckIssue): Side {
   if (i.links.sale && !i.receipt) links.push({ label: 'Sale', href: i.links.sale });
   if (i.links.item) links.push({ label: 'Item', href: i.links.item });
 
+  if (i.paid) {
+    const p = i.paid;
+    const discounted = p.rungCents !== null && p.rungCents !== p.paidCents;
+    return {
+      title: 'Sale in Square',
+      fields: [
+        ...(i.receipt ? [{ label: 'Receipt', value: `#${i.receipt}`, mono: true, ...viewInSquare(i.links.sale) }] : []),
+        ...(discounted ? [{ label: 'Rung up at', value: money(p.rungCents!) }] : []),
+        { label: 'Paid', value: `${money(p.paidCents)}${i.quantity > 1 ? ' each' : ''}`, warn: true, ...(discounted ? { tag: 'after a discount' } : {}) },
+      ],
+      links,
+    };
+  }
+
   if (i.oversold) return repeatSales(i.kind, i.oversold);
 
   const r = i.rungUpAs;
@@ -175,6 +193,21 @@ export function patrolKitSide(i: SalesCheckIssue): Side {
       title: 'To refund',
       fields: [{ label: 'Refund', value: `${money(i.fee.refundCents)} (the ${i.fee.shopFeeName})`, warn: true }],
       links: [],
+    };
+  }
+  if (i.paid) {
+    const p = i.paid;
+    const links: SideLink[] = [itemLink(p.sku)];
+    if (p.sellerId) links.push({ label: 'Seller', to: `/dashboard/ski-swap/sellers?edit=${encodeURIComponent(p.sellerId)}` });
+    return {
+      title: 'PatrolKit item',
+      fields: [
+        { label: 'SKU', value: p.sku, mono: true },
+        { label: 'Name', value: p.name },
+        { label: 'Seller', value: p.sellerName ?? '—' },
+        { label: 'Price', value: money(p.priceCents), warn: true, tag: 'the seller is paid this' },
+      ],
+      links,
     };
   }
   if (i.oversold) {
@@ -270,6 +303,16 @@ export function squarePriceOf(i: SalesCheckIssue): number | null {
 }
 
 /** "97 card sales were charged no fee (about $497.97 at 2.6%)." Null when there are none, or fees weren't read. */
+/** A sale paid at another price: what each button sets, and what a tombstone says. */
+export function paidPriceButtons(p: NonNullable<SalesCheckIssue['paid']>) {
+  return { keep: `Keep PatrolKit price (${money(p.priceCents)})`, use: `Set PatrolKit price to ${money(p.paidCents)}` };
+}
+export function paidPriceDoneText(p: NonNullable<SalesCheckIssue['paid']>, choice: 'keep' | 'use'): string {
+  return choice === 'keep'
+    ? `Kept PatrolKit’s price for ${p.sku}: ${money(p.priceCents)}, though it sold for ${money(p.paidCents)}.`
+    : `Set ${p.sku}’s PatrolKit price to ${money(p.paidCents)}, what it sold for; Square’s left as it sold.`;
+}
+
 export function missedFeesText(m: { orders: number; cardCents: number; feeCents: number | null; percentage: string | null } | null): string | null {
   if (!m || m.orders === 0) return null;
   const about = m.feeCents !== null && m.percentage ? ` (about ${money(m.feeCents)} at ${m.percentage}%)` : '';

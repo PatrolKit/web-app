@@ -7,7 +7,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
-  CreditSaleDto, CreditSuggestedDto, FeeHandledDto, IgnoreCategoryDto, IssueAndCreditDto, NotSwapSaleDto,
+  CreditSaleDto, CreditSuggestedDto, FeeHandledDto, IgnoreCategoryDto, IssueAndCreditDto, NotSwapSaleDto, PaidPriceDto,
 } from '../contracts/sales-check.contracts';
 import { SalesCheckService } from './sales-check.service';
 
@@ -69,6 +69,26 @@ export class SalesCheckController {
     @CurrentUser() user: AuthenticatedUser, @Headers('idempotency-key') key?: string,
   ) {
     return this.salesCheck.feeHandled(orgId, swapId, body, user.userId, key);
+  }
+
+  /** A sale paid at another price: PatrolKit's price kept, so the seller is paid it. */
+  @Post('price-kept')
+  @RequirePermissions('ski_swap:admin')
+  priceKept(
+    @Param('orgId') orgId: string, @Param('swapId') swapId: string, @Body() body: PaidPriceDto,
+    @CurrentUser() user: AuthenticatedUser, @Headers('idempotency-key') key?: string,
+  ) {
+    return this.salesCheck.keepPrice(orgId, swapId, body, user.userId, key);
+  }
+
+  /** A sale paid at another price: PatrolKit's price set to what was paid, in PatrolKit only. */
+  @Post('price-from-sale')
+  @RequirePermissions('ski_swap:admin')
+  priceFromSale(
+    @Param('orgId') orgId: string, @Param('swapId') swapId: string, @Body() body: PaidPriceDto,
+    @CurrentUser() user: AuthenticatedUser, @Headers('idempotency-key') key?: string,
+  ) {
+    return this.salesCheck.priceFromSale(orgId, swapId, body, user.userId, key);
   }
 
   @Post('undo/:decisionId')
