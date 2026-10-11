@@ -172,7 +172,7 @@ SwapExchange
 
 **Who sees what:** anyone with `ski_swap:report` sees the list. Only an admin sees "Record an exchange", the note's **Edit**, **Cancel…** and **Retry**.
 
-**Items page:** for an admin, a sold item's row gets **Exchange…**, which opens the tab with that ticket filled in.
+**Items page:** nothing. (A sold item's row had **Exchange…** at first; it was removed on 2026-10-11. A link to `exchanges?ticket=…` still opens the popup on that ticket.)
 
 **Dashboard:** no change on the page; its numbers follow `attributeSales`.
 

@@ -122,8 +122,6 @@ export interface SwapItemsPanelProps {
   actions?: MenuAction[];
   /** A line at the end of the toolbar, for a page that has nothing to add. */
   toolbarNote?: ReactNode;
-  /** The page's own action on a row, after the panel's: the staff page's "Exchange…" (Plan 49). */
-  rowAction?: (item: ItemResponse) => ReactNode;
 }
 
 // ─── Form state ───────────────────────────────────────────────────────────────
@@ -287,7 +285,7 @@ export function itemState(item: ItemResponse): {
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService,
   showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1, batchPrint = false,
-  tickets, actions = [], toolbarNote, addBlockedBecause, rowAction,
+  tickets, actions = [], toolbarNote, addBlockedBecause,
 }: SwapItemsPanelProps) {
   const qc = useQueryClient();
   /**
@@ -851,7 +849,6 @@ export default function SwapItemsPanel({
                         <FontAwesomeIcon icon={faPrintDuo} /> Label
                       </button>
                     )}
-                    {rowAction?.(item)}
                   </td>
                 )}
               </tr>
