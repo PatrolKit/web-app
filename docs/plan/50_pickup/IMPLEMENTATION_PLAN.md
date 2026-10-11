@@ -1,6 +1,6 @@
 # Plan 50: "Returned" becomes "picked up"
 
-**Status:** server and web built 2026-10-11. Not deployed: it ships together with the iOS rename ([IOS_HANDOFF.md](IOS_HANDOFF.md)).
+**Status:** deployed 2026-10-11, with nothing yet picked up in production. iPad pickups stay off until the iPads run the iOS rename ([IOS_HANDOFF.md](IOS_HANDOFF.md)).
 
 ## Why
 
