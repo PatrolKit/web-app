@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DiagnosticIssueResponse, DiagnosticRunResponse } from '../../lib/api.types';
-import { centsOf, decidedText, stockText, groupChoiceLabel, groupsOf, heldText, isHeld, priceButtons, priceDecidedText, priceSides, rowChoices, shown } from './swapDiagnosticsView';
+import { waitingText, withoutHeld, centsOf, decidedText, stockText, groupChoiceLabel, groupsOf, heldText, isHeld, priceButtons, priceDecidedText, priceSides, rowChoices, shown } from './swapDiagnosticsView';
 
 const issue = (over: Partial<DiagnosticIssueResponse>): DiagnosticIssueResponse => ({
   id: 'i', sku: 'SP-0001', kind: 'only_ours', field: null, ours: null, square: null, state: 'open',
@@ -62,6 +62,17 @@ describe('the diagnostics popover (Plan 41)', () => {
 });
 
 describe('issues an open sale holds back (Plan 48)', () => {
+  it('are left out of the list, counted, and kept when decided', () => {
+    const held = issue({ id: '1', kind: 'stock', sku: '73190', heldBySales: 1 });
+    const free = issue({ id: '2', kind: 'stock', sku: '74329' });
+    const decided = issue({ id: '3', kind: 'stock', sku: '75000', heldBySales: 1, state: 'applied' });
+    const { run: shown, waiting } = withoutHeld(run([held, free, decided]));
+    expect([shown.issues.map((i) => i.id), waiting]).toEqual([['2', '3'], 1]);
+    expect(withoutHeld(run([free])).run.issues).toEqual([free]);
+    expect(waitingText(14)).toBe('14 issues are waiting on open sales in Sales check. They’ll show here once those are settled, if anything’s still left to fix.');
+    expect(waitingText(1)).toMatch(/^One issue is waiting on open sales in Sales check\. It’ll show here/);
+  });
+
   it('counts held rows apart, and only open ones', () => {
     const [g] = groupsOf(run([
       issue({ id: '1', kind: 'elsewhere', sku: '73308', heldBySales: 2 }),

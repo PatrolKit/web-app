@@ -9,7 +9,7 @@ import type {
 import type { SkiSwapContext } from './SkiSwapLayout';
 import { BusyBanner, FoldHeader, NoteBox, SidePanel, Tombstone, useFolds, useJustDecided } from './ReportCard';
 import {
-  CHOICE_LABEL, canUseSquarePrice, priceButtons, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
+  CHOICE_LABEL, canUseSquarePrice, priceButtons, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, waitingText, withoutHeld, priceDecidedText, priceSides,
   rowChoices, shown, squareCopies, squareSide, stockText, tookText,
   type DiagnosticGroup,
 } from './swapDiagnosticsView';
@@ -70,7 +70,10 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
       return next;
     });
   };
-  const groups = useMemo(() => (run && run.status === 'done' ? groupsOf(run) : []), [run]);
+  // Issues an open Sales check sale holds back wait there, not here.
+  const shown = useMemo(() => (run && run.status === 'done' ? withoutHeld(run) : null), [run]);
+  const groups = useMemo(() => (shown ? groupsOf(shown.run) : []), [shown]);
+  const waiting = shown?.waiting ?? 0;
   const openCount = groups.reduce((n, g) => n + g.open, 0);
   const refresh = () => void qc.invalidateQueries({ queryKey: key });
   /**
@@ -116,9 +119,15 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
           Couldn’t read Square’s sales, so it isn’t known which tickets have an open sale in Sales check. Choices are refused until it can be read: {run.salesCheckError}
         </p>
       )}
+      {run?.status === 'done' && waiting > 0 && (
+        <p className="text-sm text-amber-400">
+          ⏸ {waitingText(waiting)}{' '}
+          <Link to="/dashboard/ski-swap/reports" className="underline hover:text-amber-300">Open Sales check</Link>
+        </p>
+      )}
       {run?.status === 'done' && openCount === 0 && (
         <p className="text-sm text-green-400">
-          ✓ Everything matches{run.issues.length ? ': every issue from this run has been dealt with.' : '.'}
+          ✓ {waiting ? 'Nothing else to fix here' : `Everything matches${run.issues.length ? ': every issue from this run has been dealt with' : ''}`}.
         </p>
       )}
       {run?.status === 'done' && groups.length > 1 && (
@@ -129,7 +138,7 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
         </p>
       )}
       {run?.status === 'done' && groups.map((g) => (
-        <Group key={g.key} group={g} run={run} orgId={orgId} swapId={swapId} sellers={sellers} onChanged={refresh} onDecided={decided}
+        <Group key={g.key} group={g} run={shown!.run} orgId={orgId} swapId={swapId} sellers={sellers} onChanged={refresh} onDecided={decided}
           folded={folds.isFolded(g.key)} onToggle={() => folds.toggle(g.key)} notes={notes} onSaveNote={saveNote} />
       ))}
     </div>

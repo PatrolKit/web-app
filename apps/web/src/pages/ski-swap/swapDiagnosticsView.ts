@@ -164,6 +164,23 @@ export function heldText(issue: DiagnosticIssueResponse): string {
   return `Ticket ${issue.sku} has ${n === 1 ? 'an open sale' : `${n} open sales`} in Sales check. Settle ${n === 1 ? 'it' : 'them'} there first; until then this can’t be changed, so the sale’s evidence stays put.`;
 }
 
+/**
+ * The run as the page lists it: issues an open Sales check sale holds back
+ * are left out, since nothing can be done to them here until that sale is
+ * settled, and settling it often fixes them. Held is read afresh on every
+ * load, so one comes back by itself once its sale is settled, if anything is
+ * still left to fix. `waiting`: how many were left out.
+ */
+export function withoutHeld(run: DiagnosticRunResponse): { run: DiagnosticRunResponse; waiting: number } {
+  const waiting = run.issues.filter(isHeld).length;
+  return { run: waiting ? { ...run, issues: run.issues.filter((i) => !isHeld(i)) } : run, waiting };
+}
+
+/** "14 issues are waiting on open sales in Sales check. They'll show here once those are settled." */
+export function waitingText(n: number): string {
+  return `${n === 1 ? 'One issue is' : `${n.toLocaleString('en-US')} issues are`} waiting on open sales in Sales check. ${n === 1 ? 'It’ll' : 'They’ll'} show here once those are settled, if anything’s still left to fix.`;
+}
+
 export function groupsOf(run: DiagnosticRunResponse): DiagnosticGroup[] {
   return ORDER.flatMap((g) => {
     const issues = run.issues.filter((i) => i.kind === g.kind && (g.kind !== 'differs' || i.field === g.field));
