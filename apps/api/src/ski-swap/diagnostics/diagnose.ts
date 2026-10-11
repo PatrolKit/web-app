@@ -213,8 +213,15 @@ export function diagnose(input: {
       // Whether it has sold rides along (not in the fingerprint): Square's
       // price of a sold item stays as it sold.
       const s = input.soldOf?.get(sku);
-      const side = s ? { ...o, sold: s.sold, checkedIn: s.checkedIn, soldOut: isSoldOut(s) } : o;
-      add(sku, 'differs', 'price', side, sq, { ours: o.priceCents, square: sq.priceCents });
+      const soldOut = s ? isSoldOut(s) : false;
+      // A ticket sold with no price in Square had it typed at the register:
+      // the sale has the price, Square's item never will, and PatrolKit's is
+      // what the seller is paid. Nothing to settle in the catalog: a price
+      // typed other than PatrolKit's is Sales check's (paid-price check).
+      if (!(soldOut && sq.priceCents === null)) {
+        const side = s ? { ...o, sold: s.sold, checkedIn: s.checkedIn, soldOut } : o;
+        add(sku, 'differs', 'price', side, sq, { ours: o.priceCents, square: sq.priceCents });
+      }
     }
 
     // Square's stock against what the sales leave: a refund not put back in

@@ -693,6 +693,29 @@ describe('Price differs on a sold item', () => {
     expect(open(await h.run())).toEqual([['1', 'differs', 'price']]);
   });
 
+  it('doesn’t flag a sold ticket Square has no price for: its price was typed at the register', async () => {
+    const h = harness();
+    h.ours('59410', { priceCents: 600 });
+    h.square('59410', { pricing: { type: 'variable' } });
+    h.stock('sv-59410', 0, 1);
+    h.ours('59411', { priceCents: 600 });
+    h.square('59411', { pricing: { type: 'variable' } });   // unsold: still flagged
+    expect(open(await h.run())).toEqual([['59411', 'differs', 'price']]);
+  });
+
+  it('can be marked resolved once decided, leaving both prices as they are', async () => {
+    const h = harness();
+    h.ours('1', { priceCents: 5000 });
+    h.square('1');
+    h.stock('sv-1', 0, 1);
+    const run = await h.run();
+    const decided = await h.service.apply('org', 'swap', run.issues.find((i) => i.kind === 'differs')!.id, 'resolve', {}, 'staff');
+    expect(decided.state).toBe('left');
+    expect(h.squareWrites).toEqual([]);
+    expect(h.db.items.find((i) => i.sku === '1')!.priceCents).toBe(5000);
+    expect(open(await h.run())).toEqual([]);
+  });
+
   it('refuses Square’s price when sales can’t be read to tell', async () => {
     const h = harness();
     h.ours('1', { priceCents: 5000 });

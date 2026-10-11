@@ -314,7 +314,7 @@ function PriceCard({ issue, orgId, swapId, onDecided, note, onSaveNote }: {
     <div className={`border rounded-lg overflow-hidden bg-surface-50 transition-opacity ${sold ? 'border-amber-700/70' : 'border-gray-800'} ${busy ? 'opacity-60' : ''}`} aria-busy={busy}>
       {sold && (
         <p className="px-3 py-2 border-b border-amber-800/60 bg-amber-900/25 text-xs text-amber-200">
-          <span className="font-semibold text-amber-300">Sold.</span> Square’s price stays as it sold, so it can’t be changed here. PatrolKit’s price can; this stays flagged until it’s settled.
+          <span className="font-semibold text-amber-300">Sold.</span> Square’s price stays as it sold, so it can’t be changed here. PatrolKit’s price can; or mark it resolved once you’ve decided.
         </p>
       )}
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_1.75rem_minmax(0,1fr)]">
@@ -341,11 +341,21 @@ function PriceCard({ issue, orgId, swapId, onDecided, note, onSaveNote }: {
               {labels.squareFromOurs}
             </button>
           )}
-          <button type="button" className={outlined} disabled={busy || !canUseSquarePrice(issue)}
-            onClick={() => { if (window.confirm(`${labels.oursFromSquare}? PatrolKit’s price for ${issue.sku} becomes Square’s, and its seller is paid that.`)) apply.mutate({ choice: 'use_square' }); }}>
-            {labels.oursFromSquare}
-          </button>
+          {/* Square has no price: taking it would leave PatrolKit with none too. */}
+          {!(sold && squareSide(issue)?.priceCents === null) && (
+            <button type="button" className={outlined} disabled={busy || !canUseSquarePrice(issue)}
+              onClick={() => { if (window.confirm(`${labels.oursFromSquare}? PatrolKit’s price for ${issue.sku} becomes Square’s, and its seller is paid that.`)) apply.mutate({ choice: 'use_square' }); }}>
+              {labels.oursFromSquare}
+            </button>
+          )}
           <button type="button" className={bordered} disabled={busy} onClick={setDifferent}>{labels.different}</button>
+          {/* Sold: once decided (keep PatrolKit's, or take Square's), it can be cleared. */}
+          {sold && (
+            <button type="button" className={bordered} disabled={busy}
+              onClick={() => { if (window.confirm(`Mark ${issue.sku} resolved? Both prices stay as they are: PatrolKit ${shown('price', issue.ours)} (what the seller is paid), Square ${shown('price', squareSide(issue))}. It won’t come up again unless one changes.`)) apply.mutate({ choice: 'resolve' }); }}>
+              Mark resolved
+            </button>
+          )}
         </div>
       )}
     </div>

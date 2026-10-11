@@ -97,6 +97,7 @@ describe('Price differs as a card', () => {
     expect(priceDecidedText({ ...price, state: 'applied', choice: 'use_square', decidedByName: 'Dana' })).toBe('Set PatrolKit’s price from Square: $45.00 in both by Dana');
     expect(priceDecidedText({ ...price, state: 'applied', choice: 'set_price' }, 4000)).toBe('Set a different price: $40.00 in both');
     expect(priceDecidedText({ ...price, state: 'applied', choice: 'set_our_price' }, 4200)).toBe('Set PatrolKit’s price: $42.00; Square’s left as it sold');
+    expect(priceDecidedText({ ...price, state: 'left', choice: 'resolve' })).toBe(`Marked resolved: PatrolKit ${shown('price', price.ours)}, Square $45.00, as they were`);
   });
 
   it('labels each button with the way its price goes, and says when the item has sold', () => {
