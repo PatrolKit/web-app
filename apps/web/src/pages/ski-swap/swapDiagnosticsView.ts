@@ -65,8 +65,8 @@ const ORDER: { kind: DiagnosticIssueKind; field: DiagnosticField | null; title: 
     explain: 'The register can sell these, but no seller would be paid for them.',
   },
   {
-    kind: 'returned', field: null, title: 'Returned, still in Square',
-    explain: 'Handed back to their sellers, but taking them out of Square failed: the register could still sell them.',
+    kind: 'picked_up', field: null, title: 'Picked up, still in Square',
+    explain: 'Picked up by their sellers, but taking them out of Square failed: the register could still sell them.',
   },
 ];
 

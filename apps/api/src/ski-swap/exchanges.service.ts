@@ -17,7 +17,7 @@ import type {
 interface Item extends ExchangeItem {
   squareVariationId: string | null;
   originalQuantity: number;
-  returnedToSeller: boolean;
+  pickedUp: boolean;
 }
 
 /** Everything a lookup or a change works from, read once. */
@@ -153,7 +153,7 @@ export class ExchangesService {
       const out = read.items.find((i) => i.id === body.replacementItemId);
       if (!out || out.deleted) throw new NotFoundException('The item going out isn’t in this swap.');
       if (out.id === returned.id) throw new BadRequestException('The item going out is the one coming back.');
-      if (out.returnedToSeller) throw new ConflictException(`${out.sku} was handed back to its seller: pick an item that’s for sale.`);
+      if (out.pickedUp) throw new ConflictException(`${out.sku} was picked up by its seller: pick an item that’s for sale.`);
       if (!out.squareVariationId) throw new ConflictException(`${out.sku} isn’t in Square yet: pick an item that’s for sale.`);
       if (this.soldUnits(read, out.squareVariationId) >= out.originalQuantity) {
         throw new ConflictException(`${out.sku} is sold already: pick an item that’s for sale.`);
@@ -352,12 +352,12 @@ export class ExchangesService {
       where: { swapId, ...(ids ? { id: { in: ids } } : {}) },
       select: {
         id: true, sku: true, name: true, priceCents: true, squareVariationId: true, originalQuantity: true,
-        deletedAt: true, returnedAt: true, seller: { include: SELLER_NAME_INCLUDE },
+        deletedAt: true, pickedUpAt: true, seller: { include: SELLER_NAME_INCLUDE },
       },
     });
     return rows.map((r) => ({
       id: r.id, sku: r.sku, name: r.name, priceCents: r.priceCents, squareVariationId: r.squareVariationId,
-      originalQuantity: r.originalQuantity, deleted: r.deletedAt !== null, returnedToSeller: r.returnedAt !== null,
+      originalQuantity: r.originalQuantity, deleted: r.deletedAt !== null, pickedUp: r.pickedUpAt !== null,
       sellerId: r.seller?.id ?? null, sellerName: r.seller ? sellerDisplayName(r.seller) : null,
     }));
   }

@@ -9,7 +9,7 @@ import type { SkiSwapContext } from './SkiSwapLayout';
 import SellerImportModal from './SellerImportModal';
 import SellerTicketSource from './SellerTicketSource';
 import IssueTicketRangeModal from './IssueTicketRangeModal';
-import ReturnItemsModal from './ReturnItemsModal';
+import PickupItemsModal from './PickupItemsModal';
 import { useFeatures } from '../../lib/features';
 import PrintReceiptModal from './PrintReceiptModal';
 import { payoutGaps } from '@patrolkit/contracts/payout-gaps';
@@ -125,8 +125,8 @@ export default function SellersPage() {
   const [showImport, setShowImport] = useState(false);
   const [receiptSeller, setReceiptSeller] = useState<SellerResponse | null>(null);
   const [ticketSeller, setTicketSeller] = useState<SellerResponse | null>(null);
-  /** Handing this seller's unsold items back (Plan 43): the return screen, locked to them. */
-  const [returnSeller, setReturnSeller] = useState<SellerResponse | null>(null);
+  /** This seller picking up their unsold items (Plan 43): the pickup screen, locked to them. */
+  const [pickupSeller, setPickupSeller] = useState<SellerResponse | null>(null);
   const [form, setForm] = useState<SellerForm>(emptyForm);
   const [sortKey, setSortKey] = useState<SellerSortKey>('displayName');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -850,11 +850,11 @@ export default function SellersPage() {
                     )}
                     {selectedSwap && s.receiptSwaps.some((w) => w.id === selectedSwap.id) && (
                       <button
-                        onClick={() => setReturnSeller(s)}
+                        onClick={() => setPickupSeller(s)}
                         title="Scan this seller’s unsold items as they go back to them"
                         className="text-xs text-gray-400 hover:text-white flex items-center gap-1 whitespace-nowrap"
                       >
-                        <FontAwesomeIcon icon={faRotateLeft} /> Return items
+                        <FontAwesomeIcon icon={faRotateLeft} /> Pick up items
                       </button>
                     )}
                     {/* Only for a seller with items in an active swap: a receipt
@@ -889,13 +889,13 @@ export default function SellersPage() {
         <IssueTicketRangeModal orgId={orgId} seller={ticketSeller} swaps={ticketSwaps} onClose={() => setTicketSeller(null)} />
       )}
 
-      {returnSeller && selectedSwap && (
-        <ReturnItemsModal
+      {pickupSeller && selectedSwap && (
+        <PickupItemsModal
           orgId={orgId}
           swapId={selectedSwap.id}
           sellers={sellers}
-          lockedTo={returnSeller.id}
-          onClose={() => setReturnSeller(null)}
+          lockedTo={pickupSeller.id}
+          onClose={() => setPickupSeller(null)}
           onChanged={() => undefined}
         />
       )}

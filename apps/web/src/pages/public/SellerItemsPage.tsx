@@ -267,11 +267,11 @@ export default function SellerItemsPage() {
                         // because nobody has taken it yet. Then whether Square
                         // could be asked, and only then its answer — a guess
                         // either way would be read as a fact.
-                        // Handed back first (Plan 43): it's home, whatever Square says.
-                        const returned = !!item.returnedAt;
-                        const waiting = !returned && !item.consigned;
-                        const unknown = !returned && !waiting && item.inventoryKnown === false;
-                        const sold = !returned && !waiting && !unknown && item.soldCount > 0;
+                        // Picked up first (Plan 43): it's home, whatever Square says.
+                        const pickedUp = !!item.pickedUpAt;
+                        const waiting = !pickedUp && !item.consigned;
+                        const unknown = !pickedUp && !waiting && item.inventoryKnown === false;
+                        const sold = !pickedUp && !waiting && !unknown && item.soldCount > 0;
                         return (
                           <tr key={item.itemId} className="border-b border-gray-800 last:border-0">
                             <td className="px-3 py-2 text-white">{item.name}</td>
@@ -279,9 +279,9 @@ export default function SellerItemsPage() {
                             <td className="px-3 py-2 text-white">{formatPrice(item.priceCents)}</td>
                             <td className="px-3 py-2">
                               <span
-                                title={returned ? `Returned ${new Date(item.returnedAt!).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}` : undefined}
+                                title={pickedUp ? `Picked up ${new Date(item.pickedUpAt!).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}` : undefined}
                                 className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                                  returned
+                                  pickedUp
                                     ? 'bg-violet-900/40 text-violet-300'
                                     : sold
                                     ? 'bg-green-900/40 text-green-400'
@@ -292,9 +292,9 @@ export default function SellerItemsPage() {
                                         : 'bg-surface-100 text-gray-400'
                                 }`}
                               >
-                                {returned
+                                {pickedUp
                                   // Partly sold: what sold is what they're paid for.
-                                  ? `Returned to seller${item.soldCount > 0 ? ` · ${item.soldCount.toLocaleString('en-US')} sold` : ''}`
+                                  ? `Picked up${item.soldCount > 0 ? ` · ${item.soldCount.toLocaleString('en-US')} sold` : ''}`
                                   : sold
                                   ? 'Sold'
                                   : waiting

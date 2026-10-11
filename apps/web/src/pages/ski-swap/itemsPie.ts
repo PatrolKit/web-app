@@ -7,7 +7,7 @@ import type { ItemBreakdown } from '../../lib/api.types';
  */
 
 export interface ItemSegment {
-  key: 'sold' | 'returned' | 'forSale' | 'noPrice' | 'noDescription' | 'notOnSale';
+  key: 'sold' | 'pickedUp' | 'forSale' | 'noPrice' | 'noDescription' | 'notOnSale';
   label: string;
   count: number;
   /** Tailwind background class, for the segment and its legend square. */
@@ -18,17 +18,17 @@ export interface ItemSegment {
 
 const KINDS: Omit<ItemSegment, 'count' | 'width'>[] = [
   { key: 'sold', label: 'Sold', dot: 'bg-green-500' },
-  { key: 'returned', label: 'Returned', dot: 'bg-violet-400' },
+  { key: 'pickedUp', label: 'Picked up', dot: 'bg-violet-400' },
   { key: 'forSale', label: 'For sale', dot: 'bg-sky-500' },
   { key: 'noPrice', label: 'No price', dot: 'bg-amber-400' },
   { key: 'noDescription', label: 'No description', dot: 'bg-pink-400' },
   { key: 'notOnSale', label: 'Not on sale', dot: 'bg-gray-500' },
 ];
 
-export function itemSegments(b: Pick<ItemBreakdown, 'sold' | 'forSale' | 'noPrice' | 'noDescription' | 'notOnSale' | 'total'> & { returned?: number }): ItemSegment[] {
+export function itemSegments(b: Pick<ItemBreakdown, 'sold' | 'forSale' | 'noPrice' | 'noDescription' | 'notOnSale' | 'total'> & { pickedUp?: number }): ItemSegment[] {
   const total = b.total || 0;
   return KINDS.map((k) => {
-    // Absent from a server older than Plan 43: none returned.
+    // Absent from a server older than Plan 43: none picked up.
     const count = b[k.key] ?? 0;
     return { ...k, count, width: total ? `${(count / total) * 100}%` : '0%' };
   });

@@ -13,7 +13,7 @@ import ItemDescriber, {
 import { usePrinter } from '../../contexts/PrinterContext';
 import { isWebBluetoothSupported } from '../../lib/printing/PhomemoPrinterService';
 import { priceInput, priceInputCents } from '../../lib/money';
-import { canUndoReturn } from './returnItemsLogic';
+import { canUndoPickup } from './pickupLogic';
 
 // ─── API adapter interface ────────────────────────────────────────────────────
 
@@ -32,8 +32,8 @@ export interface SwapItemsPanelApi {
   createItem: (swapId: string, data: CreateItemInput) => Promise<ItemResponse>;
   patchItem: (itemId: string, data: PatchItemInput) => Promise<ItemResponse>;
   deleteItem: (itemId: string) => Promise<void>;
-  /** Undoes a return (Plan 43): back on sale. Staff's Items page only. */
-  undoReturn?: (itemId: string) => Promise<ItemResponse>;
+  /** Undoes a pickup (Plan 43): back on sale. Staff's Items page only. */
+  undoPickup?: (itemId: string) => Promise<ItemResponse>;
   uploadPhoto?: (itemId: string, file: File) => Promise<{ id: string; url: string }>;
   deletePhoto?: (itemId: string, photoId: string) => Promise<void>;
 }
@@ -190,7 +190,7 @@ function describeRanges(ranges: { startNumber: number; endNumber: number }[]): s
  * unscanned item is not also "not in Square" as far as anybody acting on this
  * screen is concerned, it is unscanned, and scanning it fixes both.
  */
-export type ItemStateKey = 'returned' | 'not_received' | 'not_in_square' | 'stock_unknown' | 'for_sale' | 'sold';
+export type ItemStateKey = 'picked_up' | 'not_received' | 'not_in_square' | 'stock_unknown' | 'for_sale' | 'sold';
 
 /**
  * What the status filter offers (Plan 39 D2), so the server can filter 10,000
@@ -204,7 +204,7 @@ export const ITEM_STATE_FILTERS: { value: ItemListStatus; label: string }[] = [
   { value: 'not_received', label: 'Not yet received' },
   { value: 'not_in_square', label: 'Not in Square' },
   { value: 'needs_price', label: 'Needs a price' },
-  { value: 'returned', label: 'Returned to seller' },
+  { value: 'picked_up', label: 'Picked up' },
 ];
 
 /** Rows per page (Plan 39 D1). */
@@ -221,15 +221,15 @@ export function itemState(item: ItemResponse): {
   // "1 of 1" on all of them buries the rows that are not.
   const of = (n: number) => (qty > 1 ? ` · ${n} of ${qty}` : '');
 
-  // Handed back (Plan 43), whatever else: it's gone home, and out of Square.
-  if (item.returnedAt) {
-    const when = new Date(item.returnedAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-    const units = item.returnedUnits ?? qty;
+  // Picked up (Plan 43), whatever else: it's gone home, and out of Square.
+  if (item.pickedUpAt) {
+    const when = new Date(item.pickedUpAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const units = item.pickedUpUnits ?? qty;
     return {
-      key: 'returned',
-      label: `Returned to seller${qty > 1 ? ` · ${units} of ${qty}` : ''}`,
+      key: 'picked_up',
+      label: `Picked up${qty > 1 ? ` · ${units} of ${qty}` : ''}`,
       tone: 'bg-violet-900/40 text-violet-300',
-      title: `Returned ${when}${item.returnedBy ? ` by ${item.returnedBy}` : ''}. It’s out of Square and can’t sell.`,
+      title: `Picked up ${when}${item.pickedUpBy ? ` by ${item.pickedUpBy}` : ''}. It’s out of Square and can’t sell.`,
     };
   }
 
@@ -441,10 +441,10 @@ export default function SwapItemsPanel({
     onSuccess: (item) => { replaceRow(item); closeForm(); },
   });
 
-  const undoReturn = useMutation({
-    mutationFn: (itemId: string) => panelApi.undoReturn!(itemId),
+  const undoPickup = useMutation({
+    mutationFn: (itemId: string) => panelApi.undoPickup!(itemId),
     onSuccess: (item) => replaceRow(item),
-    onError: (err) => setActionError(describe(err, 'Could not undo the return.')),
+    onError: (err) => setActionError(describe(err, 'Could not undo the pickup.')),
   });
 
   const deleteMutation = useMutation({
@@ -781,12 +781,12 @@ export default function SwapItemsPanel({
                 </td>
                 {canManage && (
                   <td className="py-2 flex gap-2 items-center">
-                    {canUndoReturn(item) && panelApi.undoReturn && (
+                    {canUndoPickup(item) && panelApi.undoPickup && (
                       <button
-                        onClick={() => { if (confirm(`Put "${item.name}" back on sale? It goes back in Square.`)) undoReturn.mutate(item.id); }}
-                        disabled={undoReturn.isPending}
+                        onClick={() => { if (confirm(`Put "${item.name}" back on sale? It goes back in Square.`)) undoPickup.mutate(item.id); }}
+                        disabled={undoPickup.isPending}
                         className="text-xs text-violet-300 hover:underline disabled:opacity-40"
-                      >Undo return</button>
+                      >Undo pickup</button>
                     )}
                     {selfService && item.consignedAt ? (
                       // Accepted items are changed at the counter, like delete below.

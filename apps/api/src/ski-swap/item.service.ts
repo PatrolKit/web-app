@@ -180,8 +180,8 @@ export class ItemService {
       ...(opts.printed === undefined ? {} : { hasPrintedTag: opts.printed }),
       // Each is a fact about our own row (D2): never a Square read.
       ...(opts.status === 'not_received' ? { consignedAt: null } : {}),
-      ...(opts.status === 'not_in_square' ? { consignedAt: { not: null }, returnedAt: null } : {}),
-      ...(opts.status === 'returned' ? { returnedAt: { not: null } } : {}),
+      ...(opts.status === 'not_in_square' ? { consignedAt: { not: null }, pickedUpAt: null } : {}),
+      ...(opts.status === 'picked_up' ? { pickedUpAt: { not: null } } : {}),
       ...(opts.status === 'needs_price' ? { priceCents: null } : {}),
     };
 
@@ -295,7 +295,7 @@ export class ItemService {
     }
     const rows = await this.prisma.swapItem.findMany({
       where: { swapId, orgId, deletedAt: null },
-      select: { id: true, squareVariationId: true, originalQuantity: true, consignedAt: true, returnedAt: true },
+      select: { id: true, squareVariationId: true, originalQuantity: true, consignedAt: true, pickedUpAt: true },
     });
     return idsBySales(rows, sold, status);
   }
@@ -1582,12 +1582,12 @@ export class ItemService {
     return this.taxonomy.describeItems(items);
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number | null; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; returnedAt?: Date | null; returnedByName?: string | null; returnedUnits?: number | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number> | null, descriptions?: Map<string, ItemDescription>): ItemResponse {
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number | null; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; pickedUpAt?: Date | null; pickedUpByName?: string | null; pickedUpUnits?: number | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number> | null, descriptions?: Map<string, ItemDescription>): ItemResponse {
     // Only an item in Square has stock to not know about. For everything else
     // the answer is a fact about our own row, whatever Square is doing.
     // A returned item (Plan 43) is out of Square, whose count of it then says
     // nothing: none in stock, and sold is what didn't go back.
-    const returned = !!item.returnedAt;
+    const returned = !!item.pickedUpAt;
     const inventoryKnown = returned || inventoryMap !== null || !item.squareVariationId;
     // Unknown reads as unsold, not as sold out. Both are guesses; the first
     // sends a buyer to the floor to look, the second sends them home.
@@ -1597,7 +1597,7 @@ export class ItemService {
         ? item.originalQuantity
         : item.squareVariationId ? (inventoryMap!.get(item.squareVariationId) ?? 0) : 0;
     const soldCount = returned
-      ? Math.max(0, item.originalQuantity - (item.returnedUnits ?? item.originalQuantity))
+      ? Math.max(0, item.originalQuantity - (item.pickedUpUnits ?? item.originalQuantity))
       : Math.max(0, item.originalQuantity - inStock);
     return {
       id: item.id, swapId: item.swapId, orgId: item.orgId,
@@ -1613,9 +1613,9 @@ export class ItemService {
       // here and a third in the web client.
       legacyTicket: ticketNumberOf(item.sku) !== null,
       consignedAt: item.consignedAt?.toISOString() ?? null,
-      returnedAt: item.returnedAt?.toISOString() ?? null,
-      returnedBy: item.returnedAt ? (item.returnedByName ?? null) : null,
-      returnedUnits: item.returnedAt ? (item.returnedUnits ?? null) : null,
+      pickedUpAt: item.pickedUpAt?.toISOString() ?? null,
+      pickedUpBy: item.pickedUpAt ? (item.pickedUpByName ?? null) : null,
+      pickedUpUnits: item.pickedUpAt ? (item.pickedUpUnits ?? null) : null,
       deletedAt: item.deletedAt?.toISOString() ?? null,
       seller: item.seller
         ? {

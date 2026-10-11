@@ -741,17 +741,17 @@ export const api = {
     itemImportFile: (orgId: string, swapId: string, file: import('./api.types').ImportGuideFile) =>
       fetchCsv(`/api/v1/orgs/${orgId}/ski-swap/swaps/${swapId}/items/import/${file}`),
     /** One item by the number on its tag, exactly — what a scanner needs. */
-    /** Returns the item with this SKU to its seller (Plan 43); `sellerId` locks it to one. */
-    returnItemBySku: (orgId: string, swapId: string, sku: string, sellerId?: string) =>
-      request<import('./api.types').ReturnResult>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/return-by-sku`, {
+    /** Marks the item with this SKU picked up by its seller (Plan 43); `sellerId` locks it to one. */
+    pickUpItemBySku: (orgId: string, swapId: string, sku: string, sellerId?: string) =>
+      request<import('./api.types').PickupResult>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/pickup-by-sku`, {
         method: 'POST', body: JSON.stringify({ sku, ...(sellerId ? { sellerId } : {}) }),
       }),
-    /** Undoes a return: back on sale (Plan 43 D4). */
-    undoItemReturn: (orgId: string, swapId: string, itemId: string) =>
-      request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/return`, { method: 'DELETE' }),
-    /** A seller's items still out, for a locked return session (Plan 43 D5). */
-    unreturnedItems: (orgId: string, swapId: string, sellerId: string) =>
-      request<import('./api.types').UnreturnedItems>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/unreturned?sellerId=${encodeURIComponent(sellerId)}`),
+    /** Undoes a pickup: back on sale (Plan 43 D4). */
+    undoItemPickup: (orgId: string, swapId: string, itemId: string) =>
+      request<import('./api.types').ItemResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/pickup`, { method: 'DELETE' }),
+    /** A seller's items still out, for a locked pickup session (Plan 43 D5). */
+    awaitingPickupItems: (orgId: string, swapId: string, sellerId: string) =>
+      request<import('./api.types').AwaitingPickupItems>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/awaiting-pickup?sellerId=${encodeURIComponent(sellerId)}`),
     /** Batch set category (Plan 45): up to 25 scanned tags get one category, if they have none. */
     categorizeItems: (orgId: string, swapId: string, body: { categoryId: string; attributes: import('./api.types').CategorizeAnswer[]; rename: boolean; skus: string[] }) =>
       request<import('./api.types').CategorizeItemsResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/categorize`, {

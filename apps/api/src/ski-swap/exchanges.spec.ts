@@ -180,7 +180,7 @@ function harness(opts: {
 function dbItem(over: Record<string, unknown> = {}) {
   return {
     id: 'item-87344', sku: '87344', name: 'Leki poles', priceCents: 1900 as number | null, squareVariationId: 'v-87344', originalQuantity: 1,
-    deletedAt: null, returnedAt: null, seller: { id: 'seller-lm', businessName: 'Little Mountain', membership: { user: { firstName: 'Lee', lastName: 'Mountain', email: null } } },
+    deletedAt: null, pickedUpAt: null, seller: { id: 'seller-lm', businessName: 'Little Mountain', membership: { user: { firstName: 'Lee', lastName: 'Mountain', email: null } } },
     ...over,
   };
 }

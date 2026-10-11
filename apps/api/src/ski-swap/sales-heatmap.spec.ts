@@ -62,7 +62,7 @@ describe('one Square read for every card (D1)', () => {
       swapExchange: { findMany: async () => [] },
       skiSwap: { findFirst: async () => ({ id: 'swap', createdAt: new Date('2026-10-01'), locationId: 'loc', timeZone: TZ }) },
       swapItem: {
-        findMany: async () => [{ squareVariationId: 'v1', categoryId: 'skis', sku: '1', name: 'Skis', priceCents: 1, consignedAt: new Date(), returnedAt: null, squareItemId: 's1', originalQuantity: 1 }],
+        findMany: async () => [{ squareVariationId: 'v1', categoryId: 'skis', sku: '1', name: 'Skis', priceCents: 1, consignedAt: new Date(), pickedUpAt: null, squareItemId: 's1', originalQuantity: 1 }],
       },
     };
     const pos = { forOrg: async () => ({ listSales: async () => { calls += 1; await new Promise((r) => setImmediate(r)); return lines; } }) };

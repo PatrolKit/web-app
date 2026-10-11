@@ -20,7 +20,7 @@ import TicketFastEdit from './TicketFastEdit';
 import ReturnTicketsModal from './ReturnTicketsModal';
 import BatchAddTicketsModal from './BatchAddTicketsModal';
 import ScanTicketModal from './ScanTicketModal';
-import ReturnItemsModal from './ReturnItemsModal';
+import PickupItemsModal from './PickupItemsModal';
 import BatchSetCategoryModal from './BatchSetCategoryModal';
 import TicketSquareModal, { useTicketPushStatus } from './TicketSquareModal';
 
@@ -42,8 +42,8 @@ export default function ItemsPage() {
   const [returning, setReturning] = useState(false);
   const [batchAdding, setBatchAdding] = useState(false);
   const [scanning, setScanning] = useState(false);
-  /** Handing unsold items back to their sellers (Plan 43). */
-  const [returningItems, setReturningItems] = useState(false);
+  /** Sellers picking up their unsold items (Plan 43). */
+  const [pickingUp, setPickingUp] = useState(false);
   const [categorizing, setCategorizing] = useState(false);
   const [pushingOpen, setPushingOpen] = useState(false);
   const canAdmin = perms.has('ski_swap:admin');
@@ -172,12 +172,12 @@ export default function ItemsPage() {
               onSelect: () => setReturning(true),
             }]
           : []),
-        // End of the swap (Plan 43): unsold items back to their sellers.
+        // End of the swap (Plan 43): sellers pick up their unsold items.
         {
-          key: 'return-items',
-          label: 'Return items to sellers',
+          key: 'pickup-items',
+          label: 'Pick up items',
           icon: faHandHoldingBoxDuo,
-          onSelect: () => setReturningItems(true),
+          onSelect: () => setPickingUp(true),
         },
         // Plan 45: scanned items with no category get one.
         {
@@ -201,7 +201,7 @@ export default function ItemsPage() {
         createItem: (sid, data) => api.skiSwap.createItem(orgId, sid, data),
         patchItem: (iid, data) => api.skiSwap.patchItem(orgId, swapId, iid, data),
         deleteItem: (iid) => api.skiSwap.deleteItem(orgId, swapId, iid),
-        undoReturn: canManage ? (iid) => api.skiSwap.undoItemReturn(orgId, swapId, iid) : undefined,
+        undoPickup: canManage ? (iid) => api.skiSwap.undoItemPickup(orgId, swapId, iid) : undefined,
         uploadPhoto: (iid, file) => api.skiSwap.uploadPhoto(orgId, swapId, iid, file),
         deletePhoto: (iid, pid) => api.skiSwap.deletePhoto(orgId, swapId, iid, pid),
         // Staff only. The seller's own page does not pass this, so the button
@@ -228,12 +228,12 @@ export default function ItemsPage() {
       <ScanTicketModal orgId={orgId} swapId={swapId} onClose={() => setScanning(false)} />
     )}
 
-    {returningItems && swapId && (
-      <ReturnItemsModal
+    {pickingUp && swapId && (
+      <PickupItemsModal
         orgId={orgId}
         swapId={swapId}
         sellers={sellers}
-        onClose={() => setReturningItems(false)}
+        onClose={() => setPickingUp(false)}
         onChanged={() => {
           void qc.invalidateQueries({ queryKey: ['ski-swap/items', orgId] });
           void qc.invalidateQueries({ queryKey: ['ski-swap/stats', orgId] });

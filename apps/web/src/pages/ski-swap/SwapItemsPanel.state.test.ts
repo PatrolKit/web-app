@@ -89,15 +89,15 @@ describe('itemState', () => {
    * 39 D2): our own rows, and For sale and Sold by the swap's sales.
    */
   it('offers the filters the server answers without a stock read of every item', () => {
-    expect(ITEM_STATE_FILTERS.map((f) => f.value)).toEqual(['for_sale', 'sold', 'not_received', 'not_in_square', 'needs_price', 'returned']);
-    expect(ITEM_STATE_FILTERS.map((f) => f.label)).toEqual(['For sale', 'Sold', 'Not yet received', 'Not in Square', 'Needs a price', 'Returned to seller']);
+    expect(ITEM_STATE_FILTERS.map((f) => f.value)).toEqual(['for_sale', 'sold', 'not_received', 'not_in_square', 'needs_price', 'picked_up']);
+    expect(ITEM_STATE_FILTERS.map((f) => f.label)).toEqual(['For sale', 'Sold', 'Not yet received', 'Not in Square', 'Needs a price', 'Picked up']);
   });
 
   it('says returned first, whatever Square counts (Plan 43)', () => {
     // Out of Square, its count is none: without this it would read as sold.
-    const st = itemState(item({ inStock: 0, squareSynced: true, returnedAt: '2026-10-12T18:00:00.000Z', returnedBy: 'Pat' }));
-    expect(st.key).toBe('returned');
-    expect(st.label).toBe('Returned to seller');
+    const st = itemState(item({ inStock: 0, squareSynced: true, pickedUpAt: '2026-10-12T18:00:00.000Z', pickedUpBy: 'Pat' }));
+    expect(st.key).toBe('picked_up');
+    expect(st.label).toBe('Picked up');
     expect(st.title).toContain('by Pat');
   });
 

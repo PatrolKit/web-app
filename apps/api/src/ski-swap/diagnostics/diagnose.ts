@@ -37,8 +37,8 @@ export interface OurDeletedItem {
   sellerName: string | null;
 }
 
-/** One of our items handed back to its seller (Plan 43): not expected in Square. */
-export interface OurReturnedItem {
+/** One of our items picked up by its seller (Plan 43): not expected in Square. */
+export interface OurPickedUpItem {
   id: string;
   sku: string;
   name: string;
@@ -140,7 +140,7 @@ export function diagnose(input: {
   ours: OurItem[];
   deleted: OurDeletedItem[];
   /** Returned items (Plan 43): never "only ours"; still in Square is its own issue. */
-  returned?: OurReturnedItem[];
+  pickedUp?: OurPickedUpItem[];
   square: PosCatalogItem[];
   /**
    * Other Square items with our SKUs (Plan 48 D11): outside the category, or
@@ -156,7 +156,7 @@ export function diagnose(input: {
 }): FoundIssue[] {
   const want = (sku: string) => !input.onlySkus || input.onlySkus.has(sku);
   const ourBySku = new Map(input.ours.filter((o) => want(o.sku)).map((o) => [o.sku, o]));
-  const returnedBySku = new Map((input.returned ?? []).filter((r) => want(r.sku)).map((r) => [r.sku, r]));
+  const pickedUpBySku = new Map((input.pickedUp ?? []).filter((r) => want(r.sku)).map((r) => [r.sku, r]));
   const deletedBySku = new Map<string, OurDeletedItem>();
   for (const d of input.deleted) if (want(d.sku) && !deletedBySku.has(d.sku)) deletedBySku.set(d.sku, d);
   const squareBySku = new Map<string, PosCatalogItem[]>();
@@ -180,11 +180,11 @@ export function diagnose(input: {
     }
 
     const sq = squareSide(entries[0]);
-    const back = our ? undefined : returnedBySku.get(sku);
+    const back = our ? undefined : pickedUpBySku.get(sku);
     if (back) {
-      add(sku, 'returned', null,
+      add(sku, 'picked_up', null,
         { itemId: back.id, name: back.name, notes: null, priceCents: null, squareItemId: null, squareVariationId: null, sellerName: back.sellerName },
-        sq, { square: [sq.itemId], returned: back.id });
+        sq, { square: [sq.itemId], pickedUp: back.id });
       continue;
     }
     if (!our) {

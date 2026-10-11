@@ -15,7 +15,7 @@ import { BadRequestException } from '@nestjs/common';
  * payouts count them (after Sales check and exchanges), never by a stock read
  * of every item.
  */
-export const ITEM_LIST_STATUSES = ['not_received', 'not_in_square', 'needs_price', 'returned', 'sold', 'for_sale'] as const;
+export const ITEM_LIST_STATUSES = ['not_received', 'not_in_square', 'needs_price', 'picked_up', 'sold', 'for_sale'] as const;
 export type ItemListStatus = (typeof ITEM_LIST_STATUSES)[number];
 
 /** A row as the sales-based filters read it. */
@@ -24,19 +24,19 @@ export interface SalesFilterRow {
   squareVariationId: string | null;
   originalQuantity: number;
   consignedAt: Date | null;
-  returnedAt: Date | null;
+  pickedUpAt: Date | null;
 }
 
 /**
  * Sold: sales cover every unit. For sale: on the floor (accepted, in Square,
- * not handed back) with units its sales don't cover. `sold` is units sold by
+ * not picked up) with units its sales don't cover. `sold` is units sold by
  * variation, after refunds, Sales check and exchanges.
  */
 export function idsBySales(rows: SalesFilterRow[], sold: ReadonlyMap<string, number>, status: 'sold' | 'for_sale'): string[] {
   return rows.filter((r) => {
     const units = r.squareVariationId ? sold.get(r.squareVariationId) ?? 0 : 0;
     if (status === 'sold') return !!r.squareVariationId && units >= r.originalQuantity;
-    return !!r.squareVariationId && !!r.consignedAt && !r.returnedAt && units < r.originalQuantity;
+    return !!r.squareVariationId && !!r.consignedAt && !r.pickedUpAt && units < r.originalQuantity;
   }).map((r) => r.id);
 }
 

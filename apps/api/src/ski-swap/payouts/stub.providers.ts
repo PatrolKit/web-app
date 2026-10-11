@@ -237,7 +237,7 @@ class StubPosAdapter implements IPosAdapter {
 
   upsertCategory(): Promise<string> { this.refuse(); }
   syncItem(): never { this.refuse(); }
-  /** Out of the stub's catalog (Plan 43's returns), as `deleteItems` does. */
+  /** Out of the stub's catalog (Plan 43's pickups), as `deleteItems` does. */
   async deleteItem(posItemId: string): Promise<void> {
     this.saveCatalog(this.catalog().filter((r) => r.itemId !== posItemId));
   }

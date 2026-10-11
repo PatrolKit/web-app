@@ -14,7 +14,7 @@ import { SellerService } from './seller.service';
 import { SellerController } from './seller.controller';
 import { ItemService } from './item.service';
 import { ItemCategorizeService } from './item-categorize.service';
-import { ItemReturnService } from './item-return.service';
+import { ItemPickupService } from './item-pickup.service';
 import { ItemController } from './item.controller';
 import { StatsService } from './stats.service';
 import { ItemBreakdownService } from './item-breakdown.service';
@@ -150,7 +150,7 @@ import { IndemnificationImportService } from './indemnification/indemnification-
     SwapService,
     SellerService,
     ItemService,
-    ItemReturnService,
+    ItemPickupService,
     ItemCategorizeService,
     StatsService,
     ItemBreakdownService,

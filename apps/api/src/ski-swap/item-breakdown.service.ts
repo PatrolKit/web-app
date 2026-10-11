@@ -12,7 +12,7 @@ import type { CheckoutTotals, SellerTotals } from '../contracts/ski-swap.contrac
  *
  * - **sold**: Square's completed sales at the swap's location, less refunds
  *   (the same read payouts make), cover all its units;
- * - **returned**: handed back to its seller, unsold (Plan 43);
+ * - **pickedUp**: picked up by its seller, unsold (Plan 43);
  * - **noPrice**: no price yet, such as an issued ticket nobody has filled in;
  * - **noDescription**: priced, but never described (no category, so still
  *   named "Item #<sku>"), such as a business's ticket priced from its tag;
@@ -24,7 +24,7 @@ import type { CheckoutTotals, SellerTotals } from '../contracts/ski-swap.contrac
  */
 export interface ItemBreakdown {
   sold: number;
-  returned: number;
+  pickedUp: number;
   forSale: number;
   noPrice: number;
   noDescription: number;
@@ -42,7 +42,7 @@ export interface BreakdownItem {
   priceCents: number | null;
   categoryId: string | null;
   consigned: boolean;
-  returned: boolean;
+  pickedUp: boolean;
   squareItemId: string | null;
   squareVariationId: string | null;
   originalQuantity: number;
@@ -56,11 +56,11 @@ export function soldByVariation(sales: PosSaleLine[]): Map<string, number> {
 }
 
 export function breakdown(items: BreakdownItem[], sold: Map<string, number>): Omit<ItemBreakdown, 'asOf' | 'error'> {
-  const out = { sold: 0, returned: 0, forSale: 0, noPrice: 0, noDescription: 0, notOnSale: 0, total: items.length };
+  const out = { sold: 0, pickedUp: 0, forSale: 0, noPrice: 0, noDescription: 0, notOnSale: 0, total: items.length };
   for (const i of items) {
     const units = i.squareVariationId ? sold.get(i.squareVariationId) ?? 0 : 0;
     if (units > 0 && units >= i.originalQuantity) out.sold++;
-    else if (i.returned) out.returned++;
+    else if (i.pickedUp) out.pickedUp++;
     else if (i.priceCents === null) out.noPrice++;
     else if (!i.categoryId && i.name === uncategorisedName(i.sku)) out.noDescription++;
     else if (!i.consigned || !i.squareItemId || !i.squareVariationId) out.notOnSale++;
@@ -107,7 +107,7 @@ export class ItemBreakdownService {
     } catch (err) {
       this.logger.warn({ err, orgId, swapId }, 'Could not read Square sales for the dashboard');
       return {
-        sold: 0, returned: 0, forSale: 0, noPrice: 0, noDescription: 0, notOnSale: 0, total: 0, asOf: new Date().toISOString(),
+        sold: 0, pickedUp: 0, forSale: 0, noPrice: 0, noDescription: 0, notOnSale: 0, total: 0, asOf: new Date().toISOString(),
         error: err instanceof Error ? err.message : 'Square couldn’t be read.',
       };
     }
@@ -115,11 +115,11 @@ export class ItemBreakdownService {
     const rows = await this.prisma.swapItem.findMany({
       where: { swapId, orgId, deletedAt: null },
       select: {
-        sku: true, name: true, priceCents: true, categoryId: true, consignedAt: true, returnedAt: true,
+        sku: true, name: true, priceCents: true, categoryId: true, consignedAt: true, pickedUpAt: true,
         squareItemId: true, squareVariationId: true, originalQuantity: true,
       },
     });
-    const items = rows.map((r) => ({ ...r, consigned: r.consignedAt !== null, returned: r.returnedAt !== null }));
+    const items = rows.map((r) => ({ ...r, consigned: r.consignedAt !== null, pickedUp: r.pickedUpAt !== null }));
     return { ...breakdown(items, soldByVariation(read.lines)), asOf: new Date(read.at).toISOString(), error: null };
   }
 

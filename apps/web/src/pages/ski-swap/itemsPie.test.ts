@@ -3,13 +3,13 @@ import { itemSegments, percent } from './itemsPie';
 
 describe('the dashboard’s Items bar', () => {
   it('has a segment per kind, in order, each its share of the bar', () => {
-    const segs = itemSegments({ sold: 45, returned: 5, forSale: 30, noPrice: 15, noDescription: 5, notOnSale: 0, total: 100 });
+    const segs = itemSegments({ sold: 45, pickedUp: 5, forSale: 30, noPrice: 15, noDescription: 5, notOnSale: 0, total: 100 });
     expect(segs.map((s) => [s.key, s.count, s.width])).toEqual([
-      ['sold', 45, '45%'], ['returned', 5, '5%'], ['forSale', 30, '30%'], ['noPrice', 15, '15%'], ['noDescription', 5, '5%'], ['notOnSale', 0, '0%'],
+      ['sold', 45, '45%'], ['pickedUp', 5, '5%'], ['forSale', 30, '30%'], ['noPrice', 15, '15%'], ['noDescription', 5, '5%'], ['notOnSale', 0, '0%'],
     ]);
   });
 
-  it('reads no returned from an older server as none', () => {
+  it('reads no picked-up count from an older server as none', () => {
     expect(itemSegments({ sold: 1, forSale: 1, noPrice: 0, noDescription: 0, notOnSale: 0, total: 2 })[1].count).toBe(0);
   });
 

@@ -5,7 +5,7 @@ describe('an item’s public status', () => {
 
   it('says returned for an item handed back, whatever Square counts (Plan 43)', () => {
     // Out of Square, its count is none: without this it would read as sold.
-    expect(publicItemStatus({ ...item, returnedAt: new Date() }, new Map())).toEqual({ status: 'returned', soldCount: null, quantity: 1 });
+    expect(publicItemStatus({ ...item, pickedUpAt: new Date() }, new Map())).toEqual({ status: 'picked_up', soldCount: null, quantity: 1 });
   });
 
   it('still reads sold and for sale from Square otherwise', () => {

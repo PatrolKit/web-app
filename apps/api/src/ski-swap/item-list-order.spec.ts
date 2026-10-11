@@ -46,7 +46,7 @@ describe('a search with no sort asked for', () => {
 
 describe('the Sold and For sale filters (by sales)', () => {
   const row = (id: string, over: Partial<SalesFilterRow> = {}): SalesFilterRow => ({
-    id, squareVariationId: `v-${id}`, originalQuantity: 1, consignedAt: new Date(), returnedAt: null, ...over,
+    id, squareVariationId: `v-${id}`, originalQuantity: 1, consignedAt: new Date(), pickedUpAt: null, ...over,
   });
   const rows = [
     row('sold'),
@@ -54,8 +54,8 @@ describe('the Sold and For sale filters (by sales)', () => {
     row('half', { originalQuantity: 2 }),          // 1 of 2 sold: still for sale
     row('waiting', { consignedAt: null }),          // not accepted yet: neither
     row('not-in-square', { squareVariationId: null }),
-    row('returned', { returnedAt: new Date() }),    // handed back unsold: neither
-    row('sold-then-returned', { returnedAt: new Date() }),
+    row('picked_up', { pickedUpAt: new Date() }),    // picked up unsold: neither
+    row('sold-then-returned', { pickedUpAt: new Date() }),
   ];
   const sold = new Map([['v-sold', 1], ['v-half', 1], ['v-sold-then-returned', 1]]);
 

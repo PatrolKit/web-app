@@ -18,9 +18,9 @@ import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ItemService, decodeCursor } from './item.service';
 import { LegacyTicketService } from './legacy-ticket.service';
 import { IssuedTicketService } from './issued-ticket.service';
-import { BatchTicketsDto, CategorizeItemsDto, CreateItemDto, PatchItemDto, ReturnBySkuDto, ReturnItemDto, UncategorizeItemDto } from '../contracts/ski-swap.contracts';
+import { BatchTicketsDto, CategorizeItemsDto, CreateItemDto, PatchItemDto, PickUpBySkuDto, PickUpItemDto, UncategorizeItemDto } from '../contracts/ski-swap.contracts';
 import { ItemCategorizeService } from './item-categorize.service';
-import { ItemReturnService, type ReturnActor } from './item-return.service';
+import { ItemPickupService, type PickupActor } from './item-pickup.service';
 import type { Request, Response } from 'express';
 import { isImportGuideFile } from './import-guide';
 
@@ -35,7 +35,7 @@ export class ItemController {
     private readonly itemService: ItemService,
     private readonly tickets: LegacyTicketService,
     private readonly issued: IssuedTicketService,
-    private readonly returns: ItemReturnService,
+    private readonly pickups: ItemPickupService,
     private readonly categorizer: ItemCategorizeService,
   ) {}
 
@@ -166,10 +166,10 @@ export class ItemController {
     return this.itemService.findBySku(orgId, swapId, sku);
   }
 
-  // ─── Returning unsold items to their sellers (Plan 43) ─────────────────────
+  // ─── Sellers picking up their unsold items (Plan 43) ───────────────────────
 
   /**
-   * The web scanner's return, by the SKU on the tag: one request per scan, so
+   * The web scanner's pickup, by the SKU on the tag: one request per scan, so
    * what the screen says is what was done. Staff on the web only.
    */
   /**
@@ -204,57 +204,57 @@ export class ItemController {
     return this.categorizer.uncategorize(orgId, swapId, itemId, body, user.userId);
   }
 
-  @Post('return-by-sku')
+  @Post('pickup-by-sku')
   @HttpCode(200)
   @RequirePermissions('ski_swap:manage')
   @NoDeviceAccess()
-  returnBySku(
+  pickUpBySku(
     @Param('orgId') orgId: string,
     @Param('swapId') swapId: string,
-    @Body() body: ReturnBySkuDto,
+    @Body() body: PickUpBySkuDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.returns.returnBySku(orgId, swapId, body.sku, { type: 'user', id: user.userId }, { sellerId: body.sellerId });
+    return this.pickups.pickUpBySku(orgId, swapId, body.sku, { type: 'user', id: user.userId }, { sellerId: body.sellerId });
   }
 
   /** A locked session's list (D5): the seller's items still out. */
-  @Get('unreturned')
+  @Get('awaiting-pickup')
   @RequirePermissions('ski_swap:manage')
   @NoDeviceAccess()
-  unreturned(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @Query('sellerId') sellerId?: string) {
+  awaitingPickup(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @Query('sellerId') sellerId?: string) {
     if (!sellerId) throw new BadRequestException('sellerId is required');
-    return this.returns.unreturned(orgId, swapId, sellerId);
+    return this.pickups.awaitingPickup(orgId, swapId, sellerId);
   }
 
   /**
-   * Returns one item: the iPad's path, queued offline and replayed with its
-   * `Idempotency-Key`, and staff's. A double return answers `already_returned`.
+   * Picks up one item: the iPad's path, queued offline and replayed with its
+   * `Idempotency-Key`, and staff's. A double pickup answers `already_picked_up`.
    */
-  @Post(':itemId/return')
+  @Post(':itemId/pickup')
   @HttpCode(200)
   @RequirePermissions('ski_swap:manage')
-  returnItem(
+  pickUp(
     @Param('orgId') orgId: string,
     @Param('swapId') swapId: string,
     @Param('itemId') itemId: string,
-    @Body() body: ReturnItemDto,
+    @Body() body: PickUpItemDto,
     @Req() req: Request & { user?: { userId: string }; device?: { deviceId: string } },
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.returns.returnItem(orgId, swapId, itemId, actorOf(req), body, idempotencyKey);
+    return this.pickups.pickUp(orgId, swapId, itemId, actorOf(req), body, idempotencyKey);
   }
 
-  /** Undoes a return (D4): back on sale. Staff on the web only. */
-  @Delete(':itemId/return')
+  /** Undoes a pickup (D4): back on sale. Staff on the web only. */
+  @Delete(':itemId/pickup')
   @RequirePermissions('ski_swap:manage')
   @NoDeviceAccess()
-  undoReturn(
+  undoPickup(
     @Param('orgId') orgId: string,
     @Param('swapId') swapId: string,
     @Param('itemId') itemId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.returns.undo(orgId, swapId, itemId, { type: 'user', id: user.userId });
+    return this.pickups.undo(orgId, swapId, itemId, { type: 'user', id: user.userId });
   }
 
   /**
@@ -435,7 +435,7 @@ export class ItemController {
 }
 
 /** Who is acting: a staff member, or the check-in iPad. */
-function actorOf(req: { user?: { userId: string }; device?: { deviceId: string } }): ReturnActor {
+function actorOf(req: { user?: { userId: string }; device?: { deviceId: string } }): PickupActor {
   if (req.user?.userId) return { type: 'user', id: req.user.userId };
   if (req.device?.deviceId) return { type: 'device', id: req.device.deviceId };
   throw new BadRequestException('No one to act as');

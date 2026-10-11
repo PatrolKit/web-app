@@ -8,30 +8,31 @@ import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
 import type { ItemResponse } from '../contracts/ski-swap.contracts';
 
 /**
- * Handing unsold items back to their sellers (Plan 43).
+ * Sellers picking up their unsold items at the end of a swap (Plan 43; named
+ * "pickup" in Plan 50, so it isn't mistaken for a sale's return).
  *
- * A return is a state of a live item, not a delete (D1): it stays on the
+ * A pickup is a state of a live item, not a delete (D1): it stays on the
  * seller's record and on the iPads. It takes the item out of Square, so it
  * can't ring up after it has gone home (D3), and refuses one Square says has
- * sold, the guard against handing back something a buyer paid for (D2).
+ * sold, the guard against sending home something a buyer paid for (D2).
  */
 
-/** Who handed it back: a staff member, or a staff check-in iPad. */
-export interface ReturnActor {
+/** Who marked it picked up: a staff member, or a staff check-in iPad. */
+export interface PickupActor {
   type: 'user' | 'device';
   id: string;
 }
 
-export interface ReturnResult {
+export interface PickupResult {
   item: ItemResponse;
-  /** `already_returned` is a double scan, not an error (D2). */
-  outcome: 'returned' | 'already_returned';
-  /** False when Square couldn't be read: returned anyway, and said so (D2). */
+  /** `already_picked_up` is a double scan, not an error (D2). */
+  outcome: 'picked_up' | 'already_picked_up';
+  /** False when Square couldn't be read: picked up anyway, and said so (D2). */
   squareChecked: boolean;
 }
 
 /** A locked session's list (D5): the seller's items still out. */
-export interface UnreturnedItem {
+export interface AwaitingPickupItem {
   id: string;
   sku: string;
   name: string;
@@ -43,11 +44,11 @@ export interface UnreturnedItem {
 /** Device clocks drift; a scan stamped a little ahead of ours is still a scan. */
 const CLOCK_SLACK_MS = 60_000;
 
-const scopeOf = (orgId: string, swapId: string) => `item-return:${orgId}:${swapId}`;
+const scopeOf = (orgId: string, swapId: string) => `item-pickup:${orgId}:${swapId}`;
 
 @Injectable()
-export class ItemReturnService {
-  private readonly logger = new Logger(ItemReturnService.name);
+export class ItemPickupService {
+  private readonly logger = new Logger(ItemPickupService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -57,30 +58,30 @@ export class ItemReturnService {
   ) {}
 
   /** The web scanner's path: the item by the SKU on its tag. */
-  async returnBySku(orgId: string, swapId: string, sku: string, actor: ReturnActor, opts: { sellerId?: string } = {}): Promise<ReturnResult> {
+  async pickUpBySku(orgId: string, swapId: string, sku: string, actor: PickupActor, opts: { sellerId?: string } = {}): Promise<PickupResult> {
     const item = await this.prisma.swapItem.findFirst({
       where: { orgId, swapId, liveSku: sku.trim(), deletedAt: null },
       select: { id: true },
     });
     if (!item) throw notFound();
-    return this.returnItem(orgId, swapId, item.id, actor, opts);
+    return this.pickUp(orgId, swapId, item.id, actor, opts);
   }
 
   /**
-   * Returns one item, the one path both routes take. Refusals: `ITEM_NOT_FOUND`,
+   * Picks up one item, the one path both routes take. Refusals: `ITEM_NOT_FOUND`,
    * `NOT_RECEIVED`, `WRONG_SELLER` (a locked session, D5), `ITEM_SOLD`.
    */
-  async returnItem(
+  async pickUp(
     orgId: string,
     swapId: string,
     itemId: string,
-    actor: ReturnActor,
-    opts: { sellerId?: string; returnedAt?: string } = {},
+    actor: PickupActor,
+    opts: { sellerId?: string; pickedUpAt?: string } = {},
     idempotencyKey?: string,
-  ): Promise<ReturnResult> {
+  ): Promise<PickupResult> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(scopeOf(orgId, swapId), idempotencyKey);
-      if (cached) return cached as unknown as ReturnResult;
+      if (cached) return cached as unknown as PickupResult;
     }
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { id: true, locationId: true } });
     if (!swap) throw new NotFoundException('Swap not found');
@@ -95,54 +96,54 @@ export class ItemReturnService {
       const locked = await this.sellerName(orgId, opts.sellerId);
       throw new ConflictException({
         code: 'WRONG_SELLER',
-        message: `This is ${possessive(owner)} item, not ${possessive(locked)}. Not returned.`,
+        message: `This is ${possessive(owner)} item, not ${possessive(locked)}. Not picked up.`,
         details: { owner },
       });
     }
-    if (item.returnedAt) return this.answer(orgId, swapId, itemId, 'already_returned', true, idempotencyKey);
+    if (item.pickedUpAt) return this.answer(orgId, swapId, itemId, 'already_picked_up', true, idempotencyKey);
     if (!item.consignedAt) {
-      throw new ConflictException({ code: 'NOT_RECEIVED', message: 'Never accepted: it was never on sale. Not returned.' });
+      throw new ConflictException({ code: 'NOT_RECEIVED', message: 'Never accepted: it was never on sale. Not picked up.' });
     }
 
     // How many are still here, by Square's count (D2). Not in Square at all
     // is nothing sold; a count Square won't give is "couldn't check".
     const stock = await this.stockOf(orgId, swap.locationId, item.squareVariationId);
     if (stock.checked && stock.units < 1) {
-      throw new ConflictException({ code: 'ITEM_SOLD', message: 'Square says this sold. It shouldn’t be in the return pile. Not returned.' });
+      throw new ConflictException({ code: 'ITEM_SOLD', message: 'Square says this sold. It shouldn’t be in the pickup pile. Not picked up.' });
     }
     const units = stock.checked ? Math.min(stock.units, item.originalQuantity) : item.originalQuantity;
 
     const name = await this.actorName(actor);
-    const at = this.stampOf(opts.returnedAt, item.consignedAt);
-    // Conditional, so two iPads returning the same item can't both win.
+    const at = this.stampOf(opts.pickedUpAt, item.consignedAt);
+    // Conditional, so two iPads picking up the same item can't both win.
     const { count } = await this.prisma.swapItem.updateMany({
-      where: { id: item.id, returnedAt: null, deletedAt: null },
-      data: { returnedAt: at, returnedBy: actor.id, returnedByName: name, returnedUnits: units },
+      where: { id: item.id, pickedUpAt: null, deletedAt: null },
+      data: { pickedUpAt: at, pickedUpBy: actor.id, pickedUpByName: name, pickedUpUnits: units },
     });
-    if (count === 0) return this.answer(orgId, swapId, itemId, 'already_returned', true, idempotencyKey);
+    if (count === 0) return this.answer(orgId, swapId, itemId, 'already_picked_up', true, idempotencyKey);
 
-    await this.audit(orgId, actor, 'ski_swap.item.returned', item.id, {
+    await this.audit(orgId, actor, 'ski_swap.item.picked_up', item.id, {
       sku: item.sku, sellerId: item.sellerId, units, squareChecked: stock.checked,
     });
 
     // Off sale (D3), after the record: the answer doesn't wait on Square, and
-    // a refusal leaves the return standing for Diagnostics to raise (D9).
+    // a refusal leaves the pickup standing for Catalog check to raise (D9).
     if (item.squareItemId) {
       void this.removeFromSquare(orgId, item.squareItemId).catch((err: unknown) =>
-        this.logger.error({ err, itemId: item.id }, 'A returned item is still in Square'));
+        this.logger.error({ err, itemId: item.id }, 'A picked-up item is still in Square'));
     }
-    return this.answer(orgId, swapId, itemId, 'returned', stock.checked, idempotencyKey);
+    return this.answer(orgId, swapId, itemId, 'picked_up', stock.checked, idempotencyKey);
   }
 
   /**
-   * Undoes a return (D4): back on sale as a new Square item. Refused for an
+   * Undoes a pickup (D4): back on sale as a new Square item. Refused for an
    * item with any units sold, whose new Square ids would orphan those sales.
    */
-  async undo(orgId: string, swapId: string, itemId: string, actor: ReturnActor): Promise<ItemResponse> {
+  async undo(orgId: string, swapId: string, itemId: string, actor: PickupActor): Promise<ItemResponse> {
     const item = await this.prisma.swapItem.findFirst({ where: { id: itemId, orgId, swapId, deletedAt: null } });
     if (!item) throw notFound();
-    if (!item.returnedAt) throw new ConflictException({ code: 'NOT_RETURNED', message: 'This item hasn’t been returned.' });
-    if ((item.returnedUnits ?? item.originalQuantity) < item.originalQuantity) {
+    if (!item.pickedUpAt) throw new ConflictException({ code: 'NOT_PICKED_UP', message: 'This item hasn’t been picked up.' });
+    if ((item.pickedUpUnits ?? item.originalQuantity) < item.originalQuantity) {
       throw new ConflictException({
         code: 'PARTLY_SOLD',
         message: 'Some of this item sold, so it can’t go back on sale as it was. Add the rest as a new item.',
@@ -150,19 +151,19 @@ export class ItemReturnService {
     }
     await this.prisma.swapItem.update({
       where: { id: item.id },
-      data: { returnedAt: null, returnedBy: null, returnedByName: null, returnedUnits: null, squareItemId: null, squareVariationId: null },
+      data: { pickedUpAt: null, pickedUpBy: null, pickedUpByName: null, pickedUpUnits: null, squareItemId: null, squareVariationId: null },
     });
-    await this.audit(orgId, actor, 'ski_swap.item.return_undone', item.id, { sku: item.sku, sellerId: item.sellerId });
+    await this.audit(orgId, actor, 'ski_swap.item.pickup_undone', item.id, { sku: item.sku, sellerId: item.sellerId });
     await this.items.syncToPos(orgId, swapId, item.id);
     return this.items.get(orgId, swapId, item.id);
   }
 
-  /** The seller's items still out (D5): accepted, not returned, with units left. */
-  async unreturned(orgId: string, swapId: string, sellerId: string): Promise<{ items: UnreturnedItem[]; squareChecked: boolean }> {
+  /** The seller's items still out (D5): accepted, not picked up, with units left. */
+  async awaitingPickup(orgId: string, swapId: string, sellerId: string): Promise<{ items: AwaitingPickupItem[]; squareChecked: boolean }> {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { locationId: true } });
     if (!swap) throw new NotFoundException('Swap not found');
     const rows = await this.prisma.swapItem.findMany({
-      where: { orgId, swapId, sellerId, deletedAt: null, returnedAt: null, consignedAt: { not: null } },
+      where: { orgId, swapId, sellerId, deletedAt: null, pickedUpAt: null, consignedAt: { not: null } },
       select: { id: true, sku: true, name: true, priceCents: true, originalQuantity: true, squareVariationId: true },
       orderBy: { sku: 'asc' },
     });
@@ -180,9 +181,9 @@ export class ItemReturnService {
 
   private async answer(
     orgId: string, swapId: string, itemId: string,
-    outcome: ReturnResult['outcome'], squareChecked: boolean, idempotencyKey?: string,
-  ): Promise<ReturnResult> {
-    const result: ReturnResult = { item: await this.items.get(orgId, swapId, itemId), outcome, squareChecked };
+    outcome: PickupResult['outcome'], squareChecked: boolean, idempotencyKey?: string,
+  ): Promise<PickupResult> {
+    const result: PickupResult = { item: await this.items.get(orgId, swapId, itemId), outcome, squareChecked };
     if (idempotencyKey) {
       await this.idempotency.save(scopeOf(orgId, swapId), idempotencyKey, result as unknown as Record<string, unknown>);
     }
@@ -205,7 +206,7 @@ export class ItemReturnService {
       const pos = await this.posFactory.forOrg(orgId);
       return pos ? await pos.getInventoryCounts(variationIds, locationId) : null;
     } catch (err) {
-      this.logger.warn({ err, orgId }, 'Square inventory read failed during a return');
+      this.logger.warn({ err, orgId }, 'Square inventory read failed during a pickup');
       return null;
     }
   }
@@ -216,7 +217,7 @@ export class ItemReturnService {
   }
 
   /**
-   * When the return happened (D7): a device's own stamp when it falls between
+   * When the pickup happened (D7): a device's own stamp when it falls between
    * the item's acceptance and now, a scan made offline and sent later; ours
    * otherwise.
    */
@@ -228,7 +229,7 @@ export class ItemReturnService {
     return at > now ? now : at;
   }
 
-  private async actorName(actor: ReturnActor): Promise<string | null> {
+  private async actorName(actor: PickupActor): Promise<string | null> {
     if (actor.type === 'device') {
       return (await this.prisma.device.findUnique({ where: { id: actor.id }, select: { name: true } }))?.name ?? null;
     }
@@ -241,7 +242,7 @@ export class ItemReturnService {
     return sellerDisplayName(seller) ?? 'the chosen seller';
   }
 
-  private audit(orgId: string, actor: ReturnActor, action: string, itemId: string, metadata: Record<string, unknown>) {
+  private audit(orgId: string, actor: PickupActor, action: string, itemId: string, metadata: Record<string, unknown>) {
     return this.prisma.auditLog.create({
       data: { actorType: actor.type, actorId: actor.id, orgId, action, targetType: 'swap_item', targetId: itemId, metadata: metadata as object },
     });

@@ -80,7 +80,7 @@ export function skipTone() {
 
 /**
  * A banner that can't be missed: red for trouble, green for "go" and "done"
- * (not the brand's red), amber for done with a caveat (Plan 43's returns).
+ * (not the brand's red), amber for done with a caveat (Plan 43's pickups).
  */
 export function Banner({ tone, icon, title, text, action }: {
   tone: 'error' | 'ready' | 'warn';

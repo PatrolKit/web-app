@@ -28,13 +28,13 @@ describe('the swap diagnostics comparison (Plan 41)', () => {
     expect(diagnose({ ours: [ours('2', { consigned: false })], deleted: [], square: [] })).toEqual([]);
   });
 
-  it('leaves a returned item alone, and raises one still in Square (Plan 43)', () => {
+  it('leaves a picked-up item alone, and raises one still in Square (Plan 43)', () => {
     const back = { id: 'r1', sku: '1', name: 'Red Skis', sellerName: 'Dana' };
     // Out of Square, as it should be: nothing to say.
-    expect(diagnose({ ours: [], deleted: [], returned: [back], square: [] })).toEqual([]);
+    expect(diagnose({ ours: [], deleted: [], pickedUp: [back], square: [] })).toEqual([]);
     // Still in Square: its delete failed.
-    const [still] = diagnose({ ours: [], deleted: [], returned: [back], square: [square('1')] });
-    expect(still).toMatchObject({ kind: 'returned', ours: { itemId: 'r1', sellerName: 'Dana' }, square: { itemId: 'sq-1' } });
+    const [still] = diagnose({ ours: [], deleted: [], pickedUp: [back], square: [square('1')] });
+    expect(still).toMatchObject({ kind: 'picked_up', ours: { itemId: 'r1', sellerName: 'Dana' }, square: { itemId: 'sq-1' } });
   });
 
   it('finds each differing field as its own issue', () => {
