@@ -25,7 +25,8 @@ import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
 import { stationCodeOf, uncategorisedName } from './sku.util';
 import type { ItemResponse, UnpricedTicket } from '../contracts/ski-swap.contracts';
-import { searchedField, sortRows, type ItemListView, type ItemSort } from './item-list-order';
+import { idsBySales, searchedField, sortRows, type ItemListView, type ItemSort } from './item-list-order';
+import { ItemBreakdownService } from './item-breakdown.service';
 import { servingDevice } from './device-stock.interceptor';
 import { CLAIM_RELEASED, claimForSquareCreate, releaseSquareCreateClaim } from './square-create-claim';
 
@@ -101,6 +102,7 @@ export class ItemService {
     private readonly taxonomy: TaxonomyService,
     // Optional for the unit tests that build this by hand; Nest always supplies it.
     private readonly issued?: IssuedTicketService,
+    private readonly breakdown?: ItemBreakdownService,
   ) {}
 
   async list(orgId: string, swapId: string, opts: {
@@ -130,6 +132,7 @@ export class ItemService {
      * item filter is an id list rather than a join per row (Plan 39).
      */
     const searchSellerIds = opts.query ? await this.sellersMatching(orgId, opts.query) : [];
+    const salesIds = opts.status === 'sold' || opts.status === 'for_sale' ? await this.idsBySales(orgId, swapId, opts.status) : null;
     const where = {
       swapId, orgId,
       ...(opts.updatedSince ? {} : { deletedAt: null }),
@@ -140,6 +143,8 @@ export class ItemService {
       AND: [
         // Missing either id (Plan 41 D14): the same test as the row's badge.
         ...(opts.status === 'not_in_square' ? [{ OR: [{ squareItemId: null }, { squareVariationId: null }] }] : []),
+        // Sold / For sale: by the swap's sales, worked out above.
+        ...(salesIds ? [{ id: { in: salesIds } }] : []),
         ...(opts.query ? [{ OR: [
           { name: { contains: opts.query } },
           { sku: { contains: opts.query } },
@@ -274,6 +279,27 @@ export class ItemService {
    * The org's sellers whose business name, first or last name, email or phone
    * contains the search: what the Items search matches a seller by.
    */
+  /**
+   * The Items page's Sold and For sale filters: the swap's items whose sales
+   * cover them, or don't. From the sales every card reads (cached two
+   * minutes), so a filter is one cheap read, not a stock read of every item.
+   */
+  private async idsBySales(orgId: string, swapId: string, status: 'sold' | 'for_sale'): Promise<string[]> {
+    if (!this.breakdown) throw new BadRequestException('Sold and For sale can’t be filtered here.');
+    let sold: Map<string, number>;
+    try {
+      sold = await this.breakdown.soldUnits(orgId, swapId);
+    } catch (err) {
+      if (err instanceof NotFoundException) throw err;
+      throw new BadRequestException(`Square’s sales couldn’t be read, so ${status === 'sold' ? 'Sold' : 'For sale'} can’t be filtered just now. Try again in a minute.`);
+    }
+    const rows = await this.prisma.swapItem.findMany({
+      where: { swapId, orgId, deletedAt: null },
+      select: { id: true, squareVariationId: true, originalQuantity: true, consignedAt: true, returnedAt: true },
+    });
+    return idsBySales(rows, sold, status);
+  }
+
   private async sellersMatching(orgId: string, query: string): Promise<string[]> {
     // Only when the query has digits in it. Stripped of letters, "rossignol"
     // is the empty string, and `contains: ''` is every phone there is.

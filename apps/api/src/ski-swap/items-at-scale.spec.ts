@@ -69,6 +69,20 @@ describe('the Items list (Plan 39)', () => {
     expect(wheres[2]).toMatchObject({ consignedAt: null });
   });
 
+  it('filters Sold by the swap’s sales, reading Square’s stock for the page only', async () => {
+    const { service, wheres, squareReads } = harness(rows);
+    (service as unknown as { breakdown: unknown }).breakdown = { soldUnits: async () => new Map([['var-9', 1], ['var-100', 1]]) };
+    await service.list('org-1', 'swap-1', { status: 'sold' });
+    expect((wheres.at(-1) as { AND: unknown[] }).AND).toContainEqual({ id: { in: ['id-100', 'id-9'] } });
+    expect(squareReads.length).toBe(1);
+  });
+
+  it('says so when the sales can’t be read for Sold', async () => {
+    const { service } = harness(rows);
+    (service as unknown as { breakdown: unknown }).breakdown = { soldUnits: async () => { throw new Error('Square is down'); } };
+    await expect(service.list('org-1', 'swap-1', { status: 'sold' })).rejects.toThrow('Square’s sales couldn’t be read');
+  });
+
   it('reads no Square for a device', async () => {
     const { service, squareReads } = harness(rows);
     await deviceRequest.run(true, () => service.list('org-1', 'swap-1', { walk: true }));
@@ -85,7 +99,8 @@ describe('the Items list (Plan 39)', () => {
     expect(parseItemListView({ status: 'needs_price', sort: 'price', dir: 'desc', printed: 'true' }))
       .toEqual({ status: 'needs_price', sort: 'price', dir: 'desc', printed: true });
     expect(parseItemListView({ sort: 'sku' })).toEqual({ sort: 'sku', dir: 'asc' });
-    expect(() => parseItemListView({ status: 'sold' })).toThrow(/status must be one of/);
+    expect(parseItemListView({ status: 'sold' })).toEqual({ status: 'sold' });
+    expect(() => parseItemListView({ status: 'gone' })).toThrow(/status must be one of/);
     expect(() => parseItemListView({ sort: 'status' })).toThrow(/sort must be one of/);
   });
 });

@@ -1,4 +1,4 @@
-import { searchedField, sortRows, type SortRow } from './item-list-order';
+import { idsBySales, searchedField, sortRows, type SalesFilterRow, type SortRow } from './item-list-order';
 
 const row = (sku: string, over: Partial<SortRow> = {}): SortRow => ({
   id: sku, sku, name: `Item #${sku}`, priceCents: 1000, sellerName: null, hasPrintedTag: true, ...over,
@@ -41,5 +41,29 @@ describe('a search with no sort asked for', () => {
   });
   it('by seller when it matched only sellers', () => {
     expect(searchedField([r('67012', 'Skis')], 'dana')).toBe('seller');
+  });
+});
+
+describe('the Sold and For sale filters (by sales)', () => {
+  const row = (id: string, over: Partial<SalesFilterRow> = {}): SalesFilterRow => ({
+    id, squareVariationId: `v-${id}`, originalQuantity: 1, consignedAt: new Date(), returnedAt: null, ...over,
+  });
+  const rows = [
+    row('sold'),
+    row('for-sale'),
+    row('half', { originalQuantity: 2 }),          // 1 of 2 sold: still for sale
+    row('waiting', { consignedAt: null }),          // not accepted yet: neither
+    row('not-in-square', { squareVariationId: null }),
+    row('returned', { returnedAt: new Date() }),    // handed back unsold: neither
+    row('sold-then-returned', { returnedAt: new Date() }),
+  ];
+  const sold = new Map([['v-sold', 1], ['v-half', 1], ['v-sold-then-returned', 1]]);
+
+  it('sold: sales cover every unit', () => {
+    expect(idsBySales(rows, sold, 'sold')).toEqual(['sold', 'sold-then-returned']);
+  });
+
+  it('for sale: on the floor, with units the sales don’t cover', () => {
+    expect(idsBySales(rows, sold, 'for_sale')).toEqual(['for-sale', 'half']);
   });
 });

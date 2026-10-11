@@ -568,7 +568,7 @@ export interface SwapStats {
 }
 
 /** The Items page's filters and sort (Plan 39): every one answered by the server. */
-export type ItemListStatus = 'not_received' | 'not_in_square' | 'needs_price' | 'returned';
+export type ItemListStatus = 'not_received' | 'not_in_square' | 'needs_price' | 'returned' | 'sold' | 'for_sale';
 
 /** One return's answer (Plan 43). `already_returned` is a double scan, not an error. */
 export interface ReturnResult {

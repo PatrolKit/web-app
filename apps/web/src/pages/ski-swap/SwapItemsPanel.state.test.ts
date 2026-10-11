@@ -85,12 +85,12 @@ describe('itemState', () => {
   });
 
   /**
-   * Only what our own rows answer, so the server can filter a large swap
-   * without asking Square (Plan 39 D2). For sale and Sold aren't filters.
+   * Only what the server answers without asking Square for every item (Plan
+   * 39 D2): our own rows, and For sale and Sold by the swap's sales.
    */
-  it('offers the filters the server answers from our own rows', () => {
-    expect(ITEM_STATE_FILTERS.map((f) => f.value)).toEqual(['not_received', 'not_in_square', 'needs_price', 'returned']);
-    expect(ITEM_STATE_FILTERS.map((f) => f.label)).toEqual(['Not yet received', 'Not in Square', 'Needs a price', 'Returned to seller']);
+  it('offers the filters the server answers without a stock read of every item', () => {
+    expect(ITEM_STATE_FILTERS.map((f) => f.value)).toEqual(['for_sale', 'sold', 'not_received', 'not_in_square', 'needs_price', 'returned']);
+    expect(ITEM_STATE_FILTERS.map((f) => f.label)).toEqual(['For sale', 'Sold', 'Not yet received', 'Not in Square', 'Needs a price', 'Returned to seller']);
   });
 
   it('says returned first, whatever Square counts (Plan 43)', () => {

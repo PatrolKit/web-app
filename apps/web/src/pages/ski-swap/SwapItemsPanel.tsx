@@ -193,11 +193,14 @@ function describeRanges(ranges: { startNumber: number; endNumber: number }[]): s
 export type ItemStateKey = 'returned' | 'not_received' | 'not_in_square' | 'stock_unknown' | 'for_sale' | 'sold';
 
 /**
- * What the status filter offers (Plan 39 D2): only what our own rows answer,
- * so the server can filter 10,000 items without asking Square. For sale and
- * Sold need stock for every item, and Square's reports cover them.
+ * What the status filter offers (Plan 39 D2), so the server can filter 10,000
+ * items without asking Square for every one. For sale and Sold go by the
+ * swap's sales, as the dashboard and payouts count them; a row's badge goes by
+ * Square's stock, and the two can briefly differ just after a sale.
  */
 export const ITEM_STATE_FILTERS: { value: ItemListStatus; label: string }[] = [
+  { value: 'for_sale', label: 'For sale' },
+  { value: 'sold', label: 'Sold' },
   { value: 'not_received', label: 'Not yet received' },
   { value: 'not_in_square', label: 'Not in Square' },
   { value: 'needs_price', label: 'Needs a price' },
