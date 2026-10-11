@@ -223,30 +223,26 @@ export function canUseSquarePrice(issue: DiagnosticIssueResponse): boolean {
   return !!sq && (sq.priceCents !== null || isTicket(issue.sku));
 }
 
-/** Price differs as a card: Square's item on the left, ours on the right, the prices flagged. */
-/** The item has sold: Square's price stays as it sold, and only PatrolKit's can change. */
-export const isSoldItem = (issue: DiagnosticIssueResponse): boolean => issue.field === 'price' && issue.ours?.soldOut === true;
-
 /** Price differs' buttons, saying which way each price goes and what it is. */
 export function priceButtons(issue: DiagnosticIssueResponse): { squareFromOurs: string; oursFromSquare: string; different: string } {
   return {
     squareFromOurs: `Set Square price from PatrolKit (${shown('price', issue.ours)})`,
     oursFromSquare: `Set PatrolKit price from Square (${shown('price', squareSide(issue))})`,
-    different: isSoldItem(issue) ? 'Set different PatrolKit price…' : 'Set different price…',
+    different: 'Set different price…',
   };
 }
 
+/** Price differs as a card: Square's item on the left, ours on the right, the prices flagged. */
 export function priceSides(issue: DiagnosticIssueResponse): { square: Side; ours: Side } {
   const sq = squareSide(issue);
   const ours = issue.ours && !issue.ours.deleted ? issue.ours : null;
-  const sold = isSoldItem(issue);
   return {
     square: {
       title: 'Square',
       fields: [
         { label: 'SKU', value: issue.sku, mono: true },
         { label: 'Name', value: sq?.name ?? '—' },
-        { label: 'Price', value: shown('price', sq), warn: true, ...(sold ? { tag: 'sold at this price' } : {}) },
+        { label: 'Price', value: shown('price', sq), warn: true },
       ],
       links: issue.squareUrl ? [{ label: 'Item', href: issue.squareUrl }] : [],
     },
@@ -257,7 +253,6 @@ export function priceSides(issue: DiagnosticIssueResponse): { square: Side; ours
         { label: 'Name', value: ours?.name ?? '—' },
         { label: 'Seller', value: ours?.sellerName ?? '—' },
         { label: 'Price', value: shown('price', ours), warn: true },
-        ...(sold ? [{ label: 'Status', value: (ours?.checkedIn ?? 1) > 1 ? `Sold · ${ours?.sold ?? 0} of ${ours?.checkedIn}` : 'Sold', warn: true }] : []),
       ],
       links: [{ label: 'Item', to: `/dashboard/ski-swap/items?q=${encodeURIComponent(issue.sku)}` }],
     },
@@ -273,6 +268,7 @@ export function priceDecidedText(issue: DiagnosticIssueResponse, setCents?: numb
       : setCents !== undefined ? `$${(setCents / 100).toFixed(2)}` : null;
   if (closedText(issue)) return `${closedText(issue)}${byAt(issue)}`;
   if (issue.choice === 'resolve') return `Marked resolved: PatrolKit ${shown('price', ours)}, Square ${shown('price', sq)}, as they were${byAt(issue)}`;
+  // No longer offered; how issues decided with it read.
   if (issue.choice === 'set_our_price') {
     return `Set PatrolKit’s price${now ? `: ${now}` : ''}; Square’s left as it sold${byAt(issue)}`;
   }

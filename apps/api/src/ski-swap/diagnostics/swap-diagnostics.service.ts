@@ -195,7 +195,7 @@ export class SwapDiagnosticsService {
 
     const { skipped, held, sold, unsettled } = await this.applyTo(swap, [issue], choice, extra, userId);
     if (sold) {
-      throw new ConflictException(`${issue.sku} has sold, so Square’s price stays as it sold. Set PatrolKit’s price instead, or leave it flagged.`);
+      throw new ConflictException(`${issue.sku} has sold since the check ran, so nothing was changed: what it sold for against PatrolKit’s price is settled in Sales check (Sold for a different price).`);
     }
     if (held) {
       throw new ConflictException(`Ticket ${issue.sku} has ${held === 1 ? 'an open sale' : `${held} open sales`} in Sales check. Settle ${held === 1 ? 'it' : 'them'} there first.`);
@@ -218,7 +218,7 @@ export class SwapDiagnosticsService {
   ): Promise<DiagnosticApplyAllResponse> {
     const swap = await this.swapOrThrow(orgId, swapId);
     if (choice === 'keep') throw new BadRequestException('Keep this copy is chosen one item at a time.');
-    if (choice === 'set_price' || choice === 'set_our_price') throw new BadRequestException('A new price is set one item at a time.');
+    if (choice === 'set_price') throw new BadRequestException('A new price is set one item at a time.');
     const issues = await this.prisma.swapDiagnosticIssue.findMany({
       where: {
         runId, swapId, kind: group.kind,
@@ -241,7 +241,7 @@ export class SwapDiagnosticsService {
       if (!CHOICES_FOR[issue.kind as IssueKind]?.includes(choice)) {
         throw new BadRequestException('That choice doesn’t apply to this issue.');
       }
-      if ((choice === 'set_price' || choice === 'set_our_price') && (issue.field !== 'price' || !extra.priceCents)) {
+      if (choice === 'set_price' && (issue.field !== 'price' || !extra.priceCents)) {
         throw new BadRequestException('A new price is set on Price differs, with the price.');
       }
     }
@@ -267,10 +267,10 @@ export class SwapDiagnosticsService {
     issues = issues.filter((_, n) => !holding[n]);
     if (issues.length === 0) return tally;
 
-    // Both sides, as they are now, for every SKU involved. A choice that
-    // writes Square's price reads whether each item has sold, too.
-    const writesSquarePrice = (choice === 'use_ours' || choice === 'set_price') && issues.some((i) => i.field === 'price');
-    const { found: current, unsettled } = await this.recheck(swap, [...new Set(issues.map((i) => i.sku))], issues.some((i) => i.kind === 'stock'), writesSquarePrice);
+    // Both sides, as they are now, for every SKU involved. A choice on a price
+    // reads whether each item has sold since the run, too.
+    const changesPrice = choice !== 'resolve' && issues.some((i) => i.field === 'price');
+    const { found: current, unsettled } = await this.recheck(swap, [...new Set(issues.map((i) => i.sku))], issues.some((i) => i.kind === 'stock'), changesPrice);
     const outcomes: { issue: IssueRow; state: 'applied' | 'fixed' | 'left' | 'failed'; error?: string }[] = [];
 
     // Gone now (picked up, deleted, or the two sides agree): nothing is left to
@@ -285,12 +285,12 @@ export class SwapDiagnosticsService {
       }
     }
 
-    // A sold item's Square price stays as it sold: left flagged, untouched.
-    if (writesSquarePrice) {
+    // Sold since the run: its price is Sales check's now, so nothing changes here.
+    if (changesPrice) {
       const priced = issues.filter((i) => i.field === 'price');
       // Square's stock or sales unreadable: nothing can be told, so nothing changes.
       if (priced.length && priced.every((i) => current.get(issueKey(i))?.ours?.soldOut === undefined)) {
-        throw new ConflictException('Couldn’t read Square’s stock and sales to check whether it has sold, so Square’s price wasn’t changed. Try again in a minute.');
+        throw new ConflictException('Couldn’t read Square’s stock and sales to check whether it has sold, so no price was changed. Try again in a minute.');
       }
       // Not known for one: not changed either.
       const soldOut = (i: IssueRow) => i.field === 'price' && current.get(issueKey(i))?.ours?.soldOut !== false;
@@ -435,14 +435,6 @@ export class SwapDiagnosticsService {
         return [...out, ...(written.length ? await this.perform(swap, written, 'use_ours', extra) : [])];
       }
 
-      case 'set_our_price':
-        // PatrolKit's price only, for an item that has sold: Square's stays as
-        // it sold, and the seller is paid this. Straight to the item, as Use
-        // Square's is; `updatedAt` moves, so the iPads get it.
-        await each(async (issue) => {
-          await this.prisma.swapItem.update({ where: { id: ourOf(issue)!.itemId }, data: { priceCents: extra.priceCents! } });
-        });
-        return out;
 
       case 'set_stock': {
         // Square's stock to what the item's sales leave, as the re-check just
@@ -588,7 +580,7 @@ export class SwapDiagnosticsService {
     const read = withStock || withSold ? await this.stockFor(swap, pos, ours, true, new Map(square.map((q) => [q.sku, q.variationId]))) : undefined;
     const found = diagnose({
       ours, deleted, pickedUp, square, elsewhere, categoryNames,
-      stock: withStock ? read?.stock : undefined, soldOf: read?.soldOf, onlySkus: new Set(skus),
+      stock: withStock ? read?.stock : undefined, soldOf: read?.soldOf, onlySkus: new Set(skus), keepSold: true,
     });
     const unsettled = new Set(withStock
       ? ours.filter((o) => o.squareVariationId && !read?.stock?.has(o.sku)).map((o) => o.sku)

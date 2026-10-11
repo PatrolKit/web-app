@@ -12,7 +12,10 @@ export type DiagnosticField = (typeof DIAGNOSTIC_FIELDS)[number];
 
 export const DIAGNOSTIC_CHOICES = [
   'copy_to_patrolkit', 'copy_to_square', 'use_square', 'use_ours', 'link', 'keep', 'remove_from_square',
-  'delete_other', 'renumber_other', 'resolve', 'set_price', 'set_stock', 'set_our_price',
+  'delete_other', 'renumber_other', 'resolve', 'set_price', 'set_stock',
+  // No longer offered (a sold item's price is Sales check's): kept so the
+  // issues decided with it still read.
+  'set_our_price',
 ] as const;
 export type DiagnosticChoice = (typeof DIAGNOSTIC_CHOICES)[number];
 
@@ -20,9 +23,8 @@ export type DiagnosticChoice = (typeof DIAGNOSTIC_CHOICES)[number];
 export const CHOICES_FOR: Record<DiagnosticIssueKind, readonly DiagnosticChoice[]> = {
   only_square: ['copy_to_patrolkit', 'resolve'],
   only_ours: ['copy_to_square', 'resolve'],
-  // Set a new price: Price differs only, one item at a time, to both sides;
-  // or to PatrolKit's only, for an item that has sold (Square's price stays).
-  differs: ['use_square', 'use_ours', 'set_price', 'set_our_price', 'resolve'],
+  // Set a new price: Price differs only, one item at a time, to both sides.
+  differs: ['use_square', 'use_ours', 'set_price', 'resolve'],
   not_linked: ['link', 'resolve'],
   twice: ['keep', 'resolve'],
   // Returned to its seller and still in Square (Plan 43 D9): its delete failed.

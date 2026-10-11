@@ -667,47 +667,15 @@ describe('a register-made copy whose sale is settled (10/10, 6867 → 86867)', (
 });
 
 
-describe('Price differs on a sold item', () => {
-  it('says the item has sold, from Square’s count or its sales', async () => {
+describe('Price differs on a sold item: Sales check’s, not the catalog’s', () => {
+  it('isn’t flagged once the item has sold, by Square’s count or its sales; an unsold one still is', async () => {
     const h = harness();
-    h.ours('1', { priceCents: 5000 });
-    h.square('1');
-    h.stock('sv-1', 0, 1);
-    h.ours('2', { priceCents: 5000 });
-    h.square('2');
+    h.ours('1', { priceCents: 5000 }); h.square('1'); h.stock('sv-1', 0, 1);
+    h.ours('2', { priceCents: 5000 }); h.square('2');
+    h.ours('3', { priceCents: 600 }); h.square('3', { pricing: { type: 'variable' } }); h.stock('sv-3', 0, 1); // typed at the register
     const run = await h.run();
-    const by = (sku: string) => run.issues.find((i) => i.sku === sku && i.kind === 'differs')!;
-    expect(by('1').ours).toMatchObject({ soldOut: true, sold: 1, checkedIn: 1 });
-    expect(by('2').ours).toMatchObject({ soldOut: false, sold: 0 });
-  });
-
-  it('leaves Square’s price alone and the issue flagged: Use ours and Set a new price are refused', async () => {
-    const h = harness();
-    h.ours('1', { priceCents: 5000 });
-    h.square('1');
-    h.stock('sv-1', 0, 1);
-    const run = await h.run();
-    const price = run.issues.find((i) => i.kind === 'differs')!;
-    await expect(h.service.apply('org', 'swap', price.id, 'use_ours', {}, 'staff')).rejects.toThrow('1 has sold, so Square’s price stays as it sold');
-    await expect(h.service.apply('org', 'swap', price.id, 'set_price', { priceCents: 4000 }, 'staff')).rejects.toThrow('has sold');
-    expect(h.squareWrites).toEqual([]);
-    expect(open(await h.run())).toEqual([['1', 'differs', 'price']]);
-  });
-
-  it('still takes Square’s price into PatrolKit, or a different PatrolKit price only', async () => {
-    const h = harness();
-    h.ours('1', { priceCents: 5000 });
-    h.square('1');
-    h.stock('sv-1', 0, 1);
-    let run = await h.run();
-    await h.service.apply('org', 'swap', run.issues.find((i) => i.kind === 'differs')!.id, 'set_our_price', { priceCents: 4200 }, 'staff');
-    expect(h.db.items.find((i) => i.sku === '1')!.priceCents).toBe(4200);
-    expect(h.squareWrites).toEqual([]);
-    expect(open(await h.run())).toEqual([['1', 'differs', 'price']]);
-    run = await h.run();
-    await h.service.apply('org', 'swap', run.issues.find((i) => i.kind === 'differs')!.id, 'use_square', {}, 'staff');
-    expect(h.db.items.find((i) => i.sku === '1')!.priceCents).toBe(4500);
-    expect(open(await h.run())).toEqual([]);
+    expect(open(run)).toEqual([['2', 'differs', 'price']]);
+    expect(run.issues[0].ours).toMatchObject({ soldOut: false, sold: 0 });
   });
 
   it('judges an item not linked by the Square item it was compared with', async () => {
@@ -715,45 +683,48 @@ describe('Price differs on a sold item', () => {
     h.ours('1', { priceCents: 5000, squareItemId: null, squareVariationId: null });
     h.square('1');
     h.stock('sv-1', 0, 0);
-    const run = await h.run();
-    await expect(h.service.apply('org', 'swap', run.issues.find((i) => i.kind === 'differs')!.id, 'use_ours', {}, 'staff')).rejects.toThrow('has sold');
+    expect(open(await h.run())).toEqual([['1', 'not_linked', null]]);
   });
 
-  it('leaves sold ones flagged in Use ours for all, and counts them', async () => {
+  it('is still flagged when Square’s sales can’t be read to tell', async () => {
     const h = harness();
-    for (const sku of ['1', '2']) { h.ours(sku, { priceCents: 5000 }); h.square(sku); }
-    h.stock('sv-1', 0, 1);
-    const run = await h.run();
-    expect(await h.service.applyAll('org', 'swap', run.id, { kind: 'differs', field: 'price' }, 'use_ours', {}, 'staff'))
-      .toEqual({ applied: 1, skipped: 0, failed: 0, held: 0, sold: 1, closed: 0 });
-    expect(h.squareWrites.flat().map((w) => w.sku)).toEqual(['2']);
+    h.ours('1', { priceCents: 5000 }); h.square('1'); h.stock('sv-1', 0, 1);
+    h.salesUnreadable(true);
     expect(open(await h.run())).toEqual([['1', 'differs', 'price']]);
   });
 
-  it('doesn’t flag a sold ticket Square has no price for: its price was typed at the register', async () => {
+  it('sold since the run: every price choice is refused and nothing changes; Mark resolved still works', async () => {
     const h = harness();
-    h.ours('59410', { priceCents: 600 });
-    h.square('59410', { pricing: { type: 'variable' } });
-    h.stock('sv-59410', 0, 1);
-    h.ours('59411', { priceCents: 600 });
-    h.square('59411', { pricing: { type: 'variable' } });   // unsold: still flagged
-    expect(open(await h.run())).toEqual([['59411', 'differs', 'price']]);
-  });
-
-  it('can be marked resolved once decided, leaving both prices as they are', async () => {
-    const h = harness();
-    h.ours('1', { priceCents: 5000 });
-    h.square('1');
-    h.stock('sv-1', 0, 1);
+    h.ours('1', { priceCents: 5000 }); h.square('1');
     const run = await h.run();
-    const decided = await h.service.apply('org', 'swap', run.issues.find((i) => i.kind === 'differs')!.id, 'resolve', {}, 'staff');
-    expect(decided.state).toBe('left');
+    const price = run.issues.find((i) => i.kind === 'differs')!;
+    h.stock('sv-1', 0, 1);
+    for (const [choice, extra] of [['use_ours', {}], ['use_square', {}], ['set_price', { priceCents: 4000 }]] as const) {
+      await expect(h.service.apply('org', 'swap', price.id, choice, extra, 'staff')).rejects.toThrow('1 has sold since the check ran, so nothing was changed');
+    }
     expect(h.squareWrites).toEqual([]);
     expect(h.db.items.find((i) => i.sku === '1')!.priceCents).toBe(5000);
-    expect(open(await h.run())).toEqual([]);
+    await expect(h.service.apply('org', 'swap', price.id, 'resolve', {}, 'staff')).resolves.toMatchObject({ state: 'left' });
   });
 
-  it('refuses Square’s price when sales can’t be read to tell', async () => {
+  it('counts the ones sold since the run in a group choice, and leaves them alone', async () => {
+    const h = harness();
+    for (const sku of ['1', '2']) { h.ours(sku, { priceCents: 5000 }); h.square(sku); }
+    const run = await h.run();
+    h.stock('sv-1', 0, 1);
+    expect(await h.service.applyAll('org', 'swap', run.id, { kind: 'differs', field: 'price' }, 'use_ours', {}, 'staff'))
+      .toEqual({ applied: 1, skipped: 0, failed: 0, held: 0, sold: 1, closed: 0 });
+    expect(h.squareWrites.flat().map((w) => w.sku)).toEqual(['2']);
+  });
+
+  it('no longer offers PatrolKit’s price alone', async () => {
+    const h = harness();
+    h.ours('1', { priceCents: 5000 }); h.square('1');
+    const run = await h.run();
+    await expect(h.service.apply('org', 'swap', run.issues[0].id, 'set_our_price', { priceCents: 4200 }, 'staff')).rejects.toThrow('That choice doesn’t apply');
+  });
+
+  it('refuses a price choice when sales can’t be read to tell', async () => {
     const h = harness();
     h.ours('1', { priceCents: 5000 });
     h.square('1');

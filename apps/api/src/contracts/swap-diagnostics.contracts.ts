@@ -134,7 +134,7 @@ export interface DiagnosticApplyAllResponse {
   failed: number;
   /** Left alone: an open Sales check sale holds them back. */
   held: number;
-  /** Left flagged: sold, so Square's price isn't changed. */
+  /** Left alone: sold since the run, so their price is Sales check's. */
   sold?: number;
   /** Closed by themselves: gone since the run (picked up, deleted, or the sides now agree). */
   closed?: number;

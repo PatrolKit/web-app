@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DiagnosticIssueResponse, DiagnosticRunResponse } from '../../lib/api.types';
-import { centsOf, decidedText, stockText, groupChoiceLabel, groupsOf, heldText, isHeld, isSoldItem, priceButtons, priceDecidedText, priceSides, rowChoices, shown } from './swapDiagnosticsView';
+import { centsOf, decidedText, stockText, groupChoiceLabel, groupsOf, heldText, isHeld, priceButtons, priceDecidedText, priceSides, rowChoices, shown } from './swapDiagnosticsView';
 
 const issue = (over: Partial<DiagnosticIssueResponse>): DiagnosticIssueResponse => ({
   id: 'i', sku: 'SP-0001', kind: 'only_ours', field: null, ours: null, square: null, state: 'open',
@@ -103,20 +103,12 @@ describe('Price differs as a card', () => {
     expect(priceDecidedText({ ...price, state: 'left', choice: 'resolve' })).toBe(`Marked resolved: PatrolKit ${shown('price', price.ours)}, Square $45.00, as they were`);
   });
 
-  it('labels each button with the way its price goes, and says when the item has sold', () => {
+  it('labels each button with the way its price goes', () => {
     expect(priceButtons(price)).toEqual({
       squareFromOurs: `Set Square price from PatrolKit (${shown('price', price.ours)})`,
       oursFromSquare: 'Set PatrolKit price from Square ($45.00)',
       different: 'Set different price…',
     });
-    expect(isSoldItem(price)).toBe(false);
-    const sold = { ...price, ours: { ...price.ours!, soldOut: true, sold: 1, checkedIn: 1 } };
-    expect(isSoldItem(sold)).toBe(true);
-    expect(priceButtons(sold).different).toBe('Set different PatrolKit price…');
-    const sides = priceSides(sold);
-    expect(sides.ours.fields.find((f) => f.label === 'Status')).toEqual({ label: 'Status', value: 'Sold', warn: true });
-    expect(sides.square.fields.find((f) => f.label === 'Price')?.tag).toBe('sold at this price');
-    expect(priceSides(price).ours.fields.some((f) => f.label === 'Status')).toBe(false);
   });
 
   it('reads a typed price', () => {

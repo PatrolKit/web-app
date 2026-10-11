@@ -160,6 +160,8 @@ export function diagnose(input: {
   soldOf?: Map<string, StockOf>;
   /** Limit to these SKUs: a re-read of a few. Absent for a whole run. */
   onlySkus?: Set<string>;
+  /** Price differs on sold items too, marked sold: what Apply's re-check needs to refuse them. */
+  keepSold?: boolean;
 }): FoundIssue[] {
   const want = (sku: string) => !input.onlySkus || input.onlySkus.has(sku);
   const ourBySku = new Map(input.ours.filter((o) => want(o.sku)).map((o) => [o.sku, o]));
@@ -210,15 +212,13 @@ export function diagnose(input: {
     if (o.name !== sq.name) add(sku, 'differs', 'name', o, sq, { ours: o.name, square: sq.name });
     if (o.notes !== sq.notes) add(sku, 'differs', 'notes', o, sq, { ours: o.notes, square: sq.notes });
     if (o.priceCents !== sq.priceCents) {
-      // Whether it has sold rides along (not in the fingerprint): Square's
-      // price of a sold item stays as it sold.
+      // Whether it has sold rides along (not in the fingerprint). A sold
+      // item's price isn't the catalog's to settle: Square's stays as it sold,
+      // and what the sale paid against PatrolKit's (what the seller is paid) is
+      // Sales check's "Sold for a different price". Not known: still flagged.
       const s = input.soldOf?.get(sku);
       const soldOut = s ? isSoldOut(s) : false;
-      // A ticket sold with no price in Square had it typed at the register:
-      // the sale has the price, Square's item never will, and PatrolKit's is
-      // what the seller is paid. Nothing to settle in the catalog: a price
-      // typed other than PatrolKit's is Sales check's (paid-price check).
-      if (!(soldOut && sq.priceCents === null)) {
+      if (!soldOut || input.keepSold) {
         const side = s ? { ...o, sold: s.sold, checkedIn: s.checkedIn, soldOut } : o;
         add(sku, 'differs', 'price', side, sq, { ours: o.priceCents, square: sq.priceCents });
       }

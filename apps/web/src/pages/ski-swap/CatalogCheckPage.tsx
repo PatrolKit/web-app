@@ -9,7 +9,7 @@ import type {
 import type { SkiSwapContext } from './SkiSwapLayout';
 import { BusyBanner, FoldHeader, NoteBox, SidePanel, Tombstone, useFolds, useJustDecided } from './ReportCard';
 import {
-  CHOICE_LABEL, canUseSquarePrice, isSoldItem, priceButtons, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
+  CHOICE_LABEL, canUseSquarePrice, priceButtons, centsOf, decidedText, groupChoiceLabel, groupsOf, heldText, isHeld, isOpen, priceDecidedText, priceSides,
   rowChoices, shown, squareCopies, squareSide, stockText, tookText,
   type DiagnosticGroup,
 } from './swapDiagnosticsView';
@@ -185,7 +185,7 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
         r.held ? `${r.held} left for their open sales in Sales check` : null,
         r.closed ? `${r.closed} no longer applied (picked up, deleted, or already fixed)` : null,
         r.skipped ? `${r.skipped} changed since the check ran (run it again to see them)` : null,
-        r.sold ? `${r.sold} left flagged: sold, so Square’s price wasn’t changed` : null,
+        r.sold ? `${r.sold} sold since the check ran, so left alone: settle their price in Sales check` : null,
         r.failed ? `${r.failed} failed (see the rows)` : null,
       ].filter(Boolean).join(', '));
       onChanged();
@@ -294,30 +294,22 @@ function PriceCard({ issue, orgId, swapId, onDecided, note, onSaveNote }: {
 
   if (!isOpen(issue)) return <Tombstone text={`${issue.sku}: ${priceDecidedText(issue, done?.cents)}`} hint="" settle={!!done || justDecided} />;
 
-  const sold = isSoldItem(issue);
   const labels = priceButtons(issue);
 
-  /** Asks for the price, again until it's one, or until cancelled. A sold item's goes to PatrolKit only. */
+  /** Asks for the price, again until it's one, or until cancelled. */
   function setDifferent() {
-    let ask = sold
-      ? `${issue.sku} has sold. A different price for PatrolKit only (what its seller is paid); Square’s stays as it sold:`
-      : `A different price for ${issue.sku}, in both PatrolKit and Square:`;
+    let ask = `A different price for ${issue.sku}, in both PatrolKit and Square:`;
     for (;;) {
       const typed = window.prompt(ask, '');
       if (typed === null) return;
       const cents = centsOf(typed);
-      if (cents !== null) { apply.mutate({ choice: sold ? 'set_our_price' : 'set_price', priceCents: cents }); return; }
+      if (cents !== null) { apply.mutate({ choice: 'set_price', priceCents: cents }); return; }
       ask = `“${typed}” isn’t a price. Enter one above $0, like 40 or 40.50:`;
     }
   }
 
   return (
-    <div className={`border rounded-lg overflow-hidden bg-surface-50 transition-opacity ${sold ? 'border-amber-700/70' : 'border-gray-800'} ${busy ? 'opacity-60' : ''}`} aria-busy={busy}>
-      {sold && (
-        <p className="px-3 py-2 border-b border-amber-800/60 bg-amber-900/25 text-xs text-amber-200">
-          <span className="font-semibold text-amber-300">Sold.</span> Square’s price stays as it sold, so it can’t be changed here. PatrolKit’s price can; or mark it resolved once you’ve decided.
-        </p>
-      )}
+    <div className={`border border-gray-800 rounded-lg overflow-hidden bg-surface-50 transition-opacity ${busy ? 'opacity-60' : ''}`} aria-busy={busy}>
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_1.75rem_minmax(0,1fr)]">
         <SidePanel side={sides.square} icon="■" />
         <div className="hidden md:flex items-center justify-center text-gray-600">≠</div>
@@ -336,27 +328,15 @@ function PriceCard({ issue, orgId, swapId, onDecided, note, onSaveNote }: {
           {issue.state === 'failed' && issue.error && <span className="text-xs text-red-400 mr-auto">{issue.error}</span>}
           {apply.error && <span className="text-xs text-red-400 mr-auto">{errorText(apply.error)}</span>}
           {busy && <span className="text-xs text-gray-400 mr-auto">Working…</span>}
-          {!sold && (
-            <button type="button" className={outlined} disabled={busy}
-              onClick={() => { if (window.confirm(`${labels.squareFromOurs}? Square’s price for ${issue.sku} becomes PatrolKit’s.`)) apply.mutate({ choice: 'use_ours' }); }}>
-              {labels.squareFromOurs}
-            </button>
-          )}
-          {/* Square has no price: taking it would leave PatrolKit with none too. */}
-          {!(sold && squareSide(issue)?.priceCents === null) && (
-            <button type="button" className={outlined} disabled={busy || !canUseSquarePrice(issue)}
-              onClick={() => { if (window.confirm(`${labels.oursFromSquare}? PatrolKit’s price for ${issue.sku} becomes Square’s, and its seller is paid that.`)) apply.mutate({ choice: 'use_square' }); }}>
-              {labels.oursFromSquare}
-            </button>
-          )}
+          <button type="button" className={outlined} disabled={busy}
+            onClick={() => { if (window.confirm(`${labels.squareFromOurs}? Square’s price for ${issue.sku} becomes PatrolKit’s.`)) apply.mutate({ choice: 'use_ours' }); }}>
+            {labels.squareFromOurs}
+          </button>
+          <button type="button" className={outlined} disabled={busy || !canUseSquarePrice(issue)}
+            onClick={() => { if (window.confirm(`${labels.oursFromSquare}? PatrolKit’s price for ${issue.sku} becomes Square’s, and its seller is paid that.`)) apply.mutate({ choice: 'use_square' }); }}>
+            {labels.oursFromSquare}
+          </button>
           <button type="button" className={bordered} disabled={busy} onClick={setDifferent}>{labels.different}</button>
-          {/* Sold: once decided (keep PatrolKit's, or take Square's), it can be cleared. */}
-          {sold && (
-            <button type="button" className={bordered} disabled={busy}
-              onClick={() => { if (window.confirm(`Mark ${issue.sku} resolved? Both prices stay as they are: PatrolKit ${shown('price', issue.ours)} (what the seller is paid), Square ${shown('price', squareSide(issue))}. It won’t come up again unless one changes.`)) apply.mutate({ choice: 'resolve' }); }}>
-              Mark resolved
-            </button>
-          )}
         </div>
       )}
     </div>
