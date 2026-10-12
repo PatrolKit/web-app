@@ -18,7 +18,7 @@ import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ItemService, decodeCursor } from './item.service';
 import { LegacyTicketService } from './legacy-ticket.service';
 import { IssuedTicketService } from './issued-ticket.service';
-import { BatchTicketsDto, CategorizeItemsDto, CreateItemDto, EmailItemsExportDto, PatchItemDto, PickUpBySkuDto, PickUpItemDto, UncategorizeItemDto } from '../contracts/ski-swap.contracts';
+import { BatchTicketsDto, CategorizeItemsDto, CreateItemDto, EmailItemsExportDto, EmailRemainingItemsDto, PatchItemDto, PickUpBySkuDto, PickUpItemDto, UncategorizeItemDto } from '../contracts/ski-swap.contracts';
 import { ItemCategorizeService } from './item-categorize.service';
 import { ItemPickupService, type PickupActor } from './item-pickup.service';
 import { ItemExportService } from './item-export.service';
@@ -86,7 +86,7 @@ export class ItemController {
     @Query('dir') dir?: string,
   ) {
     const view = parseItemListView({ status, sellerKind, printed, sort, dir });
-    const file = await this.exports.download(orgId, swapId, { query, sellerId, ...view }, user.userId);
+    const file = await this.exports.download(orgId, swapId, { query, sellerId, ...view }, { type: 'user', id: user.userId });
     res.setHeader('Content-Type', file.contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
     res.setHeader('Cache-Control', 'no-store');
@@ -106,7 +106,7 @@ export class ItemController {
   ) {
     const { to, query, sellerId, status, sellerKind, printed, sort, dir } = body;
     const view = parseItemListView({ status, sellerKind, printed, sort, dir });
-    return this.exports.email(orgId, swapId, { query, sellerId, ...view }, to, user.userId);
+    return this.exports.email(orgId, swapId, { query, sellerId, ...view }, to, { type: 'user', id: user.userId });
   }
 
   @Get()
@@ -299,6 +299,26 @@ export class ItemController {
   awaitingPickup(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @Query('sellerId') sellerId?: string) {
     if (!sellerId) throw new BadRequestException('sellerId is required');
     return this.pickups.awaitingPickup(orgId, swapId, sellerId);
+  }
+
+  /**
+   * One seller's items still out, unsold, emailed as the export's spreadsheet
+   * (iOS Plan 38): the pickup iPad's Items remaining list. Narrower than
+   * `export/email` on purpose, which takes any filter and so every seller's
+   * contact details: here the seller and the For sale filter are fixed. Staff
+   * on the web and the staff check-in iPad, as `awaiting-pickup`; a device is
+   * the email's sender and the audit row's actor.
+   */
+  @Post('awaiting-pickup/email')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:manage')
+  emailRemaining(
+    @Param('orgId') orgId: string,
+    @Param('swapId') swapId: string,
+    @Body() body: EmailRemainingItemsDto,
+    @Req() req: Request & { user?: { userId: string }; device?: { deviceId: string } },
+  ) {
+    return this.exports.emailRemaining(orgId, swapId, body.sellerId, body.to, actorOf(req));
   }
 
   /**

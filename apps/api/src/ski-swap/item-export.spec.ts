@@ -3,7 +3,10 @@ import { RequestMethod } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { METHOD_METADATA } from '@nestjs/common/constants';
 import { PERMISSIONS_KEY } from '../common/decorators/require-permissions.decorator';
+import { NotFoundException } from '@nestjs/common';
+import { DEVICE_ROLES_KEY } from '../common/decorators/require-device-role.decorator';
 import { ItemController } from './item.controller';
+import { ItemExportService } from './item-export.service';
 import { exportRows, exportWorkbook, localDate, type ExportItem } from './item-export';
 import type { PosSaleLine } from './pos/pos.adapter';
 
@@ -90,5 +93,67 @@ describe('the export routes', () => {
   it('are open to anyone who can read the Items page', () => {
     expect(route('exportItems')).toEqual([RequestMethod.GET, ['ski_swap:report']]);
     expect(route('emailItems')).toEqual([RequestMethod.POST, ['ski_swap:report']]);
+  });
+
+  it('keep the general export from devices, but let the pickup iPad email one seller’s remaining items (iOS Plan 38)', () => {
+    const roles = (name: keyof ItemController) => reflector.getAllAndOverride(DEVICE_ROLES_KEY, [ItemController.prototype[name], ItemController]);
+    expect(roles('emailItems')).toEqual([]);
+    expect(roles('exportItems')).toEqual([]);
+    expect(route('emailRemaining')).toEqual([RequestMethod.POST, ['ski_swap:manage']]);
+    expect(roles('emailRemaining')).toEqual(['ski_swap.staff_check_in']);
+  });
+});
+
+describe('emailing a seller’s remaining items (iOS Plan 38)', () => {
+  function harness() {
+    const sent: { to: string; senderName: string; filters: string }[] = [];
+    const audits: Record<string, unknown>[] = [];
+    const asked: Record<string, unknown>[] = [];
+    const prisma = {
+      skiSwap: { findFirst: async () => ({ id: 'swap', title: 'Fall Swap', timeZone: 'America/New_York', org: { name: 'Patrol' } }) },
+      sellerProfile: {
+        findFirst: async ({ where }: { where: { id: string; membership: { orgId: string } } }) => (where.id === 'seller-1' && where.membership.orgId === 'org' ? { id: 'seller-1' } : null),
+        findUnique: async () => ({ businessName: 'Little Mountain', membership: { user: { firstName: null, lastName: null } } }),
+      },
+      swapItem: {
+        findMany: async ({ where }: { where: { id?: unknown } }) => (where.id ? [{
+          id: 'i-1', sku: '59676', name: 'Grey Hat', description: null, categoryId: null, priceCents: 500, originalQuantity: 1,
+          squareVariationId: 'v-1', consignedAt: new Date(), hasPrintedTag: true, donateProceeds: false, pickedUpAt: null, pickedUpByName: null,
+          seller: { businessName: 'Little Mountain', membership: { user: { firstName: null, lastName: null, phone: null, email: null } } },
+        }] : [{ id: 'i-1', sku: '59676', squareVariationId: 'v-1' }]),
+      },
+      swapSaleDecision: { findMany: async () => [] },
+      swapExchange: { findMany: async () => [] },
+      device: { findUnique: async () => ({ name: 'Pickup iPad' }) },
+      user: { findUnique: async () => ({ firstName: 'Dana', lastName: 'Smith', email: null, phone: null }) },
+      auditLog: { create: async ({ data }: { data: Record<string, unknown> }) => { audits.push(data); } },
+    };
+    const items = { matchingIds: async (_o: string, _s: string, f: Record<string, unknown>) => { asked.push(f); return ['i-1']; } };
+    const breakdown = { forgetSales: () => {}, rawSales: async () => ({ at: 0, lines: [] }) };
+    const taxonomy = { describeItems: async () => new Map() };
+    const mail = { sendItemsExport: async (to: string, m: { senderName: string; filters: string }) => { sent.push({ to, senderName: m.senderName, filters: m.filters }); return { status: 'sent' }; } };
+    const service = new ItemExportService(prisma as never, items as never, breakdown as never, taxonomy as never, mail as never);
+    return { service, sent, audits, asked };
+  }
+
+  it('sends that seller’s For sale items, from the device, audited as the device', async () => {
+    const h = harness();
+    await expect(h.service.emailRemaining('org', 'swap', 'seller-1', 'pat@example.com', { type: 'device', id: 'dev-1' }))
+      .resolves.toEqual({ to: 'pat@example.com', items: 1, status: 'sent' });
+    expect(h.asked).toEqual([{ sellerId: 'seller-1', status: 'for_sale' }]);
+    expect(h.sent).toEqual([{ to: 'pat@example.com', senderName: 'Pickup iPad', filters: 'For sale · seller Little Mountain' }]);
+    expect(h.audits).toEqual([expect.objectContaining({ actorType: 'device', actorId: 'dev-1', action: 'ski_swap.items.exported' })]);
+  });
+
+  it('names a person as the sender when staff send it', async () => {
+    const h = harness();
+    await h.service.emailRemaining('org', 'swap', 'seller-1', 'pat@example.com', { type: 'user', id: 'u-1' });
+    expect([h.sent[0].senderName, h.audits[0].actorType]).toEqual(['Dana Smith', 'user']);
+  });
+
+  it('refuses a seller who isn’t this organization’s, sending nothing', async () => {
+    const h = harness();
+    await expect(h.service.emailRemaining('org', 'swap', 'seller-9', 'pat@example.com', { type: 'device', id: 'dev-1' })).rejects.toBeInstanceOf(NotFoundException);
+    expect(h.sent).toEqual([]);
   });
 });

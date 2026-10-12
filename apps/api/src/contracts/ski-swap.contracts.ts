@@ -1480,3 +1480,13 @@ export const EmailItemsExportSchema = z.object({
   dir: z.string().max(4).optional(),
 }).strict();
 export class EmailItemsExportDto extends createZodDto(EmailItemsExportSchema) {}
+
+/**
+ * One seller's items still out, unsold, emailed from the pickup screen
+ * (iOS Plan 38): the For sale filter and the seller are fixed.
+ */
+export const EmailRemainingItemsSchema = z.object({
+  to: z.string().trim().email().max(254),
+  sellerId: z.string().min(1).max(64),
+}).strict();
+export class EmailRemainingItemsDto extends createZodDto(EmailRemainingItemsSchema) {}

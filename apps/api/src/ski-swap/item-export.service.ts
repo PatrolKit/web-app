@@ -14,6 +14,9 @@ import type { ItemListView } from './item-list-order';
 /** The Items page's filters, as the export takes them. */
 export type ExportFilters = { query?: string; sellerId?: string } & ItemListView;
 
+/** Who asked: a staff member, or a patrol device (the pickup iPad, iOS Plan 38). */
+export type ExportActor = { type: 'user' | 'device'; id: string };
+
 const STATUS_LABEL: Record<string, string> = {
   for_sale: 'For sale', sold: 'Sold', not_received: 'Not yet received', not_in_square: 'Not in Square', needs_price: 'Needs a price', picked_up: 'Picked up',
 };
@@ -38,7 +41,7 @@ export class ItemExportService {
   ) {}
 
   /** The file, and what it holds. */
-  async build(orgId: string, swapId: string, filters: ExportFilters, userId: string): Promise<{ filename: string; contentType: string; content: Buffer; items: number; filters: string; swapTitle: string; orgName: string; exportedBy: string }> {
+  async build(orgId: string, swapId: string, filters: ExportFilters, actor: ExportActor): Promise<{ filename: string; contentType: string; content: Buffer; items: number; filters: string; swapTitle: string; orgName: string; exportedBy: string }> {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { id: true, title: true, timeZone: true, org: { select: { name: true } } } });
     if (!swap) throw new NotFoundException('Swap not found');
 
@@ -55,7 +58,7 @@ export class ItemExportService {
     }
 
     const ids = await this.items.matchingIds(orgId, swapId, filters);
-    const [rows, every, decisions, exchanges, user] = await Promise.all([
+    const [rows, every, decisions, exchanges, sender] = await Promise.all([
       this.prisma.swapItem.findMany({
         where: { id: { in: ids }, deletedAt: null },
         select: {
@@ -68,7 +71,7 @@ export class ItemExportService {
       this.prisma.swapItem.findMany({ where: { swapId }, select: { id: true, sku: true, squareVariationId: true } }),
       this.prisma.swapSaleDecision.findMany({ where: { swapId, liveKey: { not: null } }, select: { orderId: true, lineUid: true, decision: true, itemId: true } }),
       this.prisma.swapExchange.findMany({ where: { swapId, liveKey: { not: null } }, select: { orderId: true, lineUid: true, returnedItemId: true, replacementItemId: true } }),
-      this.prisma.user.findUnique({ where: { id: userId }, select: { firstName: true, lastName: true, email: true, phone: true } }),
+      this.senderName(actor),
     ]);
     const variationOfItem = new Map(every.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
     const lines = attributeSales(raw.lines, decisions as DecisionRef[], exchanges, new Set(variationOfItem.values()), variationOfItem);
@@ -88,7 +91,7 @@ export class ItemExportService {
     })), lines, named);
 
     const described = await this.describeFilters(filters);
-    const exportedBy = user ? displayName(user) : 'Someone';
+    const exportedBy = sender ?? 'Someone';
     const at = new Date();
     const content = await exportWorkbook(table, { swap: swap.title, filters: described, exportedBy, at, timeZone: swap.timeZone });
     const stamp = at.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
@@ -97,20 +100,20 @@ export class ItemExportService {
   }
 
   /** Download: the file, audited. */
-  async download(orgId: string, swapId: string, filters: ExportFilters, userId: string) {
-    const file = await this.build(orgId, swapId, filters, userId);
-    await this.audit(orgId, userId, { swapId, how: 'download', items: file.items, filters: file.filters });
+  async download(orgId: string, swapId: string, filters: ExportFilters, actor: ExportActor) {
+    const file = await this.build(orgId, swapId, filters, actor);
+    await this.audit(orgId, actor, { swapId, how: 'download', items: file.items, filters: file.filters });
     return file;
   }
 
   /** Email: the file attached, to the address typed, audited with it. */
-  async email(orgId: string, swapId: string, filters: ExportFilters, to: string, userId: string): Promise<{ to: string; items: number; status: string }> {
-    const file = await this.build(orgId, swapId, filters, userId);
+  async email(orgId: string, swapId: string, filters: ExportFilters, to: string, actor: ExportActor): Promise<{ to: string; items: number; status: string }> {
+    const file = await this.build(orgId, swapId, filters, actor);
     const outcome = await this.mail.sendItemsExport(to, {
       orgName: file.orgName, swapTitle: file.swapTitle, senderName: file.exportedBy, items: file.items, filters: file.filters,
       file: { filename: file.filename, content: file.content, contentType: file.contentType },
     });
-    await this.audit(orgId, userId, { swapId, how: 'email', to, items: file.items, filters: file.filters, status: outcome.status });
+    await this.audit(orgId, actor, { swapId, how: 'email', to, items: file.items, filters: file.filters, status: outcome.status });
     if (outcome.status === 'suppressed') {
       throw new BadRequestException(`The email wasn’t sent: ${'reason' in outcome ? outcome.reason : 'email is off here'}.`);
     }
@@ -132,9 +135,29 @@ export class ItemExportService {
     return parts.join(' · ');
   }
 
-  private async audit(orgId: string, userId: string, metadata: Record<string, unknown>) {
+  /**
+   * One seller's items still out, unsold, emailed (iOS Plan 38): the pickup
+   * iPad's Items remaining list, as the Items page's For sale filter has it.
+   * Always that filter and that seller; a seller of another org is refused.
+   */
+  async emailRemaining(orgId: string, swapId: string, sellerId: string, to: string, actor: ExportActor) {
+    const seller = await this.prisma.sellerProfile.findFirst({ where: { id: sellerId, deletedAt: null, membership: { orgId } }, select: { id: true } });
+    if (!seller) throw new NotFoundException('No such seller in this organization.');
+    return this.email(orgId, swapId, { sellerId, status: 'for_sale' }, to, actor);
+  }
+
+  /** The email's "from" name: the person's, or the device's ("Pickup iPad"). */
+  private async senderName(actor: ExportActor): Promise<string | null> {
+    if (actor.type === 'device') {
+      return (await this.prisma.device.findUnique({ where: { id: actor.id }, select: { name: true } }))?.name ?? null;
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: actor.id }, select: { firstName: true, lastName: true, email: true, phone: true } });
+    return user ? displayName(user) : null;
+  }
+
+  private async audit(orgId: string, actor: ExportActor, metadata: Record<string, unknown>) {
     await this.prisma.auditLog.create({
-      data: { actorType: 'user', actorId: userId, orgId, action: 'ski_swap.items.exported', metadata: metadata as Prisma.InputJsonValue },
+      data: { actorType: actor.type, actorId: actor.id, orgId, action: 'ski_swap.items.exported', metadata: metadata as Prisma.InputJsonValue },
     });
   }
 }
