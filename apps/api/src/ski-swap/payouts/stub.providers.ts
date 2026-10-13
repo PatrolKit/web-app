@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
-import { PayPalClient, type PayoutBatchResult, type PayoutItemRequest } from './paypal.client';
+import { PayPalClient, type PayPalBalance, type PayoutBatchResult, type PayoutItemRequest } from './paypal.client';
 import {
   PosAdapterFactory, type IPosAdapter, type PosCatalogItem, type PosItemSync, type PosOrderFees, type PosSaleLine, type PosUpsertResult, type PosVariationInfo,
 } from '../pos/pos.adapter';
@@ -103,6 +103,11 @@ export class StubPayPalClient extends PayPalClient {
 
   async testConnection(): Promise<{ success: boolean; message: string }> {
     return { success: true, message: 'Stub PayPal client — nothing was contacted' };
+  }
+
+  async getBalance(): Promise<PayPalBalance> {
+    const cents = process.env.PAYPAL_STUB_BALANCE_CENTS;
+    return cents ? { availableCents: Number(cents) } : { availableCents: null, message: 'Stub PayPal client: no balance set' };
   }
 }
 

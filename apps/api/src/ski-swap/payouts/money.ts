@@ -72,6 +72,14 @@ export function centsToDecimalString(cents: number): string {
   return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
 }
 
+/** PayPal's "1234.5" → 123450. Read as text, never through a float; null for anything else. */
+export function decimalStringToCents(value: string): number | null {
+  const m = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
+  if (!m) return null;
+  const cents = Number(m[2]) * 100 + Number((m[3] ?? '').padEnd(2, '0') || 0);
+  return m[1] ? -cents : cents;
+}
+
 /** `$1,234.50`, for a screen. Never for a file something else will parse. */
 export function formatCents(cents: number): string {
   return `$${(cents / 100).toLocaleString('en-US', {

@@ -11,6 +11,7 @@ import {
 import { api, ApiError } from '../../lib/api';
 import { usd } from '../../lib/money';
 import type { SkiSwapContext } from './SkiSwapLayout';
+import { balanceText, fundingOf, fundingSplitText } from './payoutFunding';
 import type { PayoutLine, PayoutLineStatus, PayoutRun } from '../../lib/api.types';
 
 /**
@@ -140,6 +141,16 @@ function RunHeader({
   );
   const sendableTotal = sendable.reduce((sum, l) => sum + l.netCents, 0);
   const inFlight = run.lines.some((l) => l.status === 'SENDING');
+  // What PayPal must hold before this run is sent, against what it has.
+  const funding = fundingOf(run.lines);
+  const { data: balance } = useQuery({
+    queryKey: ['ski-swap/paypal-balance', orgId],
+    queryFn: () => api.skiSwap.paypalBalance(orgId),
+    enabled: run.status !== 'CLOSED' && funding.cents > 0,
+    staleTime: 60_000,
+  });
+  const fundedFor = balanceText(funding.cents, balance?.availableCents ?? null);
+  const sendShort = balance?.availableCents != null && balance.availableCents < sendableTotal;
 
   const send = useMutation({
     mutationFn: () => api.skiSwap.sendPayoutRun(orgId, run.id, sendable.length),
@@ -181,6 +192,35 @@ function RunHeader({
           </div>
         </div>
       </div>
+
+      {(run.earlierRuns ?? 0) > 0 && (
+        <p className="text-xs text-gray-400">
+          Pays only what the {run.earlierRuns === 1 ? 'earlier run' : `${run.earlierRuns} earlier runs`} of this swap didn’t: sales already paid, in flight, donated or owed on an earlier run’s check list are left out.
+        </p>
+      )}
+
+      {/* The money PayPal must hold before anything is sent: said first, and big. */}
+      {run.status !== 'CLOSED' && funding.cents > 0 && (
+        <div className="border border-brand-700/60 bg-brand-500/10 rounded-lg px-4 py-3 space-y-1">
+          <p className="text-white text-lg font-semibold">
+            Fund PayPal with {usd(funding.cents)} <span className="text-sm font-normal text-gray-300">before sending, plus PayPal’s fees</span>
+          </p>
+          <p className="text-sm text-gray-300">{fundingSplitText(funding)}</p>
+          {funding.noDestination.sellers > 0 && (
+            <p className="text-xs text-amber-300">
+              Includes {usd(funding.noDestination.cents)} for {funding.noDestination.sellers} {funding.noDestination.sellers === 1 ? 'seller' : 'sellers'} with no usable payout details yet: they can’t be sent until fixed.
+            </p>
+          )}
+          {fundedFor
+            ? <p className={`text-xs ${fundedFor.short ? 'text-amber-300' : 'text-green-400'}`}>{fundedFor.text}</p>
+            : balance?.message && <p className="text-xs text-gray-500">{balance.message}</p>}
+          {funding.checks.sellers > 0 && (
+            <p className="text-xs text-gray-400">
+              Checks are written apart from PayPal: {usd(funding.checks.cents)} to {funding.checks.sellers} {funding.checks.sellers === 1 ? 'seller' : 'sellers'}.
+            </p>
+          )}
+        </div>
+      )}
 
       {isAdmin && run.status !== 'CLOSED' && (
         <div className="border-t border-gray-800 pt-4 space-y-3">
@@ -226,6 +266,11 @@ function RunHeader({
                 <strong>{sendable.length}</strong> {sendable.length === 1 ? 'seller' : 'sellers'}
                 {' '}through PayPal. This cannot be undone.
               </p>
+              {sendShort && (
+                <p className="text-sm text-amber-300">
+                  PayPal has only {usd(balance!.availableCents!)} available. Fund it first, or PayPal may refuse the batch.
+                </p>
+              )}
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => send.mutate()}
@@ -727,7 +772,8 @@ function ChecksTab({
               <CheckRow
                 key={p.reference}
                 payee={p}
-                isAdmin={isAdmin && run.status !== 'CLOSED'}
+                // A check stays owed on its own run's list, so it can be recorded after the run is closed.
+                isAdmin={isAdmin}
                 busy={record.isPending}
                 onSave={(checkNumber, sentAt) =>
                   record.mutate({ lineId: p.reference, checkNumber, sentAt })

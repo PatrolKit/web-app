@@ -121,6 +121,38 @@ export interface HeldSale {
 
 export interface BuildOptions {
   commissionBasisPoints: number;
+  /**
+   * What earlier runs of the swap settled, by item and order: units already
+   * paid, or still owed on an earlier run's check list. Those sales are left
+   * out, so a later run pays only what's left and a seller is never paid twice
+   * for one sale. Built by `paidBefore`.
+   */
+  paidBefore?: Map<string, Map<string, number>>;
+}
+
+/**
+ * Whether an earlier run's line settles its sales, so a later run leaves them
+ * out. Sent, in flight, unclaimed (it may yet come back), donated, or a check
+ * marked sent: settled. A check line not yet marked sent stays owed on that
+ * run's check list, where it's printed from, so it counts too: a check is never
+ * on two runs. Failed, returned, and PayPal or Venmo never sent (no usable
+ * destination, or approved and not sent) are payable again.
+ */
+export function countsAsPaid(line: { method: string; status: string }): boolean {
+  if (['SENDING', 'SENT', 'UNCLAIMED', 'PAID_BY_CHECK', 'DONATED'].includes(line.status)) return true;
+  return line.method === 'CHECK' && (line.status === 'PENDING' || line.status === 'APPROVED');
+}
+
+/** Earlier runs' line items, as `paidBefore`: units by item, then by order. Lines `countsAsPaid` only. */
+export function paidBefore(rows: { itemId: string | null; squareOrderId: string; quantity: number }[]): Map<string, Map<string, number>> {
+  const out = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    if (!r.itemId) continue;
+    const byOrder = out.get(r.itemId) ?? new Map<string, number>();
+    byOrder.set(r.squareOrderId, (byOrder.get(r.squareOrderId) ?? 0) + r.quantity);
+    out.set(r.itemId, byOrder);
+  }
+  return out;
 }
 
 /**
@@ -148,7 +180,7 @@ export function buildRun(
   const held: HeldSale[] = [];
   const typedPrices = new Map<string, Set<number>>();
   // Each item's sales, owed on once they're all seen (Plan 48: at most its units).
-  const byItem = new Map<string, { item: RunItem; sales: { sale: PosSaleLine; soldQty: number; unitCents: number }[] }>();
+  const byItem = new Map<string, { item: RunItem; sales: { sale: PosSaleLine; soldQty: number; fullQty: number; unitCents: number }[] }>();
 
   for (const sale of sales) {
     const item = byVariation.get(sale.variationId);
@@ -176,14 +208,29 @@ export function buildRun(
       continue;
     }
     const entry = byItem.get(item.id) ?? { item, sales: [] };
-    entry.sales.push({ sale, soldQty, unitCents });
+    entry.sales.push({ sale, soldQty, fullQty: soldQty, unitCents });
     byItem.set(item.id, entry);
   }
 
-  for (const { item, sales: sold } of byItem.values()) {
+  for (const { item, sales: all } of byItem.values()) {
+    // Settled by an earlier run: those sales, unit for unit by order, are left
+    // out, and only the units not yet paid can be paid now.
+    const earlier = opts.paidBefore?.get(item.id);
+    let paidUnits = 0;
+    let sold = all;
+    if (earlier) {
+      const left = new Map(earlier);
+      paidUnits = [...earlier.values()].reduce((n, q) => n + q, 0);
+      sold = all.map((s) => {
+        const take = Math.min(left.get(s.sale.orderId) ?? 0, s.soldQty);
+        if (take) left.set(s.sale.orderId, (left.get(s.sale.orderId) ?? 0) - take);
+        return { ...s, soldQty: s.soldQty - take };
+      }).filter((s) => s.soldQty > 0);
+      if (!sold.length) continue;
+    }
     // Never more units than were checked in (Plan 48). The earliest sales
     // are the ones paid; a line is split when only part of it fits.
-    const cap = Math.max(0, item.originalQuantity);
+    const cap = Math.max(0, item.originalQuantity - paidUnits);
     const total = sold.reduce((n, s) => n + s.soldQty, 0);
     let paying = sold.map((s) => ({ ...s, payQty: s.soldQty }));
     if (total > cap) {
@@ -206,7 +253,7 @@ export function buildRun(
       }
     }
 
-    for (const { sale, soldQty, unitCents, payQty } of paying) {
+    for (const { sale, fullQty, unitCents, payQty } of paying) {
       if (payQty <= 0) continue;
       if (item.priceCents === null) {
         const seen = typedPrices.get(item.id) ?? new Set<number>();
@@ -221,7 +268,7 @@ export function buildRun(
         priceCents: unitCents,
         quantity: payQty,
         // For the org's reporting only: the paid share of what the line took.
-        collectedCents: payQty === soldQty ? sale.collectedCents : Math.round(sale.collectedCents * (payQty / soldQty)),
+        collectedCents: payQty === fullQty ? sale.collectedCents : Math.round(sale.collectedCents * (payQty / fullQty)),
         squareOrderId: sale.orderId,
         soldAt: sale.soldAt,
         refundedQty: sale.refundedQuantity,

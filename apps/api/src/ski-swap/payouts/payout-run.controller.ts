@@ -61,6 +61,13 @@ export class PayoutRunController {
     return this.runs.create(orgId, swapId, user.userId, body);
   }
 
+  /** PayPal's available balance, for "Fund PayPal with $X" on a run. Reads only. */
+  @Get('paypal-balance')
+  @RequirePermissions('ski_swap:report')
+  paypalBalance(@Param('orgId') orgId: string) {
+    return this.runs.paypalBalance(orgId);
+  }
+
   @Get('payout-runs/:runId')
   @RequirePermissions('ski_swap:report')
   get(@Param('orgId') orgId: string, @Param('runId') runId: string) {

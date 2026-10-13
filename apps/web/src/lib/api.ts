@@ -1408,6 +1408,9 @@ export const api = {
         `/orgs/${orgId}/ski-swap/swaps/${swapId}/payout-runs`,
         { method: 'POST', body: JSON.stringify(data) },
       ),
+    /** PayPal's available balance, for a run's "Fund PayPal with $X". Null, with the reason, when it can't be read. */
+    paypalBalance: (orgId: string) =>
+      request<{ availableCents: number | null; message?: string }>(`/orgs/${orgId}/ski-swap/paypal-balance`),
     getPayoutRun: (orgId: string, runId: string) =>
       request<import('./api.types').PayoutRun>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}`),
     getPayoutDiscounts: (orgId: string, runId: string) =>

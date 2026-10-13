@@ -10,7 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PosAdapterFactory } from '../pos/pos.adapter';
 import { sellerDisplayName, SELLER_NAME_INCLUDE } from '../seller.service';
 import { ItemService } from '../item.service';
-import { buildRun, discountsOf, exchangedKeyOf, type BuiltRun, type HeldSale, type RunItem, type RunSeller } from './build-run';
+import { buildRun, countsAsPaid, discountsOf, paidBefore, exchangedKeyOf, type BuiltRun, type HeldSale, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
 import { PayPalClient, PayPalError, type PayoutItemRequest } from './paypal.client';
 import { formatCents } from './money';
@@ -158,7 +158,15 @@ export class PayoutRunService {
       verifiedPhone: s.membership.user.verifiedPhone,
     }));
 
-    const built = buildRun(items, sellers, sales, { commissionBasisPoints });
+    // What earlier runs settled (paid, in flight, donated, or a check owed on
+    // their own list) is left out: a later run pays only what's left.
+    const earlier = await this.prisma.payoutLineItem.findMany({
+      where: { line: { run: { swapId } } },
+      select: { itemId: true, squareOrderId: true, quantity: true, line: { select: { method: true, status: true } } },
+    });
+    const settled = paidBefore(earlier.filter((r) => countsAsPaid(r.line)));
+
+    const built = buildRun(items, sellers, sales, { commissionBasisPoints, paidBefore: settled });
 
     // A ticket sold before it was priced, with no typed price from Square,
     // can't be owed on. Paying the rest of that seller's line would underpay
@@ -263,6 +271,11 @@ export class PayoutRunService {
 
   // ─── Reading ────────────────────────────────────────────────────────────────
 
+  /** The PayPal balance a run's funding is set against (read only). */
+  async paypalBalance(orgId: string) {
+    return this.paypal.getBalance(orgId);
+  }
+
   async list(orgId: string, swapId?: string) {
     const runs = await this.prisma.payoutRun.findMany({
       where: { orgId, ...(swapId ? { swapId } : {}) },
@@ -294,11 +307,15 @@ export class PayoutRunService {
     });
     if (!run) throw new NotFoundException('Payout run not found');
 
+    // Runs of this swap before this one: this run pays only what they didn't.
+    const earlierRuns = await this.prisma.payoutRun.count({ where: { swapId: run.swapId, createdAt: { lt: run.createdAt } } });
+
     return {
       id: run.id,
       swapId: run.swapId,
       swapTitle: run.swap.title,
       status: run.status,
+      earlierRuns,
       salesFrom: run.salesFrom.toISOString(),
       salesTo: run.salesTo.toISOString(),
       commissionBasisPoints: run.commissionBasisPoints,

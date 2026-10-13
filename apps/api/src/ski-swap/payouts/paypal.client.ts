@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CredentialCryptoService } from '../../common/services/credential-crypto.service';
 import type { Recipient } from './paypal-mapping';
+import { decimalStringToCents } from './money';
 
 /**
  * Talking to PayPal Payouts (Plan 25 §6).
@@ -30,6 +31,13 @@ export interface PayoutItemStatus {
   errorMessage?: string;
 }
 
+export interface PayPalBalance {
+  /** Available to send now, in cents; null when it couldn't be read. */
+  availableCents: number | null;
+  /** Why not, when it couldn't be read. */
+  message?: string;
+}
+
 export interface PayoutBatchResult {
   batchId: string;
   batchStatus: string;
@@ -52,6 +60,8 @@ export abstract class PayPalClient {
   abstract cancelItem(orgId: string, payoutItemId: string): Promise<void>;
   abstract verifyWebhook(orgId: string, headers: Record<string, string>, rawBody: string): Promise<boolean>;
   abstract testConnection(orgId: string): Promise<{ success: boolean; message: string }>;
+  /** The account's available USD balance, or why it can't be read: a run says how much it needs against it. */
+  abstract getBalance(orgId: string): Promise<PayPalBalance>;
   /** Drops anything held for this org's credentials, because they just changed. */
   abstract forget(orgId: string): void;
 }
@@ -207,6 +217,36 @@ export class HttpPayPalClient extends PayPalClient {
     }
     this.logger.warn({ orgId, status }, 'Unexpected answer to the Payouts connection probe');
     return { success: false, message: `PayPal answered the Payouts check with HTTP ${status}. Try again in a minute.` };
+  }
+
+  /**
+   * PayPal's balance API, which needs the app's "balance" permission on top of
+   * Payouts. Asked directly rather than through `call`, which logs every
+   * non-2xx as a failure: an app without the permission is an answer, not an
+   * error, and the screen just shows what's needed without the balance.
+   */
+  async getBalance(orgId: string): Promise<PayPalBalance> {
+    let host: string;
+    let token: string;
+    try {
+      ({ host, token } = await this.authorise(orgId));
+    } catch {
+      return { availableCents: null, message: 'Couldn’t sign in to PayPal to read the balance.' };
+    }
+    try {
+      const res = await fetch(`${host}/v1/reporting/balances?currency_code=USD`, { headers: { authorization: `Bearer ${token}` } });
+      if (res.status === 401 || res.status === 403) {
+        return { availableCents: null, message: 'PayPal doesn’t let this app read the balance. Check it in PayPal.' };
+      }
+      if (!res.ok) return { availableCents: null, message: `PayPal answered the balance request with HTTP ${res.status}.` };
+      const body = (await res.json()) as { balances?: { currency?: string; available_balance?: { value?: string }; total_balance?: { value?: string } }[] };
+      const usd = body.balances?.find((b) => b.currency === 'USD');
+      const value = usd?.available_balance?.value ?? usd?.total_balance?.value;
+      const cents = value !== undefined ? decimalStringToCents(value) : null;
+      return cents === null ? { availableCents: null, message: 'PayPal didn’t report a USD balance.' } : { availableCents: cents };
+    } catch {
+      return { availableCents: null, message: 'Couldn’t reach PayPal to read the balance.' };
+    }
   }
 
   forget(orgId: string): void {

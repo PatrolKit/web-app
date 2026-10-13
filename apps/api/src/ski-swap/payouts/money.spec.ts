@@ -1,7 +1,6 @@
 import {
-  basisPointsToPercent, centsToDecimalString, percentToBasisPoints, splitCommission,
+  basisPointsToPercent, centsToDecimalString, decimalStringToCents, percentToBasisPoints, splitCommission,
 } from './money';
-
 /**
  * Money, so this is exhaustive rather than representative. Every one of these
  * is a number somebody is paid.
@@ -123,5 +122,14 @@ describe('centsToDecimalString', () => {
     expect(centsToDecimalString(5)).toBe('0.05');
     expect(centsToDecimalString(0)).toBe('0.00');
     expect(centsToDecimalString(-125)).toBe('-1.25');
+  });
+});
+
+describe('decimalStringToCents', () => {
+  it('reads PayPal’s amounts as text, never through a float', () => {
+    expect(['1234.56', '1234.5', '1234', '0.07', ' 20.10 ', '-3.20'].map(decimalStringToCents)).toEqual([123456, 123450, 123400, 7, 2010, -320]);
+  });
+  it('refuses anything else', () => {
+    expect(['', '1.234', '$5', '1,234.00', 'abc'].map(decimalStringToCents)).toEqual([null, null, null, null, null]);
   });
 });

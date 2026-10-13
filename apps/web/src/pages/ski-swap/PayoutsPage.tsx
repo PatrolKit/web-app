@@ -131,14 +131,14 @@ export default function PayoutsPage() {
             <div className="pt-2">
               <StartButton pending={create.isPending} error={create.error} onStart={() => create.mutate()} />
               <p className="text-xs text-gray-500 mt-1.5">
-                A new run reads the sales again from the start of the swap.
+                A new run reads the sales again from the start of the swap, and pays only what earlier runs didn’t:
+                sales already paid, in flight, donated or owed on an earlier run’s check list are left out.
               </p>
             </div>
           )}
           {isAdmin && openRun && (
             <p className="text-xs text-gray-500 pt-1">
-              Close the open run before starting another — two runs over the same sales would pay
-              everybody twice.
+              Close the open run before starting another. The next run pays only what this one didn’t.
             </p>
           )}
         </div>

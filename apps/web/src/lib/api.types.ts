@@ -814,6 +814,8 @@ export interface PayoutRun {
   swapId: string;
   swapTitle: string;
   status: 'DRAFT' | 'REVIEW' | 'CLOSED';
+  /** Runs of this swap before this one: it pays only what they didn't settle. */
+  earlierRuns?: number;
   salesFrom: string;
   salesTo: string;
   commissionBasisPoints: number;

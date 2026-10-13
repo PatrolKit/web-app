@@ -404,6 +404,38 @@ const lateApprove = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/ap
 });
 ok('a closed run approves nothing further', lateApprove.status === 409, `HTTP ${lateApprove.status}`);
 
+console.log('\n── A later run pays only what the first didn’t ───────────────');
+
+// A sale that lands after the first run: the Venmo seller's second item. Every
+// line of the first run is settled (sent, checked, donated), so a second run
+// over the same window must pay this sale and nothing else.
+await prisma.swapItem.create({
+  data: {
+    id: createId(), swapId: swap.id, orgId: org.id, sellerId: sellerIds.venmo,
+    name: 'venmo item PAY-008', sku: 'PAY-008', priceCents: 5000,
+    originalQuantity: 1, squareVariationId: 'var-venmo-2', consignedAt: new Date(),
+  },
+});
+sales.push({ orderId: 'stub-order-late', variationId: 'var-venmo-2', quantity: 1, collectedCents: 5000, refundedQuantity: 0, soldAt: new Date().toISOString() });
+writeFileSync(SALES_FILE, JSON.stringify(sales, null, 2));
+
+const later = await api(`/orgs/${org.id}/ski-swap/swaps/${swap.id}/payout-runs`, {
+  method: 'POST', body: JSON.stringify({}),
+}).then(unwrap);
+ok('the second run knows a run came before it', later.earlierRuns === 1, `got ${later.earlierRuns}`);
+ok('...and pays only the sale the first didn’t: one line, one item',
+  later.lines?.length === 1 && later.lines[0].items.length === 1 && later.lines[0].items[0].sku === 'PAY-008',
+  JSON.stringify(later.lines?.map((l) => [l.sellerName, l.items.map((i) => i.sku)])));
+ok('...for $50.00 less 20%', later.lines?.[0]?.netCents === 4000, `got ${later.lines?.[0]?.netCents}`);
+ok('...and nobody from the first run is on it again',
+  !later.lines?.some((l) => l.items.some((i) => ['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004', 'PAY-005', 'PAY-006'].includes(i.sku))));
+// What "Fund PayPal with $X" is set against: the stub's balance, when the run is started with one.
+const balance = await api(`/orgs/${org.id}/ski-swap/paypal-balance`).then(unwrap);
+ok('the PayPal balance answers, as a number or with the reason it can’t',
+  typeof balance.availableCents === 'number' || (balance.availableCents === null && typeof balance.message === 'string'),
+  JSON.stringify(balance));
+await api(`/orgs/${org.id}/ski-swap/payout-runs/${later.id}/close`, { method: 'POST' }).then(unwrap);
+
 await finish();
 
 async function finish() {
