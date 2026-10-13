@@ -70,6 +70,6 @@ Keep handling `unavailable` if it's cheap, since it does no harm, but it won't a
 
 ## Shipping
 
-- **Not deployed yet:** the server change needs a database migration, which is waiting on approval. You'll be told when it's live.
+- **Live on patrolkit.io** since 2026-10-13 (server commit `aa502fe`).
 - **Orgs that declared NSSRA membership carry over** with both switches on, so an existing patrol sees no change.
 - **Builds that ignore the new field** keep working while the switch is on. Once an admin turns the iPads off, such a build gets `403` from the lookup. It should show that as an error rather than a "not listed" answer, which Plan 44's handoff already asks for.
