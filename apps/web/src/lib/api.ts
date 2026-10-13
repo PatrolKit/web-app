@@ -517,7 +517,12 @@ export const api = {
         method: 'PATCH', body: JSON.stringify(data),
       }),
     imports: () => request<import('./api.types').IndemnificationImportRecord[]>('/admin/bindings/indemnification/imports'),
-    orgs: () => request<import('./api.types').NssraDeclaration[]>('/admin/bindings/indemnification/orgs'),
+    orgs: () => request<import('./api.types').IndemnificationOrg[]>('/admin/bindings/indemnification/orgs'),
+    /** Allows an org binding indemnification, or stops allowing it (Plan 51). */
+    setOrgAllowed: (orgId: string, allowed: boolean) =>
+      request<import('./api.types').IndemnificationOrg>(`/admin/bindings/indemnification/orgs/${orgId}`, {
+        method: 'PATCH', body: JSON.stringify({ allowed }),
+      }),
     /** Multipart, like the icon upload: the JSON content-type would break it. */
     import: async (file: File, season: string, dryRun: boolean) => {
       const form = new FormData();
@@ -1345,8 +1350,10 @@ export const api = {
         commissionPercent?: string;
         barcodesPerTicket?: 1 | 2;
         showUsBootSizes?: boolean;
-        /** The NSSRA membership declaration (Plan 44 D5). */
-        nssraMember?: boolean;
+        /** Binding indemnification on the web, and on the iPads (Plan 51). Turning either on needs `certifyIndemnification`. */
+        indemnificationWeb?: boolean;
+        indemnificationIpad?: boolean;
+        certifyIndemnification?: true;
       },
     ) =>
       request<import('./api.types').SkiSwapSettings>(`/orgs/${orgId}/ski-swap/settings`, {

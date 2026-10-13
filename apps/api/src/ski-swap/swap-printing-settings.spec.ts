@@ -45,6 +45,7 @@ describe('labels per item, on the swap', () => {
   it('is still answered in the org settings, as the running swap’s, for iPads that read it there', async () => {
     const prisma = {
       skiSwapSettings: { findUnique: async () => null },
+      organization: { findUnique: async () => null },
       skiSwap: {
         findFirst: async ({ where }: { where: { active?: boolean } }) =>
           where.active ? { labelsPerItem: 2 } : { labelsPerItem: 3 },

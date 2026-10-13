@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TaxonomyService } from '../taxonomy/taxonomy.service';
 import { displayName } from '../../common/util/person';
@@ -18,7 +18,7 @@ import type {
   IndemnificationImportPlan,
   IndemnificationImportRecord,
   IndemnificationProgram,
-  NssraDeclaration,
+  IndemnificationOrg,
 } from '../../contracts/indemnification.contracts';
 import { SEASON_PATTERN } from '../../contracts/indemnification.contracts';
 
@@ -207,20 +207,52 @@ export class IndemnificationImportService {
     }));
   }
 
-  /** Every org with the ski swap, and whether it has declared (D5). */
-  async declarations(): Promise<NssraDeclaration[]> {
+  /** Every org: whether it's allowed binding indemnification, and how its admins have it set (Plan 51). */
+  async orgAccess(): Promise<IndemnificationOrg[]> {
     const orgs = await this.prisma.organization.findMany({
-      select: { id: true, name: true, skiSwapSettings: { select: { nssraMember: true, nssraMemberSetBy: true, nssraMemberSetAt: true } } },
+      select: {
+        id: true, name: true, indemnificationAllowed: true, indemnificationAllowedBy: true, indemnificationAllowedAt: true,
+        skiSwapSettings: { select: { indemnificationWeb: true, indemnificationIpad: true, indemnificationCertifiedBy: true, indemnificationCertifiedAt: true } },
+      },
       orderBy: { name: 'asc' },
     });
-    const byIds = await this.names(orgs.map((o) => o.skiSwapSettings?.nssraMemberSetBy ?? null));
-    return orgs.map((o) => ({
-      orgId: o.id,
-      orgName: o.name,
-      nssraMember: o.skiSwapSettings?.nssraMember ?? false,
-      setBy: o.skiSwapSettings?.nssraMemberSetBy ? byIds.get(o.skiSwapSettings.nssraMemberSetBy) ?? null : null,
-      setAt: o.skiSwapSettings?.nssraMemberSetAt?.toISOString() ?? null,
-    }));
+    const byIds = await this.names(orgs.flatMap((o) => [o.indemnificationAllowedBy, o.skiSwapSettings?.indemnificationCertifiedBy ?? null]));
+    return orgs.map((o) => {
+      const s = o.skiSwapSettings;
+      return {
+        orgId: o.id,
+        orgName: o.name,
+        allowed: o.indemnificationAllowed,
+        allowedBy: o.indemnificationAllowedBy ? byIds.get(o.indemnificationAllowedBy) ?? null : null,
+        allowedAt: o.indemnificationAllowedAt?.toISOString() ?? null,
+        // As the org set them; they apply only while allowed.
+        web: s?.indemnificationWeb ?? false,
+        ipad: s?.indemnificationIpad ?? false,
+        certifiedBy: s?.indemnificationCertifiedBy ? byIds.get(s.indemnificationCertifiedBy) ?? null : null,
+        certifiedAt: s?.indemnificationCertifiedAt?.toISOString() ?? null,
+      };
+    });
+  }
+
+  /**
+   * A platform admin allows an org binding indemnification, or stops (Plan 51).
+   * Stopping leaves the org's web and iPad switches as they are, so allowing
+   * it again restores them; while not allowed they read off and every lookup
+   * is refused. Audited.
+   */
+  async setAllowed(orgId: string, allowed: boolean, actorId: string): Promise<IndemnificationOrg> {
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId }, select: { indemnificationAllowed: true } });
+    if (!org) throw new NotFoundException('No such organization.');
+    if (org.indemnificationAllowed !== allowed) {
+      await this.prisma.organization.update({
+        where: { id: orgId },
+        data: { indemnificationAllowed: allowed, indemnificationAllowedBy: actorId, indemnificationAllowedAt: new Date() },
+      });
+      await this.prisma.auditLog.create({
+        data: { actorType: 'user', actorId, orgId, action: 'ski_swap.indemnification.allowed', metadata: { to: allowed } },
+      });
+    }
+    return (await this.orgAccess()).find((o) => o.orgId === orgId)!;
   }
 
   private async names(ids: (string | null)[]): Promise<Map<string, string>> {

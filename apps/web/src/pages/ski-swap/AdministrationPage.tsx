@@ -67,7 +67,7 @@ export default function AdministrationPage() {
 
       <PrintingSection orgId={orgId} />
 
-      <NssraSection orgId={orgId} />
+      <IndemnificationSection orgId={orgId} />
 
       <PayoutsSection orgId={orgId} />
 
@@ -326,12 +326,12 @@ function PrintingSection({ orgId }: { orgId: string }) {
 }
 
 /**
- * The NSSRA membership declaration (Plan 44 D5). NSSRA publishes its combined
- * indemnified-bindings list for retail members only, so the Bindings tab shows
- * the entries from it only once a patrol has said it is one. Who said so, and
- * when, is kept with it.
+ * Binding indemnification (Plan 51), for the web and for the check-in iPads,
+ * one switch each. Hidden unless a platform admin allows the org, since the
+ * lists are licensed. Turning either on certifies the org's right to them, so
+ * it asks first, and who certified and when is kept.
  */
-function NssraSection({ orgId }: { orgId: string }) {
+function IndemnificationSection({ orgId }: { orgId: string }) {
   const qc = useQueryClient();
   const { data: settings } = useQuery({
     queryKey: ['ski-swap/settings', orgId],
@@ -340,7 +340,8 @@ function NssraSection({ orgId }: { orgId: string }) {
     staleTime: 60_000,
   });
   const mutation = useMutation({
-    mutationFn: (nssraMember: boolean) => api.skiSwap.updateSettings(orgId, { nssraMember }),
+    mutationFn: (data: { indemnificationWeb?: boolean; indemnificationIpad?: boolean; certifyIndemnification?: true }) =>
+      api.skiSwap.updateSettings(orgId, data),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['ski-swap/settings', orgId] });
       void qc.invalidateQueries({ queryKey: ['indemnification/manufacturers', orgId] });
@@ -349,39 +350,52 @@ function NssraSection({ orgId }: { orgId: string }) {
       void qc.invalidateQueries({ queryKey: ['indemnification/model', orgId] });
     },
   });
-  const on = settings?.nssraMember ?? false;
+  const ind = settings?.indemnification;
+  if (!ind?.allowed) return null;
+
+  /** On asks for the certification; off doesn't. */
+  function toggle(which: 'web' | 'ipad') {
+    const turningOn = !ind![which];
+    if (turningOn && !window.confirm(`${ind!.certification}\n\nTurn binding indemnification on for ${which === 'web' ? 'the web' : 'your iPads'}?`)) return;
+    mutation.mutate({
+      ...(which === 'web' ? { indemnificationWeb: turningOn } : { indemnificationIpad: turningOn }),
+      ...(turningOn ? { certifyIndemnification: true as const } : {}),
+    });
+  }
+
+  const row = (which: 'web' | 'ipad', label: string, explain: string) => {
+    const on = ind[which];
+    return (
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-0.5">
+          <p className="text-sm text-white">{label}</p>
+          <p className="text-xs text-gray-500">{explain}</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-label={label}
+          onClick={() => toggle(which)}
+          disabled={mutation.isPending}
+          className={`shrink-0 mt-0.5 w-11 h-6 rounded-full transition-colors disabled:opacity-40 ${on ? 'bg-brand-600' : 'bg-surface-200'}`}
+        >
+          <span className={`block w-5 h-5 bg-white rounded-full transition-transform ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-3">
       <h2 className="text-white font-semibold">Binding indemnification</h2>
       <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-sm text-white">NSSRA membership</p>
-            <p className="text-xs text-gray-300">
-              This patrol is a retail member of the National Ski &amp; Snowboard Retailers Association. NSSRA publishes
-              its combined indemnified-bindings list for members only.
-            </p>
-            <p className="text-xs text-gray-500">
-              On: the Bindings tab answers from every maker's list. Off: only lists the makers publish themselves
-              (Marker's, today), and the rest read "Unavailable".
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={on}
-            aria-label="NSSRA membership"
-            onClick={() => mutation.mutate(!on)}
-            disabled={mutation.isPending || settings === undefined}
-            className={`shrink-0 mt-0.5 w-11 h-6 rounded-full transition-colors disabled:opacity-40 ${on ? 'bg-brand-600' : 'bg-surface-200'}`}
-          >
-            <span className={`block w-5 h-5 bg-white rounded-full transition-transform ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
-          </button>
-        </div>
-        {on && settings?.nssraMemberSetAt && (
+        <p className="text-xs text-amber-200 bg-amber-900/20 border border-amber-800/60 rounded px-3 py-2">{ind.certification}</p>
+        {row('web', 'On the web', 'The Bindings tab, and what the lists say beside a binding model in the item form.')}
+        {row('ipad', 'On the iPads', 'The same answers on the check-in iPads.')}
+        {(ind.web || ind.ipad) && ind.certifiedAt && (
           <p className="text-xs text-gray-600">
-            Declared{settings.nssraMemberSetBy ? ` by ${settings.nssraMemberSetBy}` : ''}, {new Date(settings.nssraMemberSetAt).toLocaleDateString()}
+            Certified{ind.certifiedBy ? ` by ${ind.certifiedBy}` : ''}, {new Date(ind.certifiedAt).toLocaleDateString()}
           </p>
         )}
         {mutation.isError && (

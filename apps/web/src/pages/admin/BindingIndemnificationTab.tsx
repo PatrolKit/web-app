@@ -176,7 +176,12 @@ function ProgramRow({ program }: { program: IndemnificationProgram }) {
 export default function BindingIndemnificationTab() {
   const programs = useQuery({ queryKey: ['admin/indemnification', 'programs'], queryFn: () => api.indemnificationAdmin.programs() });
   const imports = useQuery({ queryKey: ['admin/indemnification', 'imports'], queryFn: () => api.indemnificationAdmin.imports() });
+  const qc = useQueryClient();
   const orgs = useQuery({ queryKey: ['admin/indemnification', 'orgs'], queryFn: () => api.indemnificationAdmin.orgs() });
+  const allow = useMutation({
+    mutationFn: ({ orgId, allowed }: { orgId: string; allowed: boolean }) => api.indemnificationAdmin.setOrgAllowed(orgId, allowed),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin/indemnification', 'orgs'] }),
+  });
 
   return (
     <div className="space-y-8 max-w-3xl">
@@ -217,18 +222,42 @@ export default function BindingIndemnificationTab() {
       </div>
 
       <div className="space-y-2">
-        <h3 className="text-white font-semibold">Patrols</h3>
-        <p className="text-xs text-gray-500">Who has declared NSSRA membership, and so sees the entries from NSSRA's members-only list.</p>
+        <h3 className="text-white font-semibold">Organizations</h3>
+        <p className="text-xs text-gray-500">
+          Which organizations may use binding indemnification. The lists are licensed: off, an organization's own
+          switches are hidden and every lookup is refused. On, its administrators turn it on for the web and the iPads,
+          certifying their right to the lists.
+        </p>
         <ul className="bg-surface-50 border border-gray-700 rounded-lg px-4 text-sm">
           {(orgs.data ?? []).map((o) => (
             <li key={o.orgId} className="py-2 border-b border-gray-800 last:border-b-0 flex items-center justify-between gap-3">
-              <span className="text-white">{o.orgName}</span>
-              <span className="text-xs text-gray-500">
-                {o.nssraMember ? <>Declared{o.setBy ? ` by ${o.setBy}` : ''}{o.setAt ? `, ${new Date(o.setAt).toLocaleDateString()}` : ''}</> : 'Not declared'}
-              </span>
+              <div className="min-w-0">
+                <p className="text-white">{o.orgName}</p>
+                <p className="text-xs text-gray-500">
+                  {!o.allowed ? 'Not allowed'
+                    : !o.web && !o.ipad ? 'Allowed · off on the web and the iPads'
+                      : `Allowed · on for ${[o.web ? 'the web' : null, o.ipad ? 'the iPads' : null].filter(Boolean).join(' and ')}${
+                        o.certifiedBy ? ` · certified by ${o.certifiedBy}` : ''}${o.certifiedAt ? `, ${new Date(o.certifiedAt).toLocaleDateString()}` : ''}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={o.allowed}
+                aria-label={`Allow binding indemnification for ${o.orgName}`}
+                onClick={() => {
+                  if (o.allowed && !window.confirm(`Stop allowing ${o.orgName} binding indemnification? Its lookups stop at once; its own switches come back as they were if you allow it again.`)) return;
+                  allow.mutate({ orgId: o.orgId, allowed: !o.allowed });
+                }}
+                disabled={allow.isPending}
+                className={`shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-40 ${o.allowed ? 'bg-brand-600' : 'bg-surface-200'}`}
+              >
+                <span className={`block w-5 h-5 bg-white rounded-full transition-transform ${o.allowed ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
             </li>
           ))}
         </ul>
+        {allow.isError && <p className="text-xs text-red-400">{allow.error instanceof ApiError ? allow.error.message : 'Could not save that.'}</p>}
       </div>
     </div>
   );

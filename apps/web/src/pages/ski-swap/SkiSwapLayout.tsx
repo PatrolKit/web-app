@@ -187,8 +187,9 @@ export default function SkiSwapLayout() {
 
           {/* The bindings lookup, a group of its own: neither swap nor org
               setup, and live even before a swap is picked. Staff only: the
-              indemnified lists aren't for sellers (Plan 44 D10). */}
-          {perms.has('ski_swap:report') && (
+              indemnified lists aren't for sellers (Plan 44 D10), and only
+              where the org has it on for the web (Plan 51). */}
+          {perms.has('ski_swap:report') && skiSwapSettings?.indemnification.web && (
             <>
               <NavLink to="bindings" className={navClass}>Bindings</NavLink>
               <span className="mx-2 text-gray-700 select-none">|</span>

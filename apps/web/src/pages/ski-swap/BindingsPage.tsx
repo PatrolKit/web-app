@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronDown as faChevronDownDuo, faChevronRight as faChevronRightDuo, faMagnifyingGlass as faSearchDuo } from '@fortawesome/pro-duotone-svg-icons';
@@ -122,6 +122,13 @@ function Row({ orgId, lookup, showBrand }: { orgId: string; lookup: BindingLooku
 
 export default function BindingsPage() {
   const { orgId, perms } = useOutletContext<SkiSwapContext>();
+  // Off for the web (Plan 51): nothing is asked for, and nothing cached is shown.
+  const { data: settings } = useQuery({
+    queryKey: ['ski-swap/settings', orgId],
+    queryFn: () => api.skiSwap.getSettings(orgId),
+    staleTime: 60_000,
+  });
+  const on = settings?.indemnification.web ?? false;
   const [query, setQuery] = useState('');
   const [makerId, setMakerId] = useState<string | null>(null);
   const q = useDebounced(query.trim(), 250);
@@ -129,18 +136,19 @@ export default function BindingsPage() {
   const { data: makers, isLoading, error: makersError } = useQuery({
     queryKey: ['indemnification/manufacturers', orgId],
     queryFn: () => api.skiSwap.indemnification.manufacturers(orgId),
+    enabled: on,
     staleTime: 60_000,
   });
   const { data: hits, isFetching: searching, error: searchError } = useQuery({
     queryKey: ['indemnification/search', orgId, q],
     queryFn: () => api.skiSwap.indemnification.search(orgId, q),
-    enabled: q.length > 0,
+    enabled: on && q.length > 0,
     staleTime: 60_000,
   });
   const { data: models } = useQuery({
     queryKey: ['indemnification/models', orgId, makerId],
     queryFn: () => api.skiSwap.indemnification.models(orgId, makerId!),
-    enabled: !!makerId,
+    enabled: on && !!makerId,
     staleTime: 60_000,
   });
 
@@ -150,6 +158,19 @@ export default function BindingsPage() {
   const mode: 'search' | 'browse' | 'idle' = q ? 'search' : makerId ? 'browse' : 'idle';
   const loaded = (makers?.manufacturers.length ?? 0) > 0 && makers?.latestSeason;
 
+  if (settings && !on) {
+    return (
+      <div className="space-y-2 max-w-3xl">
+        <h2 className="text-white font-semibold">Binding indemnification</h2>
+        <p className="text-sm text-gray-400">
+          {!settings.indemnification.allowed
+            ? 'Binding indemnification isn’t available to this organization.'
+            : `Binding indemnification isn’t turned on for the web.${perms.has('ski_swap:admin') ? ' You can turn it on under Administration.' : ' An administrator can turn it on under Administration.'}`}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 max-w-5xl">
       <div className="space-y-1">
@@ -157,16 +178,6 @@ export default function BindingsPage() {
         <p className="text-xs text-gray-500 max-w-3xl">{DISCLAIMER_SEASON(makers?.latestSeason ?? null)}</p>
       </div>
 
-      {makers && !makers.nssraMember && (
-        <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-800 rounded-lg px-3 py-2 max-w-3xl">
-          Your patrol hasn't declared NSSRA membership, so only manufacturer-published lists are shown.
-          {perms.has('ski_swap:admin') ? (
-            <> An administrator can declare it under <Link to="/dashboard/ski-swap/config" className="underline">Administration → Settings</Link>.</>
-          ) : (
-            <> An administrator can declare it under Administration → Settings.</>
-          )}
-        </p>
-      )}
 
       <div className="relative max-w-xl">
         <FontAwesomeIcon icon={faSearchDuo} className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />

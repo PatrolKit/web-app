@@ -49,7 +49,7 @@ const programs = [
   { key: 'tamarack', name: 'Tamarack', notes: '', latestSeason: '2025-26' },
 ];
 
-function makeService(nssraMember: boolean, reads = { n: 0 }) {
+function makeService(reads = { n: 0 }) {
   const visible = (n: Node, where: Record<string, unknown>) => {
     const or = where.OR as { orgId: string | null }[] | undefined;
     if (or && !or.some((o) => o.orgId === n.orgId)) return false;
@@ -65,8 +65,7 @@ function makeService(nssraMember: boolean, reads = { n: 0 }) {
     return true;
   };
   const prisma = {
-    skiSwapSettings: { findUnique: async () => { reads.n += 1; return { nssraMember }; } },
-    bindingIndemnificationProgram: { findMany: async () => programs },
+    bindingIndemnificationProgram: { findMany: async () => { reads.n += 1; return programs; } },
     taxonomyNode: {
       findMany: async ({ where }: { where: Record<string, unknown> }) => nodes.filter((n) => visible(n, where)),
     },
@@ -80,7 +79,7 @@ function makeService(nssraMember: boolean, reads = { n: 0 }) {
 }
 
 describe('the answer for a model (D4)', () => {
-  const service = makeService(true);
+  const service = makeService();
 
   it('is indemnified for a model on its program\'s latest list, with that season\'s lines', async () => {
     const [glade] = await service.search('org-1', 'glade');
@@ -136,42 +135,22 @@ describe('the answer for a model (D4)', () => {
   });
 });
 
-describe('a patrol that has not declared NSSRA membership (D5)', () => {
-  const service = makeService(false);
-
-  it('still sees the maker-published entries', async () => {
-    const [glade] = await service.search('org-1', 'glade');
-    expect(glade.answer).toBe('indemnified');
-  });
-
-  it('gets unavailable, never not_listed, for a model whose entries are all NSSRA-sourced', async () => {
+describe('every list, once a patrol may ask (Plan 51)', () => {
+  it('shows NSSRA-sourced entries as well as the makers\' own, and never answers unavailable', async () => {
+    const service = makeService();
     const [pine] = await service.search('org-1', 'pine');
-    expect(pine).toMatchObject({ answer: 'unavailable', season: null });
-    const detail = await service.model('org-1', 'pine');
-    expect(detail.entries).toEqual([]);
-    expect(detail.hiddenEntries).toBe(1);
-  });
-
-  it('says so in the manufacturers response', async () => {
-    const { nssraMember, manufacturers } = await service.manufacturers('org-1');
-    expect(nssraMember).toBe(false);
-    expect(manufacturers.find((m) => m.label === 'Larch')).toMatchObject({ listed: 0, programs: [] });
-  });
-});
-
-describe('what a non-member can\'t see is never read as lapsed (D4, D5)', () => {
-  it('answers unavailable when the newest entry is on the members-only list', async () => {
-    const [torque] = await makeService(false).search('org-1', 'torque');
-    expect(torque).toMatchObject({ answer: 'unavailable', lastListedSeason: null });
-    const [asMember] = await makeService(true).search('org-1', 'torque');
-    expect(asMember).toMatchObject({ answer: 'indemnified', season: '2025-26' });
+    expect(pine.answer).not.toBe('unavailable');
+    const [torque] = await service.search('org-1', 'torque');
+    expect(torque).toMatchObject({ answer: 'indemnified', season: '2025-26' });
+    expect((await service.model('org-1', 'pine')).hiddenEntries).toBe(0);
+    expect((await service.manufacturers('org-1')).nssraMember).toBe(true);
   });
 });
 
 describe('the registry, read once a minute per patrol', () => {
   it('is reused between requests, and read again once cleared', async () => {
     const reads = { n: 0 };
-    const service = makeService(true, reads);
+    const service = makeService(reads);
     await service.search('org-1', 'glade');
     await service.models('org-1', 'maple');
     expect(reads.n).toBe(1);
@@ -182,7 +161,7 @@ describe('the registry, read once a minute per patrol', () => {
 
   it('isn\'t read for an empty search', async () => {
     const reads = { n: 0 };
-    expect(await makeService(true, reads).search('org-1', '  ')).toEqual([]);
+    expect(await makeService(reads).search('org-1', '  ')).toEqual([]);
     expect(reads.n).toBe(0);
   });
 });

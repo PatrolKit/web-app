@@ -745,7 +745,20 @@ export interface SkiSwapSettings {
   barcodesPerTicket: 1 | 2;
   /** Ski boots marked Mens, Womens or Kids are named with their US size too. */
   showUsBootSizes: boolean;
-  /** Declared an NSSRA retail member (Plan 44 D5), by whom and when. */
+  /**
+   * Binding indemnification (Plan 51): allowed for the org by a platform
+   * admin, and on for the web and for the iPads (each only while allowed).
+   * `certification` is what an admin certifies by turning either on.
+   */
+  indemnification: {
+    allowed: boolean;
+    web: boolean;
+    ipad: boolean;
+    certification: string;
+    certifiedBy: string | null;
+    certifiedAt: string | null;
+  };
+  /** Deprecated (Plan 51): use `indemnification`. */
   nssraMember: boolean;
   nssraMemberSetBy: string | null;
   nssraMemberSetAt: string | null;
@@ -1199,7 +1212,7 @@ export type {
   IndemnificationProgram,
   IndemnificationImportPlan,
   IndemnificationImportRecord,
-  NssraDeclaration,
+  IndemnificationOrg,
 } from '@patrolkit/contracts/indemnification.contracts';
 
 /** One answered question, on the way to the server. */

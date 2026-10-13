@@ -19,7 +19,7 @@ import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/guards/jwt-auth.guard';
 import { IndemnificationImportService } from './indemnification-import.service';
-import { PatchIndemnificationProgramDto } from '../../contracts/indemnification.contracts';
+import { PatchIndemnificationProgramDto, SetIndemnificationAllowedDto } from '../../contracts/indemnification.contracts';
 
 /**
  * The registry's maintenance (Plan 44 D3, D8): super admins only, as the
@@ -70,9 +70,19 @@ export class IndemnificationAdminController {
     return this.service.imports();
   }
 
-  /** Which patrols have declared NSSRA membership (D5). */
+  /** Every org's binding indemnification: allowed by the platform, and how its admins have it set (Plan 51). */
   @Get('orgs')
   orgs() {
-    return this.service.declarations();
+    return this.service.orgAccess();
+  }
+
+  /** Allows an org binding indemnification, or stops allowing it (Plan 51). */
+  @Patch('orgs/:orgId')
+  setAllowed(
+    @Param('orgId') orgId: string,
+    @Body() body: SetIndemnificationAllowedDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.setAllowed(orgId, body.allowed, user.userId);
   }
 }

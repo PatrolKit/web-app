@@ -1,10 +1,10 @@
-import { BadRequestException, Injectable, Optional } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { SkiSwapSettingsResponse } from '../contracts/ski-swap.contracts';
 import type { DevicePinResponse } from '../contracts/devices.contracts';
 import { PlatformSettingsService } from '../platform/platform-settings.service';
 import { basisPointsToPercent, percentToBasisPoints } from './payouts/money';
-import { IndemnificationLookupService } from './indemnification/indemnification-lookup.service';
+import { INDEMNIFICATION_CERTIFICATION, accessOf } from './indemnification/indemnification-access';
 
 const DEFAULT_LABELS_PER_ITEM = 1;
 
@@ -18,8 +18,6 @@ export class SkiSwapSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly platform: PlatformSettingsService,
-    /** Cleared when the NSSRA declaration changes, so the lookup follows at once. */
-    @Optional() private readonly indemnification?: IndemnificationLookupService,
   ) {}
 
   async get(orgId: string): Promise<SkiSwapSettingsResponse> {
@@ -31,7 +29,7 @@ export class SkiSwapSettingsService {
       requireConsignmentScan: row?.requireConsignmentScan ?? false,
       barcodesPerTicket: barcodesOf(row),
       showUsBootSizes: row?.showUsBootSizes ?? false,
-      ...(await this.nssraOf(row)),
+      ...(await this.indemnificationOf(orgId, row)),
       // 1 for an org with no row, matching what the taxonomy service reports —
       // a client that has cached nothing compares against it and fetches.
       taxonomyVersion: row?.taxonomyVersion ?? 1,
@@ -67,23 +65,33 @@ export class SkiSwapSettingsService {
     return swap?.labelsPerItem ?? DEFAULT_LABELS_PER_ITEM;
   }
 
-  /** The declaration and its author, by name (Plan 44 D5). */
-  private async nssraOf(
-    row: { nssraMember: boolean; nssraMemberSetBy: string | null; nssraMemberSetAt: Date | null } | null,
-  ): Promise<Pick<SkiSwapSettingsResponse, 'nssraMember' | 'nssraMemberSetBy' | 'nssraMemberSetAt'>> {
-    const by = row?.nssraMemberSetBy
+  /**
+   * Binding indemnification as this org has it (Plan 51): allowed by the
+   * platform, on for the web and the iPads, and who certified, by name. The
+   * deprecated `nssraMember` fields mirror it for iPads that still read them.
+   */
+  private async indemnificationOf(
+    orgId: string,
+    row: { indemnificationWeb: boolean; indemnificationIpad: boolean; indemnificationCertifiedBy: string | null; indemnificationCertifiedAt: Date | null } | null,
+  ): Promise<Pick<SkiSwapSettingsResponse, 'indemnification' | 'nssraMember' | 'nssraMemberSetBy' | 'nssraMemberSetAt'>> {
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId }, select: { indemnificationAllowed: true } });
+    const access = accessOf(org, row);
+    const by = row?.indemnificationCertifiedBy
       ? await this.prisma.user.findUnique({
-          where: { id: row.nssraMemberSetBy },
+          where: { id: row.indemnificationCertifiedBy },
           select: { firstName: true, lastName: true },
         })
       : null;
     // A name or nothing: this reaches every reporter and the check-in iPads,
     // and an email or phone number isn't theirs to read.
     const name = by ? [by.firstName, by.lastName].map((s) => s?.trim()).filter(Boolean).join(' ') : '';
+    const certifiedAt = row?.indemnificationCertifiedAt?.toISOString() ?? null;
+    const on = access.web || access.ipad;
     return {
-      nssraMember: row?.nssraMember ?? false,
-      nssraMemberSetBy: name || null,
-      nssraMemberSetAt: row?.nssraMemberSetAt?.toISOString() ?? null,
+      indemnification: { ...access, certification: INDEMNIFICATION_CERTIFICATION, certifiedBy: name || null, certifiedAt },
+      nssraMember: on,
+      nssraMemberSetBy: on ? name || null : null,
+      nssraMemberSetAt: on ? certifiedAt : null,
     };
   }
 
@@ -94,7 +102,9 @@ export class SkiSwapSettingsService {
       commissionPercent?: string | number;
       barcodesPerTicket?: 1 | 2;
       showUsBootSizes?: boolean;
-      nssraMember?: boolean;
+      indemnificationWeb?: boolean;
+      indemnificationIpad?: boolean;
+      certifyIndemnification?: true;
     },
     actorId?: string,
   ): Promise<SkiSwapSettingsResponse> {
@@ -112,15 +122,30 @@ export class SkiSwapSettingsService {
 
     const before = await this.prisma.skiSwapSettings.findUnique({ where: { orgId } });
 
-    // A declaration carries its author and date (Plan 44 D5); clearing it clears them.
-    const nssra =
-      data.nssraMember !== undefined && data.nssraMember !== (before?.nssraMember ?? false)
-        ? {
-            nssraMember: data.nssraMember,
-            nssraMemberSetBy: data.nssraMember ? actorId ?? null : null,
-            nssraMemberSetAt: data.nssraMember ? new Date() : null,
-          }
-        : {};
+    // Binding indemnification (Plan 51): only while the platform allows the
+    // org, and turning either switch on certifies, so it's refused without the
+    // certification and carries who certified and when.
+    const indemnification: { indemnificationWeb?: boolean; indemnificationIpad?: boolean; indemnificationCertifiedBy?: string | null; indemnificationCertifiedAt?: Date } = {};
+    const fromWeb = before?.indemnificationWeb ?? false;
+    const fromIpad = before?.indemnificationIpad ?? false;
+    const webChanged = data.indemnificationWeb !== undefined && data.indemnificationWeb !== fromWeb;
+    const ipadChanged = data.indemnificationIpad !== undefined && data.indemnificationIpad !== fromIpad;
+    if (webChanged || ipadChanged) {
+      const org = await this.prisma.organization.findUnique({ where: { id: orgId }, select: { indemnificationAllowed: true } });
+      if (!org?.indemnificationAllowed) {
+        throw new ForbiddenException({ code: 'INDEMNIFICATION_OFF', message: 'Binding indemnification isn’t available to this organization. A platform admin allows it.' });
+      }
+      const turningOn = (webChanged && data.indemnificationWeb) || (ipadChanged && data.indemnificationIpad);
+      if (turningOn && data.certifyIndemnification !== true) {
+        throw new BadRequestException(`Turning binding indemnification on needs the certification: ${INDEMNIFICATION_CERTIFICATION}`);
+      }
+      if (webChanged) indemnification.indemnificationWeb = data.indemnificationWeb;
+      if (ipadChanged) indemnification.indemnificationIpad = data.indemnificationIpad;
+      if (turningOn) {
+        indemnification.indemnificationCertifiedBy = actorId ?? null;
+        indemnification.indemnificationCertifiedAt = new Date();
+      }
+    }
 
     const row = await this.prisma.skiSwapSettings.upsert({
       where: { orgId },
@@ -131,7 +156,7 @@ export class SkiSwapSettingsService {
         ...(commissionBasisPoints !== undefined ? { commissionBasisPoints } : {}),
         ...(data.barcodesPerTicket !== undefined ? { barcodesPerTicket: data.barcodesPerTicket } : {}),
         ...(data.showUsBootSizes !== undefined ? { showUsBootSizes: data.showUsBootSizes } : {}),
-        ...nssra,
+        ...indemnification,
       },
       create: {
         orgId,
@@ -139,19 +164,22 @@ export class SkiSwapSettingsService {
         commissionBasisPoints: commissionBasisPoints ?? 0,
         barcodesPerTicket: data.barcodesPerTicket ?? 1,
         showUsBootSizes: data.showUsBootSizes ?? false,
-        ...nssra,
+        ...indemnification,
       },
     });
 
-    if ('nssraMember' in nssra) {
-      this.indemnification?.invalidate(orgId);
+    if (webChanged || ipadChanged) {
       await this.prisma.auditLog.create({
         data: {
           actorType: 'user',
           actorId: actorId ?? null,
           orgId,
-          action: 'ski_swap.settings.nssra_member',
-          metadata: { to: nssra.nssraMember },
+          action: 'ski_swap.settings.indemnification',
+          metadata: {
+            ...(webChanged ? { web: { from: fromWeb, to: data.indemnificationWeb } } : {}),
+            ...(ipadChanged ? { ipad: { from: fromIpad, to: data.indemnificationIpad } } : {}),
+            certified: 'indemnificationCertifiedAt' in indemnification,
+          },
         },
       });
     }
@@ -179,7 +207,7 @@ export class SkiSwapSettingsService {
       requireConsignmentScan: row.requireConsignmentScan,
       barcodesPerTicket: barcodesOf(row),
       showUsBootSizes: row.showUsBootSizes,
-      ...(await this.nssraOf(row)),
+      ...(await this.indemnificationOf(orgId, row)),
       taxonomyVersion: row.taxonomyVersion,
       smsEnabled: await this.platform.smsEnabled(),
       commissionPercent: basisPointsToPercent(row.commissionBasisPoints),

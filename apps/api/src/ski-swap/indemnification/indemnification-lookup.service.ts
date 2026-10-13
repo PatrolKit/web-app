@@ -38,23 +38,23 @@ type Registry = {
   models: { id: string; label: string; makerId: string }[];
   /** Model node → the entries this patrol may see. */
   entries: Map<string, EntryRow[]>;
-  /** Model node → entries hidden from this patrol (D5). */
+  /** Model node → entries hidden from this patrol. Empty since Plan 51: a patrol that may ask sees every list. */
   hidden: Map<string, number>;
   /** Model node → the newest season among its hidden entries. */
   hiddenNewest: Map<string, string>;
 };
 
-/** How long a patrol's registry is reused. Imports, notes and the NSSRA declaration clear it at once. */
+/** How long a patrol's registry is reused. Imports and notes clear it at once. */
 const CACHE_MS = 60_000;
 
 /**
- * The patrol-facing side (Plan 44 D4, D5, D10): the answer for a model,
- * computed when asked against its program's latest season, with NSSRA-sourced
- * entries dropped for a patrol that hasn't declared membership.
+ * The patrol-facing side (Plan 44 D4, D10): the answer for a model, computed
+ * when asked against its program's latest season. Who may ask is
+ * `IndemnificationAccessGuard`'s (Plan 51); a patrol that may sees every list.
  *
  * The registry is a few thousand rows, read whole and kept for a minute per
  * patrol: a search reads it per keystroke, and the item form per model picked.
- * An import, a program's notes and the NSSRA declaration clear it at once;
+ * An import and a program's notes clear it at once;
  * a merge or retire in Item Details shows within the minute.
  */
 @Injectable()
@@ -83,12 +83,14 @@ export class IndemnificationLookupService {
   }
 
   private async read(orgId: string): Promise<Registry> {
-    const [settings, programRows, attr] = await Promise.all([
-      this.prisma.skiSwapSettings.findUnique({ where: { orgId }, select: { nssraMember: true } }),
+    const [programRows, attr] = await Promise.all([
       this.prisma.bindingIndemnificationProgram.findMany(),
       this.taxonomy.bindingManufacturerAttribute(),
     ]);
-    const nssraMember = settings?.nssraMember ?? false;
+    // Every list, NSSRA's included (Plan 51): an org reaches the lookup only
+    // once its admins have turned it on, which certifies its right to them.
+    // `IndemnificationAccessGuard` refuses everyone else before this is read.
+    const nssraMember = true;
     const programs = new Map(programRows.map((p) => [p.key, p]));
     const seasons = programRows.map((p) => p.latestSeason).filter((s): s is string => !!s).sort();
     const latestSeason = seasons.length ? seasons[seasons.length - 1] : null;

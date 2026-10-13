@@ -1008,10 +1008,16 @@ export const UpdateSkiSwapSettingsSchema = z
     /** Name ski boots with their US size beside the Mondopoint. */
     showUsBootSizes: z.boolean().optional(),
     /**
-     * The patrol declares itself an NSSRA retail member (Plan 44 D5), which
-     * is what shows it entries from NSSRA's members-only combined list.
+     * Binding indemnification on the web, and on the check-in iPads (Plan
+     * 51). Only while a platform admin allows the org; refused otherwise.
      */
-    nssraMember: z.boolean().optional(),
+    indemnificationWeb: z.boolean().optional(),
+    indemnificationIpad: z.boolean().optional(),
+    /**
+     * Turning either on certifies the org's right to the lists (the text is
+     * `INDEMNIFICATION_CERTIFICATION`), so it's refused without this.
+     */
+    certifyIndemnification: z.literal(true).optional(),
   })
   .strict();
 
@@ -1035,8 +1041,24 @@ export const SkiSwapSettingsResponseSchema = z.object({
    */
   showUsBootSizes: z.boolean(),
   /**
-   * Declared an NSSRA retail member (Plan 44 D5), by whom and when. Decides
-   * which indemnification entries the patrol's lookups show.
+   * Binding indemnification (Plan 51). `allowed`: a platform admin allows
+   * the org; while not, the section is hidden and both switches read off.
+   * `web` and `ipad`: on for the org's staff on the web, and for its check-in
+   * iPads; each is only ever true while allowed. `certification` is the text
+   * an admin certifies by turning either on; who did, and when, by name.
+   */
+  indemnification: z.object({
+    allowed: z.boolean(),
+    web: z.boolean(),
+    ipad: z.boolean(),
+    certification: z.string(),
+    certifiedBy: z.string().nullable(),
+    certifiedAt: z.string().nullable(),
+  }),
+  /**
+   * Deprecated (Plan 51), kept for iPads that read it: true while
+   * indemnification is on for the web or the iPads, with who certified and
+   * when. Use `indemnification`.
    */
   nssraMember: z.boolean(),
   nssraMemberSetBy: z.string().nullable(),

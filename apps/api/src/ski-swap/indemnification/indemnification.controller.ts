@@ -8,6 +8,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import { RequireDeviceRole } from '../../common/decorators/require-device-role.decorator';
 import { IndemnificationLookupService } from './indemnification-lookup.service';
 import { LookupSearchQueryDto } from '../../contracts/indemnification.contracts';
+import { IndemnificationAccessGuard } from './indemnification-access';
 
 /**
  * The lookup, for the patrol's staff and its check-in iPads (Plan 44 D10).
@@ -16,9 +17,13 @@ import { LookupSearchQueryDto } from '../../contracts/indemnification.contracts'
  * permission, and a business seller is a retail shop: exactly who NSSRA's
  * members-only list is kept from. `ski_swap:report` is the staff floor, as on
  * the Items list. Never under `public/*`.
+ *
+ * And only where the org may see the lists (Plan 51): allowed by a platform
+ * admin, and turned on by its own admins for the web, for its iPads, or both.
+ * Otherwise every route answers 403 `INDEMNIFICATION_OFF`.
  */
 @Controller('orgs/:orgId/ski-swap/bindings/indemnification')
-@UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
+@UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard, IndemnificationAccessGuard)
 @RequireDeviceRole('ski_swap.staff_check_in')
 @RequirePermissions('ski_swap:report')
 @RequireModule('ski_swap')

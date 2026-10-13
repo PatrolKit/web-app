@@ -96,6 +96,12 @@ model Organization {
   /// the column, which is why no logo has ever appeared in local development.
   /// Base64 of the 2 MB upload cap is about 2.7 MB, inside MediumText's 16.
   logoUrl   String?  @db.MediumText
+  /// A platform admin allows this org binding indemnification (Plan 51): the
+  /// lists are licensed. Off, the org's own web and iPad switches are off and
+  /// hidden, and every lookup is refused.
+  indemnificationAllowed   Boolean   @default(false)
+  indemnificationAllowedBy String?   @db.VarChar(191)
+  indemnificationAllowedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -858,14 +864,20 @@ model SkiSwapSettings {
   /// Read when the name is composed, so it changes new names, not old ones.
   showUsBootSizes Boolean @default(false)
 
-  /// The patrol has declared itself a retail member of the National Ski &
-  /// Snowboard Retailers Association (Plan 44 D5). NSSRA publishes its
-  /// combined indemnified-bindings list for members only, so entries sourced
-  /// from it are shown to this org only while this is on. Who turned it on,
-  /// and when, is kept: it is a declaration, and a declaration has an author.
+  /// Deprecated (Plan 51): replaced by the web and iPad switches below, which
+  /// are the certification. Kept, not read, so the migration stays additive.
   nssraMember      Boolean   @default(false)
   nssraMemberSetBy String?   @db.VarChar(191)
   nssraMemberSetAt DateTime?
+
+  /// Binding indemnification for this org's staff on the web, and for its
+  /// check-in iPads (Plan 51): each on only while the platform allows the org
+  /// (`Organization.indemnificationAllowed`). Turning either on certifies the
+  /// org's right to the lists, so who certified, and when, is kept.
+  indemnificationWeb         Boolean   @default(false)
+  indemnificationIpad        Boolean   @default(false)
+  indemnificationCertifiedBy String?   @db.VarChar(191)
+  indemnificationCertifiedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

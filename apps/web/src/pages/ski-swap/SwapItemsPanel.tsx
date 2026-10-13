@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheckDouble as faCheckDoubleDuo, faPlus as faPlusDuo, faTicket as faTicketDuo, faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
+import { api } from '../../lib/api';
 import type { ItemAttributeInput, ItemListSort, ItemListStatus, ItemListView, ItemResponse, SellerKind, SellerResponse } from '../../lib/api.types';
 import SearchableSelect from '../../components/SearchableSelect';
 import ActionsMenu, { type MenuAction } from '../../components/ActionsMenu';
@@ -296,6 +297,14 @@ export default function SwapItemsPanel({
   showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1, batchPrint = false,
   tickets, actions = [], toolbarNote, addBlockedBecause, exportTo,
 }: SwapItemsPanelProps) {
+  // Binding indemnification beside a picked model, only where the org has it on for the web (Plan 51).
+  const { data: orgSettings } = useQuery({
+    queryKey: ['ski-swap/settings', orgId],
+    queryFn: () => api.skiSwap.getSettings(orgId),
+    enabled: !!orgId && !selfService,
+    staleTime: 60_000,
+  });
+  const indemnificationOn = orgSettings?.indemnification.web ?? false;
   const qc = useQueryClient();
   /**
    * What's shown lives in the URL (Plan 39): the dashboard's links land on a
@@ -940,8 +949,9 @@ export default function SwapItemsPanel({
 
             <ItemDescriber
               staff
-              // The indemnified-lists answer is for staff, not a seller's own page (Plan 44).
-              lookups={!selfService}
+              // The indemnified-lists answer is for staff, not a seller's own page
+              // (Plan 44), and only where the org has it on for the web (Plan 51).
+              lookups={!selfService && indemnificationOn}
               orgId={orgId}
               value={form.describer}
               onChange={(describer) => setForm({ ...form, describer })}

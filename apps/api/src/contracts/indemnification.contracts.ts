@@ -74,7 +74,11 @@ export const ManufacturerSummarySchema = z.object({
 export type ManufacturerSummary = z.infer<typeof ManufacturerSummarySchema>;
 
 export const ManufacturersResponseSchema = z.object({
-  /** Whether this patrol sees NSSRA-sourced entries (D5). */
+  /**
+   * Deprecated (Plan 51): always true. A lookup that answers at all shows
+   * every list, NSSRA's included, since turning it on certifies the org's
+   * right to them; one the org hasn't turned on is refused, 403.
+   */
   nssraMember: z.boolean(),
   /** The newest season any program has. Null before the first import. */
   latestSeason: z.string().nullable(),
@@ -149,12 +153,24 @@ export const IndemnificationImportRecordSchema = z.object({
 });
 export type IndemnificationImportRecord = z.infer<typeof IndemnificationImportRecordSchema>;
 
-/** Which patrols have declared NSSRA membership (D5). */
-export const NssraDeclarationSchema = z.object({
+/**
+ * Each org's binding indemnification (Plan 51): whether a platform admin
+ * allows it, and, while allowed, whether its admins have it on for the web and
+ * for its iPads, and who certified that and when.
+ */
+export const IndemnificationOrgSchema = z.object({
   orgId: z.string(),
   orgName: z.string(),
-  nssraMember: z.boolean(),
-  setBy: z.string().nullable(),
-  setAt: z.string().nullable(),
+  allowed: z.boolean(),
+  allowedBy: z.string().nullable(),
+  allowedAt: z.string().nullable(),
+  web: z.boolean(),
+  ipad: z.boolean(),
+  certifiedBy: z.string().nullable(),
+  certifiedAt: z.string().nullable(),
 });
-export type NssraDeclaration = z.infer<typeof NssraDeclarationSchema>;
+export type IndemnificationOrg = z.infer<typeof IndemnificationOrgSchema>;
+
+/** A platform admin allows an org binding indemnification, or stops allowing it. */
+export const SetIndemnificationAllowedSchema = z.object({ allowed: z.boolean() }).strict();
+export class SetIndemnificationAllowedDto extends createZodDto(SetIndemnificationAllowedSchema) {}
