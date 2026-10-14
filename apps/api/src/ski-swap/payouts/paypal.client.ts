@@ -45,6 +45,20 @@ export interface PayoutBatchResult {
 }
 
 /**
+ * The server's lock on paying out (fail closed). Nothing is sent to PayPal,
+ * and no payout is cancelled there, unless the server's environment says
+ * exactly `PAYPAL_PAYOUTS_ENABLED=on`: set by whoever runs the server, never
+ * from a screen, so a run can be built, reviewed and approved with the money
+ * held until the patrol is satisfied it works.
+ */
+export function payoutsUnlocked(): boolean {
+  return process.env.PAYPAL_PAYOUTS_ENABLED === 'on';
+}
+
+export const PAYOUTS_LOCKED_MESSAGE =
+  'Paying out is locked on this server, so nothing was sent to PayPal. Runs can still be built, reviewed and approved.';
+
+/**
  * What a payout provider has to be able to do.
  *
  * An interface because tests must never reach the real thing, and because the
@@ -64,6 +78,8 @@ export abstract class PayPalClient {
   abstract getBalance(orgId: string): Promise<PayPalBalance>;
   /** Drops anything held for this org's credentials, because they just changed. */
   abstract forget(orgId: string): void;
+  /** Whether this client may move money now: the server's lock, for the real one. */
+  abstract sendingEnabled(): boolean;
 }
 
 /**
@@ -97,11 +113,18 @@ export class HttpPayPalClient extends PayPalClient {
     super();
   }
 
+  sendingEnabled(): boolean {
+    return payoutsUnlocked();
+  }
+
   async createBatch(
     orgId: string,
     senderBatchId: string,
     items: PayoutItemRequest[],
   ): Promise<PayoutBatchResult> {
+    // The lock, here as well as in the service: no path reaches PayPal's
+    // payouts endpoint while it's on, whatever called it.
+    if (!payoutsUnlocked()) throw new PayPalError(PAYOUTS_LOCKED_MESSAGE, 423);
     const body = {
       sender_batch_header: {
         sender_batch_id: senderBatchId,
@@ -125,6 +148,7 @@ export class HttpPayPalClient extends PayPalClient {
   }
 
   async cancelItem(orgId: string, payoutItemId: string): Promise<void> {
+    if (!payoutsUnlocked()) throw new PayPalError(PAYOUTS_LOCKED_MESSAGE, 423);
     await this.call(orgId, 'POST', `/v1/payments/payouts-item/${payoutItemId}/cancel`);
   }
 

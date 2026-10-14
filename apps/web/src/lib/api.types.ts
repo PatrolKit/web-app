@@ -829,6 +829,8 @@ export interface PayoutRun {
   status: 'DRAFT' | 'REVIEW' | 'CLOSED';
   /** Runs of this swap before this one: it pays only what they didn't settle. */
   earlierRuns?: number;
+  /** Paying out is locked on this server: Send is refused until it's unlocked there. */
+  sendingLocked?: boolean;
   salesFrom: string;
   salesTo: string;
   commissionBasisPoints: number;

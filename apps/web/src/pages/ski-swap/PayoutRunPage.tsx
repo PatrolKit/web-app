@@ -224,6 +224,12 @@ function RunHeader({
 
       {isAdmin && run.status !== 'CLOSED' && (
         <div className="border-t border-gray-800 pt-4 space-y-3">
+          {run.sendingLocked && (
+            <p className="text-sm text-amber-200 bg-amber-900/20 border border-amber-800/60 rounded px-3 py-2">
+              🔒 Paying out is locked on this server. Runs can be built, reviewed and approved, but nothing can be
+              sent to PayPal until whoever runs the server unlocks it.
+            </p>
+          )}
           {inFlight && (
             <p className="text-sm text-blue-300">
               Some payouts are still with PayPal. Sending again is safe — it re-sends the same
@@ -235,7 +241,7 @@ function RunHeader({
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={() => setConfirming(true)}
-                disabled={!sendable.length && !inFlight}
+                disabled={run.sendingLocked || (!sendable.length && !inFlight)}
                 className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
               >
                 {inFlight

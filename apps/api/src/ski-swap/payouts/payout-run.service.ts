@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,7 +13,7 @@ import { sellerDisplayName, SELLER_NAME_INCLUDE } from '../seller.service';
 import { ItemService } from '../item.service';
 import { buildRun, countsAsPaid, discountsOf, paidBefore, exchangedKeyOf, type BuiltRun, type HeldSale, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
-import { PayPalClient, PayPalError, type PayoutItemRequest } from './paypal.client';
+import { PAYOUTS_LOCKED_MESSAGE, PayPalClient, PayPalError, type PayoutItemRequest } from './paypal.client';
 import { formatCents } from './money';
 import { checksToCsv, phoneForHumans, type CheckRow } from './checks-csv';
 import { TERMINAL_PAYOUT_STATUSES, type PayoutLineStatus } from '../../contracts/payouts.contracts';
@@ -316,6 +317,8 @@ export class PayoutRunService {
       swapTitle: run.swap.title,
       status: run.status,
       earlierRuns,
+      /** Paying out is locked on this server: Send is refused until it's unlocked there. */
+      sendingLocked: !this.paypal.sendingEnabled(),
       salesFrom: run.salesFrom.toISOString(),
       salesTo: run.salesTo.toISOString(),
       commissionBasisPoints: run.commissionBasisPoints,
@@ -442,6 +445,11 @@ export class PayoutRunService {
     if (!run) throw new NotFoundException('Payout run not found');
     if (run.status !== 'REVIEW') {
       throw new ConflictException(`A ${run.status.toLowerCase()} run cannot be sent`);
+    }
+    // The server's lock (fail closed): refused before any line moves, so a
+    // locked send leaves the run exactly as it was.
+    if (!this.paypal.sendingEnabled()) {
+      throw new ForbiddenException({ code: 'PAYOUTS_LOCKED', message: PAYOUTS_LOCKED_MESSAGE });
     }
 
     // A resume rather than a new send. Lines left in SENDING mean a previous

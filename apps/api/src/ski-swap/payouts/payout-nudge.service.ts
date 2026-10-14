@@ -1,11 +1,11 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../../mail/mail.service';
 import { SmsService } from '../../sms/sms.service';
 import type { SendOutcome } from '../../common/messaging/send-outcome';
-import { PayPalClient } from './paypal.client';
+import { PAYOUTS_LOCKED_MESSAGE, PayPalClient } from './paypal.client';
 import { formatCents } from './money';
 
 /**
@@ -147,6 +147,10 @@ export class PayoutNudgeService {
       throw new NotFoundException('Only an unclaimed payout can be cancelled');
     }
 
+    // Cancelling is a write to PayPal too, so the server's lock holds it.
+    if (!this.paypal.sendingEnabled()) {
+      throw new ForbiddenException({ code: 'PAYOUTS_LOCKED', message: PAYOUTS_LOCKED_MESSAGE });
+    }
     await this.paypal.cancelItem(orgId, line.payoutItemId);
 
     // Back to PENDING, not APPROVED. The destination is why this failed, and

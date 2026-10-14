@@ -31,6 +31,11 @@ export class StubPayPalClient extends PayPalClient {
   /** sender_batch_id → what was accepted under it. */
   private readonly batches = new Map<string, PayoutBatchResult>();
 
+  /** The stub never reaches PayPal, so it's never locked: the smoke script sends through it. */
+  sendingEnabled(): boolean {
+    return true;
+  }
+
   async createBatch(
     orgId: string,
     senderBatchId: string,
