@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Side } from './salesCheckView';
 import type { IssueNote } from '../../lib/api.types';
+import NewTabLink from '../../components/NewTabLink';
 
 /**
  * The Reports tab's cards (Plan 48), shared by Sales check and Catalog check:
@@ -169,7 +170,7 @@ export function SidePanel({ side, icon, className = '', action }: { side: Side; 
               <dd className={`min-w-0 break-words ${f.mono ? 'font-mono' : ''} ${f.warn ? 'text-amber-400' : 'text-gray-200'}`}>
                 {f.value}
                 {f.tag && <span className="ml-1.5 inline-block whitespace-nowrap text-[11px] bg-amber-900/40 text-amber-300 rounded px-1.5 py-px font-sans">{f.tag}</span>}
-                {f.link && <a href={f.link.href} target="_blank" rel="noreferrer" className="ml-2 whitespace-nowrap font-sans text-xs text-brand-500 hover:underline">{f.link.label} ↗</a>}
+                {f.link && <NewTabLink href={f.link.href} className="ml-4 font-sans text-xs">{f.link.label}</NewTabLink>}
               </dd>
             </Fragment>
           ))}
