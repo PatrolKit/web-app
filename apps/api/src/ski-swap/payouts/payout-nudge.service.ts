@@ -1,11 +1,12 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../../mail/mail.service';
 import { SmsService } from '../../sms/sms.service';
 import type { SendOutcome } from '../../common/messaging/send-outcome';
-import { PAYOUTS_LOCKED_MESSAGE, PayPalClient } from './paypal.client';
+import { PayPalClient } from './paypal.client';
 import { formatCents } from './money';
 
 /**
@@ -21,6 +22,23 @@ import { formatCents } from './money';
 
 /** Day 7 and day 21. Two nudges, then PayPal returns it at thirty. */
 export const NUDGE_DAY_MARKS = [7, 21] as const;
+
+const LINE_INCLUDE = {
+  notices: { select: { dayMark: true } },
+  run: { select: { orgId: true, swap: { select: { title: true } } } },
+  seller: {
+    select: {
+      membership: {
+        select: {
+          org: { select: { name: true, logoUrl: true } },
+          user: { select: { verifiedEmail: true, verifiedPhone: true, firstName: true } },
+        },
+      },
+    },
+  },
+} as const;
+
+type NudgeLine = Prisma.PayoutLineGetPayload<{ include: typeof LINE_INCLUDE }>;
 
 @Injectable()
 export class PayoutNudgeService {
@@ -47,20 +65,7 @@ export class PayoutNudgeService {
 
     const lines = await this.prisma.payoutLine.findMany({
       where: { run: { orgId }, status: 'UNCLAIMED' },
-      include: {
-        notices: { select: { dayMark: true } },
-        run: { select: { orgId: true, swap: { select: { title: true } } } },
-        seller: {
-          select: {
-            membership: {
-              select: {
-                org: { select: { name: true, logoUrl: true } },
-                user: { select: { verifiedEmail: true, verifiedPhone: true, firstName: true } },
-              },
-            },
-          },
-        },
-      },
+      include: LINE_INCLUDE,
     });
 
     let smsOn: boolean | undefined;
@@ -82,49 +87,8 @@ export class PayoutNudgeService {
       // Only the latest mark that has come due. A line first looked at on day
       // 25 owes one message, not two in the same minute.
       const dayMark = Math.max(...due);
-      const user = line.seller.membership.user;
-      // Texting off (Plan 29): email only. A seller reachable only by text is
-      // recorded unreached, like one with no contact at all.
       smsOn ??= await this.sms.enabled();
-      const channel = user.verifiedEmail ? 'EMAIL' : user.verifiedPhone && smsOn ? 'SMS' : null;
-      const destination = channel === 'EMAIL' ? user.verifiedEmail : user.verifiedPhone;
-
-      if (!channel || !destination) {
-        // Recorded as a failure rather than skipped silently, so "we could not
-        // reach this person" is a thing somebody can see and act on.
-        await this.record(line.id, dayMark, 'EMAIL', '', {
-          status: 'failed',
-          error: user.verifiedPhone ? 'Texting is off, and there is no verified email to nudge' : 'No verified contact to nudge',
-        });
-        results.failed++;
-        continue;
-      }
-
-      const org = line.seller.membership.org;
-      const claimUrl = this.claimUrl();
-      let outcome: SendOutcome;
-      try {
-        outcome =
-          channel === 'EMAIL'
-            ? await this.mail.sendPayoutNudge(destination, {
-                orgName: org.name,
-                orgLogoUrl: emailableLogo(org.logoUrl),
-                swapTitle: line.run.swap.title,
-                amount: formatCents(line.netCents),
-                firstName: user.firstName,
-                dayMark,
-                claimUrl,
-              })
-            : await this.sms.send(
-                destination,
-                `${org.name}: your ${formatCents(line.netCents)} ski swap payout is waiting to be claimed. ` +
-                  `Check the email or phone number on your PayPal account, or reply to us to change it. ${claimUrl}`,
-              );
-      } catch (err) {
-        outcome = { status: 'failed', error: err instanceof Error ? err.message : String(err) };
-      }
-
-      await this.record(line.id, dayMark, channel, destination, outcome);
+      const outcome = await this.nudgeLine(line, dayMark, dayMark, smsOn);
       results[outcome.status]++;
     }
 
@@ -132,53 +96,65 @@ export class PayoutNudgeService {
   }
 
   /**
-   * Takes an unclaimed payout back straight away (§9).
-   *
-   * A seller who says "that is my old email" should not wait thirty days for
-   * their own money. Cancelling returns it now; the line goes back to PENDING
-   * so a corrected destination can go in the next batch.
+   * "Remind them" (Plan 52 D19): the same message as the scheduled nudges,
+   * sent now. Once per payment, recorded as day mark 0.
    */
-  async cancelUnclaimed(orgId: string, lineId: string, actorId: string) {
-    const line = await this.prisma.payoutLine.findFirst({
-      where: { id: lineId, run: { orgId } },
-    });
+  async remind(orgId: string, runId: string, lineId: string) {
+    const line = await this.prisma.payoutLine.findFirst({ where: { id: lineId, runId, run: { orgId } }, include: LINE_INCLUDE });
     if (!line) throw new NotFoundException('Payout line not found');
-    if (line.status !== 'UNCLAIMED' || !line.payoutItemId) {
-      throw new NotFoundException('Only an unclaimed payout can be cancelled');
+    if (line.status !== 'UNCLAIMED') throw new ConflictException('Only an unclaimed payment is reminded.');
+    if (line.notices.some((n) => n.dayMark === 0)) throw new ConflictException('They were already reminded.');
+    const days = Math.floor((Date.now() - line.updatedAt.getTime()) / 86_400_000);
+    const outcome = await this.nudgeLine(line, 0, days, await this.sms.enabled());
+    if (outcome.status === 'failed') throw new BadRequestException(`The reminder couldn’t be sent: ${outcome.error}`);
+    return { status: outcome.status };
+  }
+
+  /** One nudge: email if there's a verified email, else a text if texting is on. Recorded either way. */
+  private async nudgeLine(line: NudgeLine, recordAs: number, daysUnclaimed: number, smsOn: boolean): Promise<SendOutcome> {
+    const user = line.seller.membership.user;
+    // Texting off (Plan 29): email only. A seller reachable only by text is
+    // recorded unreached, like one with no contact at all.
+    const channel = user.verifiedEmail ? 'EMAIL' : user.verifiedPhone && smsOn ? 'SMS' : null;
+    const destination = channel === 'EMAIL' ? user.verifiedEmail : user.verifiedPhone;
+
+    if (!channel || !destination) {
+      // Recorded as a failure rather than skipped silently, so "we could not
+      // reach this person" is a thing somebody can see and act on.
+      const outcome: SendOutcome = {
+        status: 'failed',
+        error: user.verifiedPhone ? 'Texting is off, and there is no verified email to nudge' : 'No verified contact to nudge',
+      };
+      await this.record(line.id, recordAs, 'EMAIL', '', outcome);
+      return outcome;
     }
 
-    // Cancelling is a write to PayPal too, so the server's lock holds it.
-    if (!this.paypal.sendingEnabled()) {
-      throw new ForbiddenException({ code: 'PAYOUTS_LOCKED', message: PAYOUTS_LOCKED_MESSAGE });
+    const org = line.seller.membership.org;
+    const claimUrl = this.claimUrl();
+    const amount = formatCents(line.netCents ?? 0);
+    let outcome: SendOutcome;
+    try {
+      outcome =
+        channel === 'EMAIL'
+          ? await this.mail.sendPayoutNudge(destination, {
+              orgName: org.name,
+              orgLogoUrl: emailableLogo(org.logoUrl),
+              swapTitle: line.run.swap.title,
+              amount,
+              firstName: user.firstName,
+              dayMark: daysUnclaimed,
+              claimUrl,
+            })
+          : await this.sms.send(
+              destination,
+              `${org.name}: your ${amount} ski swap payout is waiting to be claimed. ` +
+                `Check the email or phone number on your PayPal account, or reply to us to change it. ${claimUrl}`,
+            );
+    } catch (err) {
+      outcome = { status: 'failed', error: err instanceof Error ? err.message : String(err) };
     }
-    await this.paypal.cancelItem(orgId, line.payoutItemId);
-
-    // Back to PENDING, not APPROVED. The destination is why this failed, and
-    // the approval it already carried was an approval of that destination.
-    await this.prisma.payoutLine.update({
-      where: { id: lineId },
-      data: {
-        status: 'PENDING',
-        statusNote: 'Returned by cancelling the unclaimed payout — fix the destination and send again',
-        approvedBy: null,
-        approvedAt: null,
-        payoutItemId: null,
-      },
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        actorType: 'user',
-        actorId,
-        orgId,
-        action: 'payout_line.cancelled',
-        targetType: 'payout_line',
-        targetId: lineId,
-        metadata: { netCents: line.netCents, payoutItemId: line.payoutItemId },
-      },
-    });
-
-    return { id: lineId, status: 'PENDING' };
+    await this.record(line.id, recordAs, channel, destination, outcome);
+    return outcome;
   }
 
   private claimUrl(): string {

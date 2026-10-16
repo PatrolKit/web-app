@@ -38,6 +38,7 @@ export class SkiSwapSettingsService {
       // its cut is takes nothing, rather than a number somebody guessed.
       commissionPercent: basisPointsToPercent(row?.commissionBasisPoints ?? 0),
       commissionBasisPoints: row?.commissionBasisPoints ?? 0,
+      paypalFee: { flatCents: row?.paypalFeeFlatCents ?? 25, bps: row?.paypalFeeBps ?? 0, capCents: row?.paypalFeeCapCents ?? 0 },
     };
   }
 
@@ -102,6 +103,7 @@ export class SkiSwapSettingsService {
       commissionPercent?: string | number;
       barcodesPerTicket?: 1 | 2;
       showUsBootSizes?: boolean;
+      paypalFee?: { flatCents: number; bps: number; capCents: number };
       indemnificationWeb?: boolean;
       indemnificationIpad?: boolean;
       certifyIndemnification?: true;
@@ -156,6 +158,7 @@ export class SkiSwapSettingsService {
         ...(commissionBasisPoints !== undefined ? { commissionBasisPoints } : {}),
         ...(data.barcodesPerTicket !== undefined ? { barcodesPerTicket: data.barcodesPerTicket } : {}),
         ...(data.showUsBootSizes !== undefined ? { showUsBootSizes: data.showUsBootSizes } : {}),
+        ...(data.paypalFee ? { paypalFeeFlatCents: data.paypalFee.flatCents, paypalFeeBps: data.paypalFee.bps, paypalFeeCapCents: data.paypalFee.capCents } : {}),
         ...indemnification,
       },
       create: {
@@ -164,6 +167,7 @@ export class SkiSwapSettingsService {
         commissionBasisPoints: commissionBasisPoints ?? 0,
         barcodesPerTicket: data.barcodesPerTicket ?? 1,
         showUsBootSizes: data.showUsBootSizes ?? false,
+        ...(data.paypalFee ? { paypalFeeFlatCents: data.paypalFee.flatCents, paypalFeeBps: data.paypalFee.bps, paypalFeeCapCents: data.paypalFee.capCents } : {}),
         ...indemnification,
       },
     });
@@ -212,6 +216,7 @@ export class SkiSwapSettingsService {
       smsEnabled: await this.platform.smsEnabled(),
       commissionPercent: basisPointsToPercent(row.commissionBasisPoints),
       commissionBasisPoints: row.commissionBasisPoints,
+      paypalFee: { flatCents: row.paypalFeeFlatCents, bps: row.paypalFeeBps, capCents: row.paypalFeeCapCents },
     };
   }
 

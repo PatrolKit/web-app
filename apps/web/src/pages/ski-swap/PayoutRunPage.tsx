@@ -1,954 +1,482 @@
-import { useMemo, useState } from 'react';
-import { useOutletContext, useParams, Link, Navigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { Link, Navigate, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faArrowLeft,
-  faChevronDown,
-  faChevronRight,
-  faFileArrowDown,
-} from '@fortawesome/pro-duotone-svg-icons';
+import { faArrowLeft, faArrowsRotate, faChevronDown, faChevronRight, faLock, faLockOpen } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import { usd } from '../../lib/money';
+import type { PayoutLine, PayoutRun } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { balanceText, fundingOf, fundingSplitText } from './payoutFunding';
-import type { PayoutLine, PayoutLineStatus, PayoutRun } from '../../lib/api.types';
+import NewTabLink from '../../components/NewTabLink';
+import AddSellersDialog from './payouts/AddSellersDialog';
+import {
+  NOT_PAID, RUN_KIND_ICON, TONE, batchStatusText, dayText, feeRateText, fundingFor, methodLabel, soldAtText, sortSellers,
+  statusView, whenText, type SortKey,
+} from './payouts/payoutView';
 
 /**
- * Reviewing, approving and sending one payout run (Plan 25 §5–§10).
- *
- * The screen a person is looking at when they authorise money leaving an
- * account, so it is built around being able to check rather than around being
- * quick: every line opens onto the items it was calculated from, and the send
- * button says the total and the count out loud before it does anything.
+ * One payout run (Plan 52): its header (D13), the sellers in it (D10), and
+ * everything that happens to their money. A run is checks or PayPal, starts
+ * empty, and staff add the sellers it pays.
  */
 
-const STATUS_LABEL: Record<PayoutLineStatus, string> = {
-  PENDING: 'Needs review',
-  APPROVED: 'Approved',
-  SENDING: 'Sending',
-  SENT: 'Paid',
-  UNCLAIMED: 'Unclaimed',
-  FAILED: 'Failed',
-  RETURNED: 'Returned',
-  PAID_BY_CHECK: 'Check sent',
-  DONATED: 'Donated',
-};
+type Filter = 'all' | 'open' | 'approved' | 'paid' | 'unclaimed' | 'notpaid' | 'flagged';
+type Result = { ok: boolean; message: string } | null;
 
-const STATUS_TONE: Record<PayoutLineStatus, string> = {
-  PENDING: 'bg-surface-100 text-gray-300 border-gray-700',
-  APPROVED: 'bg-brand-600/15 text-brand-400 border-brand-700/50',
-  SENDING: 'bg-blue-500/10 text-blue-300 border-blue-800/50',
-  SENT: 'bg-green-500/10 text-green-400 border-green-800/50',
-  UNCLAIMED: 'bg-amber-500/10 text-amber-300 border-amber-700/50',
-  FAILED: 'bg-red-500/10 text-red-400 border-red-800/50',
-  RETURNED: 'bg-red-500/10 text-red-400 border-red-800/50',
-  PAID_BY_CHECK: 'bg-green-500/10 text-green-400 border-green-800/50',
-  DONATED: 'bg-surface-100 text-gray-400 border-gray-700',
-};
-
-type Tab = 'payouts' | 'checks' | 'discounts';
+const SORT_KEY = 'patrolkit:payout-sort';
+const smallButton = 'px-2.5 py-1 rounded border border-gray-600 bg-surface-100 hover:bg-surface-200 text-gray-200 disabled:opacity-40';
 
 export default function PayoutRunPage() {
-  const { orgId, perms } = useOutletContext<SkiSwapContext>();
-  const { runId = '' } = useParams();
+  const { runId } = useParams();
+  const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = perms.has('ski_swap:admin');
-  const [tab, setTab] = useState<Tab>('payouts');
-
-  const { data: run, isLoading } = useQuery({
-    queryKey: ['ski-swap/payout-run', orgId, runId],
-    queryFn: () => api.skiSwap.getPayoutRun(orgId, runId),
-    enabled: !!orgId && !!runId,
-    // While anything is in flight, keep asking: SENDING resolves through a
-    // webhook that arrives whenever it arrives.
-    refetchInterval: (query) =>
-      query.state.data?.lines.some((l) => l.status === 'SENDING') ? 5_000 : false,
+  const [adding, setAdding] = useState(false);
+  const [sort, setSort] = useState<SortKey>(() => {
+    try { return (localStorage.getItem(SORT_KEY) as SortKey) || 'name'; } catch { return 'name'; }
   });
+  const [filter, setFilter] = useState<Filter>('all');
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [result, setResult] = useState<Result>(null);
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['ski-swap/payout-run', orgId, runId] });
-    qc.invalidateQueries({ queryKey: ['ski-swap/payout-runs', orgId] });
-  };
-
-  if (!perms.has('ski_swap:report')) return <Navigate to="/dashboard/ski-swap" replace />;
-  if (isLoading) return <p className="text-gray-400">Loading…</p>;
-  if (!run) return <p className="text-gray-400">That payout run could not be found.</p>;
-
-  const checkCount = run.lines.filter((l) => l.method === 'CHECK').length;
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link to=".." className="text-sm text-gray-400 hover:text-white">
-          <FontAwesomeIcon icon={faArrowLeft} className="mr-1.5 h-3 w-3" />
-          All payout runs
-        </Link>
-      </div>
-
-      <RunHeader run={run} isAdmin={isAdmin} onChanged={invalidate} />
-
-      <nav className="flex items-center gap-1 border-b border-gray-800 pb-1">
-        <TabButton active={tab === 'payouts'} onClick={() => setTab('payouts')}>
-          Payouts
-        </TabButton>
-        <TabButton active={tab === 'checks'} onClick={() => setTab('checks')}>
-          Checks{checkCount > 0 && <span className="ml-1.5 text-gray-500">{checkCount}</span>}
-        </TabButton>
-        <TabButton active={tab === 'discounts'} onClick={() => setTab('discounts')}>
-          Discounts
-        </TabButton>
-      </nav>
-
-      {tab === 'payouts' && (
-        <>
-          <UnmatchedSales run={run} />
-          <HeldSales run={run} />
-          <LinesTable run={run} isAdmin={isAdmin} onChanged={invalidate} />
-        </>
-      )}
-      {tab === 'checks' && <ChecksTab run={run} isAdmin={isAdmin} onChanged={invalidate} />}
-      {tab === 'discounts' && <DiscountsTab orgId={orgId} runId={run.id} />}
-    </div>
-  );
-}
-
-function TabButton({
-  active, onClick, children,
-}: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`text-sm px-3 py-1.5 rounded transition ${
-        active ? 'bg-surface-100 text-white' : 'text-gray-400 hover:text-white'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-// ─── Header: the totals, and the two buttons that change the world ────────────
-
-function RunHeader({
-  run, isAdmin, onChanged,
-}: { run: PayoutRun; isAdmin: boolean; onChanged: () => void }) {
-  const [confirming, setConfirming] = useState(false);
-  const { orgId } = useOutletContext<SkiSwapContext>();
-
-  const sendable = run.lines.filter(
-    (l) => l.status === 'APPROVED' && (l.method === 'PAYPAL' || l.method === 'VENMO'),
-  );
-  const sendableTotal = sendable.reduce((sum, l) => sum + l.netCents, 0);
-  const inFlight = run.lines.some((l) => l.status === 'SENDING');
-  // What PayPal must hold before this run is sent, against what it has.
-  const funding = fundingOf(run.lines);
+  const key = ['ski-swap/payout-run', orgId, runId];
+  const { data: run, isLoading, error } = useQuery({
+    queryKey: key,
+    queryFn: () => api.skiSwap.getPayoutRun(orgId, runId!),
+    enabled: !!orgId && !!runId,
+  });
+  const sentOrClosed = !!run?.batch?.id || run?.status === 'CLOSED';
   const { data: balance } = useQuery({
     queryKey: ['ski-swap/paypal-balance', orgId],
     queryFn: () => api.skiSwap.paypalBalance(orgId),
-    enabled: run.status !== 'CLOSED' && funding.cents > 0,
-    staleTime: 60_000,
-  });
-  const fundedFor = balanceText(funding.cents, balance?.availableCents ?? null);
-  const sendShort = balance?.availableCents != null && balance.availableCents < sendableTotal;
-
-  const send = useMutation({
-    mutationFn: () => api.skiSwap.sendPayoutRun(orgId, run.id, sendable.length),
-    onSuccess: () => { setConfirming(false); onChanged(); },
+    enabled: !!orgId && run?.kind === 'PAYPAL' && !sentOrClosed,
   });
 
-  const close = useMutation({
-    mutationFn: () => api.skiSwap.closePayoutRun(orgId, run.id),
-    onSuccess: onChanged,
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: key });
+    qc.invalidateQueries({ queryKey: ['ski-swap/payouts-summary'] });
+  };
+  /** Runs a change, then reads the run again; an error is shown, not thrown. */
+  const act = useMutation({
+    mutationFn: async ({ fn }: { fn: () => Promise<unknown>; done?: string }) => fn(),
+    onSuccess: (_d, v) => { setResult(v.done ? { ok: true, message: v.done } : null); refresh(); },
+    onError: (err) => { setResult({ ok: false, message: err instanceof ApiError ? err.message : 'That didn’t work. Try again.' }); refresh(); },
   });
+  const run$ = (fn: () => Promise<unknown>, done?: string) => act.mutate({ fn, done });
+
+  if (!perms.has('ski_swap:report')) return <Navigate to="/dashboard/ski-swap" replace />;
+  if (isLoading) return <p className="text-gray-400">Loading…</p>;
+  if (error || !run) return <p className="text-gray-400">No such run. <Link to=".." className="underline">Back to payouts</Link></p>;
+
+  const paypal = run.kind === 'PAYPAL';
+  const isOpen = run.status === 'OPEN';
+  const lines = run.lines;
+  const toPay = lines.filter((l) => !l.frozen);
+  const approved = lines.filter((l) => l.status === 'APPROVED');
+  const waiting = lines.filter((l) => l.status === 'PENDING').length;
+  const exported = lines.filter((l) => l.status === 'EXPORTED');
+  const flaggedCount = lines.filter((l) => l.flags.length).length;
+  const changedCount = lines.filter((l) => l.changedSincePaidCents !== 0).length;
+  // PayPal must hold what the sellers get plus each payment's fee (an estimate at the rate in settings).
+  const funding = fundingFor(toPay.map((l) => l.totals.netCents), run.feeRate);
+  const sendable = fundingFor(approved.map((l) => l.approvedNetCents ?? 0), run.feeRate);
+  const available = balance?.availableCents ?? null;
+  const short = available !== null && available < sendable.total;
+  const buildable = isOpen && !run.batch?.id && !run.awaitingAnswer;
+
+  const matches = (l: PayoutLine, k: Filter) =>
+    k === 'all' ? true
+      : k === 'open' ? l.status === 'PENDING'
+        : k === 'approved' ? l.status === 'APPROVED'
+          : k === 'paid' ? l.status === 'SENT' || l.status === 'EXPORTED'
+            : k === 'unclaimed' ? l.status === 'UNCLAIMED'
+              : k === 'notpaid' ? NOT_PAID.includes(l.status)
+                : l.flags.length > 0;
+  const rows = lines.map((l) => ({ l, name: l.sellerName, netCents: l.totals.netCents, items: l.totals.items }));
+  const shown = sortSellers(rows.filter((r) => matches(r.l, filter)), sort);
+  const setSortKey = (k: SortKey) => { setSort(k); try { localStorage.setItem(SORT_KEY, k); } catch { /* remembered for this visit only */ } };
+  const toggle = (id: string) => setOpen((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  const downloadChecks = async () => {
+    try {
+      const blob = await api.skiSwap.checksCsv(orgId, run.id);
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement('a'), { href: url, download: `checks-${run.swapTitle.replace(/[^\w-]+/g, '-')}.csv` });
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setResult({ ok: false, message: err instanceof Error ? err.message : 'Couldn’t download the spreadsheet.' });
+    }
+  };
 
   return (
-    <div className="bg-surface-50 border border-gray-700 rounded-lg p-5 space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-white font-semibold">{run.swapTitle}</h2>
-          <p className="text-gray-500 text-xs mt-0.5">
-            Sales from {new Date(run.salesFrom).toLocaleDateString()} to{' '}
-            {new Date(run.salesTo).toLocaleDateString()}
-            {run.status === 'CLOSED' && run.closedAt &&
-              ` · closed ${new Date(run.closedAt).toLocaleDateString()}`}
+    <div className="space-y-5 max-w-5xl">
+      <Link to=".." className="text-sm text-gray-400 hover:text-white inline-flex items-center gap-1.5">
+        <FontAwesomeIcon icon={faArrowLeft} className="h-3 w-3" /> All payout runs
+      </Link>
+
+      {/* D13: the header. */}
+      <div className="bg-surface-50 border border-gray-700 rounded-lg p-5 space-y-4">
+        {/* The run's state comes first: open, and what's left to do; or closed, and nothing in it changes (D15). */}
+        {isOpen ? (
+          <div className="-mx-5 -mt-5 px-5 py-2.5 rounded-t-lg bg-green-900/25 border-b border-green-900/60 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-200">
+            <FontAwesomeIcon icon={faLockOpen} className="text-green-400" aria-hidden />
+            <span><strong className="text-green-300">Open</strong> since {whenText(run.createdAt)}.</span>
+            <span className="text-gray-400">
+              {run.batch?.id
+                ? 'Sent. It closes once every payment is final: paid, failed, returned or cancelled.'
+                : `Add sellers and approve each one, then ${paypal ? 'send' : 'close and export'}.`}
+            </span>
+          </div>
+        ) : (
+          <div className="-mx-5 -mt-5 px-5 py-2.5 rounded-t-lg bg-gray-700/40 border-b border-gray-700 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-200">
+            <FontAwesomeIcon icon={faLock} className="text-gray-400" aria-hidden />
+            <span><strong className="text-white">Closed</strong>{run.closedAt && ` ${whenText(run.closedAt)}`}.</span>
+            <span className="text-gray-400">Sellers can’t be added, removed or approved.</span>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-white font-semibold flex items-center gap-2">
+              <FontAwesomeIcon icon={RUN_KIND_ICON[run.kind].icon} className={`h-4 w-4 ${RUN_KIND_ICON[run.kind].color}`} aria-hidden />
+              {paypal ? 'PayPal Payouts run' : 'Check run'}
+            </h2>
+            <p className="text-gray-500 text-xs mt-0.5">
+              {run.swapTitle} · {lines.length} {lines.length === 1 ? 'seller' : 'sellers'}
+              {flaggedCount > 0 && <span className="text-amber-400"> · {flaggedCount} flagged</span>}
+              {changedCount > 0 && <span className="text-red-400"> · {changedCount} changed since paid</span>}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-gray-500 text-xs">Total owed in this run</p>
+            <p className="text-white font-semibold">{usd(lines.reduce((n, l) => n + l.totals.netCents, 0))}</p>
+          </div>
+        </div>
+
+        {run.salesError && (
+          <p className="text-sm text-red-200 bg-red-900/25 border border-red-800/60 rounded px-3 py-2">
+            {run.salesError} Amounts and flags aren’t shown, and nobody can be approved, until Square can be read.
           </p>
-        </div>
+        )}
 
-        <div className="flex items-baseline gap-6 text-sm">
-          <div>
-            <p className="text-gray-500 text-xs">Sold</p>
-            <p className="text-white">{usd(run.totals.grossCents)}</p>
-          </div>
-          <div>
-            <p className="text-gray-500 text-xs">
-              Patrol ({run.commissionBasisPoints / 100}%)
-            </p>
-            <p className="text-gray-300">−{usd(run.totals.commissionCents)}</p>
-          </div>
-          <div>
-            <p className="text-gray-500 text-xs">Payouts</p>
-            <p className="text-white font-semibold">{usd(run.totals.netCents)}</p>
-          </div>
-        </div>
-      </div>
+        {/* D17: can PayPal cover this run? One line: yes or no. Fees are in the amount (hover for them). */}
+        {paypal && buildable && toPay.length > 0 && (() => {
+          const needed = (
+            <span className="underline decoration-dotted cursor-help" title={`${usd(funding.toSellers)} to sellers + about ${usd(funding.fees)} in PayPal fees (${feeRateText(run.feeRate)})`}>
+              {usd(funding.total)}
+            </span>
+          );
+          return available === null ? (
+            <p className="text-sm text-gray-300">? Make sure PayPal has {needed}. PatrolKit can’t read the balance.</p>
+          ) : available >= funding.total ? (
+            <p className="text-sm text-green-400">✓ PayPal covers this run: {needed} needed, {usd(available)} available.</p>
+          ) : (
+            <p className="text-sm text-amber-300">✗ PayPal is {usd(funding.total - available)} short: {needed} needed, {usd(available)} available.</p>
+          );
+        })()}
+        {!paypal && isOpen && toPay.length > 0 && (
+          <p className="text-sm text-gray-300">Checks to write: <strong className="text-white">{toPay.length}</strong>, {usd(toPay.reduce((n, l) => n + l.totals.netCents, 0))}.</p>
+        )}
 
-      {(run.earlierRuns ?? 0) > 0 && (
-        <p className="text-xs text-gray-400">
-          Pays only what the {run.earlierRuns === 1 ? 'earlier run' : `${run.earlierRuns} earlier runs`} of this swap didn’t: sales already paid, in flight, donated or owed on an earlier run’s check list are left out.
-        </p>
-      )}
-
-      {/* The money PayPal must hold before anything is sent: said first, and big. */}
-      {run.status !== 'CLOSED' && funding.cents > 0 && (
-        <div className="border border-brand-700/60 bg-brand-500/10 rounded-lg px-4 py-3 space-y-1">
-          <p className="text-white text-lg font-semibold">
-            Fund PayPal with {usd(funding.cents)} <span className="text-sm font-normal text-gray-300">before sending, plus PayPal’s fees</span>
+        {paypal && isOpen && run.sendingLocked && (
+          <p className="text-sm text-amber-200 bg-amber-900/20 border border-amber-800/60 rounded px-3 py-2">
+            🔒 Sending is locked on this server. Runs can be built and approved; nothing goes to PayPal until it’s unlocked.
           </p>
-          <p className="text-sm text-gray-300">{fundingSplitText(funding)}</p>
-          {funding.noDestination.sellers > 0 && (
-            <p className="text-xs text-amber-300">
-              Includes {usd(funding.noDestination.cents)} for {funding.noDestination.sellers} {funding.noDestination.sellers === 1 ? 'seller' : 'sellers'} with no usable payout details yet: they can’t be sent until fixed.
-            </p>
-          )}
-          {fundedFor
-            ? <p className={`text-xs ${fundedFor.short ? 'text-amber-300' : 'text-green-400'}`}>{fundedFor.text}</p>
-            : balance?.message && <p className="text-xs text-gray-500">{balance.message}</p>}
-          {funding.checks.sellers > 0 && (
-            <p className="text-xs text-gray-400">
-              Checks are written apart from PayPal: {usd(funding.checks.cents)} to {funding.checks.sellers} {funding.checks.sellers === 1 ? 'seller' : 'sellers'}.
-            </p>
-          )}
-        </div>
-      )}
+        )}
+        {run.batch?.reason && !run.batch.id && (
+          <p className="text-sm text-red-200 bg-red-900/25 border border-red-800/60 rounded px-3 py-2">Not sent: {run.batch.reason}. Nothing was paid.</p>
+        )}
+        {result && <p className={`text-sm ${result.ok ? 'text-green-400' : 'text-red-300'}`}>{result.message}</p>}
 
-      {isAdmin && run.status !== 'CLOSED' && (
-        <div className="border-t border-gray-800 pt-4 space-y-3">
-          {run.sendingLocked && (
-            <p className="text-sm text-amber-200 bg-amber-900/20 border border-amber-800/60 rounded px-3 py-2">
-              🔒 Paying out is locked on this server. Runs can be built, reviewed and approved, but nothing can be
-              sent to PayPal until whoever runs the server unlocks it.
-            </p>
-          )}
-          {inFlight && (
-            <p className="text-sm text-blue-300">
-              Some payouts are still with PayPal. Sending again is safe — it re-sends the same
-              batch, which PayPal will not pay twice.
-            </p>
-          )}
+        {/* D19: Send went out and PayPal didn't answer. */}
+        {run.awaitingAnswer && (
+          <p className="text-sm text-amber-200 bg-amber-900/20 border border-amber-800/60 rounded px-3 py-2">
+            PayPal didn’t answer, so it may or may not have the batch. Nobody is paid twice: Send again re-sends the same batch, and PayPal ignores a batch it already has.
+          </p>
+        )}
 
-          {!confirming && (
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                onClick={() => setConfirming(true)}
-                disabled={run.sendingLocked || (!sendable.length && !inFlight)}
-                className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
-              >
-                {inFlight
-                  ? 'Retry sending'
-                  : `Send ${sendable.length} payout${sendable.length === 1 ? '' : 's'}`}
+        {/* D18: the run's one PayPal batch, and where everyone's payment stands. */}
+        {run.batch?.id && <BatchBox run={run} />}
+
+        {/* A closed check run: the spreadsheet the checks are written from. */}
+        {!isOpen && !paypal && exported.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 border-t border-gray-800 pt-4">
+            <button type="button" onClick={downloadChecks}
+              className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">Download checks (CSV)</button>
+            <span className="text-sm text-gray-300">{exported.length} {exported.length === 1 ? 'check' : 'checks'}, {usd(exported.reduce((n, l) => n + l.totals.netCents, 0))}</span>
+          </div>
+        )}
+
+        {isAdmin && isOpen && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-gray-800 pt-4">
+            {/* A run is one PayPal batch: once sent, it takes no one else (D18). */}
+            {buildable && (
+              <button type="button" onClick={() => setAdding(true)} className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">Add sellers</button>
+            )}
+            {paypal && run.awaitingAnswer && (
+              <button type="button" disabled={run.sendingLocked || act.isPending}
+                onClick={() => run$(() => api.skiSwap.sendPayoutRun(orgId, run.id, 0), 'Sent to PayPal.')}
+                className="bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white px-3 py-2 rounded text-sm font-medium">Send again</button>
+            )}
+            {paypal && buildable && toPay.length > 0 && (
+              <button type="button" disabled={!approved.length || waiting > 0 || run.sendingLocked || short || act.isPending}
+                title={waiting ? 'Approve every seller in the run first' : run.sendingLocked ? 'Sending is locked on this server' : short ? 'PayPal doesn’t hold enough for the approved payments and their fees' : undefined}
+                onClick={() => {
+                  if (confirm(`Send ${usd(sendable.toSellers)} to ${approved.length} ${approved.length === 1 ? 'seller' : 'sellers'} through PayPal, about ${usd(sendable.total)} with PayPal’s fees? This can’t be undone.`)) {
+                    run$(() => api.skiSwap.sendPayoutRun(orgId, run.id, approved.length), 'Sent to PayPal.');
+                  }
+                }}
+                className="bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white px-3 py-2 rounded text-sm font-medium">
+                Send to {approved.length} {approved.length === 1 ? 'seller' : 'sellers'}
               </button>
-              {!sendable.length && !inFlight && (
-                <span className="text-xs text-gray-500">
-                  Approve some payouts first.
-                </span>
-              )}
-              <button
-                onClick={() => { if (confirm('Close this run? Nothing further can be approved or sent against it.')) close.mutate(); }}
-                disabled={close.isPending}
-                className="text-sm text-gray-400 hover:text-white ml-auto"
-              >
-                Close run
+            )}
+            {!paypal && lines.length > 0 && (
+              <button type="button" disabled={!approved.length || waiting > 0 || act.isPending}
+                title={waiting ? 'Approve every seller in the run first' : undefined}
+                onClick={() => {
+                  if (confirm(`Close this run and export ${approved.length} ${approved.length === 1 ? 'check' : 'checks'}, ${usd(approved.reduce((n, l) => n + (l.approvedNetCents ?? 0), 0))}? Every amount is final once it closes.`)) {
+                    run$(() => api.skiSwap.closeCheckRun(orgId, run.id, approved.length), 'Closed. Download the spreadsheet to write the checks.');
+                  }
+                }}
+                className="bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white px-3 py-2 rounded text-sm font-medium">
+                Close and export
               </button>
-            </div>
-          )}
-
-          {/* The confirmation says the amount and the count in words, because
-              this is the last screen before money leaves somebody's account. */}
-          {confirming && (
-            <div className="border border-amber-700/50 bg-amber-500/5 rounded-lg p-4 space-y-3">
-              <p className="text-sm text-amber-100">
-                Send <strong>{usd(sendableTotal)}</strong> to{' '}
-                <strong>{sendable.length}</strong> {sendable.length === 1 ? 'seller' : 'sellers'}
-                {' '}through PayPal. This cannot be undone.
-              </p>
-              {sendShort && (
-                <p className="text-sm text-amber-300">
-                  PayPal has only {usd(balance!.availableCents!)} available. Fund it first, or PayPal may refuse the batch.
-                </p>
-              )}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => send.mutate()}
-                  disabled={send.isPending}
-                  className="bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white px-4 py-2 rounded text-sm font-medium"
-                >
-                  {send.isPending ? 'Sending…' : 'Yes, send the payouts'}
-                </button>
-                <button
-                  onClick={() => setConfirming(false)}
-                  className="text-gray-400 hover:text-white text-sm px-3 py-2"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {send.isError && (
-            <p className="text-sm text-red-400">
-              {send.error instanceof ApiError ? send.error.message : 'The send failed'}
-            </p>
-          )}
-          {close.isError && (
-            <p className="text-sm text-red-400">
-              {close.error instanceof ApiError ? close.error.message : 'Could not close the run'}
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * Sales this run could not attribute to anybody (§12).
- *
- * Almost always something rung up by hand at the register, or another swap's
- * stock at the same Square location. Shown rather than logged, because it is
- * money the org took and nobody is being paid for it — and nobody goes looking
- * for a number they were never told about.
- */
-function UnmatchedSales({ run }: { run: PayoutRun }) {
-  const [open, setOpen] = useState(false);
-  if (!run.unmatchedSales?.length) return null;
-
-  const total = run.unmatchedSales.reduce((sum, s) => sum + s.collectedCents, 0);
-
-  return (
-    <div className="rounded-lg border border-amber-800/50 bg-amber-500/5 p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <span className="text-amber-400 leading-none">⚠</span>
-        <div className="flex-1 text-sm text-amber-100">
-          <p>
-            {run.unmatchedSales.length}{' '}
-            {run.unmatchedSales.length === 1 ? 'sale' : 'sales'} totalling{' '}
-            <strong>{usd(total)}</strong> matched no item in this swap, so nobody is being paid
-            for {run.unmatchedSales.length === 1 ? 'it' : 'them'}.
-          </p>
-          <p className="text-amber-200/70 text-xs mt-1">
-            Usually something rung up by hand, a ticket scanned onto another copy of it, or another
-            swap's stock at the same Square location.{' '}
-            {/* Plan 48: where each one can be put on its item, or set aside. */}
-            <Link to="/dashboard/ski-swap/reports" className="text-amber-300 underline hover:text-amber-200">
-              Check them in Reports › Sales check
-            </Link>
-            ; a sale put on its item there pays its seller in the next run.
-          </p>
-        </div>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="text-xs text-amber-300 hover:text-amber-200 shrink-0"
-        >
-          {open ? 'Hide' : 'Show orders'}
-        </button>
-      </div>
-
-      {open && (
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-amber-200/60 text-left">
-              <th className="pb-1.5 font-normal">Square order</th>
-              <th className="pb-1.5 font-normal">Catalog item</th>
-              <th className="pb-1.5 font-normal text-right">Collected</th>
-            </tr>
-          </thead>
-          <tbody>
-            {run.unmatchedSales.map((sale, i) => (
-              <tr key={`${sale.orderId}-${i}`} className="border-t border-amber-800/30">
-                <td className="py-1.5 font-mono text-amber-100/90">{sale.orderId}</td>
-                <td className="py-1.5 font-mono text-amber-200/60">{sale.variationId}</td>
-                <td className="py-1.5 text-right text-amber-100">{usd(sale.collectedCents)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-/**
- * Sales this run holds back (Plan 48): a ticket is one item, so one rung up
- * more than once is paid once, and the rest waits for Sales check. An
- * unpriced ticket typed at different prices is held whole: which price was
- * its isn't known.
- */
-function HeldSales({ run }: { run: PayoutRun }) {
-  const [open, setOpen] = useState(false);
-  const held = run.heldSales ?? [];
-  if (!held.length) return null;
-  const total = held.reduce((sum, h) => sum + h.unitCents.reduce((a, b) => a + b, 0), 0);
-  const why = (h: (typeof held)[number]) =>
-    h.reason === 'different_prices' ? 'Unpriced, rung up at different prices: none paid, since which is this item isn’t known'
-      : h.reason === 'one_sale' ? 'Rung up more than once in one sale: paid once'
-        : 'Sold in different sales: paid once, for the earliest';
-
-  return (
-    <div className="rounded-lg border border-amber-800/50 bg-amber-500/5 p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <span className="text-amber-400 leading-none">⏸</span>
-        <div className="flex-1 text-sm text-amber-100">
-          <p>
-            {held.length} {held.length === 1 ? 'ticket was' : 'tickets were'} rung up more times than {held.length === 1 ? 'it has' : 'they have'} units,
-            so <strong>{usd(total)}</strong> isn’t paid in this run.
-          </p>
-          <p className="text-amber-200/70 text-xs mt-1">
-            Each ticket is one item: the extra is a double charge to refund, or another item rung up under the ticket.{' '}
-            <Link to="/dashboard/ski-swap/reports" className="text-amber-300 underline hover:text-amber-200">
-              Settle them in Reports › Sales check
-            </Link>
-            , then close this run and build it again.
-          </p>
-        </div>
-        <button onClick={() => setOpen((v) => !v)} className="text-xs text-amber-300 hover:text-amber-200 shrink-0">
-          {open ? 'Hide' : 'Show tickets'}
-        </button>
-      </div>
-
-      {open && (
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-amber-200/60 text-left">
-              <th className="pb-1.5 font-normal">Ticket</th>
-              <th className="pb-1.5 font-normal">Seller</th>
-              <th className="pb-1.5 font-normal">Why</th>
-              <th className="pb-1.5 font-normal text-right">Held</th>
-            </tr>
-          </thead>
-          <tbody>
-            {held.map((h) => (
-              <tr key={h.itemId} className="border-t border-amber-800/30 align-top">
-                <td className="py-1.5 pr-2"><span className="font-mono text-amber-100/90">{h.sku}</span> <span className="text-amber-200/60">{h.name}</span></td>
-                <td className="py-1.5 pr-2 text-amber-100/90">{h.sellerName ?? '—'}</td>
-                <td className="py-1.5 pr-2 text-amber-200/70">{why(h)}</td>
-                <td className="py-1.5 text-right text-amber-100 whitespace-nowrap">{h.unitCents.map(usd).join(' + ')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-// ─── The lines ───────────────────────────────────────────────────────────────
-
-function LinesTable({
-  run, isAdmin, onChanged,
-}: { run: PayoutRun; isAdmin: boolean; onChanged: () => void }) {
-  const { orgId } = useOutletContext<SkiSwapContext>();
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<PayoutLineStatus | 'ALL'>('ALL');
-
-  const electronic = run.lines.filter((l) => l.method === 'PAYPAL' || l.method === 'VENMO');
-  const pending = electronic.filter((l) => l.status === 'PENDING');
-
-  const approve = useMutation({
-    mutationFn: (v: { lineIds: string[]; approved: boolean }) =>
-      api.skiSwap.approvePayoutLines(orgId, run.id, v.lineIds, v.approved),
-    onSuccess: onChanged,
-  });
-
-  const cancel = useMutation({
-    mutationFn: (lineId: string) => api.skiSwap.cancelUnclaimedPayout(orgId, run.id, lineId),
-    onSuccess: onChanged,
-  });
-
-  const counts = useMemo(() => {
-    const out = new Map<PayoutLineStatus, number>();
-    for (const l of run.lines) out.set(l.status, (out.get(l.status) ?? 0) + 1);
-    return out;
-  }, [run.lines]);
-
-  const shown = filter === 'ALL' ? run.lines : run.lines.filter((l) => l.status === filter);
-
-  function toggle(id: string) {
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <FilterChip active={filter === 'ALL'} onClick={() => setFilter('ALL')}>
-          All {run.lines.length}
-        </FilterChip>
-        {([...counts.entries()] as [PayoutLineStatus, number][])
-          .sort((a, b) => b[1] - a[1])
-          .map(([status, count]) => (
-            <FilterChip key={status} active={filter === status} onClick={() => setFilter(status)}>
-              {STATUS_LABEL[status]} {count}
-            </FilterChip>
-          ))}
-
-        {isAdmin && run.status !== 'CLOSED' && pending.length > 0 && (
-          <button
-            onClick={() => approve.mutate({ lineIds: pending.map((l) => l.id), approved: true })}
-            disabled={approve.isPending}
-            className="ml-auto bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-white text-sm px-3 py-1.5 rounded"
-          >
-            Approve all {pending.length} remaining
-          </button>
+            )}
+            {buildable && waiting > 0 && lines.length > 0 && <span className="text-xs text-gray-400">{waiting} still to approve</span>}
+            {paypal && run.batch?.id && (
+              <button type="button" disabled={act.isPending} onClick={() => run$(() => api.skiSwap.reconcilePayoutRun(orgId, run.id), 'Checked with PayPal.')}
+                className="text-sm px-3 py-2 rounded border border-gray-600 bg-surface-100 hover:bg-surface-200 text-gray-200 disabled:opacity-40">
+                <FontAwesomeIcon icon={faArrowsRotate} className="mr-1.5 h-3.5 w-3.5" aria-hidden />Check with PayPal
+              </button>
+            )}
+            {/* D15: a run closes itself once everyone is paid; only an empty one can be deleted. */}
+            {lines.length === 0 && (
+              <button type="button"
+                onClick={() => {
+                  if (!confirm('Delete this empty run?')) return;
+                  api.skiSwap.deletePayoutRun(orgId, run.id).then(() => { refresh(); navigate('..'); })
+                    .catch((err) => setResult({ ok: false, message: err instanceof ApiError ? err.message : 'Couldn’t delete it.' }));
+                }}
+                className="ml-auto text-sm px-3 py-2 rounded border border-gray-700 text-gray-400 hover:border-red-800 hover:bg-red-900/30 hover:text-red-200">Delete run</button>
+            )}
+          </div>
         )}
       </div>
 
-      {approve.isError && (
-        <p className="text-sm text-red-400">
-          {approve.error instanceof ApiError ? approve.error.message : 'Could not save that'}
-        </p>
-      )}
+      {/* D12: sort and filter. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {([['all', 'All'], ['open', 'Needs review'], ['approved', 'Approved'], ['paid', paypal ? 'Paid' : 'Exported'], ...(paypal ? [['unclaimed', 'Unclaimed'], ['notpaid', 'Not paid']] : []), ['flagged', 'Flagged']] as [Filter, string][]).map(([k, label]) => {
+          const n = lines.filter((l) => matches(l, k)).length;
+          if ((k === 'unclaimed' || k === 'notpaid') && n === 0) return null;
+          return (
+            <button key={k} type="button" onClick={() => setFilter(k)}
+              className={`text-xs px-2.5 py-1 rounded-full border ${filter === k ? 'bg-brand-600/15 text-brand-300 border-brand-700/60' : 'bg-surface-100 text-gray-400 border-gray-700 hover:text-white'}`}>
+              {label} {n}
+            </button>
+          );
+        })}
+        <label className="ml-auto text-xs text-gray-400 flex items-center gap-2">
+          Sort by
+          <select value={sort} onChange={(e) => setSortKey(e.target.value as SortKey)} className="bg-surface-50 border border-gray-700 rounded px-2 py-1 text-sm text-white">
+            <option value="name">Name</option>
+            <option value="owed">Amount owed</option>
+            <option value="items">Number of items</option>
+          </select>
+        </label>
+      </div>
 
       <div className="space-y-2">
-        {shown.map((line) => (
-          <LineRow
-            key={line.id}
-            line={line}
-            open={open.has(line.id)}
-            onToggle={() => toggle(line.id)}
-            isAdmin={isAdmin && run.status !== 'CLOSED'}
-            onApprove={(approved) => approve.mutate({ lineIds: [line.id], approved })}
-            onCancel={() => cancel.mutate(line.id)}
-            busy={approve.isPending || cancel.isPending}
-          />
+        {shown.map(({ l }) => (
+          <SellerCard key={l.id} run={run} line={l} isAdmin={isAdmin} busy={act.isPending} timeZone={selectedSwap?.timeZone}
+            open={open.has(l.id)} onToggle={() => toggle(l.id)} act={run$} />
         ))}
-        {!shown.length && (
-          <p className="text-gray-500 text-sm py-6 text-center">Nothing in that state.</p>
-        )}
+        {lines.length === 0 && <p className="text-gray-500 text-sm py-8 text-center">No sellers yet. Add the sellers this run pays.</p>}
+        {lines.length > 0 && shown.length === 0 && <p className="text-gray-500 text-sm py-6 text-center">Nobody in that state.</p>}
       </div>
+
+      {adding && (
+        <AddSellersDialog orgId={orgId} run={run} onClose={() => setAdding(false)}
+          onAdded={(n) => { setAdding(false); setResult({ ok: true, message: `Added ${n} ${n === 1 ? 'seller' : 'sellers'}.` }); refresh(); }} />
+      )}
     </div>
   );
 }
 
-function FilterChip({
-  active, onClick, children,
-}: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function BatchBox({ run }: { run: PayoutRun }) {
+  const b = run.batch!;
+  const sent = run.lines.filter((l) => l.frozen);
+  const paidN = sent.filter((l) => l.status === 'SENT').length;
+  const waitingN = sent.filter((l) => ['SENDING', 'UNCLAIMED', 'ONHOLD'].includes(l.status)).length;
+  const notPaidN = sent.filter((l) => NOT_PAID.includes(l.status)).length;
   return (
-    <button
-      onClick={onClick}
-      className={`text-xs px-2.5 py-1 rounded-full border transition ${
-        active
-          ? 'bg-brand-600/15 text-brand-300 border-brand-700/60'
-          : 'bg-surface-100 text-gray-400 border-gray-700 hover:text-white'
-      }`}
-    >
-      {children}
-    </button>
+    <div className="text-sm border border-gray-800 rounded px-3 py-2 space-y-1">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="text-gray-400">PayPal batch</span>
+        <span className="font-mono text-gray-200">{b.id}</span>
+        <span className={b.status === 'DENIED' || b.status === 'CANCELED' ? 'text-red-300' : 'text-gray-300'}>{batchStatusText(b.status)}</span>
+        {b.feesCents !== null && <span className="text-gray-400">Fees {usd(b.feesCents)}</span>}
+      </p>
+      {b.reason && <p className="text-red-300">{b.reason} Nobody in this run was paid; add them to another run to pay them.</p>}
+      <p className="text-gray-300">
+        <span className="text-green-400">{paidN} paid</span>
+        {waitingN > 0 && <span className="text-amber-300"> · {waitingN} waiting</span>}
+        {notPaidN > 0 && <span className="text-red-300"> · {notPaidN} not paid</span>}
+        <span className="text-gray-500"> of {sent.length}</span>
+      </p>
+    </div>
   );
 }
 
-function LineRow({
-  line, open, onToggle, isAdmin, onApprove, onCancel, busy,
-}: {
-  line: PayoutLine;
-  open: boolean;
-  onToggle: () => void;
-  isAdmin: boolean;
-  onApprove: (approved: boolean) => void;
-  onCancel: () => void;
-  busy: boolean;
+function SellerCard({ run, line, isAdmin, busy, timeZone, open, onToggle, act }: {
+  run: PayoutRun; line: PayoutLine; isAdmin: boolean; busy: boolean; timeZone?: string;
+  open: boolean; onToggle: () => void; act: (fn: () => Promise<unknown>, done?: string) => void;
 }) {
-  const electronic = line.method === 'PAYPAL' || line.method === 'VENMO';
+  const { orgId } = useOutletContext<SkiSwapContext>();
+  const t = line.totals;
+  const flags = line.flags;
+  const diff = line.changedSincePaidCents;
+  const status = statusView(line.status, run.kind);
+  const where = run.kind === 'CHECK' ? line.destination ?? 'No address' : `${methodLabel(line.method)} · ${line.destination ?? 'no destination'}`;
+  const editable = isAdmin && run.status === 'OPEN' && !line.frozen && !run.batch?.id && !run.awaitingAnswer;
+  const bps = line.commissionBasisPoints;
 
   return (
-    <div className="bg-surface-50 border border-gray-700 rounded-lg">
+    <div className={`bg-surface-50 border rounded-lg ${flags.length ? 'border-amber-700/60' : diff ? 'border-red-800/60' : 'border-gray-700'}`}>
       <div className="flex items-center gap-3 p-3">
-        <button
-          onClick={onToggle}
-          aria-expanded={open}
-          aria-label={`Show what ${line.sellerName} sold`}
-          className="text-gray-500 hover:text-white w-5 shrink-0"
-        >
+        <button type="button" onClick={onToggle} aria-expanded={open} aria-label={open ? 'Hide items' : 'Show items'} className="text-gray-500 hover:text-white w-5 shrink-0">
           <FontAwesomeIcon icon={open ? faChevronDown : faChevronRight} className="h-3.5 w-3.5" />
         </button>
-
         <div className="min-w-0 flex-1">
-          <p className="text-white text-sm truncate">{line.sellerName}</p>
-          <p className="text-gray-500 text-xs truncate">
-            {line.method === 'CHECK' ? 'Check'
-              : line.method === 'DONATE' ? 'Donated to the patrol'
-              : `${line.method === 'VENMO' ? 'Venmo' : 'PayPal'} · ${line.destination ?? 'no destination'}`}
-            {' · '}
-            {line.items.length} {line.items.length === 1 ? 'item' : 'items'}
+          <p className="text-white text-sm truncate">
+            {line.sellerName}{line.business && <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-500">business</span>}
           </p>
-          {line.statusNote && (
-            <p className="text-amber-400/80 text-xs mt-0.5">{line.statusNote}</p>
-          )}
+          <p className="text-gray-500 text-xs truncate">{where} · {t.items} {t.items === 1 ? 'item' : 'items'}</p>
         </div>
-
-        <div className="text-right shrink-0">
-          <p className="text-white text-sm font-medium">{usd(line.netCents)}</p>
-          {line.commissionCents > 0 && (
-            <p className="text-gray-500 text-xs">of {usd(line.grossCents)}</p>
-          )}
-        </div>
-
-        <span className={`text-xs px-2 py-0.5 rounded border shrink-0 ${STATUS_TONE[line.status]}`}>
-          {STATUS_LABEL[line.status]}
+        {/* Fixed-width slots, so the totals, statuses and buttons line up from card to card. */}
+        <span className="w-20 shrink-0 text-right">
+          {flags.length > 0 && <span className="text-xs px-2 py-0.5 rounded border border-amber-700/60 text-amber-300 whitespace-nowrap">⚑ {flags.length} {flags.length === 1 ? 'issue' : 'issues'}</span>}
         </span>
-
-        {isAdmin && electronic && (
-          <div className="shrink-0 w-28 text-right">
-            {line.status === 'PENDING' && (
-              <button
-                onClick={() => onApprove(true)}
-                disabled={busy || !line.destination}
-                title={line.destination ? undefined : 'This seller has no usable destination'}
-                className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-xs px-3 py-1.5 rounded"
-              >
-                Approve
-              </button>
-            )}
-            {line.status === 'APPROVED' && (
-              <button
-                onClick={() => onApprove(false)}
-                disabled={busy}
-                className="text-gray-400 hover:text-white text-xs px-2 py-1.5"
-              >
-                Undo
-              </button>
-            )}
-            {line.status === 'UNCLAIMED' && (
-              <button
-                onClick={() => {
-                  if (confirm('Take this payout back from PayPal? The money returns now and the line goes back for review.')) onCancel();
-                }}
-                disabled={busy}
-                className="text-amber-400 hover:text-amber-300 text-xs px-2 py-1.5"
-              >
-                Take back
-              </button>
-            )}
-          </div>
-        )}
+        <p className="text-white text-sm font-medium w-24 text-right shrink-0">{usd(t.netCents)}</p>
+        <span className={`w-28 inline-flex items-center gap-1.5 text-xs shrink-0 ${TONE[status.tone].text}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${TONE[status.tone].dot}`} aria-hidden />{status.label}
+        </span>
+        <div className="w-44 shrink-0 flex items-center justify-end gap-2">
+          {editable && line.status === 'PENDING' && (
+            <button type="button" disabled={flags.length > 0 || busy} title={flags.length ? 'Resolve the issues first' : undefined}
+              onClick={() => act(() => api.skiSwap.approvePayoutLine(orgId, run.id, line.id, true))}
+              className={`w-28 text-xs py-1.5 rounded border ${flags.length ? 'border-gray-800 text-gray-600 cursor-not-allowed' : 'border-brand-600 bg-brand-600 hover:bg-brand-700 text-white'}`}>Approve</button>
+          )}
+          {editable && line.status === 'APPROVED' && (
+            <button type="button" disabled={busy} onClick={() => act(() => api.skiSwap.approvePayoutLine(orgId, run.id, line.id, false))}
+              className="w-28 text-xs py-1.5 rounded border border-gray-600 bg-surface-100 hover:bg-surface-200 text-gray-200">Unapprove</button>
+          )}
+          {editable && (
+            <button type="button" disabled={busy} onClick={() => act(() => api.skiSwap.removePayoutSeller(orgId, run.id, line.sellerId))}
+              className="text-xs px-2.5 py-1.5 rounded border border-gray-700 text-gray-400 hover:border-red-800 hover:bg-red-900/30 hover:text-red-200" title="Remove from this run">Remove</button>
+          )}
+        </div>
       </div>
 
-      {/* The evidence. Listed price times what sold, next to what the register
-          actually took — a seller asking "why that number" is answered here
-          rather than by somebody going to Square. */}
+      {/* Why it can't be approved, and where to fix it (D8). */}
+      {flags.length > 0 && (
+        <ul className="px-11 pb-2 space-y-0.5">
+          {flags.map((f) => <li key={f.text} className="text-xs"><span className="text-amber-300">{f.text}.</span> <span className="text-gray-400">{f.fix}</span></li>)}
+        </ul>
+      )}
+      {line.statusNote && !line.frozen && <p className="px-11 pb-2 text-xs text-red-300">{line.statusNote}</p>}
+      {/* D19: an earlier run where PayPal didn't pay them. */}
+      {line.notPaidBefore.map((e) => (
+        <p key={e.runId} className="px-11 pb-1 text-xs text-gray-500">
+          Earlier: not paid in the PayPal run of {dayText(e.createdAt)} ({statusView(e.status, 'PAYPAL').label.toLowerCase()}{e.reason ? `: ${e.reason.replace(/\.$/, '')}` : ''}).
+        </p>
+      ))}
+
+      {/* D18: PayPal's answer for this payment. */}
+      {run.kind === 'PAYPAL' && line.frozen && (
+        <div className="px-11 pb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          {line.status === 'SENT' ? (
+            <span className="text-gray-400">
+              Paid{line.paypal?.paidAt && ` ${whenText(line.paypal.paidAt)}`}
+              {line.paypal?.transactionId && <> · Transaction <span className="font-mono text-gray-200">{line.paypal.transactionId}</span></>}
+            </span>
+          ) : (
+            <span className={TONE[status.tone].text}>{line.statusNote && `${line.statusNote.replace(/\.?$/, '.')} `}{status.detail}</span>
+          )}
+          {/* D19: unclaimed is the one state with something to do here. */}
+          {isAdmin && line.status === 'UNCLAIMED' && (
+            <>
+              <button type="button" disabled={busy || !!line.remindedAt} className={smallButton}
+                title={line.remindedAt ? `Reminded ${whenText(line.remindedAt)}` : 'Email or text them a reminder to claim it'}
+                onClick={() => act(() => api.skiSwap.remindPayoutSeller(orgId, run.id, line.id), `Reminded ${line.sellerName}.`)}>
+                {line.remindedAt ? 'Reminded' : 'Remind them'}
+              </button>
+              <button type="button" disabled={busy || run.sendingLocked} className={smallButton}
+                title={run.sendingLocked ? 'Sending is locked on this server' : undefined}
+                onClick={() => {
+                  if (confirm(`Cancel ${line.sellerName}’s payment at PayPal? The money comes back to PayPal now, and they’re marked Cancelled in this run. To pay them, add them to another run.`)) {
+                    act(() => api.skiSwap.cancelPayoutPayment(orgId, run.id, line.id), 'Cancelled. The money is back in PayPal; add them to another run to pay them.');
+                  }
+                }}>Cancel payment</button>
+            </>
+          )}
+          {line.paypal?.itemId && <span className="text-gray-500">PayPal item <span className="font-mono">{line.paypal.itemId}</span></span>}
+        </div>
+      )}
+
+      {/* D9: changed since paid. */}
+      {diff !== 0 && (
+        <div className="px-11 pb-3 flex flex-wrap items-center gap-3 text-xs">
+          <span className="text-red-300">{diff > 0 ? `Owed ${usd(diff)} more since paid` : `Paid ${usd(-diff)} more than now owed`}: settle it by hand.</span>
+          {isAdmin && (
+            <button type="button" disabled={busy}
+              onClick={() => { const note = prompt('How was it settled?'); if (note?.trim()) act(() => api.skiSwap.settlePayoutLine(orgId, run.id, line.id, note.trim()), 'Marked settled.'); }}
+              className={smallButton}>Mark settled…</button>
+          )}
+        </div>
+      )}
+      {line.settled && <p className="px-11 pb-2 text-xs text-gray-400">Settled by hand {dayText(line.settled.at)}: “{line.settled.note}”</p>}
+
+      {/* D10: what was sold, and the arithmetic. */}
       {open && (
-        <div className="border-t border-gray-800 px-4 py-3">
+        <div className="border-t border-gray-800 px-4 py-3 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-gray-500 text-left">
-                <th className="pb-1.5 font-normal">Item</th>
                 <th className="pb-1.5 font-normal">SKU</th>
-                <th className="pb-1.5 font-normal text-right">Listed</th>
-                <th className="pb-1.5 font-normal text-right">Qty</th>
-                <th className="pb-1.5 font-normal text-right">Collected</th>
-                <th className="pb-1.5 font-normal text-right">Sold</th>
+                <th className="pb-1.5 font-normal">Item</th>
+                <th className="pb-1.5 font-normal">Sold</th>
+                <th className="pb-1.5 font-normal">Receipt</th>
+                <th className="pb-1.5 font-normal text-right">Price</th>
               </tr>
             </thead>
             <tbody>
-              {line.items.map((item) => {
-                const listed = item.priceCents * item.quantity;
-                const discounted = item.collectedCents < listed;
-                return (
-                  <tr key={item.id} className="border-t border-gray-800/60">
-                    <td className="py-1.5 text-gray-200">{item.name}</td>
-                    <td className="py-1.5 text-gray-500 font-mono">{item.sku}</td>
-                    <td className="py-1.5 text-gray-300 text-right">{usd(listed)}</td>
-                    <td className="py-1.5 text-gray-400 text-right">
-                      {item.quantity}
-                      {item.refundedQty > 0 && (
-                        <span className="text-amber-400"> (−{item.refundedQty})</span>
-                      )}
-                    </td>
-                    <td className={`py-1.5 text-right ${discounted ? 'text-amber-400' : 'text-gray-400'}`}>
-                      {usd(item.collectedCents)}
-                    </td>
-                    <td className="py-1.5 text-gray-500 text-right">
-                      {new Date(item.soldAt).toLocaleDateString()}
-                    </td>
-                  </tr>
-                );
-              })}
+              {line.items.map((x, i) => (
+                <tr key={`${x.itemId}-${x.soldAt}-${i}`} className="border-t border-gray-800/60">
+                  <td className="py-1.5 font-mono text-brand-400">{x.sku}</td>
+                  <td className="py-1.5 text-gray-200">{x.name}{x.quantity > 1 && ` × ${x.quantity}`}{x.donated && <span className="ml-2 text-gray-500">donated</span>}</td>
+                  <td className="py-1.5 text-gray-400 whitespace-nowrap">{soldAtText(x.soldAt, timeZone)}</td>
+                  <td className="py-1.5 whitespace-nowrap">
+                    {x.receipt && <span className="font-mono text-gray-300">#{x.receipt}</span>}{' '}
+                    {x.saleUrl && <NewTabLink href={x.saleUrl} className="ml-3">View in Square</NewTabLink>}
+                  </td>
+                  <td className="py-1.5 text-right whitespace-nowrap">
+                    <span className="text-white">{x.donated ? usd(0) : usd(x.priceCents * x.quantity)}</span>
+                    {!x.donated && x.collectedCents !== x.priceCents * x.quantity && <span className="block text-gray-500">collected {usd(x.collectedCents)}</span>}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
+          {line.items.length === 0 && <p className="text-gray-500 text-xs py-2">No sales.</p>}
+          <div className="mt-3 ml-auto w-full sm:w-72 text-sm space-y-1">
+            <div className="flex justify-between text-gray-300"><span>{t.items} {t.items === 1 ? 'item' : 'items'} · Subtotal</span><span>{usd(t.grossCents)}</span></div>
+            <div className="flex justify-between text-gray-400"><span>Patrol take ({bps / 100}%)</span><span>−{usd(t.commissionCents)}</span></div>
+            <div className="flex justify-between text-white font-semibold border-t border-gray-700 pt-1"><span>Total</span><span>{usd(t.netCents)}</span></div>
+          </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ─── Checks ──────────────────────────────────────────────────────────────────
-
-function ChecksTab({
-  run, isAdmin, onChanged,
-}: { run: PayoutRun; isAdmin: boolean; onChanged: () => void }) {
-  const { orgId } = useOutletContext<SkiSwapContext>();
-  const { data: payees, isLoading } = useQuery({
-    queryKey: ['ski-swap/payout-checks', orgId, run.id],
-    queryFn: () => api.skiSwap.listCheckPayees(orgId, run.id),
-    enabled: !!orgId,
-  });
-
-  const record = useMutation({
-    // `sentAt` left out means "leave the date alone" — saving a check number
-    // must not also mark the check as posted.
-    mutationFn: (v: { lineId: string; checkNumber?: string | null; sentAt?: string | null }) =>
-      api.skiSwap.recordCheckSent(orgId, run.id, v.lineId, {
-        ...(v.checkNumber !== undefined ? { checkNumber: v.checkNumber } : {}),
-        ...(v.sentAt !== undefined ? { sentAt: v.sentAt } : {}),
-      }),
-    onSuccess: onChanged,
-  });
-
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-
-  async function downloadCsv() {
-    setDownloadError(null);
-    try {
-      const blob = await api.skiSwap.checksCsv(orgId, run.id);
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = href;
-      a.download = `checks-${run.swapTitle.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      // Revoking immediately can cancel the save in some browsers.
-      setTimeout(() => URL.revokeObjectURL(href), 10_000);
-    } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : 'Could not build the check register');
-    }
-  }
-
-  if (isLoading) return <p className="text-gray-400">Loading…</p>;
-  if (!payees?.length) {
-    return <p className="text-gray-500 text-sm py-6">Nobody on this run is being paid by check.</p>;
-  }
-
-  const total = payees.reduce((sum, p) => sum + p.amountCents, 0);
-  const missingAddress = payees.filter((p) => !p.street || !p.city || !p.zip);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-gray-400">
-          {payees.length} {payees.length === 1 ? 'check' : 'checks'}, {usd(total)} in total.
-        </p>
-        <button
-          onClick={downloadCsv}
-          className="bg-surface-100 hover:bg-surface-200 text-white text-sm px-3 py-1.5 rounded"
-        >
-          <FontAwesomeIcon icon={faFileArrowDown} className="mr-1.5 h-3.5 w-3.5" />
-          Download CSV
-        </button>
-      </div>
-
-      {missingAddress.length > 0 && (
-        <div className="flex items-start gap-3 bg-yellow-900/30 border border-yellow-700 rounded-lg p-3">
-          <span className="text-yellow-400 leading-none">⚠</span>
-          <p className="text-yellow-200 text-sm">
-            {missingAddress.length}{' '}
-            {missingAddress.length === 1 ? 'payee has' : 'payees have'} no complete address. Their
-            check cannot be posted until somebody fills it in.
-          </p>
-        </div>
-      )}
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-gray-500 text-left border-b border-gray-800">
-              <th className="pb-2 font-normal">Name</th>
-              <th className="pb-2 font-normal">Address</th>
-              <th className="pb-2 font-normal">Phone</th>
-              <th className="pb-2 font-normal text-right">Amount</th>
-              <th className="pb-2 font-normal">Check #</th>
-              <th className="pb-2 font-normal">Sent</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payees.map((p) => (
-              <CheckRow
-                key={p.reference}
-                payee={p}
-                // A check stays owed on its own run's list, so it can be recorded after the run is closed.
-                isAdmin={isAdmin}
-                busy={record.isPending}
-                onSave={(checkNumber, sentAt) =>
-                  record.mutate({ lineId: p.reference, checkNumber, sentAt })
-                }
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {record.isError && (
-        <p className="text-sm text-red-400">
-          {record.error instanceof ApiError ? record.error.message : 'Could not save that'}
-        </p>
-      )}
-      {downloadError && <p className="text-sm text-red-400">{downloadError}</p>}
-    </div>
-  );
-}
-
-function CheckRow({
-  payee, isAdmin, busy, onSave,
-}: {
-  payee: import('../../lib/api.types').CheckPayee;
-  isAdmin: boolean;
-  busy: boolean;
-  /** `sentAt` omitted leaves the posted date where it is. */
-  onSave: (checkNumber: string | null, sentAt?: string | null) => void;
-}) {
-  const [number, setNumber] = useState(payee.checkNumber ?? '');
-  const address = [payee.street, payee.city, payee.state, payee.zip].filter(Boolean).join(', ');
-
-  return (
-    <tr className="border-b border-gray-800/60">
-      <td className="py-2 text-gray-200">{payee.sellerName}</td>
-      <td className="py-2 text-gray-400">
-        {address || <span className="text-amber-400">No address on file</span>}
-      </td>
-      <td className="py-2 text-gray-400">{payee.phone ?? '—'}</td>
-      <td className="py-2 text-white text-right font-medium">{usd(payee.amountCents)}</td>
-      <td className="py-2">
-        {isAdmin ? (
-          <input
-            value={number}
-            onChange={(e) => setNumber(e.target.value)}
-            onBlur={() => {
-              if (number !== (payee.checkNumber ?? '')) onSave(number || null);
-            }}
-            placeholder="—"
-            aria-label={`Check number for ${payee.sellerName}`}
-            className="w-20 bg-surface-100 border border-gray-700 rounded px-2 py-1 text-xs text-white"
-          />
-        ) : (
-          <span className="text-gray-400">{payee.checkNumber ?? '—'}</span>
-        )}
-      </td>
-      <td className="py-2">
-        {payee.sentAt ? (
-          <span className="text-green-400 text-xs">
-            {new Date(payee.sentAt).toLocaleDateString()}
-            {isAdmin && (
-              <button
-                onClick={() => onSave(number || null, null)}
-                disabled={busy}
-                className="ml-2 text-gray-500 hover:text-white"
-              >
-                undo
-              </button>
-            )}
-          </span>
-        ) : isAdmin ? (
-          <button
-            onClick={() => onSave(number || null, new Date().toISOString())}
-            disabled={busy}
-            className="bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-white text-xs px-2.5 py-1 rounded"
-          >
-            Mark sent
-          </button>
-        ) : (
-          <span className="text-gray-500 text-xs">Not sent</span>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-// ─── Discounts ───────────────────────────────────────────────────────────────
-
-/**
- * Where the register took less than the item listed at (§5).
- *
- * A discount is the org's to give, so the seller is still paid the listed
- * price — which means the difference comes out of the patrol's pocket and is
- * worth being able to see.
- */
-function DiscountsTab({ orgId, runId }: { orgId: string; runId: string }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ['ski-swap/payout-discounts', orgId, runId],
-    queryFn: () => api.skiSwap.getPayoutDiscounts(orgId, runId),
-    enabled: !!orgId,
-  });
-
-  if (isLoading) return <p className="text-gray-400">Loading…</p>;
-  if (!data?.discounts.length) {
-    return (
-      <p className="text-gray-500 text-sm py-6">
-        Every item sold for its listed price. Nothing was discounted.
-      </p>
-    );
-  }
-
-  const zeroes = data.discounts.filter((d) => d.zeroCollected);
-  const exchanges = data.discounts.filter((d) => d.exchange);
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-gray-400">
-        {data.discounts.length} {data.discounts.length === 1 ? 'item' : 'items'} sold below the
-        listed price, costing the patrol{' '}
-        <span className="text-white">{data.totalGapFormatted}</span>. Sellers were paid the listed
-        price regardless.
-      </p>
-
-      {exchanges.length > 0 && (
-        <p className="text-xs text-gray-400 bg-surface-100/40 border border-gray-800 rounded px-3 py-2">
-          {exchanges.length === 1 ? '1 is an exchange' : `${exchanges.length} are exchanges`}: the customer swapped for a
-          higher-priced item, and the patrol absorbed the difference. Not counted in the total; the Exchanges tab totals them.
-        </p>
-      )}
-
-      {zeroes.length > 0 && (
-        <p className="text-xs text-amber-300/90 bg-amber-500/5 border border-amber-800/50 rounded px-3 py-2">
-          {zeroes.length} of these collected nothing at all. That is as likely to be a mis-scanned
-          item as a give-away, so they are listed but not counted in the total.
-        </p>
-      )}
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-gray-500 text-left border-b border-gray-800">
-              <th className="pb-2 font-normal">Item</th>
-              <th className="pb-2 font-normal">SKU</th>
-              <th className="pb-2 font-normal">Seller</th>
-              <th className="pb-2 font-normal text-right">Listed</th>
-              <th className="pb-2 font-normal text-right">Collected</th>
-              <th className="pb-2 font-normal text-right">Difference</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.discounts.map((d, i) => (
-              <tr key={`${d.itemId ?? d.sku}-${i}`} className="border-b border-gray-800/60">
-                <td className="py-2 text-gray-200">
-                  {d.name}
-                  {d.exchange && <span className="ml-1.5 inline-block text-[11px] bg-sky-900/40 text-sky-300 rounded px-1.5 py-px">Exchange</span>}
-                </td>
-                <td className="py-2 text-gray-500 font-mono text-xs">{d.sku}</td>
-                <td className="py-2 text-gray-400">{d.sellerName}</td>
-                <td className="py-2 text-gray-300 text-right">{usd(d.listedCents)}</td>
-                <td className="py-2 text-right text-gray-400">
-                  {usd(d.collectedCents)}
-                  {d.zeroCollected && <span className="text-amber-400 ml-1.5">?</span>}
-                </td>
-                <td className={`py-2 text-right ${d.exchange ? 'text-gray-400' : 'text-amber-400'}`}>−{usd(d.gapCents)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

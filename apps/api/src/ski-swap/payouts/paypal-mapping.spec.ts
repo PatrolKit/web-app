@@ -24,7 +24,7 @@ describe('mapItemStatus', () => {
 
   it('keeps in-flight apart from finished', () => {
     expect(mapItemStatus('PENDING')).toMatchObject({ status: 'SENDING', terminal: false });
-    expect(mapItemStatus('ONHOLD')).toMatchObject({ status: 'SENDING', terminal: false });
+    expect(mapItemStatus('ONHOLD')).toMatchObject({ status: 'ONHOLD', terminal: false });
     expect(mapItemStatus('UNCLAIMED')).toMatchObject({ status: 'UNCLAIMED', terminal: false });
   });
 

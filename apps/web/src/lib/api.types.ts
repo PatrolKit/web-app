@@ -766,6 +766,8 @@ export interface SkiSwapSettings {
   commissionPercent: string;
   /** The same number the server does the arithmetic with. */
   commissionBasisPoints: number;
+  /** PayPal's fee on each payout, for what a run needs (Plan 52 D17). */
+  paypalFee: PayPalFeeRate;
 }
 
 // ─── Payouts (Plan 25) ──────────────────────────────────────────────────
@@ -781,119 +783,120 @@ export interface PayPalConfigResponse {
 }
 
 export type PayoutLineStatus =
-  | 'PENDING' | 'APPROVED' | 'SENDING' | 'SENT' | 'UNCLAIMED'
-  | 'FAILED' | 'RETURNED' | 'PAID_BY_CHECK' | 'DONATED';
+  | 'PENDING' | 'APPROVED' | 'SENDING' | 'SENT' | 'UNCLAIMED' | 'ONHOLD'
+  | 'FAILED' | 'RETURNED' | 'CANCELLED' | 'EXPORTED';
 
 export type PayoutMethod = 'PAYPAL' | 'VENMO' | 'CHECK' | 'DONATE';
+export type PayoutRunKind = 'CHECK' | 'PAYPAL';
+
+/** One thing stopping a seller being paid (Plan 52 D8): every one blocks. */
+export interface PayoutFlag { text: string; fix: string }
 
 export interface PayoutLineItem {
-  id: string;
   itemId: string | null;
-  name: string;
   sku: string;
+  name: string;
   priceCents: number;
   quantity: number;
   /** What the register took, which may be less than listed. Evidence, not pay. */
   collectedCents: number;
-  squareOrderId: string;
+  donated: boolean;
   soldAt: string;
-  refundedQty: number;
+  receipt: string | null;
+  saleUrl: string | null;
 }
+
+export interface PayoutTotals { items: number; grossCents: number; commissionCents: number; netCents: number }
 
 export interface PayoutLine {
   id: string;
   sellerId: string;
   sellerName: string;
-  method: PayoutMethod;
+  business: boolean;
+  method: PayoutMethod | null;
+  /** The PayPal email or Venmo handle, or for a check the mailing address. */
   destination: string | null;
-  destinationType: 'EMAIL' | 'PHONE' | 'PAYPAL_ID' | 'VENMO_ID' | null;
-  grossCents: number;
-  commissionCents: number;
-  netCents: number;
   status: PayoutLineStatus;
   statusNote: string | null;
-  approvedBy: string | null;
-  approvedAt: string | null;
-  sentAt: string | null;
-  payoutBatchId: string | null;
-  payoutItemId: string | null;
-  checkNumber: string | null;
-  checkSentAt: string | null;
+  /** Live until the money moves (D6). */
+  frozen: boolean;
+  frozenAt: string | null;
+  commissionBasisPoints: number;
+  totals: PayoutTotals;
   items: PayoutLineItem[];
+  flags: PayoutFlag[];
+  approvedNetCents: number | null;
+  /** D9: live net minus what was paid; 0 when unchanged or settled. */
+  changedSincePaidCents: number;
+  settled: { note: string; at: string; by: string | null } | null;
+  paypal: { itemId: string | null; transactionId: string | null; paidAt: string | null } | null;
+  /** Earlier runs where PayPal didn't pay them (D19). */
+  notPaidBefore: { runId: string; createdAt: string; status: PayoutLineStatus; reason: string | null }[];
+  remindedAt: string | null;
 }
 
 export interface PayoutRun {
   id: string;
   swapId: string;
   swapTitle: string;
-  status: 'DRAFT' | 'REVIEW' | 'CLOSED';
-  /** Runs of this swap before this one: it pays only what they didn't settle. */
-  earlierRuns?: number;
-  /** Paying out is locked on this server: Send is refused until it's unlocked there. */
-  sendingLocked?: boolean;
-  salesFrom: string;
-  salesTo: string;
-  commissionBasisPoints: number;
-  sendAttempt: number;
+  kind: PayoutRunKind;
+  status: 'OPEN' | 'CLOSED';
   createdAt: string;
   closedAt: string | null;
-  totals: { grossCents: number; commissionCents: number; netCents: number };
-  byStatus: Record<string, number>;
-  /**
-   * Sales in the window that matched no item of this swap.
-   *
-   * Money the org took that nobody is being paid for — a manual register
-   * entry, a mis-scan, or another swap's stock at the same location.
-   */
-  unmatchedSales: { variationId: string; orderId: string; collectedCents: number }[];
-  /**
-   * Sales not paid because their ticket was rung up more times than it has
-   * units (Plan 48), waiting for Sales check. Absent on runs built before.
-   */
-  heldSales?: PayoutHeldSale[];
+  /** Paying out is locked on this server: Send is refused until it's unlocked there. */
+  sendingLocked: boolean;
+  /** Sent and PayPal didn't answer: Send again re-posts the same batch (D19). */
+  awaitingAnswer: boolean;
+  batch: { id: string | null; status: string | null; feesCents: number | null; reason: string | null } | null;
+  feeRate: PayPalFeeRate;
+  salesError: string | null;
   lines: PayoutLine[];
 }
 
-export interface PayoutHeldSale {
-  itemId: string;
-  sku: string;
-  name: string;
-  sellerId: string;
-  sellerName: string | null;
-  units: number;
-  /** What each held unit was rung up at. */
-  unitCents: number[];
-  orders: string[];
-  reason: 'one_sale' | 'different_sales' | 'different_prices';
-}
+export interface PayPalFeeRate { flatCents: number; bps: number; capCents: number }
 
 export interface PayoutRunSummary {
   id: string;
-  swapId: string;
-  swapTitle: string;
-  status: 'DRAFT' | 'REVIEW' | 'CLOSED';
+  kind: PayoutRunKind;
+  status: 'OPEN' | 'CLOSED';
   createdAt: string;
   closedAt: string | null;
   lineCount: number;
-  unmatchedCount: number;
+  flaggedCount: number;
   totalNetCents: number;
-  byStatus: Record<string, number>;
 }
 
-/** A sale the register took less for than the item listed at. */
-export interface PayoutDiscount {
-  itemId: string | null;
+/** A seller a run can take (D3), for "Add sellers". */
+export interface PayoutSellerChoice {
+  sellerId: string;
   name: string;
-  sku: string;
-  sellerName: string;
-  listedCents: number;
-  collectedCents: number;
-  gapCents: number;
-  /** Collected nothing: a give-away, or a match against the wrong item. */
-  zeroCollected: boolean;
-  /** An exchange for a higher-priced item (Plan 49): labelled, not counted in the total. */
-  exchange: boolean;
+  business: boolean;
+  method: PayoutMethod;
+  destination: string | null;
+  items: number;
+  netCents: number;
+  flags: PayoutFlag[];
+  notPaidBefore: boolean;
 }
+
+export interface PayoutsSummary {
+  swapId: string;
+  swapTitle: string;
+  salesError: string | null;
+  runs: PayoutRunSummary[];
+  missingDetails: { sellerId: string; name: string; key: string; problem: string; fix: string }[];
+  salesCheck: {
+    bySeller: { sellerId: string; name: string; sku: string | null; text: string }[];
+    unmatched: { receipt: string | null; soldAt: string; name: string; collectedCents: number; saleUrl: string | null }[];
+  };
+  notPaid: { sellerId: string; name: string; runId: string; createdAt: string; status: PayoutLineStatus; reason: string | null }[];
+  changedSincePaid: { runId: string; sellerId: string; name: string; diffCents: number }[];
+  discounts: { sku: string; name: string; sellerName: string; listedCents: number; collectedCents: number }[];
+  donated: { sellerId: string; name: string; items: number; grossCents: number }[];
+  ready: { CHECK: number; PAYPAL: number };
+}
+
+export type AddPayoutSellerResult = 'added' | 'in_another_run' | 'wrong_method' | 'incomplete_details' | 'nothing_owed' | 'not_found';
 
 /**
  * What a seller is owed and what became of it, on their own status page.
@@ -912,22 +915,10 @@ export interface PublicSellerPayout {
   method: PayoutMethod;
   destination: string | null;
   sentAt: string | null;
+  /** When the check run was closed and exported (Plan 52). */
   checkSentAt: string | null;
   /** Unclaimed: the one state where the seller is the person who can act. */
   needsAction: boolean;
-}
-
-export interface CheckPayee {
-  sellerName: string;
-  street: string | null;
-  city: string | null;
-  state: string | null;
-  zip: string | null;
-  phone: string | null;
-  amountCents: number;
-  reference: string;
-  checkNumber: string | null;
-  sentAt: string | null;
 }
 
 /**

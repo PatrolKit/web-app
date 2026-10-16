@@ -191,24 +191,28 @@ export class PublicSellerService {
   private async payoutsFor(sellerId: string): Promise<PublicSellerPayout[]> {
     const lines = await this.prisma.payoutLine.findMany({
       // Swaps with Unauthenticated Seller Status on only, active or not (Plan 33).
-      where: { sellerId, run: { swap: { sellerLookupEnabled: true } } },
+      // Frozen lines only (Plan 52 D6): before the money moves, a line's
+      // amounts are worked out live and aren't the seller's to see yet.
+      where: { sellerId, frozenAt: { not: null }, run: { swap: { sellerLookupEnabled: true } } },
       orderBy: { createdAt: 'desc' },
       include: {
-        run: { select: { commissionBasisPoints: true, swap: { select: { title: true } } } },
+        run: { select: { swap: { select: { title: true } } } },
       },
     });
 
     return lines.map((line) => ({
       swapTitle: line.run.swap.title,
       status: line.status as PublicSellerPayout['status'],
-      grossCents: line.grossCents,
-      commissionCents: line.commissionCents,
-      netCents: line.netCents,
-      commissionPercent: basisPointsToPercent(line.run.commissionBasisPoints),
+      grossCents: line.grossCents ?? 0,
+      commissionCents: line.commissionCents ?? 0,
+      netCents: line.netCents ?? 0,
+      commissionPercent: basisPointsToPercent(line.commissionBasisPoints ?? 0),
       method: line.method as PublicSellerPayout['method'],
-      destination: maskDestination(line.destination, line.destinationType),
+      // A check's destination is its mailing address, which this page doesn't show.
+      destination: line.method === 'CHECK' ? null : maskDestination(line.destination, line.destinationType),
       sentAt: line.sentAt?.toISOString() ?? null,
-      checkSentAt: line.checkSentAt?.toISOString() ?? null,
+      // When the check run was closed and exported (Plan 52 D13).
+      checkSentAt: line.status === 'EXPORTED' ? line.frozenAt?.toISOString() ?? null : null,
       // UNCLAIMED is the only state where the seller, rather than the patrol,
       // is the person who can do something about it.
       needsAction: line.status === 'UNCLAIMED',

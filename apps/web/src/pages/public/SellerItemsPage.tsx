@@ -42,7 +42,7 @@ function payoutTiming(method: PayoutMethod): string | null {
 /** True once nothing is outstanding, so the estimate stops being useful. */
 function allSettled(payouts: PublicSellerPayout[]): boolean {
   return payouts.length > 0 && payouts.every(
-    (p) => p.status === 'SENT' || p.status === 'PAID_BY_CHECK' || p.status === 'DONATED',
+    (p) => p.status === 'SENT' || p.status === 'EXPORTED',
   );
 }
 
@@ -116,12 +116,13 @@ function PayoutCard({ payout }: { payout: PublicSellerPayout }) {
 function label(payout: PublicSellerPayout): string {
   switch (payout.status) {
     case 'SENT': return 'Paid';
-    case 'PAID_BY_CHECK': return 'Check sent';
+    case 'EXPORTED': return 'Check on its way';
     case 'UNCLAIMED': return 'Needs your attention';
-    case 'SENDING': return 'On its way';
+    case 'SENDING':
+    case 'ONHOLD': return 'On its way';
     case 'FAILED':
-    case 'RETURNED': return 'Did not arrive';
-    case 'DONATED': return 'Donated';
+    case 'RETURNED':
+    case 'CANCELLED': return 'Did not arrive';
     default: return 'Being prepared';
   }
 }
@@ -144,11 +145,9 @@ function describe(payout: PublicSellerPayout): { line: string; tone: string } {
         line: `Sent to ${payout.destination ?? 'your account'} on ${when(payout.sentAt)}.`,
         tone: 'bg-green-900/40 text-green-400',
       };
-    case 'PAID_BY_CHECK':
+    case 'EXPORTED':
       return {
-        line: payout.checkSentAt
-          ? `A check was posted on ${when(payout.checkSentAt)}.`
-          : 'A check is being written for you.',
+        line: 'A check is being written for you.',
         tone: 'bg-green-900/40 text-green-400',
       };
     case 'UNCLAIMED':
@@ -160,15 +159,15 @@ function describe(payout: PublicSellerPayout): { line: string; tone: string } {
         tone: 'bg-amber-900/40 text-amber-300',
       };
     case 'SENDING':
+    case 'ONHOLD':
       return { line: 'On its way through PayPal.', tone: 'bg-blue-900/40 text-blue-300' };
     case 'FAILED':
     case 'RETURNED':
+    case 'CANCELLED':
       return {
         line: 'This payment did not go through. The patrol has been told and will sort it out.',
         tone: 'bg-red-900/40 text-red-400',
       };
-    case 'DONATED':
-      return { line: 'You gave this to the patrol. Thank you.', tone: 'bg-surface-100 text-gray-400' };
     default:
       return {
         line: payout.method === 'CHECK'

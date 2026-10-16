@@ -1350,6 +1350,8 @@ export const api = {
         commissionPercent?: string;
         barcodesPerTicket?: 1 | 2;
         showUsBootSizes?: boolean;
+        /** PayPal's fee on each payout (Plan 52 D17): cents, basis points, cents. */
+        paypalFee?: { flatCents: number; bps: number; capCents: number };
         /** Binding indemnification on the web, and on the iPads (Plan 51). Turning either on needs `certifyIndemnification`. */
         indemnificationWeb?: boolean;
         indemnificationIpad?: boolean;
@@ -1404,33 +1406,30 @@ export const api = {
         `/orgs/${orgId}/ski-swap/paypal-config/test`, { method: 'POST' },
       ),
 
-    // ─── Payout runs (Plan 25 §5–§10) ───────────────────────────
+    // ─── Payout runs (Plan 52) ───────────────────────────────────
 
-    listPayoutRuns: (orgId: string, swapId?: string) =>
-      request<import('./api.types').PayoutRunSummary[]>(
-        `/orgs/${orgId}/ski-swap/payout-runs${swapId ? `?swapId=${swapId}` : ''}`,
-      ),
-    createPayoutRun: (orgId: string, swapId: string, data: { salesFrom?: string; salesTo?: string } = {}) =>
-      request<import('./api.types').PayoutRun>(
-        `/orgs/${orgId}/ski-swap/swaps/${swapId}/payout-runs`,
-        { method: 'POST', body: JSON.stringify(data) },
-      ),
-    /** PayPal's available balance, for a run's "Fund PayPal with $X". Null, with the reason, when it can't be read. */
+    payoutsSummary: (orgId: string, swapId: string) =>
+      request<import('./api.types').PayoutsSummary>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/payouts-summary`),
+    createPayoutRun: (orgId: string, swapId: string, kind: import('./api.types').PayoutRunKind) =>
+      request<{ id: string }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/payout-runs`, { method: 'POST', body: JSON.stringify({ kind }) }),
+    deletePayoutRun: (orgId: string, runId: string) =>
+      request<{ deleted: boolean }>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}`, { method: 'DELETE' }),
+    /** PayPal's available balance. Null, with the reason, when it can't be read. */
     paypalBalance: (orgId: string) =>
       request<{ availableCents: number | null; message?: string }>(`/orgs/${orgId}/ski-swap/paypal-balance`),
     getPayoutRun: (orgId: string, runId: string) =>
       request<import('./api.types').PayoutRun>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}`),
-    getPayoutDiscounts: (orgId: string, runId: string) =>
-      request<{
-        runId: string;
-        discounts: import('./api.types').PayoutDiscount[];
-        totalGapCents: number;
-        totalGapFormatted: string;
-      }>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}/discounts`),
-    approvePayoutLines: (orgId: string, runId: string, lineIds: string[], approved = true) =>
-      request<{ requested: number; changed: number }>(
-        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/approve`,
-        { method: 'POST', body: JSON.stringify({ lineIds, approved }) },
+    payoutChoices: (orgId: string, runId: string) =>
+      request<import('./api.types').PayoutSellerChoice[]>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}/choices`),
+    addPayoutSellers: (orgId: string, runId: string, sellerIds: string[]) =>
+      request<{ results: { sellerId: string; result: import('./api.types').AddPayoutSellerResult }[] }>(
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/sellers`, { method: 'POST', body: JSON.stringify({ sellerIds }) },
+      ),
+    removePayoutSeller: (orgId: string, runId: string, sellerId: string) =>
+      request<{ removed: boolean }>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}/sellers/${sellerId}`, { method: 'DELETE' }),
+    approvePayoutLine: (orgId: string, runId: string, lineId: string, approved: boolean) =>
+      request<{ status: string; approvedNetCents: number | null }>(
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/lines/${lineId}/approve`, { method: 'POST', body: JSON.stringify({ approved }) },
       ),
     /**
      * `expectedLineCount` is what the screen showed. The server refuses if it
@@ -1440,31 +1439,24 @@ export const api = {
      */
     sendPayoutRun: (orgId: string, runId: string, expectedLineCount: number) =>
       request<import('./api.types').PayoutRun>(
-        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/send`,
-        { method: 'POST', body: JSON.stringify({ expectedLineCount }) },
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/send`, { method: 'POST', body: JSON.stringify({ expectedLineCount }) },
       ),
-    closePayoutRun: (orgId: string, runId: string) =>
+    closeCheckRun: (orgId: string, runId: string, expectedLineCount: number) =>
       request<import('./api.types').PayoutRun>(
-        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/close`, { method: 'POST' },
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/close-checks`, { method: 'POST', body: JSON.stringify({ expectedLineCount }) },
       ),
-    reconcilePayouts: (orgId: string) =>
-      request<{ batches: number; reconciled: number }>(
-        `/orgs/${orgId}/ski-swap/payout-runs/reconcile`, { method: 'POST' },
+    settlePayoutLine: (orgId: string, runId: string, lineId: string, note: string) =>
+      request<{ settled: boolean }>(
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/lines/${lineId}/settle`, { method: 'POST', body: JSON.stringify({ note }) },
       ),
-    nudgePayouts: (orgId: string) =>
-      request<{ considered: number; sent: number; suppressed: number; failed: number; skipped: number }>(
-        `/orgs/${orgId}/ski-swap/payout-runs/nudge`, { method: 'POST' },
-      ),
-    cancelUnclaimedPayout: (orgId: string, runId: string, lineId: string) =>
-      request<{ id: string; status: string }>(
-        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/lines/${lineId}/cancel`, { method: 'POST' },
-      ),
-    listCheckPayees: (orgId: string, runId: string) =>
-      request<import('./api.types').CheckPayee[]>(
-        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/checks`,
-      ),
+    cancelPayoutPayment: (orgId: string, runId: string, lineId: string) =>
+      request<{ cancelled: boolean }>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}/lines/${lineId}/cancel-payment`, { method: 'POST' }),
+    remindPayoutSeller: (orgId: string, runId: string, lineId: string) =>
+      request<{ status: string }>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}/lines/${lineId}/remind`, { method: 'POST' }),
+    reconcilePayoutRun: (orgId: string, runId: string) =>
+      request<import('./api.types').PayoutRun>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}/reconcile`, { method: 'POST' }),
     /**
-     * The check register as a file.
+     * A closed check run's spreadsheet, as a file.
      *
      * Fetched rather than linked, like the QR sheet: the session token travels
      * in a header, and a plain navigation cannot carry one — a download link
@@ -1480,20 +1472,10 @@ export const api = {
       if (!res.ok) {
         // On failure the body is the API's JSON envelope, not a CSV.
         const body = await res.json().catch(() => null);
-        throw new Error(body?.error?.message ?? 'Could not build the check register');
+        throw new Error(body?.error?.message ?? 'Could not build the checks spreadsheet');
       }
       return res.blob();
     },
-    recordCheckSent: (
-      orgId: string,
-      runId: string,
-      lineId: string,
-      data: { checkNumber?: string | null; sentAt?: string | null },
-    ) =>
-      request<{ id: string; checkNumber: string | null; checkSentAt: string | null; status: string }>(
-        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/lines/${lineId}/check`,
-        { method: 'POST', body: JSON.stringify(data) },
-      ),
   },
 
   timeClock: {

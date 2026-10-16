@@ -228,6 +228,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@awesome.me/kit-9b475e388e':
+        specifier: 1.0.3
+        version: 1.0.3
       '@fortawesome/fontawesome-svg-core':
         specifier: ^7.3.1
         version: 7.3.1
@@ -389,6 +392,10 @@ packages:
   '@apimatic/schema@0.7.21':
     resolution: {integrity: sha512-RCke4toXjA7fBRxQVa1GR+Lj9utVOEJ3voDI26dhk+bZuAac4UXPzkTEaIO3AIe/o8pcKCOkpNIzhzm57Cv2Qg==}
     engines: {node: '>=14.15.0 || >=16.0.0'}
+
+  '@awesome.me/kit-9b475e388e@1.0.3':
+    resolution: {integrity: sha512-AhxwKRGlvyeICc7YJumCJw0D4K+NjuJaG5EowimWBUBUTldlH6CH4t2OkWV4x6MLWV52HZW/X4dvQQBMVzEBog==}
+    engines: {node: '>=16'}
 
   '@aws-sdk/checksums@3.1000.23':
     resolution: {integrity: sha512-Hv4VX5+IdDYmAbOdiwZguz8fLh3WnE4VtyJwVNEHLulA+OYy7Z5L0ETGUlX2T4g8DLO8XxCV8CyWrtVL4uwqkg==}
@@ -6077,6 +6084,10 @@ snapshots:
   '@apimatic/schema@0.7.21':
     dependencies:
       tslib: 2.8.1
+
+  '@awesome.me/kit-9b475e388e@1.0.3':
+    dependencies:
+      '@fortawesome/fontawesome-common-types': 7.3.1
 
   '@aws-sdk/checksums@3.1000.23':
     dependencies:

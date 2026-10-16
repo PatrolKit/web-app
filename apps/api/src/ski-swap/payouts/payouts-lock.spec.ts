@@ -1,7 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { HttpPayPalClient, PayPalError, payoutsUnlocked } from './paypal.client';
 import { PayoutRunService } from './payout-run.service';
-import { PayoutNudgeService } from './payout-nudge.service';
 
 /**
  * The server's lock on paying out (fail closed): nothing reaches PayPal's
@@ -59,28 +58,28 @@ describe('the lock', () => {
     const touched: string[] = [];
     const never = (what: string) => async () => { touched.push(what); throw new Error(`${what} must not be reached`); };
     const prisma = {
-      payoutRun: { findFirst: async () => ({ id: 'run', orgId: 'org', status: 'REVIEW', sendAttempt: 0 }), update: never('payoutRun.update') },
+      payoutRun: { findFirst: async () => ({ id: 'run', orgId: 'org', kind: 'PAYPAL', status: 'OPEN', sendAttempt: 0, payoutBatchId: null }), update: never('payoutRun.update') },
       payoutLine: { count: never('payoutLine.count'), updateMany: never('payoutLine.updateMany'), findMany: never('payoutLine.findMany') },
       $transaction: never('$transaction'),
     };
     const { paypal, calls } = client();
-    const service = new PayoutRunService(prisma as never, {} as never, paypal, {} as never);
+    const service = new PayoutRunService(prisma as never, paypal, {} as never, {} as never);
     await expect(service.send('org', 'run', 1, 'staff')).rejects.toMatchObject({ response: { code: 'PAYOUTS_LOCKED' } });
     expect([touched, calls]).toEqual([[], []]);
   });
 
-  it('refuses cancelling an unclaimed payout, leaving the line as it was', async () => {
+  it('refuses cancelling an unclaimed payment, leaving the line as it was', async () => {
     delete process.env.PAYPAL_PAYOUTS_ENABLED;
     const updates: unknown[] = [];
     const prisma = {
       payoutLine: {
-        findFirst: async () => ({ id: 'l1', status: 'UNCLAIMED', payoutItemId: 'item-1' }),
+        findFirst: async () => ({ id: 'l1', runId: 'run', status: 'UNCLAIMED', payoutItemId: 'item-1' }),
         update: async (x: unknown) => { updates.push(x); return x; },
       },
     };
     const { paypal, calls } = client();
-    const nudges = new PayoutNudgeService(prisma as never, {} as never, {} as never, paypal, {} as never);
-    await expect(nudges.cancelUnclaimed('org', 'l1', 'staff')).rejects.toBeInstanceOf(ForbiddenException);
+    const service = new PayoutRunService(prisma as never, paypal, {} as never, {} as never);
+    await expect(service.cancelPayment('org', 'run', 'l1', 'staff')).rejects.toBeInstanceOf(ForbiddenException);
     expect([updates, calls]).toEqual([[], []]);
   });
 });

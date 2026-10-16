@@ -1,17 +1,15 @@
-import { checksToCsv, phoneForHumans, CHECK_CSV_HEADERS, type CheckRow } from './checks-csv';
+import { addressText, addressToDestination, checksToCsv, destinationToAddress, phoneForHumans, CHECK_CSV_HEADERS, type CheckRow } from './checks-csv';
 
 function row(over: Partial<CheckRow> = {}): CheckRow {
   return {
-    sellerName: 'Dana Reyes',
+    payee: 'Dana Reyes',
     street: '12 Summit Rd',
     city: 'Stowe',
     state: 'VT',
     zip: '05672',
-    phone: phoneForHumans('+18025551212'),
     amountCents: 4250,
-    reference: 'line_abc',
-    checkNumber: null,
-    sentAt: null,
+    memo: 'Fall Ski Swap payout: 3 items',
+    date: new Date('2026-10-16T18:30:00Z'),
     ...over,
   };
 }
@@ -56,13 +54,8 @@ describe('checksToCsv', () => {
     expect(checksToCsv([]).trim()).toBe(CHECK_CSV_HEADERS.join(','));
   });
 
-  it('carries the phone number, which is what the treasurer rings when a check bounces back', () => {
-    expect(checksToCsv([row()])).toContain('"(802) 555-1212"');
-  });
-
-  it('defuses a number it could not format, which still starts with a plus', () => {
-    expect(checksToCsv([row({ phone: phoneForHumans('+442071234567') })]))
-      .toContain(`"'+442071234567"`);
+  it('writes payee, address, amount, memo and date, in that order', () => {
+    expect(checksToCsv([row()]).split('\r\n')[1]).toBe('"Dana Reyes","12 Summit Rd","Stowe","VT","05672",42.50,"Fall Ski Swap payout: 3 items","2026-10-16"');
   });
 
   it('writes the amount as a bare decimal so the column can be summed', () => {
@@ -80,7 +73,7 @@ describe('checksToCsv', () => {
   });
 
   it('doubles a quote in a name', () => {
-    expect(checksToCsv([row({ sellerName: 'Dana "Danno" Reyes' })])).toContain(
+    expect(checksToCsv([row({ payee: 'Dana "Danno" Reyes' })])).toContain(
       '"Dana ""Danno"" Reyes"',
     );
   });
@@ -88,9 +81,9 @@ describe('checksToCsv', () => {
   it('defuses a name a spreadsheet would run as a formula', () => {
     // Not hypothetical: a hyphenated surname typed without its first part, and
     // Excel evaluates it.
-    expect(checksToCsv([row({ sellerName: '-Smith' })])).toContain(`"'-Smith"`);
-    expect(checksToCsv([row({ sellerName: '=1+1' })])).toContain(`"'=1+1"`);
-    expect(checksToCsv([row({ sellerName: '@here' })])).toContain(`"'@here"`);
+    expect(checksToCsv([row({ payee: '-Smith' })])).toContain(`"'-Smith"`);
+    expect(checksToCsv([row({ payee: '=1+1' })])).toContain(`"'=1+1"`);
+    expect(checksToCsv([row({ payee: '@here' })])).toContain(`"'@here"`);
   });
 
   it('leaves an ordinary name alone', () => {
@@ -109,12 +102,20 @@ describe('checksToCsv', () => {
     expect(out).toContain('"Dana Reyes","","","",""');
   });
 
-  it('dates a sent check to the day, which is all a register needs', () => {
-    const out = checksToCsv([row({ sentAt: new Date('2026-02-14T18:30:00Z'), checkNumber: '1043' })]);
-    expect(out).toContain('"1043","2026-02-14"');
-  });
 
   it('ends with a newline so the last row survives import', () => {
     expect(checksToCsv([row()]).endsWith('\r\n')).toBe(true);
+  });
+});
+
+describe('a check line\'s frozen address', () => {
+  it('round-trips through the line\'s destination', () => {
+    const a = { street: '12 Summit Rd', city: 'Stowe', state: 'VT', zip: '05672' };
+    expect(destinationToAddress(addressToDestination(a))).toEqual(a);
+  });
+
+  it('reads as one line', () => {
+    expect(addressText({ street: '12 Summit Rd', city: 'Stowe', state: 'VT', zip: '05672' })).toBe('12 Summit Rd, Stowe, VT 05672');
+    expect(addressText({ street: null, city: null, state: null, zip: null })).toBeNull();
   });
 });

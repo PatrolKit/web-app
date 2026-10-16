@@ -1,4 +1,4 @@
-// Payouts (Plan 25), against a running API and database.
+// Payouts (Plan 25, reworked by Plan 52), against a running API and database.
 //
 //   PAYOUTS_STUB=1 \
 //   PAYPAL_STUB_LOG=/tmp/paypal-stub.log \
@@ -12,16 +12,18 @@
 // Money, so the things asserted here are the ones that cannot be proved by
 // reading our own database back:
 //
-//   - pressing send twice reaches PayPal once, counted at the stub;
-//   - an unapproved line is never in a batch;
+//   - a run is sent once, and only when everyone in it is approved;
+//   - a total that changed since approval stops the whole send;
 //   - a line leaves SENDING only through a verified webhook or the sweep;
-//   - a forged webhook aimed at a line in flight changes nothing.
+//   - a forged webhook aimed at a line in flight changes nothing;
+//   - a payment PayPal didn't make frees the seller for another run, where
+//     they're paid.
 //
 // This script signs in once, at the top, before anything else.
 //
-// Everything below is about how sales become lines, so the first thing asserted
-// is that the run has lines at all. A run with none approves, sends and
-// reconciles perfectly while proving nothing.
+// Everything below is about how sales become payouts, so the first thing
+// asserted is that there are sellers to pay at all. A run with nobody in it
+// approves, sends and reconciles perfectly while proving nothing.
 
 import { PrismaClient } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
@@ -73,6 +75,8 @@ const SELLERS = [
   { key: 'check',   phone: '+15550198203', method: 'CHECK',  target: null,       handle: null,       email: null },
   { key: 'donate',  phone: '+15550198204', method: 'DONATE', target: null,       handle: null,       email: null },
   { key: 'tiny',    phone: '+15550198205', method: 'PAYPAL', target: 'EMAIL',    handle: null,       email: `${SEED}-tiny@patrolkit.invalid` },
+  // PayPal, but the email was never verified: offered to no run (D3, D16).
+  { key: 'unverified', phone: '+15550198206', method: 'PAYPAL', target: 'EMAIL', handle: null, email: `${SEED}-unverified@patrolkit.invalid`, unverified: true },
 ];
 for (const s of SELLERS) {
   const u = await prisma.user.findFirst({ where: { phone: s.phone } });
@@ -81,7 +85,7 @@ for (const s of SELLERS) {
 
 await prisma.skiSwapSettings.upsert({
   where: { orgId: org.id },
-  update: { commissionBasisPoints: 2000 },
+  update: { commissionBasisPoints: 2000, paypalFeeFlatCents: 25, paypalFeeBps: 0, paypalFeeCapCents: 0 },
   create: { orgId: org.id, commissionBasisPoints: 2000 },
 });
 
@@ -98,7 +102,7 @@ for (const s of SELLERS) {
     data: {
       id: createId(), firstName: s.key, lastName: 'Smoke',
       phone: s.phone, verifiedPhone: s.phone, phoneVerifiedAt: new Date(),
-      ...(s.email ? { email: s.email, verifiedEmail: s.email, emailVerifiedAt: new Date() } : {}),
+      ...(s.email ? (s.unverified ? { email: s.email } : { email: s.email, verifiedEmail: s.email, emailVerifiedAt: new Date() }) : {}),
       street: '12 Summit Rd', city: 'Stowe', state: 'VT', zip: '05672',
       payoutMethod: s.method, payoutTarget: s.target, payoutHandle: s.handle,
       // Scanned from the seller's code at the counter: only then is Venmo paid (Plan 35).
@@ -125,43 +129,38 @@ const ITEMS = [
   { key: 'tiny',   sku: 'PAY-006', price: 100,   variation: 'var-tiny-1',   qty: 1, collected: 100 },
   // Refunded in full: sold, then returned, so it owes nobody anything.
   { key: 'paypal', sku: 'PAY-007', price: 9000,  variation: 'var-paypal-3', qty: 1, collected: 9000, refunded: 1 },
+  { key: 'unverified', sku: 'PAY-008', price: 3000, variation: 'var-unverified-1', qty: 1, collected: 3000 },
 ];
-for (const item of ITEMS) {
-  await prisma.swapItem.create({
-    data: {
-      id: createId(), swapId: swap.id, orgId: org.id, sellerId: sellerIds[item.key],
-      name: `${item.key} item ${item.sku}`, sku: item.sku, priceCents: item.price,
-      originalQuantity: 1, squareVariationId: item.variation, consignedAt: new Date(),
-    },
-  });
-}
+const addItem = (item) => prisma.swapItem.create({
+  data: {
+    id: createId(), swapId: swap.id, orgId: org.id, sellerId: sellerIds[item.key],
+    name: `${item.key} item ${item.sku}`, sku: item.sku, priceCents: item.price,
+    originalQuantity: 1, squareVariationId: item.variation, consignedAt: new Date(),
+  },
+});
+for (const item of ITEMS) await addItem(item);
 
-// After the swap was created, which is where the window starts by default.
-// A sale timestamped before its own swap is a sale the run will not see —
-// which is correct, and is what the out-of-window row below proves.
-const soldAt = new Date().toISOString();
+// After the swap was created: a swap's sales are everything since it began (D2).
+const soldAt = () => new Date().toISOString();
 const sales = ITEMS.map((item, i) => ({
   orderId: `stub-order-${i}`,
+  paymentId: `stubpay${i}abcdef`,
   variationId: item.variation,
   quantity: item.qty,
+  // What the register rang it up at, before any discount.
+  unitPriceCents: item.price,
   collectedCents: item.collected,
   refundedQuantity: item.refunded ?? 0,
-  soldAt,
+  soldAt: soldAt(),
 }));
 // A sale of something this swap never had: money the org took that nobody is
-// being paid for, which the run must report rather than drop.
+// being paid for, which "Before you pay" must show rather than drop (D14).
 sales.push({
-  orderId: 'stub-order-orphan', variationId: 'var-not-ours',
-  quantity: 1, collectedCents: 2500, refundedQuantity: 0, soldAt,
+  orderId: 'stub-order-orphan', paymentId: 'stubpayorphan', variationId: 'var-not-ours',
+  quantity: 1, collectedCents: 2500, refundedQuantity: 0, soldAt: soldAt(),
 });
-// Last year, for the same item as PAY-001. Outside the run's window, so it must
-// not be paid a second time — the window is what makes a run reproducible.
-sales.push({
-  orderId: 'stub-order-last-year', variationId: 'var-paypal-1',
-  quantity: 1, collectedCents: 5000, refundedQuantity: 0,
-  soldAt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
-});
-writeFileSync(SALES_FILE, JSON.stringify(sales, null, 2));
+const saveSales = () => writeFileSync(SALES_FILE, JSON.stringify(sales, null, 2));
+saveSales();
 truncateStubLog();
 
 const { user: staff } = await smokeStaff(prisma, org, [
@@ -170,271 +169,217 @@ const { user: staff } = await smokeStaff(prisma, org, [
 const token = await smokeSession(prisma, BASE, staff, unwrap);
 const auth = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
 const api = (path, init = {}) => fetch(`${BASE}${path}`, { ...init, headers: { ...auth, ...(init.headers ?? {}) } });
+const O = `/orgs/${org.id}/ski-swap`;
+const post = (path, body = {}) => api(`${O}${path}`, { method: 'POST', body: JSON.stringify(body) });
+const getRun = (id) => api(`${O}/payout-runs/${id}`).then(unwrap);
+const summary = () => api(`${O}/swaps/${swap.id}/payouts-summary`).then(unwrap);
+const line = (run, key) => run.lines.find((l) => l.sellerName.startsWith(key));
+const webhook = (sig, body) => fetch(`${BASE}/webhooks/paypal/${org.id}`, {
+  method: 'POST', headers: { 'content-type': 'application/json', 'paypal-transmission-sig': sig }, body: JSON.stringify(body),
+});
+const itemEvent = (lineId, batchId, status, extra = {}) => ({
+  event_type: 'PAYMENT.PAYOUTS-ITEM.X',
+  resource: { payout_item_id: `item-${lineId}`, payout_batch_id: batchId, transaction_status: status, payout_item: { sender_item_id: lineId }, ...extra },
+});
 
-console.log('\n── Building the run ──────────────────────────────────────────');
+console.log('\n── Before you pay ────────────────────────────────────────────');
 
-const run = await api(`/orgs/${org.id}/ski-swap/swaps/${swap.id}/payout-runs`, {
-  method: 'POST', body: JSON.stringify({}),
-}).then(unwrap);
+const before = await summary();
+ok('the Payouts page reads the swap', before.swapId === swap.id && before.salesError === null, before.salesError ?? '');
+ok('three sellers are ready for a PayPal run and one for a check run',
+  before.ready?.PAYPAL === 3 && before.ready?.CHECK === 1, JSON.stringify(before.ready));
+ok('the seller with an unverified PayPal email is listed to fix, not offered',
+  before.missingDetails?.length === 1 && before.missingDetails[0].sellerId === sellerIds.unverified && before.missingDetails[0].key === 'PAYPAL_UNVERIFIED',
+  JSON.stringify(before.missingDetails));
+ok('a sale matching no ticket is shown, not dropped',
+  before.salesCheck?.unmatched?.some((u) => u.collectedCents === 2500), JSON.stringify(before.salesCheck?.unmatched));
+ok('the donor is listed, not paid', before.donated?.length === 1 && before.donated[0].sellerId === sellerIds.donate);
+ok('the discount report finds the item sold under its listed price',
+  before.discounts?.length === 1 && before.discounts[0].sku === 'PAY-002', JSON.stringify(before.discounts));
 
-// The fixture, before any behaviour. Five sellers sold something; if this is
-// wrong every assertion below is about an empty run.
-ok('the run has a line for each of the five sellers', run.lines?.length === 5,
-  `got ${run.lines?.length}`);
-if (run.lines?.length !== 5) { await finish(); }
+console.log('\n── Building a PayPal run ─────────────────────────────────────');
 
-const byName = (key) => run.lines.find((l) => l.sellerName.startsWith(key));
+const { id: runId } = await post(`/swaps/${swap.id}/payout-runs`, { kind: 'PAYPAL' }).then(unwrap);
+const empty = await getRun(runId);
+ok('a new run starts empty, and open', empty.lines?.length === 0 && empty.status === 'OPEN' && empty.kind === 'PAYPAL');
 
-const paypalLine = byName('paypal');
+const choices = await api(`${O}/payout-runs/${runId}/choices`).then(unwrap);
+ok('the picker offers only PayPal and Venmo sellers with complete details',
+  choices.length === 3 && choices.every((c) => ['PAYPAL', 'VENMO'].includes(c.method)),
+  JSON.stringify(choices.map((c) => c.name)));
+
+const added = await post(`/payout-runs/${runId}/sellers`, { sellerIds: [sellerIds.paypal, sellerIds.venmo, sellerIds.tiny, sellerIds.check, sellerIds.unverified] }).then(unwrap);
+const result = (key) => added.results.find((r) => r.sellerId === sellerIds[key])?.result;
+ok('adding answers per seller', result('paypal') === 'added' && result('venmo') === 'added' && result('tiny') === 'added');
+ok('...refusing a check seller in a PayPal run', result('check') === 'wrong_method');
+ok('...and a seller whose details are incomplete', result('unverified') === 'incomplete_details');
+
+const { id: otherId } = await post(`/swaps/${swap.id}/payout-runs`, { kind: 'PAYPAL' }).then(unwrap);
+const twice = await post(`/payout-runs/${otherId}/sellers`, { sellerIds: [sellerIds.paypal] }).then(unwrap);
+ok('a seller can’t be in two runs of a swap at once', twice.results[0].result === 'in_another_run');
+const delOther = await api(`${O}/payout-runs/${otherId}`, { method: 'DELETE' });
+ok('an empty run can be deleted', delOther.status === 200, `HTTP ${delOther.status}`);
+const delFull = await api(`${O}/payout-runs/${runId}`, { method: 'DELETE' });
+ok('...a run with sellers in it can’t', delFull.status === 409, `HTTP ${delFull.status}`);
+
+let run = await getRun(runId);
+const paypal = line(run, 'paypal');
 ok('owed is the listed price, not what the register took',
-  paypalLine.grossCents === 10000,
-  `$100.00 listed across two sold items, one of them discounted to $40.00 — got ${paypalLine.grossCents}`);
-ok('a sale from before the window is not paid again',
-  paypalLine.items.filter((i) => i.sku === 'PAY-001').length === 1,
-  'PAY-001 sold once in the window and once last year');
-ok('a fully refunded item owes nothing',
-  paypalLine.items.every((i) => i.sku !== 'PAY-007'),
-  'PAY-007 sold and came back');
-ok('the commission is 20% of gross, rounded once per seller',
-  paypalLine.commissionCents === 2000 && paypalLine.netCents === 8000,
-  `${paypalLine.commissionCents}/${paypalLine.netCents}`);
-
-ok('a Venmo seller is addressed by handle',
-  byName('venmo').destinationType === 'VENMO_ID' && byName('venmo').destination === '@smoke-venmo');
-ok('a donated payout is not pending anything',
-  byName('donate').status === 'DONATED');
-// There is no floor. The money is the seller's however small it is, and a
-// payout nobody sends is a payout somebody has to chase.
-ok('a payout of eighty cents is treated like any other',
-  byName('tiny').status === 'PENDING' && byName('tiny').netCents === 80 &&
-  byName('tiny').statusNote === null,
-  `got ${byName('tiny').status} / ${byName('tiny').netCents} / ${byName('tiny').statusNote}`);
-ok('a check line starts where every other line starts',
-  byName('check').status === 'PENDING');
-
-// Money the org took that nobody is being paid for. Kept on the run rather than
-// logged, because a log line nobody reads is the same as dropping it.
-ok('a sale matching no item of this swap is reported, not dropped',
-  run.unmatchedSales?.length === 1 &&
-  run.unmatchedSales[0].orderId === 'stub-order-orphan' &&
-  run.unmatchedSales[0].collectedCents === 2500,
-  JSON.stringify(run.unmatchedSales));
+  paypal.totals.grossCents === 10000 && paypal.totals.netCents === 8000,
+  JSON.stringify(paypal.totals));
+ok('a fully refunded item owes nothing', paypal.items.every((i) => i.sku !== 'PAY-007'));
+ok('each item carries its receipt and a link to the sale', paypal.items.every((i) => i.receipt === 'stub' && i.saleUrl?.includes('stubpay')),
+  JSON.stringify(paypal.items.map((i) => [i.receipt, i.saleUrl])));
+ok('nothing is frozen before money moves', run.lines.every((l) => !l.frozen));
+// PAY-002 was discounted at the register: Sales check flags a sale paid at
+// another price, and the flag blocks the seller until it's settled (D8).
+ok('a sale paid at another price flags its seller, saying how to fix it',
+  paypal.flags.length === 1 && /PAY-002: Sold for \$40\.00; PatrolKit says \$50\.00/.test(paypal.flags[0].text) && /Sales check/.test(paypal.flags[0].fix),
+  JSON.stringify(paypal.flags));
+ok('...and nobody else is flagged', line(run, 'venmo').flags.length === 0 && line(run, 'tiny').flags.length === 0);
+ok('a Venmo seller is shown by handle', line(run, 'venmo').destination === '@smoke-venmo');
+ok('an eighty-cent payout is owed like any other', line(run, 'tiny').totals.netCents === 80);
 
 console.log('\n── Approval ──────────────────────────────────────────────────');
 
-// Only the PayPal seller. The Venmo line stays unapproved on purpose: the whole
-// point of the next assertion is that an unapproved line is not in the batch.
-await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/approve`, {
-  method: 'POST', body: JSON.stringify({ lineIds: [paypalLine.id], approved: true }),
-}).then(unwrap);
-
-const afterApprove = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(unwrap);
-ok('approving records who approved it',
-  afterApprove.lines.find((l) => l.id === paypalLine.id).approvedBy === staff.id);
-ok('approving one line leaves the others alone',
-  afterApprove.lines.find((l) => l.id === byName('venmo').id).status === 'PENDING');
-
-const wrongCount = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/send`, {
-  method: 'POST', body: JSON.stringify({ expectedLineCount: 99 }),
-});
-ok('a send whose count disagrees with the server is refused',
-  wrongCount.status === 409, `HTTP ${wrongCount.status}`);
+const approve = (l, approved = true) => post(`/payout-runs/${runId}/lines/${l.id}/approve`, { approved });
+const blocked = await approve(paypal);
+ok('a flagged seller can’t be approved', blocked.status === 409, `HTTP ${blocked.status}`);
+// Staff keep PatrolKit's price in Sales check: the seller is paid the listed price.
+const kept = await post(`/swaps/${swap.id}/sales-check/price-kept`, { orderId: 'stub-order-1', lineUid: 'line-1' });
+ok('keeping PatrolKit’s price in Sales check clears the flag', kept.status < 300 && (await getRun(runId)).lines.every((l) => l.flags.length === 0), `HTTP ${kept.status}`);
+const a1 = await approve(paypal).then(unwrap);
+ok('approving records the total the approver saw', a1.approvedNetCents === 8000, JSON.stringify(a1));
+const early = await post(`/payout-runs/${runId}/send`, { expectedLineCount: 1 });
+ok('Send is refused while anyone still needs review', early.status === 400, `HTTP ${early.status}`);
 ok('...and nothing reached PayPal', stubCalls('createBatch').length === 0);
+
+await approve(line(run, 'venmo'));
+await approve(line(run, 'tiny'));
+const wrongCount = await post(`/payout-runs/${runId}/send`, { expectedLineCount: 99 });
+ok('a send whose count disagrees with the server is refused', wrongCount.status === 409, `HTTP ${wrongCount.status}`);
+
+// D7: a late sale for the PayPal seller after approval. Send reads Square
+// afresh, sees a different total, and stops the whole run.
+const late = { key: 'paypal', sku: 'PAY-009', price: 2500, variation: 'var-paypal-late', qty: 1, collected: 2500 };
+await addItem(late);
+sales.push({ orderId: 'stub-order-late', paymentId: 'stubpaylate1', variationId: late.variation, quantity: 1, unitPriceCents: 2500, collectedCents: 2500, refundedQuantity: 0, soldAt: soldAt() });
+saveSales();
+const stale = await post(`/payout-runs/${runId}/send`, { expectedLineCount: 3 });
+ok('a total that changed since approval stops the whole send', stale.status === 409, `HTTP ${stale.status}`);
+ok('...nothing reached PayPal', stubCalls('createBatch').length === 0);
+run = await getRun(runId);
+ok('...only the changed seller needs approving again, saying why',
+  line(run, 'paypal').status === 'PENDING' && /was \$80\.00, now \$100\.00/.test(line(run, 'paypal').statusNote ?? '') &&
+  line(run, 'venmo').status === 'APPROVED' && line(run, 'tiny').status === 'APPROVED',
+  `${line(run, 'paypal').status}: ${line(run, 'paypal').statusNote}`);
+await approve(line(run, 'paypal'));
 
 console.log('\n── Sending ───────────────────────────────────────────────────');
 
-await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/send`, {
-  method: 'POST', body: JSON.stringify({ expectedLineCount: 1 }),
-}).then(unwrap);
+const sent = await post(`/payout-runs/${runId}/send`, { expectedLineCount: 3 });
+ok('Send goes through once everyone is approved', sent.status === 200, `HTTP ${sent.status}`);
+const batch = stubCalls('createBatch');
+ok('the send reached PayPal once, with all three', batch.length === 1 && batch[0].items.length === 3, `got ${batch.length}`);
+ok('the batch is for the net amounts', batch[0]?.items.map((i) => i.amountCents).sort((a, b) => a - b).join() === '80,9600,10000',
+  JSON.stringify(batch[0]?.items.map((i) => i.amountCents)));
+const venmoItem = batch[0]?.items.find((i) => i.senderItemId === line(run, 'venmo').id);
+ok('a Venmo payout is addressed as a user handle, without the @',
+  venmoItem?.recipient.recipient_type === 'USER_HANDLE' && venmoItem?.recipient.recipient_wallet === 'Venmo' && venmoItem?.recipient.receiver === 'smoke-venmo');
 
-const firstBatch = stubCalls('createBatch');
-ok('the send reached PayPal once', firstBatch.length === 1, `got ${firstBatch.length}`);
-ok('the batch holds only the approved line',
-  firstBatch[0]?.items.length === 1 && firstBatch[0].items[0].senderItemId === paypalLine.id);
-ok('the batch is for the net amount, not the gross',
-  firstBatch[0]?.items[0].amountCents === 8000);
-ok('an unapproved Venmo line was not in it',
-  !firstBatch[0]?.items.some((i) => i.senderItemId === byName('venmo').id));
+run = await getRun(runId);
+ok('an accepted batch leaves everyone Sending, not paid', run.lines.every((l) => l.status === 'SENDING'), run.lines.map((l) => l.status).join());
+ok('...frozen, with the batch on the run', run.lines.every((l) => l.frozen) && !!run.batch?.id);
+const batchId = run.batch.id;
 
-const sending = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(unwrap);
-ok('an accepted-but-unpaid batch leaves the line SENDING, not SENT',
-  sending.lines.find((l) => l.id === paypalLine.id).status === 'SENDING');
-ok('...and sentAt is still empty, because nothing has arrived',
-  sending.lines.find((l) => l.id === paypalLine.id).sentAt === null);
+const again = await post(`/payout-runs/${runId}/send`, { expectedLineCount: 3 });
+ok('a run is sent once: a second Send is refused', again.status === 409, `HTTP ${again.status}`);
+ok('...and PayPal was not asked again', stubCalls('createBatch').length === 1);
+const addLate = await post(`/payout-runs/${runId}/sellers`, { sellerIds: [sellerIds.check] });
+ok('a sent run takes no more sellers', addLate.status === 409, `HTTP ${addLate.status}`);
 
-// The one that matters. Sending again must re-post the same sender_batch_id so
-// PayPal declines to pay it twice — not mint a new one.
-await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/send`, {
-  method: 'POST', body: JSON.stringify({ expectedLineCount: 1 }),
-}).then(unwrap);
+console.log('\n── PayPal’s answers ──────────────────────────────────────────');
 
-const both = stubCalls('createBatch');
-ok('pressing send twice reaches PayPal twice',
-  both.length === 2, `got ${both.length}`);
-ok('...under the same sender_batch_id, so only one batch exists',
-  both[0].senderBatchId === both[1].senderBatchId,
-  `${both[0].senderBatchId} vs ${both[1].senderBatchId}`);
-ok('...and PayPal deduped the second',
-  stubCalls('createBatch.deduped').length === 1);
+const p = line(run, 'paypal');
+await webhook('not-the-signature', itemEvent(p.id, batchId, 'SUCCESS', { transaction_id: 'TXN-FORGED' }));
+run = await getRun(runId);
+ok('a forged webhook changes nothing', line(run, 'paypal').status === 'SENDING');
 
-console.log('\n── Webhooks ──────────────────────────────────────────────────');
+await webhook(STUB_SIG, itemEvent(p.id, batchId, 'SUCCESS', { transaction_id: 'TXN-PAYPAL-1' }));
+await webhook(STUB_SIG, itemEvent(line(run, 'venmo').id, batchId, 'UNCLAIMED'));
+await webhook(STUB_SIG, itemEvent(line(run, 'tiny').id, batchId, 'FAILED', { errors: { message: 'Receiver unregistered' } }));
+run = await getRun(runId);
+ok('a verified webhook marks a payment paid, with its transaction ID',
+  line(run, 'paypal').status === 'SENT' && line(run, 'paypal').paypal?.transactionId === 'TXN-PAYPAL-1',
+  JSON.stringify(line(run, 'paypal').paypal));
+ok('an unclaimed payment says so', line(run, 'venmo').status === 'UNCLAIMED');
+ok('a failed payment is marked failed, with PayPal’s reason',
+  line(run, 'tiny').status === 'FAILED' && line(run, 'tiny').statusNote === 'Receiver unregistered');
+ok('the run stays open while a payment is unclaimed', run.status === 'OPEN');
 
-const webhookBody = (status) => JSON.stringify({
-  event_type: 'PAYMENT.PAYOUTS-ITEM.SUCCEEDED',
-  resource: {
-    payout_item_id: firstBatch[0].items[0].senderItemId,
-    payout_batch_id: `stub-batch-${both[0].senderBatchId}`,
-    transaction_status: status,
-    payout_item: { sender_item_id: paypalLine.id },
-  },
-});
+const cancel = await post(`/payout-runs/${runId}/lines/${line(run, 'venmo').id}/cancel-payment`);
+ok('an unclaimed payment can be cancelled', cancel.status === 200, `HTTP ${cancel.status}`);
+ok('...at PayPal', stubCalls('cancelItem').length === 1);
+run = await getRun(runId);
+ok('...and is marked cancelled in the run', line(run, 'venmo').status === 'CANCELLED');
+ok('the run closes itself once every payment is final', run.status === 'CLOSED' && !!run.closedAt, run.status);
 
-const forged = await fetch(`${BASE}/webhooks/paypal/${org.id}`, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json', 'paypal-transmission-sig': 'not-the-signature' },
-  body: webhookBody('SUCCESS'),
-});
-ok('a forged webhook is answered 200, so PayPal does not retry it',
-  forged.status === 200, `HTTP ${forged.status}`);
+console.log('\n── Paying them from another run ──────────────────────────────');
 
-const afterForged = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(unwrap);
-ok('...but it changed nothing — an unverified webhook is an unauthenticated write',
-  afterForged.lines.find((l) => l.id === paypalLine.id).status === 'SENDING',
-  `status is now ${afterForged.lines.find((l) => l.id === paypalLine.id).status}`);
+const mid = await summary();
+ok('"Before you pay" lists the sellers PayPal didn’t pay',
+  mid.notPaid?.map((n) => n.sellerId).sort().join() === [sellerIds.venmo, sellerIds.tiny].sort().join(), JSON.stringify(mid.notPaid));
 
-await fetch(`${BASE}/webhooks/paypal/${org.id}`, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json', 'paypal-transmission-sig': STUB_SIG },
-  body: webhookBody('SUCCESS'),
-});
+const { id: retryId } = await post(`/swaps/${swap.id}/payout-runs`, { kind: 'PAYPAL' }).then(unwrap);
+const retryChoices = await api(`${O}/payout-runs/${retryId}/choices`).then(unwrap);
+ok('the picker offers them again, marked', retryChoices.length === 2 && retryChoices.every((c) => c.notPaidBefore),
+  JSON.stringify(retryChoices.map((c) => [c.name, c.notPaidBefore])));
+await post(`/payout-runs/${retryId}/sellers`, { sellerIds: [sellerIds.venmo, sellerIds.tiny] });
+let retry = await getRun(retryId);
+ok('their card says PayPal didn’t pay them before', retry.lines.every((l) => l.notPaidBefore.length === 1));
+for (const l of retry.lines) await post(`/payout-runs/${retryId}/lines/${l.id}/approve`, { approved: true });
 
-const afterReal = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(unwrap);
-const paid = afterReal.lines.find((l) => l.id === paypalLine.id);
-ok('a verified webhook moves the line to paid', paid.status === 'SENT', `got ${paid.status}`);
-ok('...and stamps when it arrived', !!paid.sentAt);
-
-console.log('\n── The sweep, for the webhook that never comes ───────────────');
-
-// Same proof by the other road: approve and send the Venmo line, then resolve
-// it with the sweep instead of a webhook. If only one of the two paths worked,
-// the other would be silently covering for it.
-//
-// The eighty-cent line rides along, because there is no floor and the way to
-// show that is a batch with eighty cents in it — not a status that merely
-// failed to say otherwise.
-await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/approve`, {
-  method: 'POST',
-  body: JSON.stringify({ lineIds: [byName('venmo').id, byName('tiny').id], approved: true }),
-}).then(unwrap);
-await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/send`, {
-  method: 'POST', body: JSON.stringify({ expectedLineCount: 2 }),
-}).then(unwrap);
-
-const venmoSending = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(unwrap);
-ok('the second send is its own batch, under a new attempt',
-  stubCalls('createBatch').length === 3 &&
-  stubCalls('createBatch')[2].senderBatchId !== both[0].senderBatchId);
-ok('an eighty-cent payout is actually handed to PayPal',
-  stubCalls('createBatch')[2].items.some((i) => i.amountCents === 80),
-  JSON.stringify(stubCalls('createBatch')[2].items.map((i) => i.amountCents)));
-ok('the Venmo line is in flight',
-  venmoSending.lines.find((l) => l.id === byName('venmo').id).status === 'SENDING');
-const venmoItem = stubCalls('createBatch')[2].items
-  .find((i) => i.senderItemId === byName('venmo').id);
-ok('a Venmo payout is addressed as a user handle',
-  venmoItem?.recipient.recipient_type === 'USER_HANDLE' &&
-  venmoItem?.recipient.recipient_wallet === 'Venmo');
-ok('...with the @ stripped, so two spellings are one destination',
-  venmoItem?.recipient.receiver === 'smoke-venmo');
-
-await api(`/orgs/${org.id}/ski-swap/payout-runs/reconcile`, { method: 'POST' }).then(unwrap);
-
-const swept = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(unwrap);
-ok('the sweep resolves a line no webhook arrived for',
-  swept.lines.find((l) => l.id === byName('venmo').id).status === 'SENT');
-ok('...including the eighty-cent one',
-  swept.lines.find((l) => l.id === byName('tiny').id).status === 'SENT');
-ok('...and a line already paid is not touched again',
-  swept.lines.find((l) => l.id === paypalLine.id).sentAt === paid.sentAt);
-
-console.log('\n── Checks and reports ────────────────────────────────────────');
-
-const checks = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/checks`).then(unwrap);
-ok('only the check seller is on the check register',
-  checks.length === 1 && checks[0].sellerName.startsWith('check'), `got ${checks.length}`);
-ok('the check is for the net amount', checks[0]?.amountCents === 6400,
-  `$80.00 less 20% — got ${checks[0]?.amountCents}`);
-
-const csv = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/checks.csv`).then((r) => r.text());
+// A late sale for the check seller, after their check run closes below: picked
+// up by this send's fresh read, and shown as changed since paid (D9).
+const { id: checkRunId } = await post(`/swaps/${swap.id}/payout-runs`, { kind: 'CHECK' }).then(unwrap);
+await post(`/payout-runs/${checkRunId}/sellers`, { sellerIds: [sellerIds.check] });
+let checkRun = await getRun(checkRunId);
+await post(`/payout-runs/${checkRunId}/lines/${checkRun.lines[0].id}/approve`, { approved: true });
+const closeChecks = await post(`/payout-runs/${checkRunId}/close-checks`, { expectedLineCount: 1 });
+ok('a check run closes and exports once everyone is approved', closeChecks.status === 200, `HTTP ${closeChecks.status}`);
+checkRun = await getRun(checkRunId);
+ok('...frozen, exported, and closed', checkRun.status === 'CLOSED' && checkRun.lines[0].status === 'EXPORTED' && checkRun.lines[0].frozen);
+const csv = await api(`${O}/payout-runs/${checkRunId}/checks.csv`).then((r) => r.text());
 const csvRow = csv.split('\r\n')[1] ?? '';
-ok('the CSV carries the phone number as a readable number',
-  csvRow.includes('"(555) 019-8203"'), csvRow);
-ok('the CSV amount is a bare decimal the column can be summed on',
-  csvRow.includes(',64.00,'), csvRow);
-ok('the CSV carries the address', csvRow.includes('"12 Summit Rd"'));
+ok('the spreadsheet has payee, address, amount, memo and date',
+  csvRow.startsWith('"check Smoke","12 Summit Rd","Stowe","VT","05672",64.00,"Payout smoke swap payout: 1 item",'), csvRow);
 
-await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/lines/${byName('check').id}/check`, {
-  method: 'POST', body: JSON.stringify({ checkNumber: '1043', sentAt: new Date().toISOString() }),
-}).then(unwrap);
-const afterCheck = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(unwrap);
-ok('recording a check marks it paid',
-  afterCheck.lines.find((l) => l.id === byName('check').id).status === 'PAID_BY_CHECK');
+const lateCheck = { key: 'check', sku: 'PAY-010', price: 1000, variation: 'var-check-late', qty: 1, collected: 1000 };
+await addItem(lateCheck);
+sales.push({ orderId: 'stub-order-late-check', paymentId: 'stubpaylate2', variationId: lateCheck.variation, quantity: 1, unitPriceCents: 1000, collectedCents: 1000, refundedQuantity: 0, soldAt: soldAt() });
+saveSales();
 
-const discounts = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/discounts`).then(unwrap);
-ok('the discount report finds the item sold under its listed price',
-  discounts.discounts.length === 1 && discounts.discounts[0].sku === 'PAY-002',
-  `${discounts.discounts.length} found`);
-ok('...and totals what it cost the patrol',
-  discounts.totalGapCents === 1000, `got ${discounts.totalGapCents}`);
+const resend = await post(`/payout-runs/${retryId}/send`, { expectedLineCount: 2 });
+ok('the second run sends', resend.status === 200, `HTTP ${resend.status}`);
+await post('/payout-runs/reconcile');
+retry = await getRun(retryId);
+ok('the sweep resolves payments no webhook arrived for, with transaction IDs',
+  retry.lines.every((l) => l.status === 'SENT' && l.paypal?.transactionId), retry.lines.map((l) => l.status).join());
+ok('...records the fees PayPal reported', retry.batch?.feesCents === 50, JSON.stringify(retry.batch));
+ok('...and the run closes itself', retry.status === 'CLOSED');
 
-console.log('\n── Closing ───────────────────────────────────────────────────');
+const after = await summary();
+ok('nobody is left waiting to be paid by PayPal', after.notPaid?.length === 0, JSON.stringify(after.notPaid));
+const changed = after.changedSincePaid?.find((c) => c.sellerId === sellerIds.check);
+ok('a late sale after the check was exported shows as owed more since paid', changed?.diffCents === 800, JSON.stringify(after.changedSincePaid));
+await post(`/payout-runs/${checkRunId}/lines/${checkRun.lines[0].id}/settle`, { note: 'Second check written' });
+const settled = await summary();
+ok('settling it by hand clears it', !settled.changedSincePaid?.some((c) => c.sellerId === sellerIds.check));
 
-const secondRun = await api(`/orgs/${org.id}/ski-swap/swaps/${swap.id}/payout-runs`, {
-  method: 'POST', body: JSON.stringify({}),
-});
-ok('a second run over the same sales is refused while one is open',
-  secondRun.status === 409, `HTTP ${secondRun.status}`);
-
-await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/close`, { method: 'POST' }).then(unwrap);
-const closed = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}`).then(unwrap);
-ok('closing a run closes it', closed.status === 'CLOSED');
-
-const lateApprove = await api(`/orgs/${org.id}/ski-swap/payout-runs/${run.id}/approve`, {
-  method: 'POST', body: JSON.stringify({ lineIds: [byName('donate').id], approved: true }),
-});
-ok('a closed run approves nothing further', lateApprove.status === 409, `HTTP ${lateApprove.status}`);
-
-console.log('\n── A later run pays only what the first didn’t ───────────────');
-
-// A sale that lands after the first run: the Venmo seller's second item. Every
-// line of the first run is settled (sent, checked, donated), so a second run
-// over the same window must pay this sale and nothing else.
-await prisma.swapItem.create({
-  data: {
-    id: createId(), swapId: swap.id, orgId: org.id, sellerId: sellerIds.venmo,
-    name: 'venmo item PAY-008', sku: 'PAY-008', priceCents: 5000,
-    originalQuantity: 1, squareVariationId: 'var-venmo-2', consignedAt: new Date(),
-  },
-});
-sales.push({ orderId: 'stub-order-late', variationId: 'var-venmo-2', quantity: 1, collectedCents: 5000, refundedQuantity: 0, soldAt: new Date().toISOString() });
-writeFileSync(SALES_FILE, JSON.stringify(sales, null, 2));
-
-const later = await api(`/orgs/${org.id}/ski-swap/swaps/${swap.id}/payout-runs`, {
-  method: 'POST', body: JSON.stringify({}),
-}).then(unwrap);
-ok('the second run knows a run came before it', later.earlierRuns === 1, `got ${later.earlierRuns}`);
-ok('...and pays only the sale the first didn’t: one line, one item',
-  later.lines?.length === 1 && later.lines[0].items.length === 1 && later.lines[0].items[0].sku === 'PAY-008',
-  JSON.stringify(later.lines?.map((l) => [l.sellerName, l.items.map((i) => i.sku)])));
-ok('...for $50.00 less 20%', later.lines?.[0]?.netCents === 4000, `got ${later.lines?.[0]?.netCents}`);
-ok('...and nobody from the first run is on it again',
-  !later.lines?.some((l) => l.items.some((i) => ['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004', 'PAY-005', 'PAY-006'].includes(i.sku))));
-// What "Fund PayPal with $X" is set against: the stub's balance, when the run is started with one.
-const balance = await api(`/orgs/${org.id}/ski-swap/paypal-balance`).then(unwrap);
+const balance = await api(`${O}/paypal-balance`).then(unwrap);
 ok('the PayPal balance answers, as a number or with the reason it can’t',
   typeof balance.availableCents === 'number' || (balance.availableCents === null && typeof balance.message === 'string'),
   JSON.stringify(balance));
-await api(`/orgs/${org.id}/ski-swap/payout-runs/${later.id}/close`, { method: 'POST' }).then(unwrap);
 
 await finish();
 

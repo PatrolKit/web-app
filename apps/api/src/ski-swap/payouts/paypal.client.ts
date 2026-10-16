@@ -28,6 +28,8 @@ export interface PayoutItemStatus {
   payoutItemId: string;
   /** Raw, as PayPal said it. Mapped by `mapItemStatus`, never here. */
   transactionStatus: string;
+  /** PayPal's transaction id once paid: the code the seller sees (Plan 52 D18). */
+  transactionId?: string;
   errorMessage?: string;
 }
 
@@ -41,6 +43,8 @@ export interface PayPalBalance {
 export interface PayoutBatchResult {
   batchId: string;
   batchStatus: string;
+  /** What PayPal charged for the batch, once it says (Plan 52 D17). */
+  feesCents?: number;
   items: PayoutItemStatus[];
 }
 
@@ -281,10 +285,11 @@ export class HttpPayPalClient extends PayPalClient {
 
   private toBatchResult(res: unknown): PayoutBatchResult {
     const r = res as {
-      batch_header?: { payout_batch_id?: string; batch_status?: string };
+      batch_header?: { payout_batch_id?: string; batch_status?: string; fees?: { value?: string } };
       items?: {
         payout_item_id?: string;
         transaction_status?: string;
+        transaction_id?: string;
         errors?: { message?: string };
         payout_item?: { sender_item_id?: string };
       }[];
@@ -292,10 +297,12 @@ export class HttpPayPalClient extends PayPalClient {
     return {
       batchId: r.batch_header?.payout_batch_id ?? '',
       batchStatus: r.batch_header?.batch_status ?? '',
+      feesCents: r.batch_header?.fees?.value !== undefined ? decimalStringToCents(r.batch_header.fees.value) ?? undefined : undefined,
       items: (r.items ?? []).map((i) => ({
         senderItemId: i.payout_item?.sender_item_id ?? '',
         payoutItemId: i.payout_item_id ?? '',
         transactionStatus: i.transaction_status ?? '',
+        transactionId: i.transaction_id || undefined,
         errorMessage: i.errors?.message,
       })),
     };

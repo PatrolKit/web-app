@@ -1005,6 +1005,18 @@ export const UpdateSkiSwapSettingsSchema = z
       .optional(),
     /** Barcodes on a tall item tag: 1 across the foot, or 2, head and foot. */
     barcodesPerTicket: z.union([z.literal(1), z.literal(2)]).optional(),
+    /**
+     * PayPal's fee on each payout, for what a run needs (Plan 52 D17): a flat
+     * part, plus a percentage (basis points) up to a cap.
+     */
+    paypalFee: z
+      .object({
+        flatCents: z.number().int().min(0).max(10_000),
+        bps: z.number().int().min(0).max(10_000),
+        capCents: z.number().int().min(0).max(100_000),
+      })
+      .strict()
+      .optional(),
     /** Name ski boots with their US size beside the Mondopoint. */
     showUsBootSizes: z.boolean().optional(),
     /**
@@ -1071,6 +1083,8 @@ export const SkiSwapSettingsResponseSchema = z.object({
    * percentage back out of a string.
    */
   commissionBasisPoints: z.number().int(),
+  /** PayPal's fee on each payout, for what a run needs (Plan 52 D17). */
+  paypalFee: z.object({ flatCents: z.number().int(), bps: z.number().int(), capCents: z.number().int() }),
   /**
    * The version of this org's item-description tree, so a client can tell
    * whether its cached copy is stale without downloading one to find out.

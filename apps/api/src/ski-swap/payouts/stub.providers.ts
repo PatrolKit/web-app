@@ -80,7 +80,8 @@ export class StubPayPalClient extends PayPalClient {
     return {
       ...found,
       batchStatus: 'SUCCESS',
-      items: found.items.map((i) => ({ ...i, transactionStatus: 'SUCCESS' })),
+      feesCents: found.items.length * 25,
+      items: found.items.map((i) => ({ ...i, transactionStatus: 'SUCCESS', transactionId: `stub-txn-${i.payoutItemId}` })),
     };
   }
 

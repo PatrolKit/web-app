@@ -146,7 +146,7 @@ describe('paying for a ticket sold before it was priced', () => {
   it('owes nothing, and builds no line, when Square didn’t report the typed price', () => {
     const run = buildRun([ticket()], [seller], [sale({ unitPriceCents: null })], opts);
     expect(run.lines).toEqual([]);
-    expect(run.unpricedSales).toEqual([{ itemId: 'i1', sku: '67169', orderId: 'o1' }]);
+    expect(run.unpricedSales).toEqual([{ itemId: 'i1', sku: '67169', orderId: 'o1', sellerId: 's1' }]);
   });
 
   it('records no price for a sale that was refunded', () => {

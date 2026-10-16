@@ -1,12 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
   Param,
   Post,
-  Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -21,17 +21,18 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PayoutRunService } from './payout-run.service';
 import { PayoutNudgeService } from './payout-nudge.service';
 import {
-  ApproveLinesDto,
+  AddPayoutSellersDto,
+  ApproveLineDto,
   CreatePayoutRunDto,
-  RecordCheckDto,
   SendPayoutRunDto,
+  SettlePayoutLineDto,
 } from '../../contracts/payouts.contracts';
 
 /**
- * Payout runs (Plan 25 §4–§10).
+ * Payout runs, built by hand (Plan 52).
  *
  * Reading a run is `ski_swap:report` — a swap chair should be able to see what
- * is owed. Everything that approves, sends or records a payment is
+ * is owed. Everything that builds, approves, sends or records a payment is
  * `ski_swap:admin`, per route rather than on the class, so adding a route here
  * does not quietly inherit the right to move money.
  */
@@ -44,10 +45,11 @@ export class PayoutRunController {
     private readonly nudges: PayoutNudgeService,
   ) {}
 
-  @Get('payout-runs')
+  /** The Payouts page: the runs, and everything to fix before paying. */
+  @Get('swaps/:swapId/payouts-summary')
   @RequirePermissions('ski_swap:report')
-  list(@Param('orgId') orgId: string, @Query('swapId') swapId?: string) {
-    return this.runs.list(orgId, swapId);
+  summary(@Param('orgId') orgId: string, @Param('swapId') swapId: string) {
+    return this.runs.summary(orgId, swapId);
   }
 
   @Post('swaps/:swapId/payout-runs')
@@ -58,10 +60,10 @@ export class PayoutRunController {
     @Body() body: CreatePayoutRunDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.runs.create(orgId, swapId, user.userId, body);
+    return this.runs.create(orgId, swapId, body.kind, user.userId);
   }
 
-  /** PayPal's available balance, for "Fund PayPal with $X" on a run. Reads only. */
+  /** PayPal's available balance, for "can PayPal cover this run". Reads only. */
   @Get('paypal-balance')
   @RequirePermissions('ski_swap:report')
   paypalBalance(@Param('orgId') orgId: string) {
@@ -74,22 +76,54 @@ export class PayoutRunController {
     return this.runs.get(orgId, runId);
   }
 
-  @Get('payout-runs/:runId/discounts')
-  @RequirePermissions('ski_swap:report')
-  discounts(@Param('orgId') orgId: string, @Param('runId') runId: string) {
-    return this.runs.discounts(orgId, runId);
+  /** Only an empty run (D15). */
+  @Delete('payout-runs/:runId')
+  @RequirePermissions('ski_swap:admin')
+  remove(@Param('orgId') orgId: string, @Param('runId') runId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.runs.remove(orgId, runId, user.userId);
   }
 
-  @Post('payout-runs/:runId/approve')
+  /** The sellers this run can take (D3). */
+  @Get('payout-runs/:runId/choices')
+  @RequirePermissions('ski_swap:report')
+  choices(@Param('orgId') orgId: string, @Param('runId') runId: string) {
+    return this.runs.choices(orgId, runId);
+  }
+
+  @Post('payout-runs/:runId/sellers')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  addSellers(
+    @Param('orgId') orgId: string,
+    @Param('runId') runId: string,
+    @Body() body: AddPayoutSellersDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.runs.addSellers(orgId, runId, body.sellerIds, user.userId);
+  }
+
+  @Delete('payout-runs/:runId/sellers/:sellerId')
+  @RequirePermissions('ski_swap:admin')
+  removeSeller(
+    @Param('orgId') orgId: string,
+    @Param('runId') runId: string,
+    @Param('sellerId') sellerId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.runs.removeSeller(orgId, runId, sellerId, user.userId);
+  }
+
+  @Post('payout-runs/:runId/lines/:lineId/approve')
   @HttpCode(200)
   @RequirePermissions('ski_swap:admin')
   approve(
     @Param('orgId') orgId: string,
     @Param('runId') runId: string,
-    @Body() body: ApproveLinesDto,
+    @Param('lineId') lineId: string,
+    @Body() body: ApproveLineDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.runs.approve(orgId, runId, body.lineIds, body.approved, user.userId);
+    return this.runs.approve(orgId, runId, lineId, body.approved, user.userId);
   }
 
   @Post('payout-runs/:runId/send')
@@ -104,58 +138,17 @@ export class PayoutRunController {
     return this.runs.send(orgId, runId, body.expectedLineCount, user.userId);
   }
 
-  @Post('payout-runs/:runId/close')
+  /** A check run: freeze everyone, close it, and export (D13). */
+  @Post('payout-runs/:runId/close-checks')
   @HttpCode(200)
   @RequirePermissions('ski_swap:admin')
-  close(
+  closeChecks(
     @Param('orgId') orgId: string,
     @Param('runId') runId: string,
+    @Body() body: SendPayoutRunDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.runs.close(orgId, runId, user.userId);
-  }
-
-  /**
-   * Asks PayPal what happened to everything still moving (§8).
-   *
-   * Exposed as a button as well as run on a schedule, because the person
-   * staring at a line that has said SENDING for two days wants an answer now,
-   * not at the next sweep.
-   */
-  @Post('payout-runs/reconcile')
-  @HttpCode(200)
-  @RequirePermissions('ski_swap:admin')
-  reconcile(@Param('orgId') orgId: string) {
-    return this.runs.reconcileOrg(orgId);
-  }
-
-  /** Sends whichever unclaimed-payout nudges have come due (§9). */
-  @Post('payout-runs/nudge')
-  @HttpCode(200)
-  @RequirePermissions('ski_swap:admin')
-  nudge(@Param('orgId') orgId: string) {
-    return this.nudges.sweep(orgId);
-  }
-
-  /**
-   * Takes back an unclaimed payout now rather than waiting for PayPal's
-   * thirty-day return (§9).
-   */
-  @Post('payout-runs/:runId/lines/:lineId/cancel')
-  @HttpCode(200)
-  @RequirePermissions('ski_swap:admin')
-  cancelUnclaimed(
-    @Param('orgId') orgId: string,
-    @Param('lineId') lineId: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.nudges.cancelUnclaimed(orgId, lineId, user.userId);
-  }
-
-  @Get('payout-runs/:runId/checks')
-  @RequirePermissions('ski_swap:report')
-  checks(@Param('orgId') orgId: string, @Param('runId') runId: string) {
-    return this.runs.checks(orgId, runId);
+    return this.runs.closeChecks(orgId, runId, body.expectedLineCount, user.userId);
   }
 
   @Get('payout-runs/:runId/checks.csv')
@@ -170,19 +163,72 @@ export class PayoutRunController {
     res.setHeader('Content-Disposition', `attachment; filename="checks-${runId}.csv"`);
     // A BOM, so Excel opens it as UTF-8 rather than guessing at a name with an
     // accent in it.
-    res.send('﻿' + csv);
+    res.send('\ufeff' + csv);
   }
 
-  @Post('payout-runs/:runId/lines/:lineId/check')
+  /** A change after payment, settled outside PatrolKit (D9). */
+  @Post('payout-runs/:runId/lines/:lineId/settle')
   @HttpCode(200)
   @RequirePermissions('ski_swap:admin')
-  recordCheck(
+  settle(
     @Param('orgId') orgId: string,
     @Param('runId') runId: string,
     @Param('lineId') lineId: string,
-    @Body() body: RecordCheckDto,
+    @Body() body: SettlePayoutLineDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.runs.recordCheck(orgId, runId, lineId, body, user.userId);
+    return this.runs.settle(orgId, runId, lineId, body.note, user.userId);
+  }
+
+  /** An unclaimed payment, cancelled at PayPal: final in this run (D19). */
+  @Post('payout-runs/:runId/lines/:lineId/cancel-payment')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  cancelPayment(
+    @Param('orgId') orgId: string,
+    @Param('runId') runId: string,
+    @Param('lineId') lineId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.runs.cancelPayment(orgId, runId, lineId, user.userId);
+  }
+
+  /** "Remind them": the unclaimed-payout email or text, now (D19). */
+  @Post('payout-runs/:runId/lines/:lineId/remind')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  remind(
+    @Param('orgId') orgId: string,
+    @Param('runId') runId: string,
+    @Param('lineId') lineId: string,
+  ) {
+    return this.nudges.remind(orgId, runId, lineId);
+  }
+
+  /** "Check with PayPal" on one run. */
+  @Post('payout-runs/:runId/reconcile')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  reconcileRun(@Param('orgId') orgId: string, @Param('runId') runId: string) {
+    return this.runs.reconcileRun(orgId, runId);
+  }
+
+  /**
+   * Asks PayPal what happened to everything still moving (§8): for a schedule,
+   * or a person who wants an answer now.
+   */
+  @Post('payout-runs/reconcile')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  reconcile(@Param('orgId') orgId: string) {
+    return this.runs.reconcileOrg(orgId);
+  }
+
+  /** Sends whichever unclaimed-payout nudges have come due (§9). */
+  @Post('payout-runs/nudge')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  nudge(@Param('orgId') orgId: string) {
+    return this.nudges.sweep(orgId);
   }
 }

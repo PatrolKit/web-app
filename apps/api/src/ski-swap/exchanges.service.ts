@@ -362,14 +362,14 @@ export class ExchangesService {
     }));
   }
 
-  /** D12: payout runs past draft that already paid these items on these sales. */
+  /** D12: payout lines whose money moved (frozen, Plan 52) on these items and sales. */
   private async paidInRuns(sales: { orderId: string; itemId: string }[]): Promise<Map<string, { runId: string; status: string }>> {
     if (sales.length === 0) return new Map();
     const rows = await this.prisma.payoutLineItem.findMany({
       where: {
         itemId: { in: [...new Set(sales.map((s) => s.itemId))] },
         squareOrderId: { in: [...new Set(sales.map((s) => s.orderId))] },
-        line: { run: { status: { not: 'DRAFT' } } },
+        line: { frozenAt: { not: null }, status: { notIn: ['FAILED', 'RETURNED', 'CANCELLED'] } },
       },
       select: { itemId: true, squareOrderId: true, line: { select: { run: { select: { id: true, status: true } } } } },
     });

@@ -1,4 +1,4 @@
-import { buildRun, countsAsPaid, discountsOf, paidBefore, resolveDestination } from './build-run';
+import { buildRun, discountsOf, resolveDestination } from './build-run';
 import type { RunItem, RunSeller } from './build-run';
 import type { PosSaleLine } from '../pos/pos.adapter';
 
@@ -231,49 +231,18 @@ describe('a ticket rung up more times than it has units (Plan 48)', () => {
 });
 
 
-describe('a later run pays only what earlier runs didn’t settle', () => {
-  const two = [item({ id: 'i1' }), item({ id: 'i2', sku: 'SW-A-0002', squareVariationId: 'v2' })];
-  const sales = [sale({ orderId: 'o1', variationId: 'v1' }), sale({ orderId: 'o2', variationId: 'v2' })];
-
-  it('leaves out a sale an earlier run settled, and pays the rest', () => {
-    const settled = paidBefore([{ itemId: 'i1', squareOrderId: 'o1', quantity: 1 }]);
-    const { lines } = buildRun(two, [seller()], sales, { ...opts, paidBefore: settled });
-    expect(lines).toHaveLength(1);
-    expect(lines[0].items.map((i) => [i.itemId, i.squareOrderId])).toEqual([['i2', 'o2']]);
-    expect(lines[0].grossCents).toBe(10_000);
+describe('each item carries its sale (Plan 52 D10)', () => {
+  it('keeps the payment and the line, for its receipt and "View in Square"', () => {
+    const { lines } = buildRun([item()], [seller()], [sale({ paymentId: 'GqST1234', lineUid: 'L1' })], opts);
+    expect(lines[0].items[0]).toMatchObject({ paymentId: 'GqST1234', lineUid: 'L1', soldAt: SOLD_AT });
   });
 
-  it('builds no line for a seller whose every sale was settled', () => {
-    const settled = paidBefore([{ itemId: 'i1', squareOrderId: 'o1', quantity: 1 }, { itemId: 'i2', squareOrderId: 'o2', quantity: 1 }]);
-    expect(buildRun(two, [seller()], sales, { ...opts, paidBefore: settled }).lines).toEqual([]);
+  it('says so when Square didn’t give them', () => {
+    expect(buildRun([item()], [seller()], [sale()], opts).lines[0].items[0]).toMatchObject({ paymentId: null, lineUid: null });
   });
 
-  it('never pays a ticket twice: a second sale of a settled ticket is held, not paid', () => {
-    const settled = paidBefore([{ itemId: 'i1', squareOrderId: 'o1', quantity: 1 }]);
-    const run = buildRun([item()], [seller()], [sale({ orderId: 'o1' }), sale({ orderId: 'o9', soldAt: new Date('2026-10-10T12:00:00Z') })], { ...opts, paidBefore: settled });
-    expect(run.lines).toEqual([]);
-    expect(run.held).toEqual([expect.objectContaining({ itemId: 'i1', units: 1, orders: ['o9'] })]);
-  });
-
-  it('pays the units of a multi-unit item an earlier run didn’t, with the collected share of the rest', () => {
-    const settled = paidBefore([{ itemId: 'i1', squareOrderId: 'o1', quantity: 1 }]);
-    const { lines } = buildRun([item({ originalQuantity: 3 })], [seller()], [sale({ quantity: 3, collectedCents: 27_000 })], { ...opts, paidBefore: settled });
-    expect(lines[0].items[0]).toMatchObject({ quantity: 2, collectedCents: 18_000 });
-    expect(lines[0].grossCents).toBe(20_000);
-  });
-
-  it('settles sent, in-flight, unclaimed, donated and check lines; pays failed, returned and never-sent ones again', () => {
-    const settles = (method: string, status: string) => countsAsPaid({ method, status });
-    expect(['SENDING', 'SENT', 'UNCLAIMED', 'PAID_BY_CHECK', 'DONATED'].every((st) => settles('PAYPAL', st))).toBe(true);
-    // A check not yet marked sent stays owed on its own run's list: never on two runs.
-    expect([settles('CHECK', 'PENDING'), settles('CHECK', 'APPROVED')]).toEqual([true, true]);
-    expect([settles('PAYPAL', 'FAILED'), settles('VENMO', 'RETURNED'), settles('VENMO', 'PENDING'), settles('PAYPAL', 'APPROVED')]).toEqual([false, false, false, false]);
-  });
-
-  it('adds up an item’s settled units by order, skipping lines with no item', () => {
-    expect([...paidBefore([
-      { itemId: 'i1', squareOrderId: 'o1', quantity: 1 }, { itemId: 'i1', squareOrderId: 'o1', quantity: 1 },
-      { itemId: 'i1', squareOrderId: 'o2', quantity: 1 }, { itemId: null, squareOrderId: 'o3', quantity: 1 },
-    ]).entries()].map(([k, v]) => [k, [...v.entries()]])).toEqual([['i1', [['o1', 2], ['o2', 1]]]]);
+  it('names the seller of an unpriced sale, for their flag', () => {
+    const run = buildRun([item({ priceCents: null })], [seller()], [sale({ unitPriceCents: null })], opts);
+    expect(run.unpricedSales).toEqual([{ itemId: 'i1', sku: 'SW-A-0001', orderId: 'o1', sellerId: 's1' }]);
   });
 });

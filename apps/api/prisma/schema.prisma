@@ -836,6 +836,13 @@ model SkiSwapSettings {
   /// displayed as a percentage, converted only at the edges (Plan 25 §3).
   commissionBasisPoints Int @default(0)
 
+  /// PayPal's fee on each payout, for the estimate of what a run needs (Plan 52
+  /// D17): a flat part, plus a percentage (basis points) up to a cap. PayPal's
+  /// published US rate for the Payouts API is a flat $0.25.
+  paypalFeeFlatCents Int @default(25)
+  paypalFeeBps       Int @default(0)
+  paypalFeeCapCents  Int @default(0)
+
   /// The PIN that unlocks the admin sheet on a `ski_swap.staff_check_in` iPad.
   ///
   /// Four digits, and stored in the clear on purpose: this gates a settings
@@ -1424,39 +1431,26 @@ model PayPalConfig {
 ///
 /// A swap has at most one open run; closing it is what makes the amounts final.
 model PayoutRun {
-  id       String @id
-  orgId    String
-  swapId   String
-  /// DRAFT | REVIEW | CLOSED
-  status   String @db.VarChar(12)
-
-  /// The window the orders were read from, so a re-read is reproducible and a
-  /// sale after the run is visibly after it.
-  salesFrom DateTime
-  salesTo   DateTime
-
-  /// Copied from settings when the run opens. Changing the setting later must
-  /// not restate what a seller has already been told they would get.
-  commissionBasisPoints Int
+  id     String @id
+  orgId  String
+  swapId String
+  /// CHECK | PAYPAL (Plan 52 D1): which sellers it pays. Chosen when the run is
+  /// created and never changed.
+  kind   String @db.VarChar(8)
+  /// OPEN | CLOSED. A PayPal run closes itself once every payment is final; a
+  /// check run closes with "Close and export" (Plan 52 D15).
+  status String @db.VarChar(12)
 
   /// Bumped every time a send is attempted. Half of `sender_batch_id`, which is
   /// what stops PayPal paying a batch twice (§7).
   sendAttempt Int @default(0)
 
-  /// Sales in the window that matched no item of this swap — something rung up
-  /// by hand, a mis-scan, or another swap's stock at the same location (§12).
-  ///
-  /// Kept rather than only logged: this is money the org took that nobody is
-  /// being paid for, and a log line nobody reads is the same as dropping it.
-  /// Frozen with the run, because it is a statement about one reading of the
-  /// orders and re-deriving it would need Square again.
-  unmatchedSales Json?
-
-  /// Sales not paid because their ticket was rung up more times than it has
-  /// units (Plan 48): a double charge, or another item rung up under it. Held
-  /// until it's settled in Sales check, then the run is built again. Frozen
-  /// with the run, as `unmatchedSales` is.
-  heldSales Json?
+  /// The run's one PayPal batch (Plan 52 D18): its id, PayPal's status for it,
+  /// the fees PayPal reported (D17), and why PayPal refused it, if it did (D19).
+  payoutBatchId  String?
+  batchStatus    String? @db.VarChar(12)
+  paypalFeeCents Int?
+  batchReason    String? @db.Text
 
   createdAt DateTime  @default(now())
   closedAt  DateTime?
@@ -1474,52 +1468,69 @@ model PayoutRun {
 model PayoutLine {
   id       String @id
   runId    String
+  swapId   String
   sellerId String
 
-  /// Frozen when the run was built, like a receipt's lines.
-  sellerName  String
-  /// PAYPAL | VENMO | CHECK | DONATE
-  method      String  @db.VarChar(8)
-  /// Resolved at build time, so a seller who changes their email mid-run
-  /// cannot redirect a payment somebody has already approved.
-  destination String?
+  /// `swapId:sellerId` while this line counts, and null once PayPal didn't pay
+  /// them (failed, returned, cancelled): a seller is in one run of a swap at a
+  /// time, and only a payment that didn't pay them frees them (Plan 52 D4).
+  activeKey String? @unique @db.VarChar(80)
+
+  /// Refreshed when the line is frozen.
+  sellerName      String
+  /// PAYPAL | VENMO | CHECK, frozen with the line; null until then (Plan 52 D6).
+  method          String? @db.VarChar(8)
+  /// Where the money went, frozen with the line: the PayPal email or Venmo
+  /// handle, or for a check the mailing address.
+  destination     String?
   /// The PayPal `recipient_type`: EMAIL | PHONE | PAYPAL_ID | USER_HANDLE.
   destinationType String? @db.VarChar(12)
 
-  grossCents      Int
-  commissionCents Int
-  netCents        Int
+  /// Null until frozen: before then a line's amounts are worked out live.
+  grossCents            Int?
+  commissionCents       Int?
+  netCents              Int?
+  /// The patrol's share when the line froze.
+  commissionBasisPoints Int?
+  /// When the money moved and the line stopped changing (Plan 52 D6).
+  frozenAt              DateTime?
 
-  /// PENDING | APPROVED | SENDING | SENT | UNCLAIMED | FAILED | RETURNED |
-  /// PAID_BY_CHECK | DONATED
+  /// PENDING | APPROVED | SENDING | SENT | UNCLAIMED | ONHOLD | FAILED |
+  /// RETURNED | CANCELLED | EXPORTED
   status     String  @db.VarChar(16)
-  /// Why it is where it is: PayPal's failure reason, or that a held item is
-  /// under review.
+  /// Why it is where it is: PayPal's failure reason, or why an approval was
+  /// cleared.
   statusNote String? @db.Text
 
-  /// PayPal's own ids, for reconciling against their dashboard.
+  /// PayPal's own ids, for reconciling against their dashboard, and its
+  /// transaction id once paid: the code the seller sees (Plan 52 D18).
   payoutBatchId String?
   payoutItemId  String?
+  transactionId String? @db.VarChar(64)
 
-  /// Set when a person approved this line. Nothing sends without it.
-  approvedBy String?
-  approvedAt DateTime?
-  sentAt     DateTime?
+  /// Set when a person approved this line, with the total they saw (Plan 52 D7).
+  approvedBy       String?
+  approvedAt       DateTime?
+  approvedNetCents Int?
+  /// When PayPal confirmed the money arrived.
+  sentAt           DateTime?
 
-  /// Check tracking (§10). Null for every other method.
-  checkNumber String?
-  checkSentAt DateTime?
+  /// A change after money moved, settled outside PatrolKit (Plan 52 D9).
+  settledAt   DateTime?
+  settledBy   String?
+  settledNote String?   @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  run    PayoutRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
-  seller SellerProfile @relation(fields: [sellerId], references: [id])
-  items  PayoutLineItem[]
+  run     PayoutRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  seller  SellerProfile    @relation(fields: [sellerId], references: [id])
+  items   PayoutLineItem[]
   notices PayoutNotice[]
 
   @@unique([runId, sellerId])
   @@index([runId, status])
+  @@index([swapId, sellerId])
   @@index([payoutBatchId])
 }
 
@@ -1532,19 +1543,23 @@ model PayoutLineItem {
   /// paid on.
   itemId String?
 
-  name       String
-  sku        String
+  name           String
+  sku            String
   /// What the seller was owed on: `SwapItem.priceCents` at run time, or, for
   /// a ticket sold before it was priced, what the clerk typed (Plan 32).
-  priceCents Int
-  quantity   Int
+  priceCents     Int
+  quantity       Int
   /// What Square actually took, which may be less. Recorded so the org can see
   /// what a discount cost it; never what the seller is paid on.
   collectedCents Int
   /// The order this came from, and when. What makes the payout defensible.
-  squareOrderId String
-  soldAt        DateTime
-  refundedQty   Int @default(0)
+  squareOrderId  String
+  soldAt         DateTime
+  /// The sale's payment and line, so a frozen item keeps its receipt and its
+  /// "View in Square" link (Plan 52 D10).
+  paymentId      String?  @db.VarChar(64)
+  lineUid        String?  @db.VarChar(64)
+  refundedQty    Int      @default(0)
 
   line PayoutLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
 

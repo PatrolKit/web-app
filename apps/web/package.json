@@ -12,6 +12,7 @@
     "icons:render": "node scripts/render-taxonomy-icons.mjs"
   },
   "dependencies": {
+    "@awesome.me/kit-9b475e388e": "1.0.3",
     "@fortawesome/fontawesome-svg-core": "^7.3.1",
     "@fortawesome/free-solid-svg-icons": "^7.3.1",
     "@fortawesome/pro-duotone-svg-icons": "^7.3.1",

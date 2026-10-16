@@ -1,5 +1,6 @@
 /**
- * The check register, as a spreadsheet (Plan 25 §10).
+ * A closed check run, as a spreadsheet (Plan 52 D13): one row per check, in
+ * plain columns for whatever program the patrol writes checks with.
  *
  * Pure, and tested, because this file is printed onto real checks and posted to
  * real addresses. A column silently shifted by one is somebody's money in
@@ -7,47 +8,62 @@
  */
 
 export interface CheckRow {
-  sellerName: string;
+  payee: string;
   street: string | null;
   city: string | null;
   state: string | null;
   zip: string | null;
-  /** Already formatted for reading. See `phoneForHumans`. */
-  phone: string | null;
   amountCents: number;
-  /** The payout line id: what to write in the memo, and what to search on later. */
-  reference: string;
-  checkNumber: string | null;
-  sentAt: Date | null;
+  /** What the check is for, e.g. "Fall Ski Swap payout: 6 items". */
+  memo: string;
+  /** When the run was closed and exported. */
+  date: Date;
 }
 
-export const CHECK_CSV_HEADERS = [
-  'Name', 'Street', 'City', 'State', 'ZIP', 'Phone',
-  'Amount', 'Reference', 'Check number', 'Sent',
-] as const;
+export const CHECK_CSV_HEADERS = ['Payee', 'Street', 'City', 'State', 'ZIP', 'Amount', 'Memo', 'Date'] as const;
 
 export function checksToCsv(rows: CheckRow[]): string {
   const lines = [CHECK_CSV_HEADERS.join(',')];
   for (const row of rows) {
     lines.push(
       [
-        cell(row.sellerName),
+        cell(row.payee),
         cell(row.street),
         cell(row.city),
         cell(row.state),
         cell(row.zip),
-        cell(row.phone),
         // Bare decimal, no currency symbol: this column is summed and mail-merged.
         (row.amountCents / 100).toFixed(2),
-        cell(row.reference),
-        cell(row.checkNumber),
-        cell(row.sentAt ? row.sentAt.toISOString().slice(0, 10) : ''),
+        cell(row.memo),
+        cell(row.date.toISOString().slice(0, 10)),
       ].join(','),
     );
   }
   // A trailing newline, because a file without one loses its last row to some
   // importers and to `wc -l`.
   return lines.join('\r\n') + '\r\n';
+}
+
+/** A check's mailing address, frozen on its line as `destination` (Plan 52 D6). */
+export interface CheckAddress { street: string | null; city: string | null; state: string | null; zip: string | null }
+
+export function addressToDestination(a: CheckAddress): string {
+  return JSON.stringify({ street: a.street, city: a.city, state: a.state, zip: a.zip });
+}
+
+export function destinationToAddress(destination: string | null): CheckAddress {
+  try {
+    const a = destination ? (JSON.parse(destination) as Partial<CheckAddress>) : {};
+    return { street: a.street ?? null, city: a.city ?? null, state: a.state ?? null, zip: a.zip ?? null };
+  } catch {
+    return { street: destination, city: null, state: null, zip: null };
+  }
+}
+
+/** "12 Main St, Stowe, VT 05672" */
+export function addressText(a: CheckAddress): string | null {
+  const cityLine = [a.city, [a.state, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  return [a.street, cityLine].filter(Boolean).join(', ') || null;
 }
 
 /**

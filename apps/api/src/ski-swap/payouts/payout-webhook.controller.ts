@@ -84,6 +84,7 @@ export class PayoutWebhookController {
           senderItemId,
           payoutItemId: resource.payout_item_id ?? '',
           transactionStatus: resource.transaction_status ?? '',
+          transactionId: resource.transaction_id,
           errorMessage: resource.errors?.message,
         },
       ]);
@@ -109,6 +110,7 @@ interface PayPalWebhookEvent {
     payout_item_id?: string;
     payout_batch_id?: string;
     transaction_status?: string;
+    transaction_id?: string;
     errors?: { message?: string };
     payout_item?: { sender_item_id?: string };
     batch_header?: { payout_batch_id?: string };

@@ -15,8 +15,8 @@ export type PayPalItemStatus = (typeof PAYPAL_ITEM_STATUSES)[number];
 
 /** What we call it. */
 export type LineStatus =
-  | 'PENDING' | 'APPROVED' | 'SENDING' | 'SENT' | 'UNCLAIMED'
-  | 'FAILED' | 'RETURNED' | 'PAID_BY_CHECK' | 'DONATED';
+  | 'PENDING' | 'APPROVED' | 'SENDING' | 'SENT' | 'UNCLAIMED' | 'ONHOLD'
+  | 'FAILED' | 'RETURNED' | 'CANCELLED' | 'EXPORTED';
 
 export interface MappedStatus {
   status: LineStatus;
@@ -51,7 +51,7 @@ export function mapItemStatus(raw: string): MappedStatus {
       // Named rather than lumped with PENDING: PayPal describes it as under
       // review, which can sit for days, and a treasurer asking why it has not
       // landed deserves better than a spinner.
-      return { status: 'SENDING', terminal: false, note: 'PayPal has this item under review' };
+      return { status: 'ONHOLD', terminal: false, note: 'PayPal has this item under review' };
     default:
       throw new Error(`Unrecognised PayPal payout item status: ${raw}`);
   }

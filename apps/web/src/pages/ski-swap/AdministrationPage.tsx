@@ -428,7 +428,7 @@ function PayoutsSection({ orgId }: { orgId: string }) {
   const [percent, setPercent] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: (data: { commissionPercent?: string }) =>
+    mutationFn: (data: { commissionPercent?: string; paypalFee?: { flatCents: number; bps: number; capCents: number } }) =>
       api.skiSwap.updateSettings(orgId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ski-swap/settings', orgId] });
@@ -489,6 +489,8 @@ function PayoutsSection({ orgId }: { orgId: string }) {
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
           </div>
         </div>
+
+        {settings && <PayPalFeeSetting key={JSON.stringify(settings.paypalFee)} fee={settings.paypalFee} onSave={(paypalFee) => mutation.mutate({ paypalFee })} />}
 
         {mutation.isError && (
           <p className="text-xs text-red-400">
@@ -841,6 +843,52 @@ function ResetButton({ orgId, disabled, onDone }: { orgId: string; disabled: boo
       {mutation.isError && (
         <p className="text-red-400 text-xs">{mutation.error instanceof ApiError ? mutation.error.message : 'Reset failed'}</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * PayPal's fee on each payout (Plan 52 D17): what a PayPal run says it needs
+ * is the sellers' total plus this on each payment. PayPal's published US rate
+ * for payouts sent through its API is a flat $0.25.
+ */
+function PayPalFeeSetting({ fee, onSave }: { fee: { flatCents: number; bps: number; capCents: number }; onSave: (fee: { flatCents: number; bps: number; capCents: number }) => void }) {
+  const [flat, setFlat] = useState((fee.flatCents / 100).toFixed(2));
+  const [pct, setPct] = useState(String(fee.bps / 100));
+  const [cap, setCap] = useState((fee.capCents / 100).toFixed(2));
+  const cents = (v: string) => Math.round(Number(v.replace(/[$,\s]/g, '')) * 100);
+  const save = () => {
+    const next = { flatCents: cents(flat), bps: Math.round(Number(pct.replace(/[%\s]/g, '')) * 100), capCents: cents(cap) };
+    if ([next.flatCents, next.bps, next.capCents].some((n) => !Number.isFinite(n) || n < 0)) return;
+    if (next.flatCents === fee.flatCents && next.bps === fee.bps && next.capCents === fee.capCents) return;
+    onSave(next);
+  };
+  const field = (label: string, value: string, set: (v: string) => void, unit: string, prefix = false) => (
+    <label className="flex items-center gap-1.5 text-xs text-gray-400">
+      {label}
+      <span className="relative">
+        {prefix && <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">{unit}</span>}
+        <input inputMode="decimal" value={value} onChange={(e) => set(e.target.value)} onBlur={save}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+          className={`w-20 bg-surface-100 border border-gray-700 rounded py-1.5 text-sm text-white text-right ${prefix ? 'pl-5 pr-2' : 'pl-2 pr-6'}`} />
+        {!prefix && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500">{unit}</span>}
+      </span>
+    </label>
+  );
+  return (
+    <div className="border-t border-gray-800 pt-4 space-y-2">
+      <div className="space-y-1">
+        <p className="text-sm text-white">PayPal’s fee on each payout</p>
+        <p className="text-xs text-gray-500">
+          For what a PayPal run says it needs. PayPal’s US rate for payouts sent the way PatrolKit sends them is a flat $0.25 a payment, Venmo too.
+          Change it only if your PayPal account is on other terms.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-4">
+        {field('Flat', flat, setFlat, '$', true)}
+        {field('plus', pct, setPct, '%')}
+        {field('at most', cap, setCap, '$', true)}
+      </div>
     </div>
   );
 }

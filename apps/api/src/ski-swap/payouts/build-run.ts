@@ -56,6 +56,9 @@ export interface BuiltLineItem {
   squareOrderId: string;
   soldAt: Date;
   refundedQty: number;
+  /** The sale's payment and line, for its receipt and "View in Square" (Plan 52 D10). */
+  paymentId: string | null;
+  lineUid: string | null;
 }
 
 export interface BuiltLine {
@@ -95,7 +98,7 @@ export interface BuiltRun {
    * without them would underpay quietly, so the run isn't built until staff
    * price them. Square includes the price on catalog sales, so this is a guard.
    */
-  unpricedSales: { itemId: string; sku: string; orderId: string }[];
+  unpricedSales: { itemId: string; sku: string; orderId: string; sellerId: string }[];
   /**
    * Sales not paid because the ticket was rung up more times than it has
    * units (Plan 48): a double charge, or another item rung up under it. Held
@@ -121,42 +124,11 @@ export interface HeldSale {
 
 export interface BuildOptions {
   commissionBasisPoints: number;
-  /**
-   * What earlier runs of the swap settled, by item and order: units already
-   * paid, or still owed on an earlier run's check list. Those sales are left
-   * out, so a later run pays only what's left and a seller is never paid twice
-   * for one sale. Built by `paidBefore`.
-   */
-  paidBefore?: Map<string, Map<string, number>>;
 }
 
 /**
- * Whether an earlier run's line settles its sales, so a later run leaves them
- * out. Sent, in flight, unclaimed (it may yet come back), donated, or a check
- * marked sent: settled. A check line not yet marked sent stays owed on that
- * run's check list, where it's printed from, so it counts too: a check is never
- * on two runs. Failed, returned, and PayPal or Venmo never sent (no usable
- * destination, or approved and not sent) are payable again.
- */
-export function countsAsPaid(line: { method: string; status: string }): boolean {
-  if (['SENDING', 'SENT', 'UNCLAIMED', 'PAID_BY_CHECK', 'DONATED'].includes(line.status)) return true;
-  return line.method === 'CHECK' && (line.status === 'PENDING' || line.status === 'APPROVED');
-}
-
-/** Earlier runs' line items, as `paidBefore`: units by item, then by order. Lines `countsAsPaid` only. */
-export function paidBefore(rows: { itemId: string | null; squareOrderId: string; quantity: number }[]): Map<string, Map<string, number>> {
-  const out = new Map<string, Map<string, number>>();
-  for (const r of rows) {
-    if (!r.itemId) continue;
-    const byOrder = out.get(r.itemId) ?? new Map<string, number>();
-    byOrder.set(r.squareOrderId, (byOrder.get(r.squareOrderId) ?? 0) + r.quantity);
-    out.set(r.itemId, byOrder);
-  }
-  return out;
-}
-
-/**
- * Builds a run's lines from a swap's items and a window of sales.
+ * Works out what each seller is owed from a swap's items and all its sales
+ * (Plan 52 D2, D6): worked out live whenever a run is shown, until it's frozen.
  *
  * The amount owed is the item's **listed price**, never what the register took.
  * A discount was the org's to give, and a seller who agreed a price should not
@@ -204,7 +176,7 @@ export function buildRun(
     // owed on what the clerk typed for this sale (Plan 32 D4).
     const unitCents = item.priceCents ?? sale.unitPriceCents;
     if (unitCents === null) {
-      unpricedSales.push({ itemId: item.id, sku: item.sku, orderId: sale.orderId });
+      unpricedSales.push({ itemId: item.id, sku: item.sku, orderId: sale.orderId, sellerId: item.sellerId });
       continue;
     }
     const entry = byItem.get(item.id) ?? { item, sales: [] };
@@ -213,24 +185,10 @@ export function buildRun(
   }
 
   for (const { item, sales: all } of byItem.values()) {
-    // Settled by an earlier run: those sales, unit for unit by order, are left
-    // out, and only the units not yet paid can be paid now.
-    const earlier = opts.paidBefore?.get(item.id);
-    let paidUnits = 0;
-    let sold = all;
-    if (earlier) {
-      const left = new Map(earlier);
-      paidUnits = [...earlier.values()].reduce((n, q) => n + q, 0);
-      sold = all.map((s) => {
-        const take = Math.min(left.get(s.sale.orderId) ?? 0, s.soldQty);
-        if (take) left.set(s.sale.orderId, (left.get(s.sale.orderId) ?? 0) - take);
-        return { ...s, soldQty: s.soldQty - take };
-      }).filter((s) => s.soldQty > 0);
-      if (!sold.length) continue;
-    }
+    const sold = all;
     // Never more units than were checked in (Plan 48). The earliest sales
     // are the ones paid; a line is split when only part of it fits.
-    const cap = Math.max(0, item.originalQuantity - paidUnits);
+    const cap = Math.max(0, item.originalQuantity);
     const total = sold.reduce((n, s) => n + s.soldQty, 0);
     let paying = sold.map((s) => ({ ...s, payQty: s.soldQty }));
     if (total > cap) {
@@ -272,6 +230,8 @@ export function buildRun(
         squareOrderId: sale.orderId,
         soldAt: sale.soldAt,
         refundedQty: sale.refundedQuantity,
+        paymentId: sale.paymentId ?? null,
+        lineUid: sale.lineUid ?? null,
       });
       owedBySeller.set(item.sellerId!, list);
     }
