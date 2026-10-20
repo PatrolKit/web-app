@@ -19,46 +19,16 @@ export interface SalesCheckGroup {
 
 /** Most worth fixing first: a seller unpaid for a sale we can place, then what we can't. */
 const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
-  {
-    kind: 'other_copy', title: 'Sold on another copy of a ticket',
-    explain: 'The ticket scanned as last year’s item, or a duplicate, so the sale isn’t on this year’s. Its seller won’t be paid for it until it is.',
-  },
-  {
-    kind: 'register_item', title: 'Sold on an item made at the register',
-    explain: 'Someone made a new item at the register, named for a ticket. Accept the suggestion so that ticket’s seller is paid.',
-  },
-  {
-    kind: 'scanned_twice', title: 'Scanned twice in one sale',
-    explain: 'The ticket was rung up more than once in the same sale: twice, as a quantity of 2, or again on another copy. Each ticket is one item, so either the customer paid for it twice (refund the extra in Square, and it leaves this list once Square shows the refund; or settle it outside Square) or another item was rung up under this ticket (check the receipt and the stubs, and note which ticket it was). Either way, Pay once picks the line its seller is paid for; the rest stay unpaid.',
-  },
-  {
-    kind: 'double_fee', title: 'Charged both fees',
-    explain: 'Square’s credit card surcharge and the Shop Fee were both charged on this sale. In Square, open the sale, choose Issue refund, and refund the Shop Fee only. It leaves this list once Square shows the refund.',
-  },
-  {
-    kind: 'cash_fee', title: 'Shop Fee on a cash sale',
-    explain: 'The Shop Fee is for card payments, but this sale was paid all in cash. In Square, refund the Shop Fee only. It leaves this list once Square shows the refund.',
-  },
-  {
-    kind: 'oversold', title: 'Counted as sold more than once',
-    explain: 'The ticket sold in two different sales, but each ticket is one item: one sale was really another ticket, or the first was returned without a refund in Square. Check the receipts and stubs, and note what you find. If an accepted suggestion caused it, undo that below.',
-  },
-  {
-    kind: 'price_paid', title: 'Sold for a different price',
-    explain: 'Rung up at another price than PatrolKit’s, typed at the register or discounted. The seller is paid PatrolKit’s price, so the difference is the patrol’s. If the price paid was right, set PatrolKit’s price to it and the seller is paid that; if not, keep PatrolKit’s.',
-  },
-  {
-    kind: 'unknown_ticket', title: 'A ticket PatrolKit doesn’t have',
-    explain: 'The number isn’t one of this swap’s tickets. Find its seller from the stub, then issue it to them: the new item is priced at what Square sold it for, in PatrolKit and Square, and the sale goes on it.',
-  },
-  {
-    kind: 'custom_amount', title: 'Custom amounts',
-    explain: 'Typed in at the register, with no item. Pick the item it was for, or say it isn’t a swap sale.',
-  },
-  {
-    kind: 'other_item', title: 'Other items',
-    explain: 'Sold at the swap’s location, but not swap items, such as the patrol’s swag. Stop counting a whole Square category, or set single sales aside.',
-  },
+  { kind: 'other_copy', title: 'Sold on another copy of a ticket', explain: 'Rung up on last year’s copy of the ticket, or a duplicate. Accept it so the seller is paid.' },
+  { kind: 'register_item', title: 'Sold on an item made at the register', explain: 'An item made at the register, named for a ticket. Accept it so that ticket’s seller is paid.' },
+  { kind: 'scanned_twice', title: 'Scanned twice in one sale', explain: 'One ticket rung up more than once in a sale. Pay once pays its seller for exactly one, at the list price.' },
+  { kind: 'double_fee', title: 'Charged both fees', explain: 'Charged Square’s surcharge and the Shop Fee. Refund the Shop Fee in Square.' },
+  { kind: 'cash_fee', title: 'Shop Fee on a cash sale', explain: 'The Shop Fee is for cards. Refund it in Square.' },
+  { kind: 'oversold', title: 'Counted as sold more than once', explain: 'Sold in two different sales: one was really another ticket, or a return wasn’t refunded in Square.' },
+  { kind: 'price_paid', title: 'Sold for a different price', explain: 'Rung up at another price than PatrolKit’s. The seller is paid PatrolKit’s, unless you set it from the sale.' },
+  { kind: 'unknown_ticket', title: 'A ticket PatrolKit doesn’t have', explain: 'Not one of this swap’s tickets. Find its seller from the stub, and issue it to them.' },
+  { kind: 'custom_amount', title: 'Custom amounts', explain: 'Typed in at the register, with no item. Pick the item it was for.' },
+  { kind: 'other_item', title: 'Other items', explain: 'Not swap items, such as the patrol’s swag. Set them aside, or stop counting their category.' },
 ];
 
 export function money(cents: number): string {
@@ -316,7 +286,7 @@ export function paidPriceDoneText(p: NonNullable<SalesCheckIssue['paid']>, choic
 export function missedFeesText(m: { orders: number; cardCents: number; feeCents: number | null; percentage: string | null } | null): string | null {
   if (!m || m.orders === 0) return null;
   const about = m.feeCents !== null && m.percentage ? ` (about ${money(m.feeCents)} at ${m.percentage}%)` : '';
-  return `${m.orders.toLocaleString('en-US')} card sale${m.orders === 1 ? ' was' : 's were'} charged no fee${about}. Counted here, not flagged.`;
+  return `${m.orders.toLocaleString('en-US')} card sale${m.orders === 1 ? '' : 's'} charged no fee${about}.`;
 }
 
 /**

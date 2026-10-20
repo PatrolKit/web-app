@@ -123,9 +123,8 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
               {open === 0 ? '✓ Every sale is on one of this swap’s items' : `${open.toLocaleString('en-US')} sale${open === 1 ? '' : 's'} to check`}
             </p>
             <p className="text-xs text-gray-500">
-              Sales at the swap’s location that PatrolKit can’t put on one of its items, and fees to refund · from Square as of {asOf}
+              From Square as of {asOf}{missedFeesText(data.missedFees) ? ` · ${missedFeesText(data.missedFees)}` : ''}
             </p>
-            {missedFeesText(data.missedFees) && <p className="text-xs text-gray-500">{missedFeesText(data.missedFees)}</p>}
           </div>
           {canFix && suggested.length > 0 && (
             <div className="flex flex-wrap items-center gap-3">
@@ -460,7 +459,7 @@ function Decided({ d, orgId, swapId, canFix, onUndone }: {
         {d.decision === 'CREDIT' ? `${money(d.collectedCents)} sale put on ${d.item ? `${d.item.sku} ${d.item.name}` : 'an item'}`
           : d.decision === 'FEE_HANDLED' ? `${money(d.collectedCents)} fee marked refunded`
             : d.decision === 'PRICE_KEPT' ? `PatrolKit price kept on ${d.item ? `${d.item.sku} ${d.item.name}` : 'an item'}, sold for ${money(d.collectedCents)}`
-            : d.decision === 'PAID_ONCE' ? `${d.item ? `${d.item.sku} ${d.item.name}` : 'A ticket'} paid once; the extra ${money(d.collectedCents)} settled outside Square`
+            : d.decision === 'PAID_ONCE' ? `${d.item ? `${d.item.sku} ${d.item.name}` : 'A ticket'} paid for once; ${money(d.collectedCents)} more isn’t paid to anyone`
             : `Not a swap sale (${money(d.collectedCents)})`}
       </span>
       {d.note && <span>“{d.note}”</span>}

@@ -146,7 +146,7 @@ describe('the fee check', () => {
   });
 
   it('counts card sales charged no fee', () => {
-    expect(missedFeesText({ orders: 97, cardCents: 1915250, feeCents: 49797, percentage: '2.6' })).toBe('97 card sales were charged no fee (about $497.97 at 2.6%). Counted here, not flagged.');
+    expect(missedFeesText({ orders: 97, cardCents: 1915250, feeCents: 49797, percentage: '2.6' })).toBe('97 card sales charged no fee (about $497.97 at 2.6%).');
     expect([missedFeesText({ orders: 0, cardCents: 0, feeCents: null, percentage: null }), missedFeesText(null)]).toEqual([null, null]);
   });
 });
