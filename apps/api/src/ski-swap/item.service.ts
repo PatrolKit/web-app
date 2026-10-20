@@ -27,7 +27,7 @@ import { createId } from '@paralleldrive/cuid2';
 import sharp from 'sharp';
 import { stationCodeOf, uncategorisedName } from './sku.util';
 import type { ItemResponse, UnpricedTicket } from '../contracts/ski-swap.contracts';
-import { idsBySales, searchedField, sortRows, type ItemListView, type ItemSort } from './item-list-order';
+import { bySearchRank, idsBySales, searchedField, sortRows, type ItemListView, type ItemSort } from './item-list-order';
 import { ItemBreakdownService } from './item-breakdown.service';
 import { servingDevice } from './device-stock.interceptor';
 import { CLAIM_RELEASED, claimForSquareCreate, releaseSquareCreateClaim } from './square-create-claim';
@@ -295,11 +295,13 @@ export class ItemService {
       });
       for (const sl of sellers) sellerNames.set(sl.id, sellerDisplayName(sl));
     }
-    const ordered = sortRows(
+    const sorted = sortRows(
       light.map((r) => ({ ...r, sellerName: r.sellerId ? sellerNames.get(r.sellerId) ?? null : null })),
       sortBy,
       dir,
     );
+    // A search with no sort asked for puts its best matches first.
+    const ordered = opts.sort ? sorted : bySearchRank(sorted, opts.query!);
     return { ordered, sortBy };
   }
 

@@ -1,4 +1,4 @@
-import { idsBySales, searchedField, sortRows, type SalesFilterRow, type SortRow } from './item-list-order';
+import { bySearchRank, idsBySales, searchedField, sortRows, type SalesFilterRow, type SortRow } from './item-list-order';
 
 const row = (sku: string, over: Partial<SortRow> = {}): SortRow => ({
   id: sku, sku, name: `Item #${sku}`, priceCents: 1000, sellerName: null, hasPrintedTag: true, ...over,
@@ -41,6 +41,11 @@ describe('a search with no sort asked for', () => {
   });
   it('by seller when it matched only sellers', () => {
     expect(searchedField([r('67012', 'Skis')], 'dana')).toBe('seller');
+  });
+  it('lists the exact ticket first, then SKUs, names and sellers, each in the order it had', () => {
+    // 1001–1003 matched a seller whose phone has the digits; 87024 is the ticket.
+    const rows = [r('1001', 'Skis'), r('1002', 'Boots'), r('1003', 'Poles 87024'), r('187024', 'Helmet'), r('87024', 'Skis')];
+    expect(bySearchRank(rows, ' 87024 ').map((x) => x.sku)).toEqual(['87024', '187024', '1003', '1001', '1002']);
   });
 });
 

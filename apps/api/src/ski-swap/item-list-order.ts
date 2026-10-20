@@ -101,6 +101,26 @@ export function searchedField(
   return 'seller';
 }
 
+/**
+ * A search's best matches first, ahead of the field order: the ticket whose
+ * SKU is the search, then SKUs that contain it, then names, then rows that
+ * matched only their seller (a name, email or phone). "87024" lists 87024
+ * first, not after every item of a seller whose phone has those digits in it.
+ * Within a rank the order is kept, so the rest still read by SKU or name.
+ */
+export function bySearchRank<T extends { sku: string; name: string }>(rows: T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  const rank = (r: T): number => {
+    const sku = r.sku.toLowerCase();
+    if (sku === q) return 0;
+    if (sku.includes(q)) return 1;
+    if (r.name.toLowerCase().includes(q)) return 2;
+    return 3;
+  };
+  const ranks = new Map(rows.map((r) => [r, rank(r)]));
+  return [...rows].sort((a, b) => ranks.get(a)! - ranks.get(b)!);
+}
+
 /** Business sellers (a shop: `businessName` set), or individuals. */
 export const SELLER_KINDS = ['business', 'individual'] as const;
 export type SellerKind = (typeof SELLER_KINDS)[number];
