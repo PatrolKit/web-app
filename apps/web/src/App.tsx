@@ -166,7 +166,7 @@ export default function App() {
               <Route index element={<ExchangesPage />} />
               <Route path="comps" element={<CompsPage />} />
             </Route>
-            <Route path="reports" element={<ReportsLayout />}>
+            <Route path="verify" element={<ReportsLayout />}>
               <Route index element={<SalesCheckPage />} />
               <Route path="catalog" element={<CatalogCheckPage />} />
             </Route>

@@ -26,7 +26,7 @@ function errorText(err: unknown): string {
 }
 
 /**
- * Catalog check (Plan 48 D2): Plan 41's swap diagnostics as a page in Reports,
+ * Catalog check (Plan 48 D2): Plan 41's swap diagnostics as a page in Verify,
  * for the selected swap. Our items against Square, by SKU, and (D11) any other
  * Square item a scan of one of our tickets could find. Running the checks
  * reads Square and records what it found; nothing changes until someone picks
@@ -122,7 +122,7 @@ function CatalogCheck({ orgId, swapId, title }: { orgId: string; swapId: string;
       {run?.status === 'done' && waiting > 0 && (
         <p className="text-sm text-amber-400">
           ⏸ {waitingText(waiting)}{' '}
-          <Link to="/dashboard/ski-swap/reports" className="underline hover:text-amber-300">Open Sales check</Link>
+          <Link to="/dashboard/ski-swap/verify" className="underline hover:text-amber-300">Open Sales check</Link>
         </p>
       )}
       {run?.status === 'done' && openCount === 0 && (
@@ -229,7 +229,7 @@ function Group({ group, run, orgId, swapId, sellers, onChanged, onDecided, folde
         {group.held > 0 && (
           <p className="text-xs text-amber-400">
             {group.held === 1 ? 'One has' : `${group.held} have`} an open sale in Sales check, so {group.held === 1 ? 'it’s' : 'they’re'} left out of the choices below.{' '}
-            <Link to="/dashboard/ski-swap/reports" className="underline hover:text-amber-300">Open Sales check</Link>
+            <Link to="/dashboard/ski-swap/verify" className="underline hover:text-amber-300">Open Sales check</Link>
           </p>
         )}
         {fixable > 1 && (
@@ -330,7 +330,7 @@ function PriceCard({ issue, orgId, swapId, onDecided, note, onSaveNote }: {
       {held ? (
         <p className="px-3 py-2 border-t border-gray-800 text-xs text-amber-300 bg-amber-900/20">
           ⏸ {heldText(issue)}{' '}
-          <Link to="/dashboard/ski-swap/reports" className="underline hover:text-amber-200">Open Sales check</Link>
+          <Link to="/dashboard/ski-swap/verify" className="underline hover:text-amber-200">Open Sales check</Link>
         </p>
       ) : (
         <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40">
@@ -435,7 +435,7 @@ function IssueRow({ issue, orgId, swapId, sellers, onDecided, note, onSaveNote }
       {held && (
         <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-800/50 rounded px-2 py-1.5">
           ⏸ {heldText(issue)}{' '}
-          <Link to="/dashboard/ski-swap/reports" className="underline hover:text-amber-200">Open Sales check</Link>
+          <Link to="/dashboard/ski-swap/verify" className="underline hover:text-amber-200">Open Sales check</Link>
         </p>
       )}
       {issue.state === 'failed' && issue.error && <p className="text-xs text-red-400">{issue.error}</p>}

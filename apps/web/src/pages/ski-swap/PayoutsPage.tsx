@@ -155,7 +155,7 @@ export default function PayoutsPage() {
                   </li>
                 ))}
               </ul>
-              <Link to="/dashboard/ski-swap/reports" className="text-xs text-amber-300 underline">Open Sales check</Link>
+              <Link to="/dashboard/ski-swap/verify" className="text-xs text-amber-300 underline">Open Sales check</Link>
             </div>
           )}
         </div>

@@ -151,8 +151,8 @@ export default function SwapsPage() {
                   <td className="py-2 flex gap-3">
                     <button onClick={() => setEditing(s)}
                       className="text-xs text-brand-500 hover:underline">Edit</button>
-                    {/* Diagnostics live in Reports › Catalog check now (Plan 48 D2), for this swap. */}
-                    <button onClick={() => { setSelectedSwapId(s.id); navigate('/dashboard/ski-swap/reports/catalog'); }}
+                    {/* Diagnostics live in Verify › Catalog check now (Plan 48 D2), for this swap. */}
+                    <button onClick={() => { setSelectedSwapId(s.id); navigate('/dashboard/ski-swap/verify/catalog'); }}
                       className="text-xs text-brand-500 hover:underline">Diagnostics</button>
                     <button onClick={() => toggleMutation.mutate({ id: s.id, active: !s.active })}
                       disabled={toggleMutation.isPending}

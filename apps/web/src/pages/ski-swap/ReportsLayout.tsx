@@ -5,7 +5,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   `text-sm px-3 py-1.5 rounded transition ${isActive ? 'bg-surface-100 text-white' : 'text-gray-400 hover:text-white'}`;
 
 /**
- * Reports (Plan 48): what Square and PatrolKit disagree about, for the
+ * Verify (Plan 48; once "Reports"): what Square and PatrolKit disagree about, for the
  * selected swap. Sales check is the sales side; Catalog check (Plan 41's
  * diagnostics) is the catalogue side. Reading either changes nothing.
  */

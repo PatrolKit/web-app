@@ -5,7 +5,7 @@ import type { IssueNote } from '../../lib/api.types';
 import NewTabLink from '../../components/NewTabLink';
 
 /**
- * The Reports tab's cards (Plan 48), shared by Sales check and Catalog check:
+ * The Verify tab's cards (Plan 48), shared by Sales check and Catalog check:
  * one side of a comparison as labelled fields with its links, the tombstone
  * a decided card leaves in its place, and sections that fold.
  */

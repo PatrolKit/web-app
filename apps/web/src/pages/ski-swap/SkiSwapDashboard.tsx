@@ -153,7 +153,7 @@ export default function SkiSwapDashboard() {
       {/* Sales PatrolKit can't put on an item (Plan 48): a seller may be
           going unpaid. Admins only, as the fixes are. Counting reads only. */}
       {(salesToCheck?.open ?? 0) > 0 && (
-        <Link to="/dashboard/ski-swap/reports" className={`${issueCard} hover:border-amber-600`}>
+        <Link to="/dashboard/ski-swap/verify" className={`${issueCard} hover:border-amber-600`}>
           <p className="text-amber-300 text-sm font-medium">
             {salesToCheck!.open} {salesToCheck!.open === 1 ? 'sale needs' : 'sales need'} checking
           </p>
