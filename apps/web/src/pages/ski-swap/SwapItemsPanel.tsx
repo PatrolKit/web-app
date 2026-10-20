@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import CompDialog from './comps/CompDialog';
 import { compReasonLabel } from './comps/compView';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
@@ -113,7 +112,7 @@ export interface SwapItemsPanelProps {
    * offering a button that would be.
    */
   selfService?: boolean;
-  /** Offer "Comp…" and "Undo comp" on each item: Ski Swap admins on staff's Items page (Plan 53 D9). */
+  /** Offer "Undo comp" on a comped item: Ski Swap admins on staff's Items page (Plan 53 D9). Comping is on Adjustments → Comps. */
   canComp?: boolean;
   showSearch?: boolean;
   sellers?: SellerResponse[];
@@ -307,11 +306,6 @@ export function itemState(item: ItemResponse): {
   };
 }
 
-/** Whether an item could be comped: in Square, on the floor, with stock Square shows unsold (Plan 53 D2). */
-function canBeComped(item: ItemResponse): boolean {
-  return !item.comp && !item.pickedUpAt && !item.deletedAt && !!item.consignedAt && item.squareSynced && item.inventoryKnown && item.inStock > 0;
-}
-
 export default function SwapItemsPanel({
   orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService, canComp = false,
   showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1, batchPrint = false,
@@ -419,7 +413,6 @@ export default function SwapItemsPanel({
 
   /** A delete or a print that was refused. Both used to fail without a word. */
   const [actionError, setActionError] = useState<string | null>(null);
-  const [comping, setComping] = useState<ItemResponse | null>(null);
   const [compNote, setCompNote] = useState<{ ok: boolean; message: string } | null>(null);
   const refreshAfterComp = () => {
     qc.invalidateQueries({ queryKey: [queryKeyPrefix] });
@@ -850,13 +843,9 @@ export default function SwapItemsPanel({
                 </td>
                 {canManage && (
                   <td className="py-2 flex gap-2 items-center">
-                    {/* Comps (Plan 53): an item with no sale in Square, marked sold so its seller is paid. */}
+                    {/* Comps (Plan 53): made on Adjustments → Comps; undone there or here. */}
                     {canComp && !selfService && item.comp && (
                       <button onClick={() => void undoComp(item)} className="text-xs text-teal-300 hover:underline">Undo comp</button>
-                    )}
-                    {canComp && !selfService && canBeComped(item) && (
-                      <button onClick={() => setComping(item)} className="text-xs text-teal-300 hover:underline"
-                        title="Mark it sold with no sale in Square, so its seller is paid the list price">Comp…</button>
                     )}
                     {canUndoPickup(item) && panelApi.undoPickup && (
                       <button
@@ -937,11 +926,6 @@ export default function SwapItemsPanel({
       </div>
       {total > ITEMS_PAGE && (
         <Pager page={page} total={total} busy={isFetching} onPage={(n) => setView({ page: n > 1 ? String(n) : null }, true)} />
-      )}
-
-      {comping && swapId && (
-        <CompDialog orgId={orgId} swapId={swapId} item={comping} onClose={() => setComping(null)}
-          onDone={(message) => { setComping(null); setCompNote({ ok: true, message }); refreshAfterComp(); }} />
       )}
 
       {/* Add / Edit modal */}

@@ -23,7 +23,7 @@ Today "sold" comes from Square only. Sales check can put a Square sale on the ri
 | D6 | **How it reads everywhere.** The comp is a sale line of the item, quantity 1, at its list price, with **nothing collected**, sold when it was comped:<br>• **Customers see "Sold"**, never "Comped": the public item status lookup and the seller's website show a comped item exactly as any sold one.<br>• **Patrol staff see "Comped"**: the Items page, Adjustments → Comps, Payouts and the staff iPad say so, with the reason to hand. Stock, pickup and Catalog check treat it as sold: its Square stock is 0 (D5).<br>• **Payouts:** owed like any sale (Plan 52). The seller's card shows the item with "Comp: reason" where a receipt would be, and no "View in Square". The comp freezes with the line when money moves.<br>• **Reports:** counted as sold; nothing collected; the dashboard's money totals don't count it.<br>• **Discounts and the paid-price check** leave comps out: nothing collected is the point, not a discount or a different price.<br>• **Exchanges** refuse a comped unit, either way. |
 | D7 | **Undo**, by an admin, with a note: the comp stops counting at once, and Square's stock goes back to what's left unsold. Refused once the comped unit is in a payout line whose money moved (Plan 52 D6): a change after payment is settled by hand there (Plan 52 D9). |
 | D8 | **A comped item rung up in Square later** is sold twice, which Sales check already flags (scanned twice, or sold twice across sales), with the comp listed among its sales. Undoing the comp settles it, and the Square sale stands. |
-| D9 | **Where it's done:** "Comp…" among an item's actions on the Items page, and "Comp an item…" on Adjustments → Comps (D11), **Ski Swap admins only** (`ski_swap:admin`). A dialog: a price for an unpriced item (D4), the reason, a note, and a confirmation naming the seller and what they'll be paid. "Undo comp…" on the item and on its row in Comps, for the same admins. |
+| D9 | **Where it's done:** "+ Comp Item" on Adjustments → Comps (D11), **Ski Swap admins only** (`ski_swap:admin`). A dialog: a price for an unpriced item (D4), the reason, a note, and a confirmation naming the seller and what they'll be paid. "Undo comp…" on the item and on its row in Comps, for the same admins. |
 | D10 | **Seen, for the record.** Adjustments → Comps lists the swap's comps (item, seller, list price, reason, note, who, when), with the total: money the patrol owes sellers that Square never took. Undone comps stay listed, marked undone, with who and why. The Payouts page links to it with one line ("4 comped items, $260.00"). Every comp and undo is audited. |
 | D11 | **A new "Adjustments" tab** holds what changes how the swap's sales count, with two sub-tabs, as Reports has Sales check and Catalog check:<br>• **Exchanges:** today's Exchanges tab, moved here unchanged.<br>• **Comps:** D10.<br>The Ski Swap tabs start **Dashboard, Items, Adjustments, Reports, Payouts**, then the rest as they are. |
 
@@ -85,7 +85,7 @@ Today "sold" comes from Square only. Sales check can put a Square sale on the ri
   - `ExchangesPage` moves under it as is, at `ski-swap/adjustments/exchanges`; the old address goes;
   - the tab order becomes Dashboard, Items, Adjustments, Reports, Payouts, with seller-only tabs and the rest after the divider unchanged; the disabled placeholders shown before a swap is chosen follow the same order.
 - **Adjustments → Comps:** the comps table (D10) with the total, "Comp an item…" (an item search, then the comp dialog), and "Undo comp…" per row.
-- **Items page:** "Comp…" and "Undo comp" in the item's actions, Ski Swap admins only (D9). A "Comped" status, with its reason and note on hover.
+- **Items page:** "Undo comp" in a comped item's actions, Ski Swap admins only (D9); comping is on Adjustments → Comps only. A "Comped" status, with its reason and note on hover.
 - **Comp dialog:**
   - the list price, shown; for an unpriced item, a price to enter, which becomes its list price;
   - the reason, as four choices;
@@ -117,7 +117,7 @@ Today "sold" comes from Square only. Sales check can put a Square sale on the ri
 ## Rollout
 
 - Additive migration; deploy as usual.
-- The five tickets are comped by staff from the Items page or Adjustments → Comps once it's live, each with its reason and note. 74125, 75042 and 75367 may turn out to have a Square sale under another ticket (the extra $60, $10 and $7 lines). If so, those are put on the right ticket in Sales check instead, and comps are only for what has no sale.
+- The five tickets are comped by staff from Adjustments → Comps once it's live, each with its reason and note. 74125, 75042 and 75367 may turn out to have a Square sale under another ticket (the extra $60, $10 and $7 lines). If so, those are put on the right ticket in Sales check instead, and comps are only for what has no sale.
 
 ## Not in this plan
 
