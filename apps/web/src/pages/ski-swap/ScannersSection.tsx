@@ -95,24 +95,23 @@ export default function ScannersSection({
 
   return (
     <div className="space-y-3 border-t border-gray-800 pt-6">
-      <div>
-        <h2 className="text-white font-medium">Scanners</h2>
-        <p className="text-xs text-gray-500">
-          The barcode scanners this org owns. A scanner is reached through a bridge —
-          choose which one on the bridge itself, under Print bridges above.
-        </p>
-      </div>
-
-      {canAdmin && !showForm && (
-        <div className="flex justify-end">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-white font-medium">Scanners</h2>
+          <p className="text-xs text-gray-500">
+            The barcode scanners this org owns. A scanner is reached through a bridge —
+            choose which one on the bridge itself, under Print bridges above.
+          </p>
+        </div>
+        {canAdmin && !showForm && (
           <button
             onClick={() => { setShowForm(true); setError(''); }}
-            className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
+            className="shrink-0 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
           >
             + Add Scanner
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {showForm && (
         <form

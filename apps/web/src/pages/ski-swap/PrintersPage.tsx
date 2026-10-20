@@ -216,18 +216,18 @@ export default function PrintersPage() {
   return (
     <div className="space-y-6">
         <div className="space-y-3">
-          <div>
-            <h2 className="text-white font-medium">Printers</h2>
-            <p className="text-xs text-gray-500">
-              The Phomemos this org owns: what paper each one carries and the margins it
-              needs. A printer is reached either through a bridge below, or over Bluetooth
-              from whoever is holding it.
-            </p>
-          </div>
-          <div className="flex justify-end">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-white font-medium">Printers</h2>
+              <p className="text-xs text-gray-500">
+                The Phomemos this org owns: what paper each one carries and the margins it
+                needs. A printer is reached either through a bridge below, or over Bluetooth
+                from whoever is holding it.
+              </p>
+            </div>
             <button
               onClick={() => { setShowPrinterForm(true); setPrinterName(''); setPrinterBtName(''); setPrinterModel(''); setPrinterPaperSize(''); setPrinterFormError(null); }}
-              className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
+              className="shrink-0 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium"
             >
               + Provision Printer
             </button>
@@ -443,16 +443,18 @@ export default function PrintersPage() {
         </div>
 
       <div className="space-y-3 border-t border-gray-800 pt-6">
-        <div>
-          <h2 className="text-white font-medium">Print bridges</h2>
-          <p className="text-xs text-gray-500">
-            A bridge puts a printer and a scanner on the network so a check-in station can
-            reach them. Pick what each one drives below; the board is told on its next
-            check-in, so nothing needs resetting. Bind the bridge itself to a station on the
-            Check-in stations page.
-          </p>
-        </div>
         <DeviceCredentialList
+          header={
+            <div>
+              <h2 className="text-white font-medium">Print bridges</h2>
+              <p className="text-xs text-gray-500">
+                A bridge puts a printer and a scanner on the network so a check-in station can
+                reach them. Pick what each one drives below; the board is told on its next
+                check-in, so nothing needs resetting. Bind the bridge itself to a station on the
+                Check-in stations page.
+              </p>
+            </div>
+          }
           orgId={orgId}
           role={BRIDGE_ROLE}
           canProvision={canManagePrinters}

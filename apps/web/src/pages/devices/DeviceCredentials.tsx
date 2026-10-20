@@ -190,10 +190,13 @@ export function DeviceCredentialList({
   onEdit,
   editLabel = 'Edit',
   onProvisioned,
+  header,
 }: {
   orgId: string;
   role: DeviceRole;
   canProvision: boolean;
+  /** A title and explanation: when given, "+ Provision" sits beside it, as the page's other sections have it. */
+  header?: ReactNode;
   /** Extra controls under a device row — the Printers page shows status here. */
   renderExtra?: (device: DeviceItem) => ReactNode;
   /**
@@ -296,9 +299,10 @@ export function DeviceCredentialList({
 
   return (
     <div className="space-y-4">
-          {canProvision && (
-            <div className="flex justify-end">
-              <button
+          {(header || canProvision) && (
+            <div className={header ? 'flex items-start justify-between gap-4' : 'flex justify-end'}>
+              {header}
+              {canProvision && <button
                 onClick={() => {
                   provisionMutation.reset();
                   // Nothing to fill in for a bridge — it is not named, and its
@@ -309,10 +313,10 @@ export function DeviceCredentialList({
                   setProvisionName('');
                 }}
                 disabled={provisionMutation.isPending}
-                className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-40"
+                className="shrink-0 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-40"
               >
                 {provisionMutation.isPending ? 'Provisioning…' : `+ Provision ${roleInfo?.label ?? 'Device'}`}
-              </button>
+              </button>}
             </div>
           )}
 
