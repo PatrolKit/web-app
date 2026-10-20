@@ -13,7 +13,7 @@ import { sellerDisplayName } from '../seller.service';
 import { ItemBreakdownService } from '../item-breakdown.service';
 import { SalesCheckService, receiptOf } from '../sales-check.service';
 import { squareSaleUrl } from '../square-links';
-import { attributeSales, COMP_ORDER_PREFIX, paidOnceKeyOf, type DecisionRef } from '../sales-check';
+import { attributeSales, COMP_ORDER_PREFIX, paidOnceKeyOf, paidOnceLines, type DecisionRef } from '../sales-check';
 import { liveComps } from '../comps/live-comps';
 import { buildRun, discountsOf, exchangedKeyOf, resolveDestination, type BuiltLine, type BuiltRun, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
@@ -73,8 +73,8 @@ interface Snapshot {
   discounts: ReturnType<typeof discountsOf>['discounts'];
   /** Every comp of the swap, live or undone, for the cards (Plan 53). */
   comps: Map<string, { reason: string; note: string; live: boolean; units: number; priceCents: number }>;
-  /** Tickets scanned twice in one sale and paid once in Sales check: their held extra is settled. */
-  paidOnce: Set<string>;
+  /** Tickets scanned twice in one sale and paid once in Sales check, and the line paid: their held extra is settled. */
+  paidOnce: Map<string, string>;
 }
 
 const SELLER_SELECT = {
@@ -690,6 +690,8 @@ export class PayoutRunService {
     const sellerRows = await this.prisma.sellerProfile.findMany({ where: { id: { in: sellerIds } }, select: SELLER_SELECT });
     const sellers = new Map<string, SellerInfo>(sellerRows.map((s) => [s.id, sellerInfo(s)]));
 
+    // Tickets paid once in Sales check, and the line each is paid for.
+    const paidOnce = paidOnceLines(decisions as DecisionRef[]);
     let built = EMPTY_BUILT;
     let salesError: string | null = null;
     try {
@@ -702,7 +704,7 @@ export class PayoutRunService {
         new Map(itemRows.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!])),
         comps,
       );
-      built = buildRun(itemRows, [...sellers.values()].map((s) => s.run), sales, { commissionBasisPoints: bps });
+      built = buildRun(itemRows, [...sellers.values()].map((s) => s.run), sales, { commissionBasisPoints: bps, paidOnce });
     } catch (err) {
       salesError = err instanceof Error ? err.message : 'Square couldn’t be read.';
     }
@@ -736,7 +738,7 @@ export class PayoutRunService {
       salesError,
       discounts: discountsOf(built.lines, exchangedKeys).discounts,
       comps: new Map(compRows.map((c) => [c.id, { reason: c.reason, note: c.note, live: !!c.liveKey, units: c.units, priceCents: c.priceCents }])),
-      paidOnce: new Set(decisions.filter((d) => d.decision === 'PAID_ONCE' && d.itemId).map((d) => paidOnceKeyOf(d.orderId, d.itemId!))),
+      paidOnce,
     };
   }
 

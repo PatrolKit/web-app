@@ -21,9 +21,9 @@ export interface DecisionRef {
    * PRICE_KEPT: PatrolKit's price kept on a sale paid at another; its line is
    * `#price:` and the sale line's, so it never matches a sale line itself.
    * PAID_ONCE: a ticket scanned twice in one sale, settled outside Square; its
-   * line is `#once:` and the item's (`paidOnceLineOf`), so it never matches a
-   * sale line either. The sales stand: the seller is paid for the units
-   * checked in, and the extra stays held.
+   * line is `#once:` and the sale line staff picked to pay the seller for
+   * (`paidOnceLineOf`), so it never matches a sale line either. The sales
+   * stand: the seller is paid for that line, and the rest stays held.
    */
   decision: 'CREDIT' | 'NOT_SWAP' | 'FEE_HANDLED' | 'PRICE_KEPT' | 'PAID_ONCE';
   itemId: string | null;
@@ -33,10 +33,21 @@ export const lineKeyOf = (orderId: string, lineUid: string) => `${orderId}:${lin
 
 /**
  * A ticket scanned twice in one sale, paid once: the issue's key, which is the
- * decision's live key too, and the decision's line.
+ * decision's live key too; the decision's line, which names the sale line the
+ * seller is paid for; and that sale line, back from it.
  */
 export const paidOnceKeyOf = (orderId: string, itemId: string) => `twice:${orderId}:${itemId}`;
-export const paidOnceLineOf = (itemId: string) => `#once:${itemId}`;
+export const PAID_ONCE_LINE = '#once:';
+export const paidOnceLineOf = (saleLineUid: string) => `${PAID_ONCE_LINE}${saleLineUid}`;
+export const paidLineOf = (decisionLineUid: string) => decisionLineUid.slice(PAID_ONCE_LINE.length);
+
+/**
+ * The sale line each paid-once ticket is paid for, by `paidOnceKeyOf`: what
+ * Payouts pays first (an older decision names no line, and pays the earliest).
+ */
+export function paidOnceLines(decisions: Pick<DecisionRef, 'orderId' | 'lineUid' | 'decision' | 'itemId'>[]): Map<string, string> {
+  return new Map(decisions.filter((d) => d.decision === 'PAID_ONCE' && d.itemId).map((d) => [paidOnceKeyOf(d.orderId, d.itemId!), paidLineOf(d.lineUid)]));
+}
 
 /** Units a line still stands for, after refunds. */
 export const netUnits = (l: Pick<PosSaleLine, 'quantity' | 'refundedQuantity'>) => Math.max(0, l.quantity - l.refundedQuantity);
@@ -178,7 +189,7 @@ export interface SalesCheckIssue {
   oversold?: {
     itemId: string; sku: string; name: string; sellerName: string | null; priceCents: number | null;
     units: number; quantity: number; orders: string[];
-    sales: { orderId: string; lineUid: string; paymentId: string | null; soldAt: string; quantity: number; collectedCents: number }[];
+    sales: { orderId: string; lineUid: string; paymentId: string | null; soldAt: string; quantity: number; collectedCents: number; unitPriceCents: number | null }[];
   };
 }
 
@@ -310,7 +321,7 @@ export function oversoldOf(input: Pick<ClassifyInput, 'lines' | 'items' | 'decis
         units: units(lines), quantity: item.originalQuantity, orders: [...new Set(lines.map((l) => l.orderId))],
         sales: lines.map((l) => ({
           orderId: l.orderId, lineUid: l.lineUid ?? '', paymentId: l.paymentId ?? null, soldAt: l.soldAt.toISOString(),
-          quantity: netUnits(l), collectedCents: l.collectedCents,
+          quantity: netUnits(l), collectedCents: l.collectedCents, unitPriceCents: l.unitPriceCents ?? null,
         })),
       },
     };

@@ -27,10 +27,12 @@ export class CreditSaleDto extends createZodDto(CreditSaleSchema) {}
 export const NotSwapSaleSchema = z.object({ ...line, note: z.string().max(500).optional() }).strict();
 export class NotSwapSaleDto extends createZodDto(NotSwapSaleSchema) {}
 
-/** A ticket scanned twice in one sale, settled outside Square: its seller is paid once. */
+/** A ticket scanned twice in one sale, settled outside Square: its seller is paid once, for the line picked. */
 export const PayOnceSchema = z.object({
   orderId: z.string().min(1).max(64),
   itemId: z.string().min(1).max(40),
+  /** The sale line the seller is paid for; the rest stay unpaid. */
+  lineUid: z.string().min(1).max(58),
   note: z.string().trim().min(1, 'Say how the extra was settled.').max(500),
 }).strict();
 export class PayOnceDto extends createZodDto(PayOnceSchema) {}
@@ -89,8 +91,11 @@ export interface SalesCheckIssue {
   oversold?: {
     itemId: string; sku: string; name: string; sellerName: string | null; priceCents: number | null;
     units: number; quantity: number; orders: string[];
-    /** `comp`: an item comped in PatrolKit (Plan 53), with no Square sale behind it. */
-    sales: { orderId: string; receipt: string | null; soldAt: string; quantity: number; collectedCents: number; link: string | null; comp?: boolean }[];
+    /**
+     * `comp`: an item comped in PatrolKit (Plan 53), with no Square sale behind it.
+     * `unitPriceCents`: one unit as rung up, before discounts.
+     */
+    sales: { orderId: string; lineUid: string; receipt: string | null; soldAt: string; quantity: number; collectedCents: number; unitPriceCents: number | null; link: string | null; comp?: boolean }[];
   };
   /** The item's categories, for "Never count …" (other_item). */
   categoryIds: string[];

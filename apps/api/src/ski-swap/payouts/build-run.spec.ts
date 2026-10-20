@@ -228,6 +228,34 @@ describe('a ticket rung up more times than it has units (Plan 48)', () => {
   it('holds nothing for a ticket sold once', () => {
     expect(buildRun([item()], [seller()], [sale()], opts).held).toEqual([]);
   });
+
+  describe('a ticket paid once in Sales check, for the line picked', () => {
+    // 73297 rung up at $10 then $20 in one sale (#WErn); the $20 is its own.
+    const lines = [
+      sale({ orderId: 'WE', lineUid: 'a', unitPriceCents: 1000, collectedCents: 1000 }),
+      sale({ orderId: 'WE', lineUid: 'b', unitPriceCents: 2000, collectedCents: 2000 }),
+      sale({ orderId: 'WE', lineUid: 'c', unitPriceCents: 1500, collectedCents: 1500 }),
+    ];
+    const once = (lineUid: string) => ({ ...opts, paidOnce: new Map([['twice:WE:i1', lineUid]]) });
+
+    it('pays the line picked, not the earliest, and holds the rest', () => {
+      const run = buildRun([item({ priceCents: 2000 })], [seller()], lines, once('b'));
+      expect(run.lines[0].items.map((i) => [i.lineUid, i.quantity, i.collectedCents])).toEqual([['b', 1, 2000]]);
+      // Held at the ticket's price, as owed would be.
+      expect(run.held).toEqual([expect.objectContaining({ units: 2, unitCents: [2000, 2000], reason: 'one_sale' })]);
+    });
+
+    it('pays an unpriced ticket typed at different prices at the line picked', () => {
+      const run = buildRun([item({ priceCents: null })], [seller()], lines, once('b'));
+      expect(run.lines[0].grossCents).toBe(2000);
+      expect(run.held).toEqual([expect.objectContaining({ units: 2, reason: 'one_sale' })]);
+    });
+
+    it('pays the earliest when the decision names no line of the sale', () => {
+      const run = buildRun([item({ priceCents: 2000 })], [seller()], lines, once('i1'));
+      expect(run.lines[0].items.map((i) => i.lineUid)).toEqual(['a']);
+    });
+  });
 });
 
 

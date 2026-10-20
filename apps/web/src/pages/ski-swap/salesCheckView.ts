@@ -29,7 +29,7 @@ const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
   },
   {
     kind: 'scanned_twice', title: 'Scanned twice in one sale',
-    explain: 'The ticket was rung up more than once in the same sale: twice, as a quantity of 2, or again on another copy. Each ticket is one item, so either the customer paid for it twice (refund the extra in Square, and it leaves this list once Square shows the refund; or settle it outside Square and choose Pay once) or another item was rung up under this ticket (check the receipt and the stubs, and note which ticket it was).',
+    explain: 'The ticket was rung up more than once in the same sale: twice, as a quantity of 2, or again on another copy. Each ticket is one item, so either the customer paid for it twice (refund the extra in Square, and it leaves this list once Square shows the refund; or settle it outside Square) or another item was rung up under this ticket (check the receipt and the stubs, and note which ticket it was). Either way, Pay once picks the line its seller is paid for; the rest stay unpaid.',
   },
   {
     kind: 'double_fee', title: 'Charged both fees',
@@ -320,6 +320,37 @@ export function missedFeesText(m: { orders: number; cardCents: number; feeCents:
 }
 
 type Repeat = NonNullable<SalesCheckIssue['oversold']>;
+
+/** A line of a sale that rang a ticket up more than once, to pay its seller for. */
+export interface PayOnceChoice {
+  lineUid: string;
+  /** "Line 2: $20.00", numbered as the card numbers them. */
+  label: string;
+  /** One unit as rung up. */
+  unitCents: number | null;
+  /** Rung up at PatrolKit's price. */
+  matches: boolean;
+}
+
+/**
+ * Pay once: the sale's lines, and the one picked to start with: the first
+ * rung up at PatrolKit's price, or the only line there is. None for an
+ * unpriced ticket rung up at several prices: a person has to pick.
+ */
+export function payOnceChoices(o: Repeat): { choices: PayOnceChoice[]; picked: string | null } {
+  const choices = o.sales.flatMap((s, n): PayOnceChoice[] => {
+    if (s.comp) return [];
+    const unitCents = s.unitPriceCents ?? (s.quantity > 0 ? Math.round(s.collectedCents / s.quantity) : null);
+    return [{
+      lineUid: s.lineUid,
+      label: `Line ${n + 1}: ${money(s.collectedCents)}${s.quantity > 1 ? ` (×${s.quantity})` : ''}`,
+      unitCents,
+      matches: o.priceCents !== null && unitCents === o.priceCents,
+    }];
+  });
+  const picked = choices.find((c) => c.matches)?.lineUid ?? (choices.length === 1 ? choices[0].lineUid : null);
+  return { choices, picked };
+}
 
 /**
  * A ticket rung up more times than it has units: each sale that counts it,

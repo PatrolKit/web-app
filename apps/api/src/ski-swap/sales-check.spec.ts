@@ -561,6 +561,7 @@ describe('an item rung up more times than it has units', () => {
 
 describe('paying a ticket scanned twice once (settled outside Square)', () => {
   // 73190: $20, rung up as a quantity of 2 on #iWVd; the customer is refunded by hand.
+  // 73297: rung up at $10 and $20 on #WErn; the $20 is its, the $10 another ticket's.
   const twice = () => harness({
     items: [item('73190', { sellerName: 'Carrie Will', priceCents: 2000 }), item('73297')],
     lines: [
@@ -570,28 +571,41 @@ describe('paying a ticket scanned twice once (settled outside Square)', () => {
     ],
   });
 
-  it('records it with the note, clears it, links the sale, and undoes', async () => {
+  it('shows each line of the sale, with what it was rung up at, to pick from', async () => {
     const h = twice();
-    await expect(h.service.payOnce('org', 'swap', { orderId: 'iW', itemId: 'it-73190', note: 'Refunding $20 by check' }, 'staff'))
+    const issue = (await h.service.list('org', 'swap')).issues.find((i) => i.key === 'twice:WE:it-73297');
+    expect(issue?.oversold?.sales.map((x) => [x.lineUid, x.unitPriceCents, x.collectedCents])).toEqual([['a', 1000, 1000], ['b', 2000, 2000]]);
+  });
+
+  it('records the line picked, with the note, clears it, links the sale, and undoes', async () => {
+    const h = twice();
+    await expect(h.service.payOnce('org', 'swap', { orderId: 'iW', itemId: 'it-73190', lineUid: 'c', note: 'Refunding $20 by check' }, 'staff'))
       .resolves.toEqual({ key: 'twice:iW:it-73190', ok: true });
     expect(h.decisions[0]).toMatchObject({
-      decision: 'PAID_ONCE', orderId: 'iW', lineUid: '#once:it-73190', itemId: 'it-73190', collectedCents: 2000,
+      decision: 'PAID_ONCE', orderId: 'iW', lineUid: '#once:c', itemId: 'it-73190', collectedCents: 2000,
       note: 'Refunding $20 by check', liveKey: 'twice:iW:it-73190',
     });
     expect(h.audits).toEqual(['ski_swap.sales_check.paid_once']);
     const after = await h.service.list('org', 'swap');
     expect(after.issues.map((i) => i.key)).toEqual(['twice:WE:it-73297']);
     expect(after.decided.map((d) => [d.decision, d.item?.sku, d.links.sale])).toEqual([['PAID_ONCE', '73190', expect.stringContaining('iWVdX')]]);
-    await expect(h.service.payOnce('org', 'swap', { orderId: 'iW', itemId: 'it-73190', note: 'again' }, 'staff')).resolves.toMatchObject({ ok: false });
+    await expect(h.service.payOnce('org', 'swap', { orderId: 'iW', itemId: 'it-73190', lineUid: 'c', note: 'again' }, 'staff')).resolves.toMatchObject({ ok: false });
     await h.service.undo('org', 'swap', 'd1', 'staff');
     expect((await h.service.list('org', 'swap')).issues.map((i) => i.key).sort()).toEqual(['twice:WE:it-73297', 'twice:iW:it-73190']);
   });
 
-  it('refuses an unpriced ticket, and one that isn’t scanned twice', async () => {
+  it('pays an unpriced ticket for the line picked: the rest is what the others took', async () => {
     const h = twice();
-    await expect(h.service.payOnce('org', 'swap', { orderId: 'WE', itemId: 'it-73297', note: 'n' }, 'staff'))
-      .resolves.toMatchObject({ ok: false, error: expect.stringMatching(/73297 has no price/) });
-    await expect(h.service.payOnce('org', 'swap', { orderId: 'WE', itemId: 'it-73190', note: 'n' }, 'staff'))
+    await expect(h.service.payOnce('org', 'swap', { orderId: 'WE', itemId: 'it-73297', lineUid: 'b', note: 'The $10 was 75042' }, 'staff'))
+      .resolves.toMatchObject({ ok: true });
+    expect(h.decisions[0]).toMatchObject({ lineUid: '#once:b', collectedCents: 1000 });
+  });
+
+  it('refuses a line that isn’t the sale’s, and a ticket that isn’t scanned twice', async () => {
+    const h = twice();
+    await expect(h.service.payOnce('org', 'swap', { orderId: 'WE', itemId: 'it-73297', lineUid: 'c', note: 'n' }, 'staff'))
+      .resolves.toMatchObject({ ok: false, error: expect.stringMatching(/isn’t one of this sale’s/) });
+    await expect(h.service.payOnce('org', 'swap', { orderId: 'WE', itemId: 'it-73190', lineUid: 'a', note: 'n' }, 'staff'))
       .resolves.toMatchObject({ ok: false, error: expect.stringMatching(/isn’t waiting/) });
     expect(h.decisions).toEqual([]);
   });

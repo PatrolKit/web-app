@@ -81,6 +81,8 @@ const SELLERS = [
   { key: 'comp', phone: '+15550198207', method: 'CHECK', target: null, handle: null, email: null },
   // Their ticket was scanned twice in one sale, and the extra settled outside Square.
   { key: 'twice', phone: '+15550198208', method: 'CHECK', target: null, handle: null, email: null },
+  // Their unpriced ticket was rung up at three prices in one sale; one line is theirs.
+  { key: 'lines', phone: '+15550198209', method: 'CHECK', target: null, handle: null, email: null },
 ];
 for (const s of SELLERS) {
   const u = await prisma.user.findFirst({ where: { phone: s.phone } });
@@ -167,6 +169,12 @@ const sales = ITEMS.map((item, i) => ({
   refundedQuantity: item.refunded ?? 0,
   soldAt: soldAt(),
 }));
+// PAY-021, unpriced, rung up at $10, $20 and $7 in one sale: held whole until
+// Sales check says which line is its own.
+const linesItemId = (await addItem({ key: 'lines', sku: 'PAY-021', price: null, variation: 'var-lines-1' })).id;
+for (const [lineUid, cents] of [['L10', 1000], ['L20', 2000], ['L7', 700]]) {
+  sales.push({ orderId: 'stub-order-lines', paymentId: 'stubpaylines', lineUid, variationId: 'var-lines-1', quantity: 1, unitPriceCents: cents, collectedCents: cents, refundedQuantity: 0, soldAt: soldAt() });
+}
 // A sale of something this swap never had: money the org took that nobody is
 // being paid for, which "Before you pay" must show rather than drop (D14).
 sales.push({
@@ -455,9 +463,11 @@ ok('a ticket rung up twice in one sale is owed once, and flags its seller',
   twiceRun.lines[0]?.totals.netCents === 1600 && twiceRun.lines[0].flags.some((f) => /PAY-020/.test(f.text)), JSON.stringify([twiceRun.lines[0]?.totals, twiceRun.lines[0]?.flags]));
 const twiceBlocked = await post(`/payout-runs/${twiceRunId}/lines/${twiceRun.lines[0].id}/approve`, { approved: true });
 ok('...so they can’t be approved', twiceBlocked.status === 409, `HTTP ${twiceBlocked.status}`);
-const onceNoNote = await post(`/swaps/${swap.id}/sales-check/paid-once`, { orderId: twiceOrder, itemId: twiceItem.id, note: ' ' });
+const onceNoNote = await post(`/swaps/${swap.id}/sales-check/paid-once`, { orderId: twiceOrder, itemId: twiceItem.id, lineUid: 'line-8', note: ' ' });
 ok('paying once needs a note', onceNoNote.status === 400, `HTTP ${onceNoNote.status}`);
-const once = await post(`/swaps/${swap.id}/sales-check/paid-once`, { orderId: twiceOrder, itemId: twiceItem.id, note: 'Customer refunded $20 by check' }).then(unwrap);
+const checkBefore = await api(`${O}/swaps/${swap.id}/sales-check`).then(unwrap);
+const twiceLine = checkBefore.issues.find((i) => i.oversold?.sku === 'PAY-020')?.oversold.sales[0]?.lineUid;
+const once = await post(`/swaps/${swap.id}/sales-check/paid-once`, { orderId: twiceOrder, itemId: twiceItem.id, lineUid: twiceLine, note: 'Customer refunded $20 by check' }).then(unwrap);
 ok('paying once in Sales check is recorded', once.ok === true, JSON.stringify(once));
 const checkAfter = await api(`${O}/swaps/${swap.id}/sales-check`).then(unwrap);
 ok('...the issue leaves the list, decided, with its note',
@@ -469,6 +479,21 @@ ok('...the seller is still owed once, and no longer flagged',
   twiceRun.lines[0]?.totals.netCents === 1600 && twiceRun.lines[0].flags.length === 0, JSON.stringify([twiceRun.lines[0]?.totals, twiceRun.lines[0]?.flags]));
 const twiceApproved = await post(`/payout-runs/${twiceRunId}/lines/${twiceRun.lines[0].id}/approve`, { approved: true });
 ok('...and can be approved', twiceApproved.status === 200, `HTTP ${twiceApproved.status}`);
+
+const linesOwed = async () => (await api(`${O}/payout-runs/${twiceRunId}/choices`).then(unwrap)).find((c) => c.sellerId === sellerIds.lines);
+ok('an unpriced ticket rung up at three prices in one sale is owed nothing yet', !(await linesOwed()));
+const linesIssue = checkBefore.issues.find((i) => i.oversold?.sku === 'PAY-021');
+ok('...Sales check lists each line with what it was rung up at',
+  JSON.stringify(linesIssue?.oversold.sales.map((x) => [x.lineUid, x.unitPriceCents])) === JSON.stringify([['L10', 1000], ['L20', 2000], ['L7', 700]]),
+  JSON.stringify(linesIssue?.oversold.sales));
+const wrongLine = await post(`/swaps/${swap.id}/sales-check/paid-once`, { orderId: 'stub-order-lines', itemId: linesItemId, lineUid: twiceLine, note: 'n' }).then(unwrap);
+ok('...a line from another sale can’t be picked', wrongLine.ok === false, JSON.stringify(wrongLine));
+const pickedLine = await post(`/swaps/${swap.id}/sales-check/paid-once`, { orderId: 'stub-order-lines', itemId: linesItemId, lineUid: 'L20', note: 'The $10 and $7 were other tickets' }).then(unwrap);
+ok('...paying once picks the $20 line', pickedLine.ok === true, JSON.stringify(pickedLine));
+const linesChoice = await linesOwed();
+ok('...and the seller is owed on that line, once', linesChoice?.netCents === 1600 && linesChoice.items === 1, JSON.stringify(linesChoice));
+const linesDecided = (await api(`${O}/swaps/${swap.id}/sales-check`).then(unwrap)).decided.find((d) => d.item?.sku === 'PAY-021');
+ok('...the other lines are what was settled outside Square', linesDecided?.decision === 'PAID_ONCE' && linesDecided.collectedCents === 1700, JSON.stringify(linesDecided));
 
 const balance = await api(`${O}/paypal-balance`).then(unwrap);
 ok('the PayPal balance answers, as a number or with the reason it can’t',

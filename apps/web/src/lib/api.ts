@@ -905,8 +905,8 @@ export const api = {
         method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
       }),
     /** A sale paid at another price than PatrolKit's: keep PatrolKit's price. */
-    /** A ticket scanned twice in one sale, settled outside Square: its seller is paid once. */
-    payOnce: (orgId: string, swapId: string, body: { orderId: string; itemId: string; note: string }) =>
+    /** A ticket scanned twice in one sale, settled outside Square: its seller is paid once, for the line picked. */
+    payOnce: (orgId: string, swapId: string, body: { orderId: string; itemId: string; lineUid: string; note: string }) =>
       request<import('./api.types').SalesCheckOutcome>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/sales-check/paid-once`, {
         method: 'POST', body: JSON.stringify(body), headers: { 'idempotency-key': crypto.randomUUID() },
       }),

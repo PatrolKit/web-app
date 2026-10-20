@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedText, byCategory, groupsOf, missedFeesText, paidPriceButtons, paidPriceDoneText, squarePriceOf, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
+import { acceptedText, byCategory, groupsOf, missedFeesText, paidPriceButtons, payOnceChoices, paidPriceDoneText, squarePriceOf, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
 import type { SalesCheckIssue } from '../../lib/api.types';
 
 const issue = (over: Partial<SalesCheckIssue>): SalesCheckIssue => ({
@@ -202,7 +202,7 @@ describe('a ticket rung up more times than it has units', () => {
     kind, key: `${kind}:x`,
     oversold: {
       itemId: 'it', sku: '73297', name: 'Item #73297', sellerName: 'Karen Beckwith', priceCents: null, units: 2, quantity: 1,
-      orders: [...new Set(sales.map((s) => s.orderId))], sales: sales.map((s) => ({ ...s, link: `https://sq/${s.orderId}` })),
+      orders: [...new Set(sales.map((s) => s.orderId))], sales: sales.map((s, n) => ({ lineUid: `l${n}`, unitPriceCents: null, ...s, link: `https://sq/${s.orderId}` })),
     },
   });
 
@@ -234,3 +234,34 @@ describe('a ticket rung up more times than it has units', () => {
   });
 });
 
+describe('Pay once: which line the seller is paid for', () => {
+  type Sale = NonNullable<SalesCheckIssue['oversold']>['sales'][number];
+  const sale = (lineUid: string, collectedCents: number, over: Partial<Sale> = {}): Sale => ({
+    orderId: 'WE', lineUid, receipt: 'WErn', soldAt: '2026-10-09T19:19:00Z', quantity: 1, collectedCents, unitPriceCents: collectedCents, link: null, ...over,
+  });
+  const twice = (priceCents: number | null, sales: Sale[]) => ({
+    itemId: 'it', sku: '73297', name: 'Item #73297', sellerName: 'Karen Beckwith', priceCents, units: sales.length, quantity: 1, orders: ['WE'], sales,
+  });
+
+  it('starts on the line rung up at PatrolKit’s price, among any number', () => {
+    const { choices, picked } = payOnceChoices(twice(2000, [sale('a', 1000), sale('b', 700), sale('c', 2000), sale('d', 2000)]));
+    expect(choices.map((c) => [c.label, c.matches])).toEqual([
+      ['Line 1: $10.00', false], ['Line 2: $7.00', false], ['Line 3: $20.00', true], ['Line 4: $20.00', true],
+    ]);
+    expect(picked).toBe('c');
+  });
+
+  it('matches a discounted line by what it was rung up at, not what it took', () => {
+    expect(payOnceChoices(twice(2000, [sale('a', 1000), sale('b', 1800, { unitPriceCents: 2000 })])).picked).toBe('b');
+  });
+
+  it('starts on the only line, as a quantity of 2 (73190)', () => {
+    const { choices, picked } = payOnceChoices(twice(2000, [sale('c', 4000, { quantity: 2, unitPriceCents: 2000 })]));
+    expect([choices[0].label, picked]).toEqual(['Line 1: $40.00 (×2)', 'c']);
+  });
+
+  it('leaves the pick to a person when none matches, or the ticket is unpriced', () => {
+    expect(payOnceChoices(twice(2500, [sale('a', 1000), sale('b', 2000)])).picked).toBeNull();
+    expect(payOnceChoices(twice(null, [sale('a', 1000), sale('b', 2000)])).picked).toBeNull();
+  });
+});
