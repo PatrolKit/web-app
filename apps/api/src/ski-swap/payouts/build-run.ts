@@ -1,5 +1,6 @@
 import type { PosSaleLine } from '../pos/pos.adapter';
 import { splitCommission } from './money';
+import { COMP_ORDER_PREFIX } from '../sales-check';
 import type { PayoutMethod, PayoutTarget } from './paypal-mapping';
 
 /**
@@ -376,6 +377,8 @@ export function discountsOf(lines: DiscountableLine[], exchanged: ReadonlySet<st
       // A refunded unit collected nothing by definition; counting it here would
       // report the whole price as given away.
       if (item.quantity <= 0) continue;
+      // A comp collected nothing by design: not a discount (Plan 53 D6).
+      if (item.squareOrderId?.startsWith(COMP_ORDER_PREFIX)) continue;
 
       const listedCents = item.priceCents * item.quantity;
       const gapCents = listedCents - item.collectedCents;

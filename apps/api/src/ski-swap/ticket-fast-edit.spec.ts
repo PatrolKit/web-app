@@ -21,6 +21,7 @@ function harness(opts: { existing?: ReturnType<typeof row>; list?: ReturnType<ty
   const updates: { where: Record<string, unknown>; data: Record<string, unknown> }[] = [];
   let listWhere: Record<string, unknown> | null = null;
   const prisma = {
+    swapComp: { findMany: async () => [] },
     skiSwap: { findFirst: async () => SWAP },
     swapItem: {
       findMany: async ({ where }: { where: Record<string, unknown> }) => {

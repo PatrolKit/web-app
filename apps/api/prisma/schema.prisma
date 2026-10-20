@@ -481,6 +481,7 @@ model SkiSwap {
   saleDecisions    SwapSaleDecision[]
   issueNotes       SwapIssueNote[]
   exchanges        SwapExchange[]
+  comps            SwapComp[]
 
   @@unique([orgId, title])
   @@unique([orgId, activeSkuPrefix])
@@ -1825,6 +1826,36 @@ model SwapExchange {
   @@index([swapId, recordedAt])
   @@index([returnedItemId])
   @@index([replacementItemId])
+}
+
+/// An item marked sold with no Square sale behind it (Plan 53): read alongside
+/// Square's sales wherever they're attributed to items, so it counts as sold
+/// everywhere and its seller is paid the list price.
+model SwapComp {
+  id          String    @id @default(cuid())
+  swapId      String
+  orgId       String
+  itemId      String
+  units       Int       @default(1)
+  /// The item's list price when comped, per unit: what the seller is owed on.
+  priceCents  Int
+  /// OUTSIDE (paid outside Square) | NOT_FOUND (sold, no sale found) | LOST
+  /// (lost or damaged) | OTHER.
+  reason      String    @db.VarChar(12)
+  note        String    @db.Text
+  compedBy    String?
+  compedAt    DateTime  @default(now())
+  undoneBy    String?
+  undoneAt    DateTime?
+  undoNote    String?   @db.Text
+  /// The comp's id while it counts, null once undone (as SwapExchange's).
+  liveKey     String?   @db.VarChar(40)
+
+  swap SkiSwap @relation(fields: [swapId], references: [id], onDelete: Cascade)
+
+  @@unique([swapId, liveKey])
+  @@index([swapId, compedAt])
+  @@index([itemId])
 }
 
 model SwapIssueNote {

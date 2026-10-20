@@ -1406,6 +1406,21 @@ export const api = {
         `/orgs/${orgId}/ski-swap/paypal-config/test`, { method: 'POST' },
       ),
 
+    // ─── Comps (Plan 53) ────────────────────────────────────────
+
+    listComps: (orgId: string, swapId: string) =>
+      request<import('./api.types').CompsResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/comps`),
+    /** `priceCents` only for an unpriced item, which takes it as its list price first. */
+    compItem: (orgId: string, swapId: string, itemId: string, data: { reason: import('./api.types').CompReason; note: string; priceCents?: number; units?: number }) =>
+      request<{ id: string; priceCents: number; stock: number; stockError?: string }>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/items/${itemId}/comp`,
+        { method: 'POST', body: JSON.stringify(data), headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      ),
+    undoComp: (orgId: string, swapId: string, compId: string, note: string) =>
+      request<{ undone: boolean; stock: number | null; stockError?: string }>(
+        `/orgs/${orgId}/ski-swap/swaps/${swapId}/comps/${compId}/undo`, { method: 'POST', body: JSON.stringify({ note }) },
+      ),
+
     // ─── Payout runs (Plan 52) ───────────────────────────────────
 
     payoutsSummary: (orgId: string, swapId: string) =>

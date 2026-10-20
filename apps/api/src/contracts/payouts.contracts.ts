@@ -140,6 +140,8 @@ export interface PayoutLineItemView {
   soldAt: string;
   receipt: string | null;
   saleUrl: string | null;
+  /** A comp (Plan 53): sold with no Square sale, so no receipt or link. */
+  comp: { reason: string; note: string } | null;
 }
 
 export interface PayoutTotals { items: number; grossCents: number; commissionCents: number; netCents: number }
@@ -232,6 +234,8 @@ export interface PayoutsSummaryView {
   changedSincePaid: { runId: string; sellerId: string; name: string; diffCents: number }[];
   discounts: { sku: string; name: string; sellerName: string; listedCents: number; collectedCents: number }[];
   donated: { sellerId: string; name: string; items: number; grossCents: number }[];
+  /** Live comps (Plan 53 D10): units, and what sellers are owed on them before the patrol's share. */
+  comps: { count: number; totalCents: number };
   /** How many can be added to a run of each kind now. */
   ready: { CHECK: number; PAYPAL: number };
 }

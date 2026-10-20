@@ -6,6 +6,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { liveCompsByItem } from './comps/live-comps';
+import type { ItemComp } from '../contracts/comps.contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { PosAdapterFactory } from './pos/pos.adapter';
 import type { IPosAdapter } from './pos/pos.adapter';
@@ -156,7 +158,7 @@ export class ItemService {
         syncedAt: syncedAt.toISOString(),
         // Which column the order is by, so the page can show it on the heading.
         ...(opts.sort ? {} : { sortedBy: sortBy }),
-        items: page.map((i) => this.toResponse(i, inventoryMap, descriptions)),
+        items: await this.withComps(page, (comps) => page.map((i) => this.toResponse(i, inventoryMap, descriptions, comps))),
       };
     }
     /*
@@ -197,7 +199,7 @@ export class ItemService {
       total,
       syncedAt: syncedAt.toISOString(),
       ...(nextAfter ? { nextAfter } : {}),
-      items: items.map((i) => this.toResponse(i, inventoryMap, descriptions)),
+      items: await this.withComps(items, (comps) => items.map((i) => this.toResponse(i, inventoryMap, descriptions, comps))),
     };
   }
 
@@ -376,7 +378,7 @@ export class ItemService {
       this.displayStock(orgId, swap, [item]),
       this.fetchDescriptions([item]),
     ]);
-    return this.toResponse(item, inventoryMap, descriptions);
+    return this.withComps([item], (comps) => this.toResponse(item, inventoryMap, descriptions, comps));
   }
 
   /**
@@ -670,7 +672,7 @@ export class ItemService {
       ? new Map<string, number>()
       : await this.displayStock(orgId, swap, [refreshed]);
     const descriptions = await this.fetchDescriptions([refreshed]);
-    const response = this.toResponse(refreshed, inventoryMap, descriptions);
+    const response = await this.withComps([refreshed], (comps) => this.toResponse(refreshed, inventoryMap, descriptions, comps));
 
     if (idempotencyKey) {
       await this.idempotency.save(
@@ -803,7 +805,7 @@ export class ItemService {
               data.deferPos ? new Map<string, number>() : this.displayStock(orgId, swap, [updated]),
               this.fetchDescriptions([updated]),
             ]);
-            return this.toResponse(updated, inventoryMap, descriptions);
+            return this.withComps([updated], (comps) => this.toResponse(updated, inventoryMap, descriptions, comps));
           })();
     if (idempotencyKey) {
       await this.idempotency.save(
@@ -1260,7 +1262,7 @@ export class ItemService {
     });
     if (!item) throw new NotFoundException(`No item in this swap has tag ${tag}.`);
     const inventoryMap = await this.displayStock(orgId, swap, [item]);
-    return this.toResponse(item, inventoryMap);
+    return this.withComps([item], (comps) => this.toResponse(item, inventoryMap, undefined, comps));
   }
 
   /**
@@ -1410,7 +1412,7 @@ export class ItemService {
       include: { seller: { include: SELLER_NAME_INCLUDE }, photos: { orderBy: { displayOrder: 'asc' } } },
     });
     const inventoryMap = await this.displayStock(orgId, swap, [item]);
-    return this.toResponse(item, inventoryMap);
+    return this.withComps([item], (comps) => this.toResponse(item, inventoryMap, undefined, comps));
   }
 
   /**
@@ -1616,7 +1618,12 @@ export class ItemService {
     return this.taxonomy.describeItems(items);
   }
 
-  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number | null; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; pickedUpAt?: Date | null; pickedUpByName?: string | null; pickedUpUnits?: number | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number> | null, descriptions?: Map<string, ItemDescription>): ItemResponse {
+  /** Staff item responses carry each item's live comp (Plan 53 D6): read once for the lot. */
+  private async withComps<T>(items: { id: string }[], build: (comps: Map<string, ItemComp>) => T): Promise<T> {
+    return build(await liveCompsByItem(this.prisma, items.map((i) => i.id)));
+  }
+
+  private toResponse(item: { id: string; swapId: string; orgId: string; name: string; description: string | null; sku: string; priceCents: number | null; originalQuantity: number; squareItemId: string | null; squareVariationId: string | null; donateProceeds: boolean; hasPrintedTag: boolean; consignedAt: Date | null; deletedAt?: Date | null; pickedUpAt?: Date | null; pickedUpByName?: string | null; pickedUpUnits?: number | null; updatedAt: Date; seller: (SellerNameRow & { id: string }) | null; photos: { id: string; url: string }[] }, inventoryMap: Map<string, number> | null, descriptions?: Map<string, ItemDescription>, comps?: Map<string, ItemComp>): ItemResponse {
     // Only an item in Square has stock to not know about. For everything else
     // the answer is a fact about our own row, whatever Square is doing.
     // A picked-up item (Plan 43) is out of Square, whose count of it then says
@@ -1650,6 +1657,8 @@ export class ItemService {
       pickedUpAt: item.pickedUpAt?.toISOString() ?? null,
       pickedUpBy: item.pickedUpAt ? (item.pickedUpByName ?? null) : null,
       pickedUpUnits: item.pickedUpAt ? (item.pickedUpUnits ?? null) : null,
+      // Staff see a comp; customers never get this response (Plan 53 D6).
+      comp: comps?.get(item.id) ?? null,
       deletedAt: item.deletedAt?.toISOString() ?? null,
       seller: item.seller
         ? {

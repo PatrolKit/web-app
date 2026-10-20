@@ -41,6 +41,8 @@ function harness(
   let n = 0;
 
   const prisma = {
+
+    swapComp: { findMany: async () => [] },
     skiSwap: { findFirst: async () => SWAP },
     checkinStation: { findFirst: async () => STATION },
     swapItem: {

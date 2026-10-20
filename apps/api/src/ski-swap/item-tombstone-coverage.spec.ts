@@ -27,6 +27,19 @@ describe('item tombstone coverage', () => {
    * widen the exemption to a new call added next to it.
    */
   const EXEMPT: Record<string, { count: number; because: string }> = {
+    'ski-swap/comps/live-comps.ts': {
+      count: 1,
+      because:
+        'Comps (Plan 53 D1): a comped item stays sold after it is deleted, as ' +
+        'a sale credited in Sales check does, so its variation is read whatever ' +
+        'became of the item.',
+    },
+    'ski-swap/comps/swap-comp.service.ts': {
+      count: 1,
+      because:
+        'Adjustments → Comps (Plan 53 D10) lists every comp, including those on ' +
+        'items deleted since, marked deleted.',
+    },
     'ski-swap/item.service.ts': {
       // Two calls, one `where`. `list` builds its filter as a variable and
       // hands it to findMany and count, so neither call reads as filtered from

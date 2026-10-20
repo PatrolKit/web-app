@@ -80,9 +80,33 @@ export function applyExchanges(lines: PosSaleLine[], exchanges: ExchangeRef[], v
   });
 }
 
+/** A live comp as attribution needs it (Plan 53): an item sold with no Square sale. */
+export interface CompRef {
+  id: string;
+  /** The comped item's Square variation, which is how every reader matches a sale to it. */
+  variationId: string;
+  units: number;
+  /** The item's list price when comped: what the seller is owed on. */
+  priceCents: number;
+  compedAt: Date;
+}
+
+/** A comp's order id: never a Square one, so nothing mistakes it for a sale Square took. */
+export const COMP_ORDER_PREFIX = 'comp:';
+export const isComp = (line: Pick<PosSaleLine, 'orderId'>) => line.orderId.startsWith(COMP_ORDER_PREFIX);
+export const compIdOf = (line: Pick<PosSaleLine, 'orderId'>) => (isComp(line) ? line.orderId.slice(COMP_ORDER_PREFIX.length) : null);
+
+/** A comp as a sale line of its item, at its list price, with nothing collected (Plan 53 D6). */
+export function compLine(c: CompRef): PosSaleLine {
+  return {
+    orderId: `${COMP_ORDER_PREFIX}${c.id}`, lineUid: 'comp', variationId: c.variationId, name: 'Comp', paymentId: null,
+    quantity: c.units, unitPriceCents: c.priceCents, collectedCents: 0, refundedQuantity: 0, soldAt: c.compedAt,
+  };
+}
+
 /**
  * The sale lines as every reader counts them: Sales check's decisions, then
- * exchanges. The one way in, so no reader can skip a step.
+ * exchanges, then comps (Plan 53). The one way in, so no reader can skip a step.
  */
 export function attributeSales(
   lines: PosSaleLine[],
@@ -90,8 +114,10 @@ export function attributeSales(
   exchanges: ExchangeRef[],
   ourVariations: Set<string>,
   variationOfItem: Map<string, string>,
+  comps: CompRef[] = [],
 ): PosSaleLine[] {
-  return applyExchanges(applyDecisions(lines, decisions, ourVariations, variationOfItem), exchanges, variationOfItem);
+  const out = applyExchanges(applyDecisions(lines, decisions, ourVariations, variationOfItem), exchanges, variationOfItem);
+  return comps.length ? [...out, ...comps.map(compLine)] : out;
 }
 
 /** One of our items, as Sales check needs it. */
@@ -152,6 +178,8 @@ export interface ClassifyInput {
   decisions: DecisionRef[];
   /** Live exchanges only (Plan 49). */
   exchanges?: ExchangeRef[];
+  /** Live comps only (Plan 53). */
+  comps?: CompRef[];
   described: Map<string, PosVariationInfo>;
   categoryNames: Map<string, string>;
   ignoredCategoryIds: Set<string>;
@@ -184,7 +212,7 @@ export function classify(input: ClassifyInput): SalesCheckIssue[] {
     const k = `${orderId}\u0000${itemId}`;
     soldInOrder.set(k, (soldInOrder.get(k) ?? 0) + units);
   };
-  const attributed = attributeSales(input.lines, input.decisions, input.exchanges ?? [], new Set(ours.keys()), variationOfItem);
+  const attributed = attributeSales(input.lines, input.decisions, input.exchanges ?? [], new Set(ours.keys()), variationOfItem, input.comps);
   for (const l of attributed) {
     const our = ours.get(l.variationId);
     if (our) addSold(l.orderId, our.id, netUnits(l));
@@ -249,7 +277,8 @@ export function classify(input: ClassifyInput): SalesCheckIssue[] {
 function oversold(input: ClassifyInput): SalesCheckIssue[] {
   const ourVariations = new Set(input.items.map((i) => i.squareVariationId).filter((v): v is string => !!v));
   const variationOfItem = new Map(input.items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
-  const attributed = attributeSales(input.lines, input.decisions, input.exchanges ?? [], ourVariations, variationOfItem);
+  // A comp counts like any sale: comped, then rung up in Square, is sold twice (Plan 53 D8).
+  const attributed = attributeSales(input.lines, input.decisions, input.exchanges ?? [], ourVariations, variationOfItem, input.comps);
   const byVariation = new Map<string, PosSaleLine[]>();
   for (const l of attributed) if (ourVariations.has(l.variationId) && netUnits(l) > 0) byVariation.set(l.variationId, [...(byVariation.get(l.variationId) ?? []), l]);
   const out: SalesCheckIssue[] = [];

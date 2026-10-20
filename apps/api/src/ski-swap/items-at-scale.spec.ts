@@ -21,6 +21,7 @@ function harness(rows: ReturnType<typeof row>[]) {
   const wheres: unknown[] = [];
   const squareReads: string[][] = [];
   const prisma = {
+    swapComp: { findMany: async () => [] },
     skiSwap: { findFirst: async () => ({ id: 'swap-1', orgId: 'org-1', locationId: 'loc-1' }) },
     swapItem: {
       findMany: async (args: { where: { id?: { in: string[] } }; select?: unknown; skip?: number; take?: number }) => {
@@ -143,6 +144,7 @@ describe('the Receipt popup’s figures (Plan 39 D7)', () => {
   it('count a seller’s items and their listed value, with no Square read', async () => {
     const reads: unknown[] = [];
     const prisma = {
+      swapComp: { findMany: async () => [] },
       skiSwap: { findFirst: async () => ({ id: 'swap-1', locationId: 'loc-1' }) },
       swapItem: {
         findMany: async () => [

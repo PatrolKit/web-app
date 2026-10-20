@@ -1,5 +1,5 @@
 import type { PosSaleLine } from './pos/pos.adapter';
-import { lineKeyOf, netUnits, type CheckItem } from './sales-check';
+import { isComp, lineKeyOf, netUnits, type CheckItem } from './sales-check';
 
 /**
  * Sales check's paid-price check, kept pure so it can be tested.
@@ -45,6 +45,8 @@ export function paidPriceCheck(lines: PosSaleLine[], items: CheckItem[], kept: R
     const item = byVariation.get(l.variationId);
     // No price of ours: the seller is paid what the clerk typed (Plan 32 D4).
     if (!item || item.priceCents === null || !l.lineUid) continue;
+    // A comp collected nothing by design: no price was paid to differ (Plan 53 D6).
+    if (isComp(l)) continue;
     if (l.quantity <= 0 || netUnits(l) <= 0) continue;
     const key = priceKeyOf(l.orderId, l.lineUid);
     if (kept.has(key)) continue;

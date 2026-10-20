@@ -8,6 +8,7 @@ import { ItemBreakdownService } from './item-breakdown.service';
 import { TaxonomyService } from './taxonomy/taxonomy.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
 import { attributeSales, type DecisionRef } from './sales-check';
+import { liveComps } from './comps/live-comps';
 import { exportRows, exportWorkbook } from './item-export';
 import type { ItemListView } from './item-list-order';
 
@@ -58,7 +59,7 @@ export class ItemExportService {
     }
 
     const ids = await this.items.matchingIds(orgId, swapId, filters);
-    const [rows, every, decisions, exchanges, sender] = await Promise.all([
+    const [rows, every, decisions, exchanges, sender, comps] = await Promise.all([
       this.prisma.swapItem.findMany({
         where: { id: { in: ids }, deletedAt: null },
         select: {
@@ -72,9 +73,10 @@ export class ItemExportService {
       this.prisma.swapSaleDecision.findMany({ where: { swapId, liveKey: { not: null } }, select: { orderId: true, lineUid: true, decision: true, itemId: true } }),
       this.prisma.swapExchange.findMany({ where: { swapId, liveKey: { not: null } }, select: { orderId: true, lineUid: true, returnedItemId: true, replacementItemId: true } }),
       this.senderName(actor),
+      liveComps(this.prisma, swapId),
     ]);
     const variationOfItem = new Map(every.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
-    const lines = attributeSales(raw.lines, decisions as DecisionRef[], exchanges, new Set(variationOfItem.values()), variationOfItem);
+    const lines = attributeSales(raw.lines, decisions as DecisionRef[], exchanges, new Set(variationOfItem.values()), variationOfItem, comps);
     const skuOf = new Map(every.map((i) => [i.id, i.sku]));
     const named = exchanges.map((e) => ({ ...e, returnedSku: skuOf.get(e.returnedItemId) ?? '?', replacementSku: skuOf.get(e.replacementItemId) ?? '?' }));
     const descriptions = await this.taxonomy.describeItems(rows.map((r) => ({ id: r.id, categoryId: r.categoryId })));

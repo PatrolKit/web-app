@@ -398,6 +398,8 @@ export interface ItemResponse {
   pickedUpBy?: string | null;
   /** How many went back: the quantity less any sold. Null unless returned. */
   pickedUpUnits?: number | null;
+  /** Comped (Plan 53): marked sold with no Square sale, so its seller is paid the list price. Staff only. */
+  comp?: ItemComp | null;
   /**
    * When this item was withdrawn, or null.
    *
@@ -804,6 +806,8 @@ export interface PayoutLineItem {
   soldAt: string;
   receipt: string | null;
   saleUrl: string | null;
+  /** A comp (Plan 53): sold with no Square sale, so no receipt or link. */
+  comp: { reason: CompReason; note: string } | null;
 }
 
 export interface PayoutTotals { items: number; grossCents: number; commissionCents: number; netCents: number }
@@ -894,6 +898,36 @@ export interface PayoutsSummary {
   discounts: { sku: string; name: string; sellerName: string; listedCents: number; collectedCents: number }[];
   donated: { sellerId: string; name: string; items: number; grossCents: number }[];
   ready: { CHECK: number; PAYPAL: number };
+  /** Live comps (Plan 53): units, and what sellers are owed on them before the patrol's share. */
+  comps: { count: number; totalCents: number };
+}
+
+// ─── Comps (Plan 53) ─────────────────────────────────────────────────────────
+
+export type CompReason = 'OUTSIDE' | 'NOT_FOUND' | 'LOST' | 'OTHER';
+
+export interface ItemComp {
+  id: string;
+  priceCents: number;
+  units: number;
+  reason: CompReason;
+  note: string;
+  compedAt: string;
+  compedBy: string | null;
+}
+
+export interface CompView extends ItemComp {
+  item: { id: string; sku: string; name: string; deleted: boolean };
+  seller: { id: string; name: string } | null;
+  compedByName: string | null;
+  undone: { at: string; by: string | null; byName: string | null; note: string | null } | null;
+  /** In a payout line whose money moved: undo is refused. */
+  paid: boolean;
+}
+
+export interface CompsResponse {
+  comps: CompView[];
+  live: { count: number; totalCents: number };
 }
 
 export type AddPayoutSellerResult = 'added' | 'in_another_run' | 'wrong_method' | 'incomplete_details' | 'nothing_owed' | 'not_found';

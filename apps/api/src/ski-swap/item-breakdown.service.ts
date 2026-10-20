@@ -5,6 +5,7 @@ import { uncategorisedName } from './sku.util';
 import { salesHeatmap, soldByCategory, type SalesHeatmapData } from './sales-heatmap';
 import { checkoutTotals, sellerTotals } from './seller-checkout-totals';
 import { attributeSales, type DecisionRef } from './sales-check';
+import { liveComps } from './comps/live-comps';
 import type { CheckoutTotals, SellerTotals } from '../contracts/ski-swap.contracts';
 
 /**
@@ -234,7 +235,7 @@ export class ItemBreakdownService {
    */
   private async sales(orgId: string, swap: { id: string; createdAt: Date; locationId: string }): Promise<SalesRead> {
     const read = await this.rawRead(orgId, swap);
-    const [decisions, exchanges] = await Promise.all([
+    const [decisions, exchanges, comps] = await Promise.all([
       this.prisma.swapSaleDecision.findMany({
         where: { swapId: swap.id, liveKey: { not: null } },
         select: { orderId: true, lineUid: true, decision: true, itemId: true },
@@ -244,8 +245,10 @@ export class ItemBreakdownService {
         where: { swapId: swap.id, liveKey: { not: null } },
         select: { orderId: true, lineUid: true, replacementItemId: true },
       }),
+      // Plan 53: a comped item counts as sold.
+      liveComps(this.prisma, swap.id),
     ]);
-    if (decisions.length === 0 && exchanges.length === 0) return read;
+    if (decisions.length === 0 && exchanges.length === 0 && comps.length === 0) return read;
     const credited = [...new Set([...decisions.map((d) => d.itemId), ...exchanges.map((e) => e.replacementItemId)].filter((x): x is string => !!x))];
     const items = credited.length
       // Deleted ones too: a credited sale stays a sale after its item goes.
@@ -254,7 +257,7 @@ export class ItemBreakdownService {
     const variationOfItem = new Map(items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
     return {
       at: read.at,
-      lines: attributeSales(read.lines, decisions as DecisionRef[], exchanges, new Set(), variationOfItem),
+      lines: attributeSales(read.lines, decisions as DecisionRef[], exchanges, new Set(), variationOfItem, comps),
     };
   }
 

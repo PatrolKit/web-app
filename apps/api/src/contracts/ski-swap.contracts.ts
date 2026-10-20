@@ -510,6 +510,15 @@ export const ItemResponseSchema = z.object({
   pickedUpBy: z.string().nullable(),
   /** How many went back: the quantity less any sold. Null unless returned. */
   pickedUpUnits: z.number().int().nullable(),
+  /**
+   * Comped (Plan 53): marked sold with no Square sale behind it, so its
+   * seller is paid the list price. Staff only; customers see it sold.
+   */
+  comp: z.object({
+    id: z.string(), priceCents: z.number().int(), units: z.number().int(),
+    reason: z.enum(['OUTSIDE', 'NOT_FOUND', 'LOST', 'OTHER']), note: z.string(),
+    compedAt: z.string(), compedBy: z.string().nullable(),
+  }).nullable(),
   seller: SellerResponseSchema.pick({ id: true, displayName: true, phone: true }).nullable(),
   photos: z.array(z.object({ id: z.string(), url: z.string() })),
   /**

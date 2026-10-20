@@ -155,6 +155,7 @@ function harness(opts: {
       findMany: async () => (opts.paidRun ? [{ itemId: 'item-87344', squareOrderId: 'order-gq00', line: { run: { id: 'run-1', status: 'CLOSED' } } }] : []),
     },
     swapExchange,
+    swapComp: { findMany: async () => [] },
     $transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn(prisma),
   };
   const pos = {
@@ -296,6 +297,7 @@ describe('the dashboard reads exchanges', () => {
     const prisma = {
       swapSaleDecision: { findMany: async () => [] },
       swapExchange: { findMany: async () => [EX] },
+      swapComp: { findMany: async () => [] },
       skiSwap: { findFirst: async () => ({ id: 'swap', createdAt: new Date('2026-09-01'), locationId: 'loc' }) },
       swapItem: { findMany: async () => [{ id: 'item-87339', squareVariationId: 'v-87339' }] },
     };

@@ -6,7 +6,8 @@ import { PosAdapterFactory, type IPosAdapter, type PosSaleLine } from './pos/pos
 import { ItemBreakdownService } from './item-breakdown.service';
 import { ItemService } from './item.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
-import { attributeSales, lineKeyOf, netUnits, type DecisionRef, type ExchangeRef } from './sales-check';
+import { attributeSales, isComp, lineKeyOf, netUnits, type CompRef, type DecisionRef, type ExchangeRef } from './sales-check';
+import { liveComps } from './comps/live-comps';
 import { receiptOf } from './sales-check.service';
 import { squareSaleUrl } from './square-links';
 import type {
@@ -32,6 +33,8 @@ interface Read {
   decisions: DecisionRef[];
   /** Live exchanges only. */
   exchanges: SwapExchange[];
+  /** Live comps (Plan 53). */
+  comps: CompRef[];
 }
 
 /**
@@ -103,7 +106,8 @@ export class ExchangesService {
     // Either or both: a four-digit number could be a receipt or a ticket.
     const wanted = new Set(ticket ? read.items.filter((i) => i.sku === ticket && i.squareVariationId).map((i) => i.squareVariationId!) : []);
     const found = this.attributed(read).filter((l) => {
-      if (!l.lineUid || netUnits(l) === 0 || !byVariation.has(l.variationId)) return false;
+      // A comp is no Square sale, so nothing to exchange (Plan 53 D6).
+      if (!l.lineUid || isComp(l) || netUnits(l) === 0 || !byVariation.has(l.variationId)) return false;
       return wanted.has(l.variationId) || (!!receipt && receiptOf(l.paymentId)?.toLowerCase() === receipt.toLowerCase());
     });
     const live = new Map(read.exchanges.map((e) => [lineKeyOf(e.orderId, e.lineUid), e]));
@@ -307,7 +311,7 @@ export class ExchangesService {
     const ours = new Set(read.items.map((i) => i.squareVariationId).filter((v): v is string => !!v));
     const variationOfItem = new Map(read.items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
     const refs: ExchangeRef[] = read.exchanges.map((e) => ({ orderId: e.orderId, lineUid: e.lineUid, replacementItemId: e.replacementItemId }));
-    return attributeSales(read.lines, read.decisions, refs, ours, variationOfItem);
+    return attributeSales(read.lines, read.decisions, refs, ours, variationOfItem, read.comps);
   }
 
   /** Units counted sold on a variation, after decisions and exchanges. */
@@ -334,15 +338,16 @@ export class ExchangesService {
     const raw = await this.breakdown.rawSales(orgId, swapId);
     const pos = await this.pos.forOrg(orgId);
     if (!pos) throw new BadRequestException('Square isn’t connected.');
-    const [items, decisions, exchanges, config] = await Promise.all([
+    const [items, decisions, exchanges, config, comps] = await Promise.all([
       this.itemsOf(swapId),
       this.prisma.swapSaleDecision.findMany({ where: { swapId, liveKey: { not: null } }, select: { orderId: true, lineUid: true, decision: true, itemId: true } }),
       this.prisma.swapExchange.findMany({ where: { swapId, liveKey: { not: null } } }),
       this.prisma.squareConfig.findUnique({ where: { orgId }, select: { environment: true } }),
+      liveComps(this.prisma, swapId),
     ]);
     return {
       orgId, swapId, locationId: swap.locationId, pos, env: config?.environment ?? 'production',
-      lines: raw.lines, items, decisions: decisions as DecisionRef[], exchanges,
+      lines: raw.lines, items, decisions: decisions as DecisionRef[], exchanges, comps,
     };
   }
 

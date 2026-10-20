@@ -13,7 +13,8 @@ import { sellerDisplayName } from '../seller.service';
 import { ItemBreakdownService } from '../item-breakdown.service';
 import { SalesCheckService, receiptOf } from '../sales-check.service';
 import { squareSaleUrl } from '../square-links';
-import { attributeSales, type DecisionRef } from '../sales-check';
+import { attributeSales, COMP_ORDER_PREFIX, type DecisionRef } from '../sales-check';
+import { liveComps } from '../comps/live-comps';
 import { buildRun, discountsOf, exchangedKeyOf, resolveDestination, type BuiltLine, type BuiltRun, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
 import { PAYOUTS_LOCKED_MESSAGE, PayPalClient, PayPalError, type PayoutItemRequest, type PayoutItemStatus } from './paypal.client';
@@ -70,6 +71,8 @@ interface Snapshot {
   unmatched: SalesCheckIssue[];
   salesError: string | null;
   discounts: ReturnType<typeof discountsOf>['discounts'];
+  /** Every comp of the swap, live or undone, for the cards (Plan 53). */
+  comps: Map<string, { reason: string; note: string; live: boolean; units: number; priceCents: number }>;
 }
 
 const SELLER_SELECT = {
@@ -181,6 +184,7 @@ export class PayoutRunService {
         .filter((l) => l.method === 'DONATE')
         .map((l) => ({ sellerId: l.sellerId, name: l.sellerName, items: l.items.reduce((n, i) => n + i.quantity, 0), grossCents: l.items.reduce((n, i) => n + i.priceCents * i.quantity, 0) })),
       ready,
+      comps: [...snap.comps.values()].filter((c) => c.live).reduce((t, c) => ({ count: t.count + c.units, totalCents: t.totalCents + c.units * c.priceCents }), { count: 0, totalCents: 0 }),
     };
   }
 
@@ -661,7 +665,7 @@ export class PayoutRunService {
   private async snapshot(orgId: string, swapId: string): Promise<Snapshot> {
     const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { id: true, title: true } });
     if (!swap) throw new NotFoundException('Swap not found');
-    const [settings, square, itemRows, decisions, exchanges] = await Promise.all([
+    const [settings, square, itemRows, decisions, exchanges, comps] = await Promise.all([
       this.prisma.skiSwapSettings.findUnique({ where: { orgId } }),
       this.prisma.squareConfig.findUnique({ where: { orgId }, select: { environment: true } }),
       // Tombstones included, deliberately: an item can sell and be deleted
@@ -673,7 +677,9 @@ export class PayoutRunService {
       }),
       this.prisma.swapSaleDecision.findMany({ where: { swapId, liveKey: { not: null } }, select: { orderId: true, lineUid: true, decision: true, itemId: true } }),
       this.prisma.swapExchange.findMany({ where: { swapId, liveKey: { not: null } }, select: { orderId: true, lineUid: true, replacementItemId: true } }),
+      liveComps(this.prisma, swapId),
     ]);
+    const compRows = await this.prisma.swapComp.findMany({ where: { swapId }, select: { id: true, reason: true, note: true, liveKey: true, units: true, priceCents: true } });
     const bps = settings?.commissionBasisPoints ?? 0;
     const feeRate = { flatCents: settings?.paypalFeeFlatCents ?? 25, bps: settings?.paypalFeeBps ?? 0, capCents: settings?.paypalFeeCapCents ?? 0 };
 
@@ -692,6 +698,7 @@ export class PayoutRunService {
         exchanges,
         new Set(itemRows.map((i) => i.squareVariationId).filter((v): v is string => !!v)),
         new Map(itemRows.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!])),
+        comps,
       );
       built = buildRun(itemRows, [...sellers.values()].map((s) => s.run), sales, { commissionBasisPoints: bps });
     } catch (err) {
@@ -726,6 +733,7 @@ export class PayoutRunService {
       unmatched,
       salesError,
       discounts: discountsOf(built.lines, exchangedKeys).discounts,
+      comps: new Map(compRows.map((c) => [c.id, { reason: c.reason, note: c.note, live: !!c.liveKey, units: c.units, priceCents: c.priceCents }])),
     };
   }
 
@@ -868,18 +876,26 @@ export class PayoutRunService {
     const s = snap.sellers.get(l.sellerId);
     const built = snap.lineBySeller.get(l.sellerId);
     const frozen = !!l.frozenAt;
-    const link = (orderId: string, paymentId: string | null) => squareSaleUrl(snap.env, orderId, paymentId);
+    // A comp has no receipt or Square sale to link to; it says why it was comped (Plan 53).
+    const saleRefs = (orderId: string, paymentId: string | null) => {
+      const compId = orderId.startsWith(COMP_ORDER_PREFIX) ? orderId.slice(COMP_ORDER_PREFIX.length) : null;
+      if (compId) {
+        const c = snap.comps.get(compId);
+        return { receipt: null, saleUrl: null, comp: { reason: c?.reason ?? 'OTHER', note: c?.note ?? '' } };
+      }
+      return { receipt: receiptOf(paymentId), saleUrl: squareSaleUrl(snap.env, orderId, paymentId), comp: null };
+    };
 
     const items = frozen
       ? l.items.map((i) => ({
           itemId: i.itemId, sku: i.sku, name: i.name, priceCents: i.priceCents, quantity: i.quantity, collectedCents: i.collectedCents,
           donated: !!i.itemId && snap.donatedItems.has(i.itemId), soldAt: i.soldAt.toISOString(),
-          receipt: receiptOf(i.paymentId), saleUrl: link(i.squareOrderId, i.paymentId),
+          ...saleRefs(i.squareOrderId, i.paymentId),
         }))
       : (built?.items ?? []).map((i) => ({
           itemId: i.itemId, sku: i.sku, name: i.name, priceCents: i.priceCents, quantity: i.quantity, collectedCents: i.collectedCents,
           donated: snap.donatedItems.has(i.itemId), soldAt: i.soldAt.toISOString(),
-          receipt: receiptOf(i.paymentId), saleUrl: link(i.squareOrderId, i.paymentId),
+          ...saleRefs(i.squareOrderId, i.paymentId),
         }));
     const count = items.reduce((n, i) => n + i.quantity, 0);
     const totals = frozen

@@ -124,6 +124,7 @@ describe('emailing a seller’s remaining items (iOS Plan 38)', () => {
       },
       swapSaleDecision: { findMany: async () => [] },
       swapExchange: { findMany: async () => [] },
+      swapComp: { findMany: async () => [] },
       device: { findUnique: async () => ({ name: 'Pickup iPad' }) },
       user: { findUnique: async () => ({ firstName: 'Dana', lastName: 'Smith', email: null, phone: null }) },
       auditLog: { create: async ({ data }: { data: Record<string, unknown> }) => { audits.push(data); } },

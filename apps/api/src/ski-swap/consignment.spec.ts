@@ -65,6 +65,8 @@ function harness(opts: { requireConsignmentScan?: boolean } = {}) {
     ) ?? null;
 
   const prisma = {
+
+    swapComp: { findMany: async () => [] },
     skiSwap: { findFirst: async () => SWAP },
     checkinStation: { findFirst: async () => STATION },
     swapItem: {

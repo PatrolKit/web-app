@@ -19,6 +19,7 @@ function harness(nextSku = 'SS26-A-0001') {
   const stored: { sku: string; priceCents: number | null }[] = [];
   let last: object | null = null;
   const prisma = {
+    swapComp: { findMany: async () => [] },
     skiSwap: { findFirst: async () => ({ id: 'swap-1', orgId: 'org-1', title: 'Swap', squareCategoryId: 'cat', locationId: 'loc' }) },
     checkinStation: { findFirst: async () => ({ id: 'station-1', code: 'A', bridgeDeviceId: null }) },
     swapItem: {

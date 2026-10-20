@@ -25,6 +25,7 @@ function harness(opts: { existing: ReturnType<typeof row>; squareStock: number |
     setInventoryPhysicalCount: async (id: string, _loc: string, n: number) => { stockSets.push([id, n]); },
   };
   const prisma = {
+    swapComp: { findMany: async () => [] },
     skiSwap: { findFirst: async () => SWAP },
     swapItem: {
       findFirst: async () => opts.existing,

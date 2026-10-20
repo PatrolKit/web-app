@@ -16,6 +16,7 @@ const STATION = { id: 'station-1', code: 'A', bridgeDeviceId: null };
 function harness() {
   const created: { name: string; sku: string; categoryId: string | null }[] = [];
   const prisma = {
+    swapComp: { findMany: async () => [] },
     skiSwap: { findFirst: async () => SWAP },
     checkinStation: { findFirst: async () => STATION },
     swapItem: {

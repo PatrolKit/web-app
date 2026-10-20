@@ -329,8 +329,11 @@ function repeatSales(kind: SalesCheckIssue['kind'], o: Repeat): Side {
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const one = kind === 'scanned_twice';
   const fields: Field[] = o.sales.map((s, n) => ({
-    label: one ? `Line ${n + 1}` : s.receipt ? `#${s.receipt}` : `Sale ${n + 1}`,
-    value: `${money(s.collectedCents)}${s.quantity > 1 ? ` (×${s.quantity})` : ''}${one ? '' : ` · ${when(s.soldAt)}`}`,
+    // A comp (Plan 53) is no Square sale: undone in Adjustments → Comps.
+    label: s.comp ? 'Comp' : one ? `Line ${n + 1}` : s.receipt ? `#${s.receipt}` : `Sale ${n + 1}`,
+    value: s.comp
+      ? `Comped ${when(s.soldAt)}, nothing collected. Undo it in Adjustments → Comps if the Square sale stands.`
+      : `${money(s.collectedCents)}${s.quantity > 1 ? ` (×${s.quantity})` : ''}${one ? '' : ` · ${when(s.soldAt)}`}`,
     warn: true,
     ...(one ? {} : viewInSquare(s.link)),
   }));

@@ -118,6 +118,7 @@ export default function ItemsPage() {
       showSearch
       sellers={sellers}
       queryKeyPrefix="ski-swap/items"
+      canComp={canAdmin}
       labelsPerItem={labelsPerItem}
       batchPrint={canManage}
       exportTo={{ defaultEmail: user?.email ?? '' }}

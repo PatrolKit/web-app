@@ -78,6 +78,8 @@ import { SwapDiagnosticsController } from './diagnostics/swap-diagnostics.contro
 import { SalesCheckController } from './sales-check.controller';
 import { IssueNotesController } from './issue-notes.controller';
 import { ExchangesController } from './exchanges.controller';
+import { SwapCompController } from './comps/swap-comp.controller';
+import { SwapCompService } from './comps/swap-comp.service';
 import { ExchangesService } from './exchanges.service';
 import { ItemExportService } from './item-export.service';
 import { IssueNotesService } from './issue-notes.service';
@@ -123,6 +125,7 @@ import { IndemnificationImportService } from './indemnification/indemnification-
     SalesCheckController,
     IssueNotesController,
     ExchangesController,
+    SwapCompController,
     IndemnificationController,
     IndemnificationAdminController,
   ],
@@ -158,6 +161,7 @@ import { IndemnificationImportService } from './indemnification/indemnification-
     SalesCheckService,
     IssueNotesService,
     ExchangesService,
+    SwapCompService,
     ItemExportService,
     PublicLookupService,
     PublicStatusService,

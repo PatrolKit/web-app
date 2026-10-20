@@ -77,6 +77,8 @@ const SELLERS = [
   { key: 'tiny',    phone: '+15550198205', method: 'PAYPAL', target: 'EMAIL',    handle: null,       email: `${SEED}-tiny@patrolkit.invalid` },
   // PayPal, but the email was never verified: offered to no run (D3, D16).
   { key: 'unverified', phone: '+15550198206', method: 'PAYPAL', target: 'EMAIL', handle: null, email: `${SEED}-unverified@patrolkit.invalid`, unverified: true },
+  // Sells nothing in Square: their items are comped (Plan 53).
+  { key: 'comp', phone: '+15550198207', method: 'CHECK', target: null, handle: null, email: null },
 ];
 for (const s of SELLERS) {
   const u = await prisma.user.findFirst({ where: { phone: s.phone } });
@@ -139,6 +141,14 @@ const addItem = (item) => prisma.swapItem.create({
   },
 });
 for (const item of ITEMS) await addItem(item);
+// Unsold in Square, for comps (Plan 53): priced, priced, and unpriced.
+const COMPS = [
+  { key: 'comp', sku: 'PAY-012', price: 4000, variation: 'var-comp-1' },
+  { key: 'comp', sku: 'PAY-013', price: 2000, variation: 'var-comp-2' },
+  { key: 'comp', sku: 'PAY-014', price: null, variation: 'var-comp-3' },
+];
+const compItemIds = {};
+for (const c of COMPS) compItemIds[c.sku] = (await addItem(c)).id;
 
 // After the swap was created: a swap's sales are everything since it began (D2).
 const soldAt = () => new Date().toISOString();
@@ -375,6 +385,60 @@ ok('a late sale after the check was exported shows as owed more since paid', cha
 await post(`/payout-runs/${checkRunId}/lines/${checkRun.lines[0].id}/settle`, { note: 'Second check written' });
 const settled = await summary();
 ok('settling it by hand clears it', !settled.changedSincePaid?.some((c) => c.sellerId === sellerIds.check));
+
+console.log('\n── Comps (Plan 53) ───────────────────────────────────────────');
+
+const comp = (sku, body) => post(`/swaps/${swap.id}/items/${compItemIds[sku] ?? sku}/comp`, body);
+const sold = await prisma.swapItem.findFirst({ where: { swapId: swap.id, sku: 'PAY-003' }, select: { id: true } });
+const soldComp = await post(`/swaps/${swap.id}/items/${sold.id}/comp`, { reason: 'OUTSIDE', note: 'smoke' });
+ok('an item Square already shows sold can’t be comped', soldComp.status === 409, `HTTP ${soldComp.status}`);
+const noNote = await comp('PAY-012', { reason: 'OUTSIDE', note: '' });
+ok('a comp needs a note', noNote.status === 400, `HTTP ${noNote.status}`);
+const otherPrice = await comp('PAY-012', { reason: 'OUTSIDE', note: 'smoke', priceCents: 3500 });
+ok('a comp is always the list price', otherPrice.status === 400, `HTTP ${otherPrice.status}`);
+const unpricedNoPrice = await comp('PAY-014', { reason: 'LOST', note: 'smoke' });
+ok('an unpriced item needs a price to be comped', unpricedNoPrice.status === 400, `HTTP ${unpricedNoPrice.status}`);
+
+const c1 = await comp('PAY-012', { reason: 'OUTSIDE', note: 'Paid cash at the counter' });
+ok('an item with no sale in Square can be comped', c1.status === 200, `HTTP ${c1.status}`);
+const c3 = await comp('PAY-014', { reason: 'NOT_FOUND', note: 'Left with a buyer', priceCents: 2500 });
+ok('an unpriced item is comped at the price entered', c3.status === 200, `HTTP ${c3.status}`);
+ok('...which becomes its list price', (await prisma.swapItem.findUnique({ where: { id: compItemIds['PAY-014'] } })).priceCents === 2500);
+const compedTwice = await comp('PAY-012', { reason: 'OUTSIDE', note: 'again' });
+ok('a comped item can’t be comped twice', compedTwice.status === 409, `HTTP ${compedTwice.status}`);
+
+const items = await api(`${O}/swaps/${swap.id}/items?take=50`).then(unwrap);
+const i12 = items.items?.find((x) => x.sku === 'PAY-012');
+ok('staff see the item comped, with its reason', i12?.comp?.reason === 'OUTSIDE' && i12.comp.note === 'Paid cash at the counter', JSON.stringify(i12?.comp));
+const comps = await api(`${O}/swaps/${swap.id}/comps`).then(unwrap);
+ok('Adjustments → Comps lists them, with the total at list price',
+  comps.comps?.length === 2 && comps.live?.count === 2 && comps.live?.totalCents === 6500, JSON.stringify(comps.live));
+const withComps = await summary();
+ok('the Payouts page counts them', withComps.comps?.count === 2 && withComps.comps?.totalCents === 6500, JSON.stringify(withComps.comps));
+
+const { id: compRunId } = await post(`/swaps/${swap.id}/payout-runs`, { kind: 'CHECK' }).then(unwrap);
+const compChoices = await api(`${O}/payout-runs/${compRunId}/choices`).then(unwrap);
+const compSeller = compChoices.find((c) => c.sellerId === sellerIds.comp);
+ok('a seller with only comped items is owed the list price less the patrol’s share',
+  compSeller?.netCents === 5200 && compSeller?.items === 2, JSON.stringify(compSeller));
+await post(`/payout-runs/${compRunId}/sellers`, { sellerIds: [sellerIds.comp] });
+let compRun = await getRun(compRunId);
+const compItem = compRun.lines[0]?.items.find((x) => x.sku === 'PAY-012');
+ok('their card shows the comp where a receipt would be, with no Square link',
+  compItem?.comp?.reason === 'OUTSIDE' && compItem.receipt === null && compItem.saleUrl === null, JSON.stringify(compItem));
+ok('...and nobody is flagged for it', compRun.lines[0]?.flags.length === 0, JSON.stringify(compRun.lines[0]?.flags));
+
+const c3Id = (await prisma.swapComp.findFirst({ where: { itemId: compItemIds['PAY-014'], liveKey: { not: null } } }))?.id ?? 'none';
+const undoC3 = await post(`/swaps/${swap.id}/comps/${c3Id}/undo`, { note: 'Found it on the rack' });
+ok('a comp can be undone before its seller is paid', undoC3.status === 200, `HTTP ${undoC3.status}`);
+compRun = await getRun(compRunId);
+ok('...and their total drops at once', compRun.lines[0]?.totals.netCents === 3200, JSON.stringify(compRun.lines[0]?.totals));
+await post(`/payout-runs/${compRunId}/lines/${compRun.lines[0].id}/approve`, { approved: true });
+const closedComp = await post(`/payout-runs/${compRunId}/close-checks`, { expectedLineCount: 1 });
+ok('a comped item is paid by check like any sale', closedComp.status === 200, `HTTP ${closedComp.status}`);
+const c1Id = (await prisma.swapComp.findFirst({ where: { itemId: compItemIds['PAY-012'], liveKey: { not: null } } })).id;
+const undoPaid = await post(`/swaps/${swap.id}/comps/${c1Id}/undo`, { note: 'too late' });
+ok('a comp can’t be undone once its seller is paid', undoPaid.status === 409, `HTTP ${undoPaid.status}`);
 
 const balance = await api(`${O}/paypal-balance`).then(unwrap);
 ok('the PayPal balance answers, as a number or with the reason it can’t',

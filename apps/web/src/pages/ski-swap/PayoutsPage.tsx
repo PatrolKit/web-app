@@ -228,6 +228,14 @@ export default function PayoutsPage() {
         </div>
       )}
 
+      {/* Plan 53 D10: comps, for the record. */}
+      {!!data?.comps.count && (
+        <p className="text-sm text-gray-300">
+          {data.comps.count} comped {data.comps.count === 1 ? 'item' : 'items'}, {usd(data.comps.totalCents)} at list price, with no sale in Square.{' '}
+          <Link to="/dashboard/ski-swap/adjustments/comps" className="text-brand-400 underline">See comps</Link>
+        </p>
+      )}
+
       {/* D9: changed since paid, settled by hand. */}
       {!!data?.changedSincePaid.length && (
         <div className="border border-red-800/60 bg-red-900/15 rounded-lg px-4 py-3 space-y-1">

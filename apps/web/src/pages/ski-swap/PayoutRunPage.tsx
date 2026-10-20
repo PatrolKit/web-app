@@ -9,6 +9,7 @@ import type { PayoutLine, PayoutRun } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import NewTabLink from '../../components/NewTabLink';
 import AddSellersDialog from './payouts/AddSellersDialog';
+import { compReasonLabel } from './comps/compView';
 import {
   NOT_PAID, RUN_KIND_ICON, TONE, batchStatusText, dayText, feeRateText, fundingFor, methodLabel, soldAtText, sortSellers,
   statusView, whenText, type SortKey,
@@ -458,8 +459,15 @@ function SellerCard({ run, line, isAdmin, busy, timeZone, open, onToggle, act }:
                   <td className="py-1.5 text-gray-200">{x.name}{x.quantity > 1 && ` × ${x.quantity}`}{x.donated && <span className="ml-2 text-gray-500">donated</span>}</td>
                   <td className="py-1.5 text-gray-400 whitespace-nowrap">{soldAtText(x.soldAt, timeZone)}</td>
                   <td className="py-1.5 whitespace-nowrap">
-                    {x.receipt && <span className="font-mono text-gray-300">#{x.receipt}</span>}{' '}
-                    {x.saleUrl && <NewTabLink href={x.saleUrl} className="ml-3">View in Square</NewTabLink>}
+                    {x.comp ? (
+                      // A comp (Plan 53): no Square sale, so no receipt; it says why.
+                      <span className="text-teal-300" title={x.comp.note}>Comp · {compReasonLabel(x.comp.reason)}</span>
+                    ) : (
+                      <>
+                        {x.receipt && <span className="font-mono text-gray-300">#{x.receipt}</span>}{' '}
+                        {x.saleUrl && <NewTabLink href={x.saleUrl} className="ml-3">View in Square</NewTabLink>}
+                      </>
+                    )}
                   </td>
                   <td className="py-1.5 text-right whitespace-nowrap">
                     <span className="text-white">{x.donated ? usd(0) : usd(x.priceCents * x.quantity)}</span>

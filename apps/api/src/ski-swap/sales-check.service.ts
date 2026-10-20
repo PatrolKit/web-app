@@ -7,7 +7,8 @@ import { ItemBreakdownService } from './item-breakdown.service';
 import { IssuedTicketService } from './issued-ticket.service';
 import { ItemService } from './item.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
-import { attributeSales, classify, lineKeyOf, netUnits, salesHolds, type CheckItem, type DecisionRef, type ExchangeRef, type SalesHolds } from './sales-check';
+import { attributeSales, classify, isComp, lineKeyOf, netUnits, salesHolds, type CheckItem, type CompRef, type DecisionRef, type ExchangeRef, type SalesHolds } from './sales-check';
+import { liveComps } from './comps/live-comps';
 import { squareItemUrl, squareSaleUrl } from './square-links';
 import { FEE_LINE, feeCheck, feeKeyOf } from './fee-check';
 import { PRICE_LINE as PRICE_PREFIX, paidPriceCheck, priceKeyOf, priceLineOf } from './paid-price-check';
@@ -45,7 +46,7 @@ export class SalesCheckService {
   async list(orgId: string, swapId: string): Promise<SalesCheckResponse> {
     const read = await this.read(orgId, swapId);
     if ('error' in read) return { asOf: new Date().toISOString(), error: read.error ?? 'Square couldn’t be read.', issues: [], decided: [], ignoredCategories: [], missedFees: null };
-    const { swap, at, lines, fees, items, decisions, exchanges, pos, env } = read;
+    const { swap, at, lines, fees, items, decisions, exchanges, comps, pos, env } = read;
 
     const ourVariations = new Set(items.map((i) => i.squareVariationId).filter((v): v is string => !!v));
     const unknown = lines.filter((l) => l.variationId && !ourVariations.has(l.variationId)).map((l) => l.variationId);
@@ -54,7 +55,7 @@ export class SalesCheckService {
 
     const found = classify({
       lines, items, described, categoryNames, ignoredCategoryIds: ignored,
-      decisions: decisions.map(toRef), exchanges,
+      decisions: decisions.map(toRef), exchanges, comps,
     });
     const paymentOf = new Map(lines.map((l) => [lineKeyOf(l.orderId, l.lineUid ?? ''), l.paymentId ?? null]));
     const issues: SalesCheckIssue[] = found.map((i) => ({
@@ -64,7 +65,10 @@ export class SalesCheckService {
       ...(i.oversold ? {
         oversold: {
           ...i.oversold,
-          sales: i.oversold.sales.map(({ paymentId, lineUid: _l, ...s }) => ({ ...s, receipt: receiptOf(paymentId), link: squareSaleUrl(env, s.orderId, paymentId) })),
+          // A comp has no receipt and nothing in Square to link to (Plan 53 D8).
+          sales: i.oversold.sales.map(({ paymentId, lineUid: _l, ...s }) => isComp(s)
+            ? { ...s, receipt: null, link: null, comp: true }
+            : { ...s, receipt: receiptOf(paymentId), link: squareSaleUrl(env, s.orderId, paymentId) }),
         },
       } : {}),
       categoryIds: i.rungUpAs ? described.get(i.rungUpAs.variationId)?.categoryIds ?? [] : [],
@@ -211,7 +215,7 @@ export class SalesCheckService {
     const ctx = await this.context(orgId, swapId);
     const item = ctx.items.find((i) => i.id === itemId && !i.deleted);
     if (!item?.squareVariationId) throw new NotFoundException('That item isn’t in Square.');
-    const attributed = attributeSales(ctx.lines, ctx.decisions.map(toRef), ctx.exchanges, ctx.ourVariations, ctx.variationOfItem)
+    const attributed = attributeSales(ctx.lines, ctx.decisions.map(toRef), ctx.exchanges, ctx.ourVariations, ctx.variationOfItem, ctx.comps)
       .filter((l) => l.variationId === item.squareVariationId)
       .reduce((n, l) => n + netUnits(l), 0);
     const stock = Math.max(0, item.originalQuantity - attributed);
@@ -364,7 +368,7 @@ export class SalesCheckService {
       if (ctx.decisions.some((d) => lineKeyOf(d.orderId, d.lineUid) === key)) return { key, ok: false, error: 'That sale was already decided.' };
       const units = netUnits(line);
       // The oversold guard: never count an item sold more times than it has units.
-      const already = attributeSales(ctx.lines, ctx.decisions.map(toRef), ctx.exchanges, ctx.ourVariations, ctx.variationOfItem)
+      const already = attributeSales(ctx.lines, ctx.decisions.map(toRef), ctx.exchanges, ctx.ourVariations, ctx.variationOfItem, ctx.comps)
         .filter((x) => x.variationId === item.squareVariationId)
         .reduce((n, x) => n + netUnits(x), 0);
       if (already + units > item.originalQuantity) {
@@ -425,7 +429,7 @@ export class SalesCheckService {
     const pos = await this.pos.forOrg(orgId);
     if (!pos) return { error: 'Square isn’t connected.' };
     const swap = await this.swapOrThrow(orgId, swapId);
-    const [rows, decisions, exchanges, config] = await Promise.all([
+    const [rows, decisions, exchanges, config, comps] = await Promise.all([
       this.prisma.swapItem.findMany({
         // Withdrawn ones too, marked: a sale on an item since withdrawn is still that item's.
         where: { swapId },
@@ -438,12 +442,13 @@ export class SalesCheckService {
       // Exchanges (Plan 49): an exchanged sale counts on the item that went out.
       this.prisma.swapExchange.findMany({ where: { swapId, liveKey: { not: null } }, select: { orderId: true, lineUid: true, replacementItemId: true } }),
       this.prisma.squareConfig.findUnique({ where: { orgId }, select: { environment: true } }),
+      liveComps(this.prisma, swapId),
     ]);
     const items: CheckItem[] = rows.map((r) => ({
       id: r.id, sku: r.sku, name: r.name, priceCents: r.priceCents, squareVariationId: r.squareVariationId,
       originalQuantity: r.originalQuantity, deleted: r.deletedAt !== null, sellerName: r.seller ? sellerDisplayName(r.seller) : null, sellerId: r.seller?.id ?? null,
     }));
-    return { swap, at: raw.at, lines: raw.lines, fees: raw.fees ?? null, items, decisions, exchanges: exchanges as ExchangeRef[], pos, env: config?.environment ?? 'production' };
+    return { swap, at: raw.at, lines: raw.lines, fees: raw.fees ?? null, items, decisions, exchanges: exchanges as ExchangeRef[], comps, pos, env: config?.environment ?? 'production' };
   }
 
   private async context(orgId: string, swapId: string): Promise<Ctx> {
@@ -451,18 +456,18 @@ export class SalesCheckService {
     if ('error' in read) throw new BadRequestException(read.error);
     if (!read.swap.locationId) throw new BadRequestException('This swap has no Square location.');
     return {
-      orgId, swapId, locationId: read.swap.locationId, pos: read.pos, lines: read.lines, items: read.items, decisions: read.decisions, exchanges: read.exchanges,
+      orgId, swapId, locationId: read.swap.locationId, pos: read.pos, lines: read.lines, items: read.items, decisions: read.decisions, exchanges: read.exchanges, comps: read.comps,
       ourVariations: new Set(read.items.map((i) => i.squareVariationId).filter((v): v is string => !!v)),
       variationOfItem: new Map(read.items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!])),
     };
   }
 
   /** Sales of ours paid at another price than PatrolKit's, as every reader counts sales. */
-  private paidPrices(read: { lines: PosSaleLine[]; items: CheckItem[]; decisions: { orderId: string; lineUid: string; decision: string; itemId: string | null }[]; exchanges: ExchangeRef[] }) {
+  private paidPrices(read: { lines: PosSaleLine[]; items: CheckItem[]; decisions: { orderId: string; lineUid: string; decision: string; itemId: string | null }[]; exchanges: ExchangeRef[]; comps: CompRef[] }) {
     const ourVariations = new Set(read.items.map((i) => i.squareVariationId).filter((v): v is string => !!v));
     const variationOfItem = new Map(read.items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
     const kept = new Set(read.decisions.filter((d) => d.decision === 'PRICE_KEPT').map((d) => lineKeyOf(d.orderId, d.lineUid)));
-    const lines = attributeSales(read.lines, read.decisions.map(toRef), read.exchanges, ourVariations, variationOfItem);
+    const lines = attributeSales(read.lines, read.decisions.map(toRef), read.exchanges, ourVariations, variationOfItem, read.comps);
     return paidPriceCheck(lines, read.items, kept);
   }
 
@@ -510,6 +515,7 @@ interface Ctx {
   items: CheckItem[];
   decisions: { id: string; orderId: string; lineUid: string; decision: string; itemId: string | null }[];
   exchanges: ExchangeRef[];
+  comps: CompRef[];
   ourVariations: Set<string>;
   variationOfItem: Map<string, string>;
 }

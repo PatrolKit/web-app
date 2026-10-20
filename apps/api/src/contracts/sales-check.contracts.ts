@@ -81,7 +81,8 @@ export interface SalesCheckIssue {
   oversold?: {
     itemId: string; sku: string; name: string; sellerName: string | null; priceCents: number | null;
     units: number; quantity: number; orders: string[];
-    sales: { orderId: string; receipt: string | null; soldAt: string; quantity: number; collectedCents: number; link: string | null }[];
+    /** `comp`: an item comped in PatrolKit (Plan 53), with no Square sale behind it. */
+    sales: { orderId: string; receipt: string | null; soldAt: string; quantity: number; collectedCents: number; link: string | null; comp?: boolean }[];
   };
   /** The item's categories, for "Never count …" (other_item). */
   categoryIds: string[];
