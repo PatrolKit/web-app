@@ -4,7 +4,7 @@
 
 ## Why
 
-Staff can now **comp** an item on the web (Ski Swap → Items, or Adjustments → Comps): mark it sold when Square has no trace of it selling, so its seller is paid the list price. Customers see a comped item as sold. **Patrol staff see "Comped"**, with the reason to hand, and that includes the staff iPad.
+Staff can now **comp** an item on the web (Ski Swap → Adjustments → Comps): mark it sold when Square has no trace of it selling, so its seller is paid the list price. Customers see a comped item as sold. **Patrol staff see "Comped"**, with the reason to hand, and that includes the staff iPad.
 
 The iPad doesn't comp anything. It only shows the state.
 
@@ -36,3 +36,13 @@ Every staff item response (the item lists, by-SKU lookup, the scan lookup, and t
 
 - Wherever staff see an item's status, show **Comped** instead of **Sold** while `comp` is set, with the reason. The note is optional to show.
 - Nothing customer-facing changes: the seller status page and seller website already say "Sold" and carry no `comp`.
+
+## Since this was first sent (2026-10-19)
+
+Three more server and web changes went live. None changes the item contract above, and none needs work on the iPad:
+
+- **Comping and undoing are on Adjustments → Comps only.** The web's Items list no longer has "Comp…" or "Undo comp"; it shows the Comped status, as the iPad should. The iPad still only shows the state.
+- **The Items search ranks its matches.** The exact ticket number comes first, then other tickets containing the search, then names, then items that matched only by seller. It affects the item list only when a `query` is sent with no `sort`. The iPad sends neither: it reads items with `walk=true`, which is unchanged.
+- **The web's Reports tab is now Verify**, at `/dashboard/ski-swap/verify`. The iPad has no links to it.
+
+So the work for the iPad is still just the Comped state described above.
