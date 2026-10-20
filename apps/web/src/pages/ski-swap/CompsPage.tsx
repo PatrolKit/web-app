@@ -55,16 +55,18 @@ export default function CompsPage() {
 
   return (
     <div className="space-y-5 max-w-5xl">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-white font-semibold">Comps</h2>
-          <p className="text-gray-500 text-sm mt-0.5 max-w-2xl">
-            Items marked sold with no sale in Square, so their sellers are paid the list price. Customers see them as sold.
+          <h2 className="text-white font-medium">Comps</h2>
+          <p className="text-xs text-gray-500">
+            An item that sold with no sale in Square: paid for outside the register, sold with no sale to be found, or lost
+            or damaged. Comping it marks it sold, so its seller is paid the list price. Customers see it as sold.
           </p>
         </div>
         {isAdmin && (
-          <button type="button" onClick={() => setPicking(!picking)} className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">
-            Comp an item…
+          <button type="button" onClick={() => setPicking(!picking)}
+            className="shrink-0 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">
+            + Comp Item
           </button>
         )}
       </div>

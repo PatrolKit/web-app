@@ -46,11 +46,23 @@ function Exchanges({ orgId, swapId, isAdmin }: { orgId: string; swapId: string; 
   }
   return (
     <div className="space-y-5">
-      <p className="text-sm text-gray-300 bg-sky-950/30 border border-sky-800/60 rounded-lg px-4 py-3">
-        Exchanges in Square are preferred, but they need Square Plus and the Square for Retail POS app.
-        Record an exchange here when Square can’t.
-      </p>
-      <ExchangeList orgId={orgId} swapId={swapId} isAdmin={isAdmin} onRecord={isAdmin ? () => setRecording(true) : undefined} />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-white font-medium">Exchanges</h2>
+          <p className="text-xs text-gray-500">
+            A buyer brought an item back and left with another. The sale counts on the item that went out, and its seller
+            is paid its list price. Exchanges in Square are preferred, but they need Square Plus and the Square for Retail
+            POS app: record one here when Square can’t.
+          </p>
+        </div>
+        {isAdmin && (
+          <button type="button" onClick={() => setRecording(true)}
+            className="shrink-0 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">
+            + Record Exchange
+          </button>
+        )}
+      </div>
+      <ExchangeList orgId={orgId} swapId={swapId} isAdmin={isAdmin} />
       {recording && <RecordModal orgId={orgId} swapId={swapId} ticket={params.get('ticket') ?? ''} onClose={close} />}
     </div>
   );
@@ -270,7 +282,7 @@ function ItemPicker({ orgId, swapId, exclude, picked, onPick }: {
 
 // ─── Exchanges so far ────────────────────────────────────────────────────────
 
-function ExchangeList({ orgId, swapId, isAdmin, onRecord }: { orgId: string; swapId: string; isAdmin: boolean; onRecord?: () => void }) {
+function ExchangeList({ orgId, swapId, isAdmin }: { orgId: string; swapId: string; isAdmin: boolean }) {
   const { data, isLoading, error } = useQuery({
     queryKey: listKey(orgId, swapId),
     queryFn: () => api.skiSwap.exchanges(orgId, swapId),
@@ -286,7 +298,6 @@ function ExchangeList({ orgId, swapId, isAdmin, onRecord }: { orgId: string; swa
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <h3 className="text-white font-medium">Exchanges</h3>
         <span className="text-xs text-gray-400">
           {totals.live} live
           {totals.absorbedCents > 0 && <> · patrol absorbed <span className="text-gray-200">{money(totals.absorbedCents)}</span></>}
@@ -296,7 +307,6 @@ function ExchangeList({ orgId, swapId, isAdmin, onRecord }: { orgId: string; swa
           {data.exchanges.length > 0 && (
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ticket, receipt or seller" className={`${input} w-64`} />
           )}
-          {onRecord && <button type="button" className={primary} onClick={onRecord}>+ Record exchange</button>}
         </div>
       </div>
       {data.exchanges.length === 0 ? (
