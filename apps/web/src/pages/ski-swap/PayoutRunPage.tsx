@@ -48,7 +48,7 @@ export default function PayoutRunPage() {
     enabled: !!orgId && !!runId,
   });
   const sentOrClosed = !!run?.batch?.id || run?.status === 'CLOSED';
-  const { data: balance } = useQuery({
+  const { data: balance, isLoading: balanceLoading } = useQuery({
     queryKey: ['ski-swap/paypal-balance', orgId],
     queryFn: () => api.skiSwap.paypalBalance(orgId),
     enabled: !!orgId && run?.kind === 'PAYPAL' && !sentOrClosed,
@@ -170,7 +170,10 @@ export default function PayoutRunPage() {
             </span>
           );
           return available === null ? (
-            <p className="text-sm text-gray-300">? Make sure PayPal has {needed}. PatrolKit can’t read the balance.</p>
+            <p className="text-sm text-gray-300">
+              ? Make sure PayPal has {needed}.{' '}
+              <span className="text-gray-500">{balanceLoading ? 'Reading the balance…' : balance?.message ?? 'PatrolKit can’t read the balance.'}</span>
+            </p>
           ) : available >= funding.total ? (
             <p className="text-sm text-green-400">✓ PayPal covers this run: {needed} needed, {usd(available)} available.</p>
           ) : (
