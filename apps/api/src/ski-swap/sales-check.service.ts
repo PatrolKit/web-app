@@ -7,7 +7,7 @@ import { ItemBreakdownService } from './item-breakdown.service';
 import { IssuedTicketService } from './issued-ticket.service';
 import { ItemService } from './item.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
-import { attributeSales, classify, isComp, lineKeyOf, netUnits, oversoldOf, paidOnceKeyOf, paidOnceLineOf, salesHolds, type CheckItem, type CompRef, type DecisionRef, type ExchangeRef, type SalesHolds } from './sales-check';
+import { attributeSales, classify, isComp, lineKeyOf, netUnits, oversoldOf, paidOnceLineOf, salesHolds, soldOnceLineOf, type CheckItem, type CompRef, type DecisionRef, type ExchangeRef, type SalesHolds } from './sales-check';
 import { liveComps } from './comps/live-comps';
 import { squareItemUrl, squareSaleUrl } from './square-links';
 import { FEE_LINE, feeCheck, feeKeyOf } from './fee-check';
@@ -292,23 +292,25 @@ export class SalesCheckService {
    * for good. The sale is left as Square has it. It leaves the list, with the
    * note; undone like any decision.
    */
-  async payOnce(orgId: string, swapId: string, body: { orderId: string; itemId: string; lineUid: string; note: string }, userId: string, key?: string): Promise<SalesCheckOutcome> {
+  async payOnce(orgId: string, swapId: string, body: { key: string; orderId: string; lineUid: string; note: string }, userId: string, key?: string): Promise<SalesCheckOutcome> {
     return this.once(orgId, swapId, 'paid-once', key, async () => {
       const read = await this.read(orgId, swapId);
       if ('error' in read) throw new BadRequestException(read.error);
-      const outKey = paidOnceKeyOf(body.orderId, body.itemId);
+      const outKey = body.key;
+      // Scanned twice in one sale, or sold in different sales: the same choice.
       const issue = oversoldOf({ ...read, decisions: read.decisions.map(toRef) }).find((i) => i.key === outKey);
       if (!issue?.oversold) return { key: outKey, ok: false, error: 'That sale isn’t waiting any more: it was refunded in Square, or already decided.' };
       const o = issue.oversold;
-      const paid = o.sales.find((s) => s.orderId === body.orderId && s.lineUid === body.lineUid);
-      if (!paid) return { key: outKey, ok: false, error: 'That line isn’t one of this sale’s for the ticket. Reload and pick again.' };
+      const paid = o.sales.find((s) => s.orderId === body.orderId && s.lineUid === body.lineUid && !isComp(s));
+      if (!paid) return { key: outKey, ok: false, error: 'That line isn’t one of the ticket’s sales here. Reload and pick again.' };
       // What the other lines took: one unit of the paid line is the seller's.
       const extraCents = issue.collectedCents - Math.round(paid.collectedCents / Math.max(1, paid.quantity));
       const variationId = read.items.find((i) => i.id === o.itemId)?.squareVariationId ?? null;
       try {
         await this.prisma.swapSaleDecision.create({
           data: {
-            swapId, orgId, orderId: body.orderId, lineUid: paidOnceLineOf(body.lineUid), decision: 'PAID_ONCE', itemId: o.itemId,
+            swapId, orgId, orderId: body.orderId, decision: 'PAID_ONCE', itemId: o.itemId,
+            lineUid: issue.kind === 'oversold' ? soldOnceLineOf(body.lineUid) : paidOnceLineOf(body.lineUid),
             collectedCents: extraCents, variationId, note: body.note, decidedBy: userId, liveKey: outKey,
           },
         });
@@ -317,7 +319,7 @@ export class SalesCheckService {
         throw err;
       }
       await this.audit(orgId, userId, 'ski_swap.sales_check.paid_once', {
-        swapId, orderId: body.orderId, itemId: o.itemId, sku: o.sku, units: o.units, checkedIn: o.quantity, paidLine: body.lineUid, extraCents, note: body.note,
+        swapId, issue: outKey, orderId: body.orderId, itemId: o.itemId, sku: o.sku, units: o.units, checkedIn: o.quantity, paidLine: body.lineUid, extraCents, note: body.note,
       });
       return { key: outKey, ok: true };
     });

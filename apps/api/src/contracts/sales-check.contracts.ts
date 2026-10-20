@@ -27,12 +27,17 @@ export class CreditSaleDto extends createZodDto(CreditSaleSchema) {}
 export const NotSwapSaleSchema = z.object({ ...line, note: z.string().max(500).optional() }).strict();
 export class NotSwapSaleDto extends createZodDto(NotSwapSaleSchema) {}
 
-/** A ticket scanned twice in one sale, settled outside Square: its seller is paid once, for the line picked. */
+/**
+ * A ticket rung up more often than it has units (scanned twice in one sale, or
+ * sold in different sales), settled outside Square: its seller is paid once,
+ * for the sale line picked.
+ */
 export const PayOnceSchema = z.object({
+  /** The issue's key: `twice:…` or `oversold:…`. */
+  key: z.string().min(1).max(140),
+  /** The sale line the seller is paid for, and its sale; the rest stay unpaid. */
   orderId: z.string().min(1).max(64),
-  itemId: z.string().min(1).max(40),
-  /** The sale line the seller is paid for; the rest stay unpaid. */
-  lineUid: z.string().min(1).max(58),
+  lineUid: z.string().min(1).max(55),
   note: z.string().trim().min(1, 'Say how the extra was settled.').max(500),
 }).strict();
 export class PayOnceDto extends createZodDto(PayOnceSchema) {}

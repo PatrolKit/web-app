@@ -553,9 +553,12 @@ describe('an item rung up more times than it has units', () => {
     const once = { orderId: 'o1', lineUid: '#once:it-90830', decision: 'PAID_ONCE' as const, itemId: 'it-90830' };
     const lines = [line('o1', 'v-90830', { lineUid: 'a' }), line('o1', 'v-90830', { lineUid: 'b' })];
     expect(classify(input({ items: [item('90830')], lines, decisions: [once] }))).toEqual([]);
-    // Sold again in another sale: that's still sold more than once.
+    // Sold again in another sale: that's still sold more than once…
     const again = classify(input({ items: [item('90830')], lines: [...lines, line('o2', 'v-90830', { lineUid: 'c' })], decisions: [once] }));
     expect(again.map((i) => i.kind)).toEqual(['oversold']);
+    // …until that's paid once too, across the sales.
+    const across = { orderId: 'o2', lineUid: '#onceall:c', decision: 'PAID_ONCE' as const, itemId: 'it-90830' };
+    expect(classify(input({ items: [item('90830')], lines: [...lines, line('o2', 'v-90830', { lineUid: 'c' })], decisions: [once, across] }))).toEqual([]);
   });
 });
 
@@ -579,7 +582,7 @@ describe('paying a ticket scanned twice once (settled outside Square)', () => {
 
   it('records the line picked, with the note, clears it, links the sale, and undoes', async () => {
     const h = twice();
-    await expect(h.service.payOnce('org', 'swap', { orderId: 'iW', itemId: 'it-73190', lineUid: 'c', note: 'Refunding $20 by check' }, 'staff'))
+    await expect(h.service.payOnce('org', 'swap', { key: 'twice:iW:it-73190', orderId: 'iW', lineUid: 'c', note: 'Refunding $20 by check' }, 'staff'))
       .resolves.toEqual({ key: 'twice:iW:it-73190', ok: true });
     expect(h.decisions[0]).toMatchObject({
       decision: 'PAID_ONCE', orderId: 'iW', lineUid: '#once:c', itemId: 'it-73190', collectedCents: 2000,
@@ -589,23 +592,40 @@ describe('paying a ticket scanned twice once (settled outside Square)', () => {
     const after = await h.service.list('org', 'swap');
     expect(after.issues.map((i) => i.key)).toEqual(['twice:WE:it-73297']);
     expect(after.decided.map((d) => [d.decision, d.item?.sku, d.links.sale])).toEqual([['PAID_ONCE', '73190', expect.stringContaining('iWVdX')]]);
-    await expect(h.service.payOnce('org', 'swap', { orderId: 'iW', itemId: 'it-73190', lineUid: 'c', note: 'again' }, 'staff')).resolves.toMatchObject({ ok: false });
+    await expect(h.service.payOnce('org', 'swap', { key: 'twice:iW:it-73190', orderId: 'iW', lineUid: 'c', note: 'again' }, 'staff')).resolves.toMatchObject({ ok: false });
     await h.service.undo('org', 'swap', 'd1', 'staff');
     expect((await h.service.list('org', 'swap')).issues.map((i) => i.key).sort()).toEqual(['twice:WE:it-73297', 'twice:iW:it-73190']);
   });
 
   it('pays an unpriced ticket for the line picked: the rest is what the others took', async () => {
     const h = twice();
-    await expect(h.service.payOnce('org', 'swap', { orderId: 'WE', itemId: 'it-73297', lineUid: 'b', note: 'The $10 was 75042' }, 'staff'))
+    await expect(h.service.payOnce('org', 'swap', { key: 'twice:WE:it-73297', orderId: 'WE', lineUid: 'b', note: 'The $10 was 75042' }, 'staff'))
       .resolves.toMatchObject({ ok: true });
     expect(h.decisions[0]).toMatchObject({ lineUid: '#once:b', collectedCents: 1000 });
   });
 
+  it('pays a ticket sold in different sales once, for the sale picked (87025: #mYLC was really 87024)', async () => {
+    const h = harness({
+      items: [item('87025', { priceCents: 8900, sellerName: 'Little Mountain' })],
+      lines: [
+        line('8p', 'v-87025', { lineUid: 'a', collectedCents: 8900, unitPriceCents: 8900, paymentId: '8pWsX' }),
+        line('mY', 'v-87025', { lineUid: 'b', collectedCents: 8900, unitPriceCents: 8900, paymentId: 'mYLCX' }),
+      ],
+    });
+    expect((await h.service.list('org', 'swap')).issues.map((i) => i.key)).toEqual(['oversold:it-87025']);
+    await expect(h.service.payOnce('org', 'swap', { key: 'oversold:it-87025', orderId: '8p', lineUid: 'a', note: '#mYLC was 87024, comped Oct 19' }, 'staff'))
+      .resolves.toEqual({ key: 'oversold:it-87025', ok: true });
+    expect(h.decisions[0]).toMatchObject({ decision: 'PAID_ONCE', orderId: '8p', lineUid: '#onceall:a', itemId: 'it-87025', collectedCents: 8900, liveKey: 'oversold:it-87025' });
+    const after = await h.service.list('org', 'swap');
+    expect(after.issues).toEqual([]);
+    expect(after.decided.map((d) => [d.decision, d.item?.sku, d.links.sale])).toEqual([['PAID_ONCE', '87025', expect.stringContaining('8pWsX')]]);
+  });
+
   it('refuses a line that isn’t the sale’s, and a ticket that isn’t scanned twice', async () => {
     const h = twice();
-    await expect(h.service.payOnce('org', 'swap', { orderId: 'WE', itemId: 'it-73297', lineUid: 'c', note: 'n' }, 'staff'))
-      .resolves.toMatchObject({ ok: false, error: expect.stringMatching(/isn’t one of this sale’s/) });
-    await expect(h.service.payOnce('org', 'swap', { orderId: 'WE', itemId: 'it-73190', lineUid: 'a', note: 'n' }, 'staff'))
+    await expect(h.service.payOnce('org', 'swap', { key: 'twice:WE:it-73297', orderId: 'WE', lineUid: 'c', note: 'n' }, 'staff'))
+      .resolves.toMatchObject({ ok: false, error: expect.stringMatching(/isn’t one of the ticket’s sales/) });
+    await expect(h.service.payOnce('org', 'swap', { key: 'twice:WE:it-73190', orderId: 'WE', lineUid: 'a', note: 'n' }, 'staff'))
       .resolves.toMatchObject({ ok: false, error: expect.stringMatching(/isn’t waiting/) });
     expect(h.decisions).toEqual([]);
   });

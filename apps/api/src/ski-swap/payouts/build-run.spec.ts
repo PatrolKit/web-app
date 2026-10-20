@@ -251,6 +251,13 @@ describe('a ticket rung up more times than it has units (Plan 48)', () => {
       expect(run.held).toEqual([expect.objectContaining({ units: 2, reason: 'one_sale' })]);
     });
 
+    it('pays the sale picked across different sales, not the earliest', () => {
+      const across = [sale({ orderId: '8p', lineUid: 'a' }), sale({ orderId: 'mY', lineUid: 'b' })];
+      const run = buildRun([item()], [seller()], across, { ...opts, paidOnce: new Map([['oversold:i1', 'mY:b']]) });
+      expect(run.lines[0].items.map((i) => [i.squareOrderId, i.lineUid])).toEqual([['mY', 'b']]);
+      expect(run.held).toEqual([expect.objectContaining({ units: 1, orders: ['8p', 'mY'], reason: 'different_sales' })]);
+    });
+
     it('pays the earliest when the decision names no line of the sale', () => {
       const run = buildRun([item({ priceCents: 2000 })], [seller()], lines, once('i1'));
       expect(run.lines[0].items.map((i) => i.lineUid)).toEqual(['a']);

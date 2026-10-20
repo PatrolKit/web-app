@@ -13,7 +13,7 @@ import { sellerDisplayName } from '../seller.service';
 import { ItemBreakdownService } from '../item-breakdown.service';
 import { SalesCheckService, receiptOf } from '../sales-check.service';
 import { squareSaleUrl } from '../square-links';
-import { attributeSales, COMP_ORDER_PREFIX, paidOnceKeyOf, paidOnceLines, type DecisionRef } from '../sales-check';
+import { attributeSales, COMP_ORDER_PREFIX, paidOnceKeyOf, paidOnceLines, soldOnceKeyOf, type DecisionRef } from '../sales-check';
 import { liveComps } from '../comps/live-comps';
 import { buildRun, discountsOf, exchangedKeyOf, resolveDestination, type BuiltLine, type BuiltRun, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
@@ -836,7 +836,8 @@ export class PayoutRunService {
       unpriced: snap.built.unpricedSales.filter((u) => u.sellerId === sellerId).map((u) => u.sku),
       // Held still, and never paid; but a sale paid once in Sales check is settled, not a flag.
       held: snap.built.held
-        .filter((h) => h.sellerId === sellerId && !(h.reason === 'one_sale' && snap.paidOnce.has(paidOnceKeyOf(h.orders[0], h.itemId))))
+        .filter((h) => h.sellerId === sellerId && !snap.paidOnce.has(soldOnceKeyOf(h.itemId))
+          && !(h.reason === 'one_sale' && snap.paidOnce.has(paidOnceKeyOf(h.orders[0], h.itemId))))
         .map((h) => h.sku),
       netCents: snap.lineBySeller.get(sellerId)?.netCents ?? 0,
     });

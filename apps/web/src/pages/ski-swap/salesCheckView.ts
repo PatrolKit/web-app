@@ -24,7 +24,7 @@ const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
   { kind: 'scanned_twice', title: 'Scanned twice in one sale', explain: 'One ticket rung up more than once in a sale. Pay once pays its seller for exactly one, at the list price.' },
   { kind: 'double_fee', title: 'Charged both fees', explain: 'Charged Square’s surcharge and the Shop Fee. Refund the Shop Fee in Square.' },
   { kind: 'cash_fee', title: 'Shop Fee on a cash sale', explain: 'The Shop Fee is for cards. Refund it in Square.' },
-  { kind: 'oversold', title: 'Counted as sold more than once', explain: 'Sold in two different sales: one was really another ticket, or a return wasn’t refunded in Square.' },
+  { kind: 'oversold', title: 'Counted as sold more than once', explain: 'Sold in different sales: one was really another ticket, or a return wasn’t refunded in Square. Pay once pays its seller for one of them.' },
   { kind: 'price_paid', title: 'Sold for a different price', explain: 'Rung up at another price than PatrolKit’s. The seller is paid PatrolKit’s, unless you set it from the sale.' },
   { kind: 'unknown_ticket', title: 'A ticket PatrolKit doesn’t have', explain: 'Not one of this swap’s tickets. Find its seller from the stub, and issue it to them.' },
   { kind: 'custom_amount', title: 'Custom amounts', explain: 'Typed in at the register, with no item. Pick the item it was for.' },
@@ -318,7 +318,8 @@ export function issueActions(i: SalesCheckIssue): { action: IssueAction; tier: A
   } else if (i.paid) {
     out.push(['keep_price', 'primary'], ['use_paid_price', 'secondary']);
   } else if (i.oversold) {
-    if (i.kind === 'scanned_twice') out.push(['pay_once', 'primary']);
+    // Scanned twice in one sale, or sold in different sales: paid for once either way.
+    out.push(['pay_once', 'primary']);
   } else if (s && i.kind !== 'scanned_twice') {
     if (s.priceCents === null) {
       out.push(squarePrice !== null ? ['accept_square_price', 'primary'] : ['accept_other_price', 'primary']);
@@ -344,10 +345,13 @@ export function issueActions(i: SalesCheckIssue): { action: IssueAction; tier: A
 
 type Repeat = NonNullable<SalesCheckIssue['oversold']>;
 
-/** A line of a sale that rang a ticket up more than once, to pay its seller for. */
+/** A sale line of a ticket rung up more than once, to pay its seller for. */
 export interface PayOnceChoice {
+  /** `order:line`: lines are numbered within their sale. */
+  id: string;
+  orderId: string;
   lineUid: string;
-  /** "Line 2: $20.00", numbered as the card numbers them. */
+  /** "Line 2: $20.00" in one sale, "#mYLC: $89.00 · Oct 10, 3:03 PM" across sales, as the card shows them. */
   label: string;
   /** One unit as rung up. */
   unitCents: number | null;
@@ -356,22 +360,28 @@ export interface PayOnceChoice {
 }
 
 /**
- * Pay once: the sale's lines, and the one picked to start with: the first
- * rung up at PatrolKit's price, or the only line there is. None for an
- * unpriced ticket rung up at several prices: a person has to pick.
+ * Pay once: the sale lines, and the one picked to start with: the first rung
+ * up at PatrolKit's price, or the only line there is. None for an unpriced
+ * ticket rung up at several prices: a person has to pick. Across different
+ * sales (`oversold`), each is named by its receipt.
  */
-export function payOnceChoices(o: Repeat): { choices: PayOnceChoice[]; picked: string | null } {
+export function payOnceChoices(o: Repeat, kind: SalesCheckIssue['kind'] = 'scanned_twice'): { choices: PayOnceChoice[]; picked: string | null } {
+  const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const across = kind === 'oversold';
   const choices = o.sales.flatMap((s, n): PayOnceChoice[] => {
     if (s.comp) return [];
     const unitCents = s.unitPriceCents ?? (s.quantity > 0 ? Math.round(s.collectedCents / s.quantity) : null);
+    const amount = `${money(s.collectedCents)}${s.quantity > 1 ? ` (×${s.quantity})` : ''}`;
     return [{
+      id: `${s.orderId}:${s.lineUid}`,
+      orderId: s.orderId,
       lineUid: s.lineUid,
-      label: `Line ${n + 1}: ${money(s.collectedCents)}${s.quantity > 1 ? ` (×${s.quantity})` : ''}`,
+      label: across ? `${s.receipt ? `#${s.receipt}` : `Sale ${n + 1}`}: ${amount} · ${when(s.soldAt)}` : `Line ${n + 1}: ${amount}`,
       unitCents,
       matches: o.priceCents !== null && unitCents === o.priceCents,
     }];
   });
-  const picked = choices.find((c) => c.matches)?.lineUid ?? (choices.length === 1 ? choices[0].lineUid : null);
+  const picked = choices.find((c) => c.matches)?.id ?? (choices.length === 1 ? choices[0].id : null);
   return { choices, picked };
 }
 

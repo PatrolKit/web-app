@@ -81,7 +81,8 @@ export function issueText(issue: SalesCheckIssue): string {
         ? `Sold for ${formatCents(issue.paid.paidCents)}; PatrolKit says ${formatCents(issue.paid.priceCents)}`
         : 'Sold for a different price';
     case 'oversold':
-      return issue.oversold ? `Rung up ${issue.oversold.quantity} times; checked in ${issue.oversold.units}` : 'Rung up more times than it was checked in';
+      // `units`: sold; `quantity`: checked in.
+      return issue.oversold ? `Sold ${issue.oversold.units} times in different sales; checked in ${issue.oversold.quantity}` : 'Sold more times than it was checked in';
     case 'scanned_twice':
       return 'Scanned twice in one sale';
     case 'other_copy':

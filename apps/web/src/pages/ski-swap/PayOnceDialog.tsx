@@ -5,21 +5,22 @@ import type { SalesCheckIssue } from '../../lib/api.types';
 import { money, payOnceChoices } from './salesCheckView';
 
 /**
- * Pay once: a ticket rung up more than once in one sale. Its seller is paid
- * for exactly one, at the list price, and the rest isn't paid to anyone. A
- * sale with several lines asks which line was the ticket (the one at the list
- * price to start with); one line rung up as a quantity of 2 asks nothing.
+ * Pay once: a ticket rung up more than once, in one sale or in different
+ * sales. Its seller is paid for exactly one, at the list price, and the rest
+ * isn't paid to anyone. Several lines ask which was the ticket (the one at the
+ * list price to start with); one line rung up as a quantity of 2 asks nothing.
  */
 export default function PayOnceDialog({ orgId, swapId, issue, initialNote, onClose, onDone }: {
   orgId: string; swapId: string; issue: SalesCheckIssue; initialNote: string;
   onClose: () => void; onDone: (text: string) => void;
 }) {
   const o = issue.oversold!;
-  const { choices, picked: start } = payOnceChoices(o);
+  const across = issue.kind === 'oversold';
+  const { choices, picked: start } = payOnceChoices(o, issue.kind);
   const [picked, setPicked] = useState<string | null>(start);
   const [note, setNote] = useState(initialNote);
   const [refused, setRefused] = useState<string | null>(null);
-  const chosen = choices.find((c) => c.lineUid === picked) ?? null;
+  const chosen = choices.find((c) => c.id === picked) ?? null;
   // The list price; an unpriced ticket is paid what its line was rung up at.
   const pays = o.priceCents ?? chosen?.unitCents ?? null;
   const seller = o.sellerName ?? 'The seller';
@@ -27,7 +28,7 @@ export default function PayOnceDialog({ orgId, swapId, issue, initialNote, onClo
   const extra = o.units - o.quantity;
 
   const save = useMutation({
-    mutationFn: () => api.skiSwap.payOnce(orgId, swapId, { orderId: issue.orderId, itemId: o.itemId, lineUid: picked!, note: note.trim().slice(0, 500) }),
+    mutationFn: () => api.skiSwap.payOnce(orgId, swapId, { key: issue.key, orderId: chosen!.orderId, lineUid: chosen!.lineUid, note: note.trim().slice(0, 500) }),
     onMutate: () => setRefused(null),
     onSuccess: (r) => {
       if (!r.ok) { setRefused(r.error ?? 'That didn’t work. Try again.'); return; }
@@ -35,7 +36,7 @@ export default function PayOnceDialog({ orgId, swapId, issue, initialNote, onClo
     },
     onError: (err) => setRefused(err instanceof ApiError ? err.message : 'That didn’t work. Try again.'),
   });
-  const ready = !!picked && note.trim().length > 0 && !save.isPending;
+  const ready = !!chosen && note.trim().length > 0 && !save.isPending;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}
@@ -49,10 +50,10 @@ export default function PayOnceDialog({ orgId, swapId, issue, initialNote, onClo
         <div className="p-5 space-y-4 text-sm">
           {choices.length > 1 && (
             <fieldset className="space-y-1.5">
-              <legend className="text-gray-300 mb-1">Which line was {o.sku}?</legend>
+              <legend className="text-gray-300 mb-1">Which {across ? 'sale' : 'line'} was {o.sku}?</legend>
               {choices.map((c) => (
-                <label key={c.lineUid} className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="pay-once-line" checked={picked === c.lineUid} onChange={() => setPicked(c.lineUid)} />
+                <label key={c.id} className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="pay-once-line" checked={picked === c.id} onChange={() => setPicked(c.id)} />
                   <span className="text-white">{c.label}</span>
                   {c.matches && <span className="text-xs text-green-400">list price</span>}
                 </label>
@@ -62,18 +63,18 @@ export default function PayOnceDialog({ orgId, swapId, issue, initialNote, onClo
           <p className="text-white">
             {pays !== null && picked
               ? <>{seller} is paid for <strong>{one}</strong>, at <strong>{money(pays)}</strong>{o.priceCents === null ? ', what that line was rung up at' : ', the list price'}.</>
-              : <>{seller} is paid for {one}, for the line you pick.</>}
+              : <>{seller} is paid for {one}, for the {across ? 'sale' : 'line'} you pick.</>}
             {' '}
             <span className="text-gray-400">
               {choices.length > 1
-                ? 'The other lines aren’t paid to anyone.'
+                ? `The other ${across ? 'sales' : 'lines'} aren’t paid to anyone.`
                 : `The other ${extra === 1 ? 'charge isn’t' : `${extra} charges aren’t`} paid to anyone.`}
             </span>
           </p>
           <label className="block">
             <span className="text-gray-300">Note</span>
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
-              placeholder="How the rest was settled, e.g. customer refunded $20 by check."
+              placeholder={across ? 'What the other sale was, e.g. it was really 87024, comped Oct 19.' : 'How the rest was settled, e.g. customer refunded $20 by check.'}
               className="mt-1 w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white" />
           </label>
           {refused && <p className="text-red-300">{refused}</p>}

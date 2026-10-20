@@ -248,21 +248,31 @@ describe('Pay once: which line the seller is paid for', () => {
     expect(choices.map((c) => [c.label, c.matches])).toEqual([
       ['Line 1: $10.00', false], ['Line 2: $7.00', false], ['Line 3: $20.00', true], ['Line 4: $20.00', true],
     ]);
-    expect(picked).toBe('c');
+    expect(picked).toBe('WE:c');
   });
 
   it('matches a discounted line by what it was rung up at, not what it took', () => {
-    expect(payOnceChoices(twice(2000, [sale('a', 1000), sale('b', 1800, { unitPriceCents: 2000 })])).picked).toBe('b');
+    expect(payOnceChoices(twice(2000, [sale('a', 1000), sale('b', 1800, { unitPriceCents: 2000 })])).picked).toBe('WE:b');
   });
 
   it('starts on the only line, as a quantity of 2 (73190)', () => {
     const { choices, picked } = payOnceChoices(twice(2000, [sale('c', 4000, { quantity: 2, unitPriceCents: 2000 })]));
-    expect([choices[0].label, picked]).toEqual(['Line 1: $40.00 (×2)', 'c']);
+    expect([choices[0].label, picked]).toEqual(['Line 1: $40.00 (×2)', 'WE:c']);
   });
 
   it('leaves the pick to a person when none matches, or the ticket is unpriced', () => {
     expect(payOnceChoices(twice(2500, [sale('a', 1000), sale('b', 2000)])).picked).toBeNull();
     expect(payOnceChoices(twice(null, [sale('a', 1000), sale('b', 2000)])).picked).toBeNull();
+  });
+
+  it('names sales in different sales by receipt, and tells same-numbered lines apart (87025)', () => {
+    const sales = [
+      sale('1', 8900, { orderId: '8p', receipt: '8pWs', soldAt: '2026-10-09T18:17:00Z' }),
+      sale('1', 8900, { orderId: 'mY', receipt: 'mYLC', soldAt: '2026-10-10T19:03:00Z' }),
+    ];
+    const { choices, picked } = payOnceChoices({ ...twice(8900, sales), orders: ['8p', 'mY'] }, 'oversold');
+    expect(choices.map((c) => [c.id, c.label.replace(/ · .*/, '')])).toEqual([['8p:1', '#8pWs: $89.00'], ['mY:1', '#mYLC: $89.00']]);
+    expect(picked).toBe('8p:1');
   });
 });
 
@@ -286,8 +296,9 @@ describe('a card’s actions, by tier', () => {
     }
   });
 
-  it('makes Pay once the usual answer for a ticket rung up twice in one sale', () => {
+  it('makes Pay once the usual answer for a ticket rung up twice, in one sale or in different sales', () => {
     expect(tiers(issue({ kind: 'scanned_twice', oversold: repeat }))).toEqual(['primary:pay_once']);
+    expect(tiers(issue({ kind: 'oversold', oversold: repeat }))).toEqual(['primary:pay_once']);
   });
 
   it('accepts a suggestion, at PatrolKit’s price when Square’s differs', () => {

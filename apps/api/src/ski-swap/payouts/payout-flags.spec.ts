@@ -1,4 +1,4 @@
-import { activeKeyOf, allFinal, flagsFor, gapsForPayout, issuesBySeller, kindOf } from './payout-flags';
+import { activeKeyOf, allFinal, flagsFor, gapsForPayout, issuesBySeller, issueText, kindOf } from './payout-flags';
 import type { PayoutGapSeller } from '../../contracts/payout-gaps';
 import type { SalesCheckIssue } from '../../contracts/sales-check.contracts';
 
@@ -15,6 +15,13 @@ const issue = (over: Partial<SalesCheckIssue>): SalesCheckIssue => ({
 });
 
 const base = { kind: 'PAYPAL' as const, method: 'PAYPAL' as const, gaps: [], issues: [], unpriced: [], held: [], netCents: 5000 };
+
+describe('what an issue says on a seller’s card', () => {
+  it('says how many times a ticket sold across sales, and how many were checked in', () => {
+    const oversold = { itemId: 'i', sku: '87025', name: 'Boots', sellerName: null, priceCents: 8900, units: 2, quantity: 1, orders: ['8p', 'mY'], sales: [] };
+    expect(issueText({ kind: 'oversold', oversold } as never)).toBe('Sold 2 times in different sales; checked in 1');
+  });
+});
 
 describe('kindOf (D1)', () => {
   it('pays PayPal and Venmo in a PayPal run, checks in a check run, and Donate in neither', () => {

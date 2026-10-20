@@ -20,10 +20,12 @@ export interface DecisionRef {
    * FEE_HANDLED: a fee check marked handled; its line (`#fee`) is no sale line.
    * PRICE_KEPT: PatrolKit's price kept on a sale paid at another; its line is
    * `#price:` and the sale line's, so it never matches a sale line itself.
-   * PAID_ONCE: a ticket scanned twice in one sale, settled outside Square; its
-   * line is `#once:` and the sale line staff picked to pay the seller for
-   * (`paidOnceLineOf`), so it never matches a sale line either. The sales
-   * stand: the seller is paid for that line, and the rest stays held.
+   * PAID_ONCE: a ticket rung up more often than it has units, settled outside
+   * Square: in one sale, its line is `#once:` and the sale line staff picked
+   * to pay the seller for (`paidOnceLineOf`); across different sales,
+   * `#onceall:` and the picked line, in the decision's order
+   * (`soldOnceLineOf`). Neither matches a sale line. The sales stand: the
+   * seller is paid for that line, and the rest stays held.
    */
   decision: 'CREDIT' | 'NOT_SWAP' | 'FEE_HANDLED' | 'PRICE_KEPT' | 'PAID_ONCE';
   itemId: string | null;
@@ -32,21 +34,31 @@ export interface DecisionRef {
 export const lineKeyOf = (orderId: string, lineUid: string) => `${orderId}:${lineUid}`;
 
 /**
- * A ticket scanned twice in one sale, paid once: the issue's key, which is the
- * decision's live key too; the decision's line, which names the sale line the
- * seller is paid for; and that sale line, back from it.
+ * A ticket paid once: the issue's key, which is the decision's live key too,
+ * for a ticket scanned twice in one sale (`paidOnceKeyOf`) or sold in
+ * different sales (`soldOnceKeyOf`); and the decision's line, which names the
+ * sale line the seller is paid for.
  */
 export const paidOnceKeyOf = (orderId: string, itemId: string) => `twice:${orderId}:${itemId}`;
+export const soldOnceKeyOf = (itemId: string) => `oversold:${itemId}`;
 export const PAID_ONCE_LINE = '#once:';
+export const SOLD_ONCE_LINE = '#onceall:';
 export const paidOnceLineOf = (saleLineUid: string) => `${PAID_ONCE_LINE}${saleLineUid}`;
-export const paidLineOf = (decisionLineUid: string) => decisionLineUid.slice(PAID_ONCE_LINE.length);
+export const soldOnceLineOf = (saleLineUid: string) => `${SOLD_ONCE_LINE}${saleLineUid}`;
 
 /**
- * The sale line each paid-once ticket is paid for, by `paidOnceKeyOf`: what
- * Payouts pays first (an older decision names no line, and pays the earliest).
+ * What each paid-once ticket is paid for, which Payouts pays first: by
+ * `paidOnceKeyOf`, the line of that sale; by `soldOnceKeyOf`, the sale and its
+ * line (`lineKeyOf`). An older decision names no line, and pays the earliest.
  */
 export function paidOnceLines(decisions: Pick<DecisionRef, 'orderId' | 'lineUid' | 'decision' | 'itemId'>[]): Map<string, string> {
-  return new Map(decisions.filter((d) => d.decision === 'PAID_ONCE' && d.itemId).map((d) => [paidOnceKeyOf(d.orderId, d.itemId!), paidLineOf(d.lineUid)]));
+  const out = new Map<string, string>();
+  for (const d of decisions) {
+    if (d.decision !== 'PAID_ONCE' || !d.itemId) continue;
+    if (d.lineUid.startsWith(SOLD_ONCE_LINE)) out.set(soldOnceKeyOf(d.itemId), lineKeyOf(d.orderId, d.lineUid.slice(SOLD_ONCE_LINE.length)));
+    else out.set(paidOnceKeyOf(d.orderId, d.itemId), d.lineUid.slice(PAID_ONCE_LINE.length));
+  }
+  return out;
 }
 
 /** Units a line still stands for, after refunds. */
@@ -301,7 +313,7 @@ export function classify(input: ClassifyInput): SalesCheckIssue[] {
  * its extra still isn't paid, so it doesn't spill into "sold more than once".
  */
 export function oversoldOf(input: Pick<ClassifyInput, 'lines' | 'items' | 'decisions' | 'exchanges' | 'comps'>): SalesCheckIssue[] {
-  const paidOnce = new Set(input.decisions.filter((d) => d.decision === 'PAID_ONCE' && d.itemId).map((d) => paidOnceKeyOf(d.orderId, d.itemId!)));
+  const paidOnce = paidOnceLines(input.decisions);
   const ourVariations = new Set(input.items.map((i) => i.squareVariationId).filter((v): v is string => !!v));
   const variationOfItem = new Map(input.items.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!]));
   // A comp counts like any sale: comped, then rung up in Square, is sold twice (Plan 53 D8).
@@ -340,8 +352,9 @@ export function oversoldOf(input: Pick<ClassifyInput, 'lines' | 'items' | 'decis
       if (!paidOnce.has(key)) out.push(issue('scanned_twice', key, item, inOrder));
       extra += units(inOrder) - item.originalQuantity;
     }
-    // What's left over, across different sales.
-    if (units(lines) - extra > item.originalQuantity) out.push(issue('oversold', `oversold:${item.id}`, item, lines));
+    // What's left over, across different sales: settled once it's paid once.
+    const across = soldOnceKeyOf(item.id);
+    if (units(lines) - extra > item.originalQuantity && !paidOnce.has(across)) out.push(issue('oversold', across, item, lines));
   }
   return out;
 }

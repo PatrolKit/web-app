@@ -1,6 +1,6 @@
 import type { PosSaleLine } from '../pos/pos.adapter';
 import { splitCommission } from './money';
-import { COMP_ORDER_PREFIX, paidOnceKeyOf } from '../sales-check';
+import { COMP_ORDER_PREFIX, lineKeyOf, paidOnceKeyOf, soldOnceKeyOf } from '../sales-check';
 import type { PayoutMethod, PayoutTarget } from './paypal-mapping';
 
 /**
@@ -126,9 +126,9 @@ export interface HeldSale {
 export interface BuildOptions {
   commissionBasisPoints: number;
   /**
-   * Tickets scanned twice in one sale and paid once in Sales check: the sale
-   * line each is paid for, by `paidOnceKeyOf`. That line is paid first, and
-   * the rest held, whatever it was rung up at.
+   * Tickets paid once in Sales check (`paidOnceLines`): the sale line each is
+   * paid for, in one sale or across sales. That line is paid first, and the
+   * rest held, whatever it was rung up at.
    */
   paidOnce?: ReadonlyMap<string, string>;
 }
@@ -201,15 +201,14 @@ export function buildRun(
     if (total > cap) {
       const typed = new Set(sold.map((s) => s.unitCents));
       const orders = [...new Set(sold.map((s) => s.sale.orderId))];
-      const picked = (s: { sale: PosSaleLine }) => {
-        const line = opts.paidOnce?.get(paidOnceKeyOf(s.sale.orderId, item.id));
-        return line !== undefined && line === s.sale.lineUid;
-      };
+      const across = opts.paidOnce?.get(soldOnceKeyOf(item.id));
+      const picked = (s: { sale: PosSaleLine }) => !!s.sale.lineUid
+        && (opts.paidOnce?.get(paidOnceKeyOf(s.sale.orderId, item.id)) === s.sale.lineUid || across === lineKeyOf(s.sale.orderId, s.sale.lineUid));
       // The line picked in Sales check first (a stable sort keeps the rest by time).
       const inOrder = [...sold]
         .sort((a, b) => a.sale.soldAt.getTime() - b.sale.soldAt.getTime())
         .sort((a, b) => Number(picked(b)) - Number(picked(a)));
-      if (item.priceCents === null && typed.size > 1 && !(orders.length === 1 && inOrder.some(picked))) {
+      if (item.priceCents === null && typed.size > 1 && !((orders.length === 1 || across !== undefined) && inOrder.some(picked))) {
         held.push({ itemId: item.id, sku: item.sku, name: item.name, sellerId: item.sellerId!, units: total, unitCents: inOrder.flatMap((s) => Array(s.soldQty).fill(s.unitCents)), orders, reason: 'different_prices' });
         paying = [];
       } else {
