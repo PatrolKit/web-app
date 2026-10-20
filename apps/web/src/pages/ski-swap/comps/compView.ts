@@ -9,9 +9,3 @@ export const COMP_REASONS: { value: CompReason; label: string; hint: string }[] 
 ];
 
 export const compReasonLabel = (r: CompReason) => COMP_REASONS.find((x) => x.value === r)?.label ?? r;
-
-/** What the seller is paid on a comp: the list price, less the patrol's share (rounded once). */
-export function sellerGets(priceCents: number, units: number, commissionBasisPoints: number): number {
-  const gross = priceCents * units;
-  return gross - Math.round((gross * commissionBasisPoints) / 10_000);
-}

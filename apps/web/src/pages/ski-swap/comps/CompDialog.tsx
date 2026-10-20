@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from '../../../lib/api';
 import { usd } from '../../../lib/money';
 import type { CompReason, ItemResponse } from '../../../lib/api.types';
-import { COMP_REASONS, sellerGets } from './compView';
+import { COMP_REASONS } from './compView';
 
 /**
  * Comp an item (Plan 53 D9): marks it sold with no Square sale behind it, so
@@ -20,24 +20,16 @@ export default function CompDialog({ orgId, swapId, item: given, onClose, onDone
   const [price, setPrice] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { data: settings } = useQuery({
-    queryKey: ['ski-swap/settings', orgId],
-    queryFn: () => api.skiSwap.getSettings(orgId),
-    staleTime: 60_000,
-  });
-
   const item = picked;
   const unpriced = item?.priceCents === null;
   const typed = Math.round(Number(price.replace(/[$,\s]/g, '')) * 100);
   const priceCents = !item ? null : unpriced ? (Number.isFinite(typed) && typed > 0 ? typed : null) : item.priceCents;
-  const units = 1;
   const seller = item?.seller?.displayName ?? 'Its seller';
-  const gets = priceCents !== null && settings ? sellerGets(priceCents, units, settings.commissionBasisPoints) : null;
   const ready = !!reason && note.trim().length > 0 && priceCents !== null;
 
   const save = async () => {
     if (!item || !ready || priceCents === null) return;
-    const ask = `Comp ${item.sku} for ${usd(priceCents)}?${gets !== null ? ` ${seller} will be paid ${usd(gets)} for it.` : ''} Square’s stock goes to 0.`;
+    const ask = `Comp ${item.sku} at ${usd(priceCents)}? It’s marked sold, and Square’s stock goes to 0.`;
     if (!confirm(ask)) return;
     setSaving(true);
     setError(null);
@@ -45,7 +37,7 @@ export default function CompDialog({ orgId, swapId, item: given, onClose, onDone
       const res = await api.skiSwap.compItem(orgId, swapId, item.id, { reason: reason!, note: note.trim(), ...(unpriced ? { priceCents } : {}) });
       onDone(res.stockError
         ? `Comped ${item.sku}, but Square’s stock couldn’t be set (${res.stockError}). Set it to 0 in Square.`
-        : `Comped ${item.sku}. ${seller} will be paid for it.`);
+        : `Comped ${item.sku}: it’s marked sold.`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Couldn’t comp it. Try again.');
       setSaving(false);
@@ -61,7 +53,7 @@ export default function CompDialog({ orgId, swapId, item: given, onClose, onDone
           <h3 id="comp-title" className="text-white font-semibold">{item ? `Comp ${item.sku}` : 'Comp an item'}</h3>
           <p className="text-xs text-gray-400 mt-1">
             {item ? `${item.name} · ${seller}. ` : 'Find the item by its ticket number or name. '}
-            Marks it sold with no sale in Square, so its seller is paid the list price. Customers see it as sold.
+            Marks the ticket sold, at its list price, with no sale in Square.
           </p>
         </div>
         {!item ? (
@@ -87,7 +79,6 @@ export default function CompDialog({ orgId, swapId, item: given, onClose, onDone
             ) : (
               <p className="text-white">{usd(item.priceCents!)}</p>
             )}
-            {gets !== null && <p className="text-xs text-gray-400 mt-1">{seller} is paid {usd(gets)} after the patrol’s share.</p>}
           </div>
           <fieldset className="space-y-1.5">
             <legend className="text-gray-300 mb-1">Why</legend>
