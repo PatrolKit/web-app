@@ -330,8 +330,8 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
     onMutate: () => setRefused(null),
     onSuccess: (r, choice) => settle(r, paidPriceDoneText(issue.paid!, choice)),
   });
-  /** Scanned twice in one sale, settled outside Square: the seller is paid once, for the line picked. */
-  const twice = issue.kind === 'scanned_twice' && issue.oversold ? issue.oversold : null;
+  /** Rung up more often than checked in, in one sale or in different sales: the seller is paid once, for the line picked. */
+  const repeat = issue.oversold ?? null;
   const [payingOnce, setPayingOnce] = useState(false);
   /** What each of the card's actions says and does (`issueActions` says which, and how much each stands out). */
   function actionOf(action: IssueAction): { label: string; run: () => void; title?: string } {
@@ -399,7 +399,7 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
         })}
       </div>
 
-      {payingOnce && twice && (
+      {payingOnce && repeat && (
         <PayOnceDialog orgId={orgId} swapId={swapId} issue={issue} initialNote={note?.text ?? ''}
           onClose={() => setPayingOnce(false)} onDone={(text) => { setPayingOnce(false); onDone([{ issue, text }]); }} />
       )}
