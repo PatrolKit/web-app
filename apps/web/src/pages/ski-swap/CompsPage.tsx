@@ -3,7 +3,7 @@ import { Link, useOutletContext } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
 import { usd } from '../../lib/money';
-import type { CompView, ItemResponse } from '../../lib/api.types';
+import type { CompView } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import CompDialog from './comps/CompDialog';
 import { compReasonLabel } from './comps/compView';
@@ -17,8 +17,7 @@ export default function CompsPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
   const qc = useQueryClient();
   const isAdmin = perms.has('ski_swap:admin');
-  const [picking, setPicking] = useState(false);
-  const [comping, setComping] = useState<ItemResponse | null>(null);
+  const [comping, setComping] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [showUndone, setShowUndone] = useState(false);
 
@@ -64,16 +63,13 @@ export default function CompsPage() {
           </p>
         </div>
         {isAdmin && (
-          <button type="button" onClick={() => setPicking(!picking)}
+          <button type="button" onClick={() => setComping(true)}
             className="shrink-0 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">
             + Comp Item
           </button>
         )}
       </div>
 
-      {picking && (
-        <ItemSearch orgId={orgId} swapId={selectedSwap.id} onPick={(it) => { setPicking(false); setComping(it); }} />
-      )}
       {result && <p className={`text-sm ${result.ok ? 'text-green-400' : 'text-red-300'}`}>{result.message}</p>}
       {isLoading && <p className="text-gray-400">Loading…</p>}
       {error && <p className="text-red-300 text-sm">{error instanceof ApiError ? error.message : 'Couldn’t load comps.'}</p>}
@@ -98,8 +94,8 @@ export default function CompsPage() {
       )}
 
       {comping && (
-        <CompDialog orgId={orgId} swapId={selectedSwap.id} item={comping} onClose={() => setComping(null)}
-          onDone={(message) => { setComping(null); setResult({ ok: true, message }); refresh(); }} />
+        <CompDialog orgId={orgId} swapId={selectedSwap.id} onClose={() => setComping(false)}
+          onDone={(message) => { setComping(false); setResult({ ok: true, message }); refresh(); }} />
       )}
     </div>
   );
@@ -146,44 +142,6 @@ function CompTable({ comps, isAdmin, onUndo }: { comps: CompView[]; isAdmin: boo
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-/** "Comp an item…": the Items search, by ticket or name; only items that could be comped are offered. */
-function ItemSearch({ orgId, swapId, onPick }: { orgId: string; swapId: string; onPick: (item: ItemResponse) => void }) {
-  const [q, setQ] = useState('');
-  const { data, isFetching } = useQuery({
-    queryKey: ['ski-swap/comp-search', orgId, swapId, q],
-    queryFn: () => api.skiSwap.listItems(orgId, swapId, { query: q, take: 10 }),
-    enabled: q.trim().length >= 2,
-  });
-  const why = (it: ItemResponse): string | null =>
-    it.comp ? 'already comped'
-      : it.pickedUpAt ? 'picked up'
-        : !it.consignedAt ? 'not received'
-          : !it.squareSynced ? 'not in Square'
-            : it.inventoryKnown && it.inStock < 1 ? 'already sold'
-              : null;
-  return (
-    <div className="border border-gray-700 bg-surface-50 rounded-lg p-3 space-y-2">
-      <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ticket number or name…"
-        className="w-72 bg-surface-100 border border-gray-700 rounded px-3 py-1.5 text-sm text-white" />
-      {isFetching && <p className="text-xs text-gray-500">Searching…</p>}
-      <ul className="space-y-1">
-        {data?.items.map((it) => {
-          const no = why(it);
-          return (
-            <li key={it.id}>
-              <button type="button" disabled={!!no} onClick={() => onPick(it)}
-                className="text-left text-sm text-gray-300 hover:text-white disabled:text-gray-600 disabled:cursor-not-allowed">
-                <span className="font-mono text-brand-400">{it.sku}</span> {it.name} · {it.priceCents === null ? 'unpriced' : usd(it.priceCents)}
-                {it.seller ? ` · ${it.seller.displayName}` : ''}{no && ` · ${no}`}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
     </div>
   );
 }
