@@ -334,8 +334,24 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
     onMutate: () => setRefused(null),
     onSuccess: (r, choice) => settle(r, paidPriceDoneText(issue.paid!, choice)),
   });
-  const busy = credit.isPending || notSwap.isPending || issue_.isPending || feeHandled.isPending || paidPrice.isPending;
-  const failed = credit.error ?? notSwap.error ?? issue_.error ?? feeHandled.error ?? paidPrice.error;
+  /** Scanned twice in one sale, and the extra settled outside Square: the seller is paid once. */
+  const twice = issue.kind === 'scanned_twice' && issue.oversold ? issue.oversold : null;
+  const payOnce = useMutation({
+    mutationFn: (text: string) => api.skiSwap.payOnce(orgId, swapId, { orderId: issue.orderId, itemId: twice!.itemId, note: text }),
+    onMutate: () => setRefused(null),
+    onSuccess: (r) => settle(r, `Paid once: ${twice!.sku} pays ${twice!.sellerName ?? 'its seller'} ${money(twice!.priceCents ?? 0)}; the extra is settled outside Square.`),
+  });
+  function askPayOnce() {
+    const o = twice!;
+    const extra = o.units - o.quantity;
+    const ask = `Pay ${o.sellerName ?? 'the seller'} for ${o.sku} once, at ${money(o.priceCents!)}? The ${extra === 1 ? 'extra charge stays' : `${extra} extra charges stay`} unpaid, and the sale stays as Square has it.\n\nHow was the extra settled? (for the record)`;
+    const text = window.prompt(ask, note?.text ?? '');
+    if (text === null) return;
+    if (!text.trim()) { setRefused('Say how the extra was settled.'); return; }
+    payOnce.mutate(text.trim().slice(0, 500));
+  }
+  const busy = credit.isPending || notSwap.isPending || issue_.isPending || feeHandled.isPending || paidPrice.isPending || payOnce.isPending;
+  const failed = credit.error ?? notSwap.error ?? issue_.error ?? feeHandled.error ?? paidPrice.error ?? payOnce.error;
   const err = refused ?? (failed ? errorText(failed) : null);
   const when = new Date(issue.soldAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -357,6 +373,12 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
           <button type="button" className={btn} disabled={busy}
             onClick={() => { if (window.confirm(`Mark this ${issue.fee!.shopFeeName} refunded? Only when it was refunded some way Square doesn’t show; a refund in Square clears it by itself.`)) feeHandled.mutate(); }}>
             Mark refunded…
+          </button>
+        )}
+        {canFix && twice && (
+          <button type="button" className={btn} disabled={busy || twice.priceCents === null} onClick={askPayOnce}
+            title={twice.priceCents === null ? `${twice.sku} has no price. Price it on the Items page first.` : 'The customer’s extra charge was settled outside Square: pay the seller for the ticket once.'}>
+            {payOnce.isPending ? 'Saving…' : 'Pay once…'}
           </button>
         )}
         {canFix && issue.paid && (
@@ -468,6 +490,7 @@ function Decided({ d, orgId, swapId, canFix, onUndone }: {
         {d.decision === 'CREDIT' ? `${money(d.collectedCents)} sale put on ${d.item ? `${d.item.sku} ${d.item.name}` : 'an item'}`
           : d.decision === 'FEE_HANDLED' ? `${money(d.collectedCents)} fee marked refunded`
             : d.decision === 'PRICE_KEPT' ? `PatrolKit price kept on ${d.item ? `${d.item.sku} ${d.item.name}` : 'an item'}, sold for ${money(d.collectedCents)}`
+            : d.decision === 'PAID_ONCE' ? `${d.item ? `${d.item.sku} ${d.item.name}` : 'A ticket'} paid once; the extra ${money(d.collectedCents)} settled outside Square`
             : `Not a swap sale (${money(d.collectedCents)})`}
       </span>
       {d.note && <span>“{d.note}”</span>}

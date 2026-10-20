@@ -27,6 +27,14 @@ export class CreditSaleDto extends createZodDto(CreditSaleSchema) {}
 export const NotSwapSaleSchema = z.object({ ...line, note: z.string().max(500).optional() }).strict();
 export class NotSwapSaleDto extends createZodDto(NotSwapSaleSchema) {}
 
+/** A ticket scanned twice in one sale, settled outside Square: its seller is paid once. */
+export const PayOnceSchema = z.object({
+  orderId: z.string().min(1).max(64),
+  itemId: z.string().min(1).max(40),
+  note: z.string().trim().min(1, 'Say how the extra was settled.').max(500),
+}).strict();
+export class PayOnceDto extends createZodDto(PayOnceSchema) {}
+
 /** A fee check refunded some way Square doesn't show (Plan 48 fee check). */
 export const FeeHandledSchema = z.object({ orderId: z.string().min(1).max(64) }).strict();
 export class FeeHandledDto extends createZodDto(FeeHandledSchema) {}
@@ -118,7 +126,7 @@ export interface SalesCheckIssue {
 export interface SalesCheckDecided {
   id: string;
   key: string;
-  decision: 'CREDIT' | 'NOT_SWAP' | 'FEE_HANDLED' | 'PRICE_KEPT';
+  decision: 'CREDIT' | 'NOT_SWAP' | 'FEE_HANDLED' | 'PRICE_KEPT' | 'PAID_ONCE';
   orderId: string;
   lineUid: string;
   collectedCents: number;

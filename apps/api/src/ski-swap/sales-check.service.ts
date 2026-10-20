@@ -7,7 +7,7 @@ import { ItemBreakdownService } from './item-breakdown.service';
 import { IssuedTicketService } from './issued-ticket.service';
 import { ItemService } from './item.service';
 import { SELLER_NAME_INCLUDE, sellerDisplayName } from './seller.service';
-import { attributeSales, classify, isComp, lineKeyOf, netUnits, salesHolds, type CheckItem, type CompRef, type DecisionRef, type ExchangeRef, type SalesHolds } from './sales-check';
+import { attributeSales, classify, isComp, lineKeyOf, netUnits, oversoldOf, paidOnceKeyOf, paidOnceLineOf, salesHolds, type CheckItem, type CompRef, type DecisionRef, type ExchangeRef, type SalesHolds } from './sales-check';
 import { liveComps } from './comps/live-comps';
 import { squareItemUrl, squareSaleUrl } from './square-links';
 import { FEE_LINE, feeCheck, feeKeyOf } from './fee-check';
@@ -58,6 +58,8 @@ export class SalesCheckService {
       decisions: decisions.map(toRef), exchanges, comps,
     });
     const paymentOf = new Map(lines.map((l) => [lineKeyOf(l.orderId, l.lineUid ?? ''), l.paymentId ?? null]));
+    // A decision on no one line (paid once) links to its sale by the order.
+    const paymentOfOrder = new Map(lines.filter((l) => l.paymentId).map((l) => [l.orderId, l.paymentId!]));
     const issues: SalesCheckIssue[] = found.map((i) => ({
       key: i.key, kind: i.kind, orderId: i.orderId, lineUid: i.lineUid, soldAt: i.soldAt,
       quantity: i.quantity, refundedQuantity: i.refundedQuantity, collectedCents: i.collectedCents, unitPriceCents: i.unitPriceCents,
@@ -116,7 +118,7 @@ export class SalesCheckService {
         item: item ? { id: item.id, sku: item.sku, name: item.name } : null,
         note: d.note, markedSold: d.markedSold, decidedBy: d.decidedBy ? names.get(d.decidedBy) ?? null : null,
         decidedAt: d.decidedAt.toISOString(),
-        links: { sale: squareSaleUrl(env, d.orderId, paymentOf.get(lineKeyOf(d.orderId, d.lineUid.replace(PRICE_PREFIX, ''))) ?? null) },
+        links: { sale: squareSaleUrl(env, d.orderId, paymentOf.get(lineKeyOf(d.orderId, d.lineUid.replace(PRICE_PREFIX, ''))) ?? paymentOfOrder.get(d.orderId) ?? null) },
       };
     });
 
@@ -278,6 +280,42 @@ export class SalesCheckService {
       }
       await this.audit(orgId, userId, 'ski_swap.sales_check.price_kept', {
         swapId, orderId: body.orderId, lineUid: body.lineUid, itemId: issue.item.id, sku: issue.item.sku, priceCents: issue.item.priceCents, paidCents: issue.paidCents,
+      });
+      return { key: outKey, ok: true };
+    });
+  }
+
+  /**
+   * A ticket scanned twice in one sale, and the extra settled outside Square
+   * (the customer refunded by hand): its seller is paid once, for the units
+   * checked in, and the extra stays held for good. The sale is left as Square
+   * has it. It leaves the list, with the note; undone like any decision.
+   */
+  async payOnce(orgId: string, swapId: string, body: { orderId: string; itemId: string; note: string }, userId: string, key?: string): Promise<SalesCheckOutcome> {
+    return this.once(orgId, swapId, 'paid-once', key, async () => {
+      const read = await this.read(orgId, swapId);
+      if ('error' in read) throw new BadRequestException(read.error);
+      const outKey = paidOnceKeyOf(body.orderId, body.itemId);
+      const issue = oversoldOf({ ...read, decisions: read.decisions.map(toRef) }).find((i) => i.key === outKey);
+      if (!issue?.oversold) return { key: outKey, ok: false, error: 'That sale isn’t waiting any more: it was refunded in Square, or already decided.' };
+      const o = issue.oversold;
+      // An unpriced ticket rung up at different prices is held whole: which is its price isn't known.
+      if (o.priceCents === null) return { key: outKey, ok: false, error: `${o.sku} has no price. Price it on the Items page first, so its seller is paid that.` };
+      const extraCents = Math.round((issue.collectedCents * (o.units - o.quantity)) / o.units);
+      const variationId = read.items.find((i) => i.id === o.itemId)?.squareVariationId ?? null;
+      try {
+        await this.prisma.swapSaleDecision.create({
+          data: {
+            swapId, orgId, orderId: body.orderId, lineUid: paidOnceLineOf(o.itemId), decision: 'PAID_ONCE', itemId: o.itemId,
+            collectedCents: extraCents, variationId, note: body.note, decidedBy: userId, liveKey: outKey,
+          },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return { key: outKey, ok: false, error: 'That sale was already decided.' };
+        throw err;
+      }
+      await this.audit(orgId, userId, 'ski_swap.sales_check.paid_once', {
+        swapId, orderId: body.orderId, itemId: o.itemId, sku: o.sku, units: o.units, checkedIn: o.quantity, extraCents, note: body.note,
       });
       return { key: outKey, ok: true };
     });

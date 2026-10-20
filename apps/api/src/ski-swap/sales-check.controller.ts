@@ -7,7 +7,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
-  CreditSaleDto, CreditSuggestedDto, FeeHandledDto, IgnoreCategoryDto, IssueAndCreditDto, NotSwapSaleDto, PaidPriceDto,
+  CreditSaleDto, CreditSuggestedDto, FeeHandledDto, IgnoreCategoryDto, IssueAndCreditDto, NotSwapSaleDto, PaidPriceDto, PayOnceDto,
 } from '../contracts/sales-check.contracts';
 import { SalesCheckService } from './sales-check.service';
 
@@ -69,6 +69,16 @@ export class SalesCheckController {
     @CurrentUser() user: AuthenticatedUser, @Headers('idempotency-key') key?: string,
   ) {
     return this.salesCheck.feeHandled(orgId, swapId, body, user.userId, key);
+  }
+
+  /** A ticket scanned twice in one sale, settled outside Square: its seller is paid once. */
+  @Post('paid-once')
+  @RequirePermissions('ski_swap:admin')
+  paidOnce(
+    @Param('orgId') orgId: string, @Param('swapId') swapId: string, @Body() body: PayOnceDto,
+    @CurrentUser() user: AuthenticatedUser, @Headers('idempotency-key') key?: string,
+  ) {
+    return this.salesCheck.payOnce(orgId, swapId, body, user.userId, key);
   }
 
   /** A sale paid at another price: PatrolKit's price kept, so the seller is paid it. */

@@ -79,6 +79,8 @@ const SELLERS = [
   { key: 'unverified', phone: '+15550198206', method: 'PAYPAL', target: 'EMAIL', handle: null, email: `${SEED}-unverified@patrolkit.invalid`, unverified: true },
   // Sells nothing in Square: their items are comped (Plan 53).
   { key: 'comp', phone: '+15550198207', method: 'CHECK', target: null, handle: null, email: null },
+  // Their ticket was scanned twice in one sale, and the extra settled outside Square.
+  { key: 'twice', phone: '+15550198208', method: 'CHECK', target: null, handle: null, email: null },
 ];
 for (const s of SELLERS) {
   const u = await prisma.user.findFirst({ where: { phone: s.phone } });
@@ -132,6 +134,8 @@ const ITEMS = [
   // Refunded in full: sold, then returned, so it owes nobody anything.
   { key: 'paypal', sku: 'PAY-007', price: 9000,  variation: 'var-paypal-3', qty: 1, collected: 9000, refunded: 1 },
   { key: 'unverified', sku: 'PAY-008', price: 3000, variation: 'var-unverified-1', qty: 1, collected: 3000 },
+  // One ticket rung up as a quantity of 2: the customer was charged twice.
+  { key: 'twice', sku: 'PAY-020', price: 2000, variation: 'var-twice-1', qty: 2, collected: 4000 },
 ];
 const addItem = (item) => prisma.swapItem.create({
   data: {
@@ -196,8 +200,8 @@ console.log('\n── Before you pay ──────────────�
 
 const before = await summary();
 ok('the Payouts page reads the swap', before.swapId === swap.id && before.salesError === null, before.salesError ?? '');
-ok('three sellers are ready for a PayPal run and one for a check run',
-  before.ready?.PAYPAL === 3 && before.ready?.CHECK === 1, JSON.stringify(before.ready));
+ok('three sellers are ready for a PayPal run and two for a check run',
+  before.ready?.PAYPAL === 3 && before.ready?.CHECK === 2, JSON.stringify(before.ready));
 ok('the seller with an unverified PayPal email is listed to fix, not offered',
   before.missingDetails?.length === 1 && before.missingDetails[0].sellerId === sellerIds.unverified && before.missingDetails[0].key === 'PAYPAL_UNVERIFIED',
   JSON.stringify(before.missingDetails));
@@ -439,6 +443,32 @@ ok('a comped item is paid by check like any sale', closedComp.status === 200, `H
 const c1Id = (await prisma.swapComp.findFirst({ where: { itemId: compItemIds['PAY-012'], liveKey: { not: null } } })).id;
 const undoPaid = await post(`/swaps/${swap.id}/comps/${c1Id}/undo`, { note: 'too late' });
 ok('a comp can’t be undone once its seller is paid', undoPaid.status === 409, `HTTP ${undoPaid.status}`);
+
+console.log('\n── Scanned twice, paid once ──────────────────────────────────');
+
+const twiceOrder = sales.find((x) => x.variationId === 'var-twice-1').orderId;
+const twiceItem = await prisma.swapItem.findFirst({ where: { swapId: swap.id, sku: 'PAY-020' }, select: { id: true } });
+const { id: twiceRunId } = await post(`/swaps/${swap.id}/payout-runs`, { kind: 'CHECK' }).then(unwrap);
+await post(`/payout-runs/${twiceRunId}/sellers`, { sellerIds: [sellerIds.twice] });
+let twiceRun = await getRun(twiceRunId);
+ok('a ticket rung up twice in one sale is owed once, and flags its seller',
+  twiceRun.lines[0]?.totals.netCents === 1600 && twiceRun.lines[0].flags.some((f) => /PAY-020/.test(f.text)), JSON.stringify([twiceRun.lines[0]?.totals, twiceRun.lines[0]?.flags]));
+const twiceBlocked = await post(`/payout-runs/${twiceRunId}/lines/${twiceRun.lines[0].id}/approve`, { approved: true });
+ok('...so they can’t be approved', twiceBlocked.status === 409, `HTTP ${twiceBlocked.status}`);
+const onceNoNote = await post(`/swaps/${swap.id}/sales-check/paid-once`, { orderId: twiceOrder, itemId: twiceItem.id, note: ' ' });
+ok('paying once needs a note', onceNoNote.status === 400, `HTTP ${onceNoNote.status}`);
+const once = await post(`/swaps/${swap.id}/sales-check/paid-once`, { orderId: twiceOrder, itemId: twiceItem.id, note: 'Customer refunded $20 by check' }).then(unwrap);
+ok('paying once in Sales check is recorded', once.ok === true, JSON.stringify(once));
+const checkAfter = await api(`${O}/swaps/${swap.id}/sales-check`).then(unwrap);
+ok('...the issue leaves the list, decided, with its note',
+  !checkAfter.issues.some((i) => i.oversold?.sku === 'PAY-020')
+    && checkAfter.decided.some((d) => d.decision === 'PAID_ONCE' && d.item?.sku === 'PAY-020' && d.collectedCents === 2000 && d.note === 'Customer refunded $20 by check'),
+  JSON.stringify(checkAfter.decided.filter((d) => d.decision === 'PAID_ONCE')));
+twiceRun = await getRun(twiceRunId);
+ok('...the seller is still owed once, and no longer flagged',
+  twiceRun.lines[0]?.totals.netCents === 1600 && twiceRun.lines[0].flags.length === 0, JSON.stringify([twiceRun.lines[0]?.totals, twiceRun.lines[0]?.flags]));
+const twiceApproved = await post(`/payout-runs/${twiceRunId}/lines/${twiceRun.lines[0].id}/approve`, { approved: true });
+ok('...and can be approved', twiceApproved.status === 200, `HTTP ${twiceApproved.status}`);
 
 const balance = await api(`${O}/paypal-balance`).then(unwrap);
 ok('the PayPal balance answers, as a number or with the reason it can’t',

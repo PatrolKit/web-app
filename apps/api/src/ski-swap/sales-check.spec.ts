@@ -309,7 +309,7 @@ describe('the Sales check routes (D1, D13)', () => {
 
   it('make every change a POST that needs an admin', () => {
     const changes = handlers.filter((n) => n !== 'list' && n !== 'count');
-    expect(changes.sort()).toEqual(['credit', 'creditSuggested', 'feeHandled', 'ignoreCategory', 'issueAndCredit', 'notSwap', 'priceFromSale', 'priceKept', 'restock', 'undo']);
+    expect(changes.sort()).toEqual(['credit', 'creditSuggested', 'feeHandled', 'ignoreCategory', 'issueAndCredit', 'notSwap', 'paidOnce', 'priceFromSale', 'priceKept', 'restock', 'undo']);
     for (const name of changes) {
       expect(Reflect.getMetadata(METHOD_METADATA, SalesCheckController.prototype[name])).toBe(RequestMethod.POST);
       expect(reflector.get(PERMISSIONS_KEY, SalesCheckController.prototype[name])).toEqual(['ski_swap:admin']);
@@ -547,6 +547,53 @@ describe('an item rung up more times than it has units', () => {
       lines: [line('o1', 'v-90830', { lineUid: 'a' }), line('o1', 'v-90830', { lineUid: 'b' }), line('o2', 'v-90830', { lineUid: 'c' })],
     }));
     expect(issues.map((i) => i.kind)).toEqual(['scanned_twice', 'oversold']);
+  });
+
+  it('is settled when the sale is paid once, and its extra doesn’t spill into sold more than once', () => {
+    const once = { orderId: 'o1', lineUid: '#once:it-90830', decision: 'PAID_ONCE' as const, itemId: 'it-90830' };
+    const lines = [line('o1', 'v-90830', { lineUid: 'a' }), line('o1', 'v-90830', { lineUid: 'b' })];
+    expect(classify(input({ items: [item('90830')], lines, decisions: [once] }))).toEqual([]);
+    // Sold again in another sale: that's still sold more than once.
+    const again = classify(input({ items: [item('90830')], lines: [...lines, line('o2', 'v-90830', { lineUid: 'c' })], decisions: [once] }));
+    expect(again.map((i) => i.kind)).toEqual(['oversold']);
+  });
+});
+
+describe('paying a ticket scanned twice once (settled outside Square)', () => {
+  // 73190: $20, rung up as a quantity of 2 on #iWVd; the customer is refunded by hand.
+  const twice = () => harness({
+    items: [item('73190', { sellerName: 'Carrie Will', priceCents: 2000 }), item('73297')],
+    lines: [
+      line('iW', 'v-73190', { lineUid: 'c', quantity: 2, collectedCents: 4000, unitPriceCents: 2000, paymentId: 'iWVdX' }),
+      line('WE', 'v-73297', { lineUid: 'a', collectedCents: 1000, unitPriceCents: 1000 }),
+      line('WE', 'v-73297', { lineUid: 'b', collectedCents: 2000, unitPriceCents: 2000 }),
+    ],
+  });
+
+  it('records it with the note, clears it, links the sale, and undoes', async () => {
+    const h = twice();
+    await expect(h.service.payOnce('org', 'swap', { orderId: 'iW', itemId: 'it-73190', note: 'Refunding $20 by check' }, 'staff'))
+      .resolves.toEqual({ key: 'twice:iW:it-73190', ok: true });
+    expect(h.decisions[0]).toMatchObject({
+      decision: 'PAID_ONCE', orderId: 'iW', lineUid: '#once:it-73190', itemId: 'it-73190', collectedCents: 2000,
+      note: 'Refunding $20 by check', liveKey: 'twice:iW:it-73190',
+    });
+    expect(h.audits).toEqual(['ski_swap.sales_check.paid_once']);
+    const after = await h.service.list('org', 'swap');
+    expect(after.issues.map((i) => i.key)).toEqual(['twice:WE:it-73297']);
+    expect(after.decided.map((d) => [d.decision, d.item?.sku, d.links.sale])).toEqual([['PAID_ONCE', '73190', expect.stringContaining('iWVdX')]]);
+    await expect(h.service.payOnce('org', 'swap', { orderId: 'iW', itemId: 'it-73190', note: 'again' }, 'staff')).resolves.toMatchObject({ ok: false });
+    await h.service.undo('org', 'swap', 'd1', 'staff');
+    expect((await h.service.list('org', 'swap')).issues.map((i) => i.key).sort()).toEqual(['twice:WE:it-73297', 'twice:iW:it-73190']);
+  });
+
+  it('refuses an unpriced ticket, and one that isn’t scanned twice', async () => {
+    const h = twice();
+    await expect(h.service.payOnce('org', 'swap', { orderId: 'WE', itemId: 'it-73297', note: 'n' }, 'staff'))
+      .resolves.toMatchObject({ ok: false, error: expect.stringMatching(/73297 has no price/) });
+    await expect(h.service.payOnce('org', 'swap', { orderId: 'WE', itemId: 'it-73190', note: 'n' }, 'staff'))
+      .resolves.toMatchObject({ ok: false, error: expect.stringMatching(/isn’t waiting/) });
+    expect(h.decisions).toEqual([]);
   });
 });
 

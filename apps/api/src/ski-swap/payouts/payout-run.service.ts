@@ -13,7 +13,7 @@ import { sellerDisplayName } from '../seller.service';
 import { ItemBreakdownService } from '../item-breakdown.service';
 import { SalesCheckService, receiptOf } from '../sales-check.service';
 import { squareSaleUrl } from '../square-links';
-import { attributeSales, COMP_ORDER_PREFIX, type DecisionRef } from '../sales-check';
+import { attributeSales, COMP_ORDER_PREFIX, paidOnceKeyOf, type DecisionRef } from '../sales-check';
 import { liveComps } from '../comps/live-comps';
 import { buildRun, discountsOf, exchangedKeyOf, resolveDestination, type BuiltLine, type BuiltRun, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
@@ -73,6 +73,8 @@ interface Snapshot {
   discounts: ReturnType<typeof discountsOf>['discounts'];
   /** Every comp of the swap, live or undone, for the cards (Plan 53). */
   comps: Map<string, { reason: string; note: string; live: boolean; units: number; priceCents: number }>;
+  /** Tickets scanned twice in one sale and paid once in Sales check: their held extra is settled. */
+  paidOnce: Set<string>;
 }
 
 const SELLER_SELECT = {
@@ -734,6 +736,7 @@ export class PayoutRunService {
       salesError,
       discounts: discountsOf(built.lines, exchangedKeys).discounts,
       comps: new Map(compRows.map((c) => [c.id, { reason: c.reason, note: c.note, live: !!c.liveKey, units: c.units, priceCents: c.priceCents }])),
+      paidOnce: new Set(decisions.filter((d) => d.decision === 'PAID_ONCE' && d.itemId).map((d) => paidOnceKeyOf(d.orderId, d.itemId!))),
     };
   }
 
@@ -829,7 +832,10 @@ export class PayoutRunService {
       gaps: gapsForPayout(s.gaps),
       issues: snap.issues.get(sellerId) ?? [],
       unpriced: snap.built.unpricedSales.filter((u) => u.sellerId === sellerId).map((u) => u.sku),
-      held: snap.built.held.filter((h) => h.sellerId === sellerId).map((h) => h.sku),
+      // Held still, and never paid; but a sale paid once in Sales check is settled, not a flag.
+      held: snap.built.held
+        .filter((h) => h.sellerId === sellerId && !(h.reason === 'one_sale' && snap.paidOnce.has(paidOnceKeyOf(h.orders[0], h.itemId))))
+        .map((h) => h.sku),
       netCents: snap.lineBySeller.get(sellerId)?.netCents ?? 0,
     });
   }

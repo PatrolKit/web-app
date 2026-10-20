@@ -29,7 +29,7 @@ const ORDER: { kind: SalesCheckKind; title: string; explain: string }[] = [
   },
   {
     kind: 'scanned_twice', title: 'Scanned twice in one sale',
-    explain: 'The ticket was rung up more than once in the same sale: twice, as a quantity of 2, or again on another copy. Each ticket is one item, so either the customer paid for it twice (refund the extra in Square; it leaves this list once Square shows the refund) or another item was rung up under this ticket (check the receipt and the stubs, and note which ticket it was).',
+    explain: 'The ticket was rung up more than once in the same sale: twice, as a quantity of 2, or again on another copy. Each ticket is one item, so either the customer paid for it twice (refund the extra in Square, and it leaves this list once Square shows the refund; or settle it outside Square and choose Pay once) or another item was rung up under this ticket (check the receipt and the stubs, and note which ticket it was).',
   },
   {
     kind: 'double_fee', title: 'Charged both fees',
