@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheckDouble as faCheckDoubleDuo, faPlus as faPlusDuo, faTicket as faTicketDuo, faPrint as faPrintDuo, faRotateRight as faRotateRightDuo, faTag as faTagDuo, faTriangleExclamation as faTriangleExclamationDuo } from '@fortawesome/pro-duotone-svg-icons';
-import { api, ApiError } from '../../lib/api';
+import { api } from '../../lib/api';
 import type { ItemAttributeInput, ItemListSort, ItemListStatus, ItemListView, ItemResponse, SellerKind, SellerResponse } from '../../lib/api.types';
 import SearchableSelect from '../../components/SearchableSelect';
 import ActionsMenu, { type MenuAction } from '../../components/ActionsMenu';
@@ -112,8 +112,6 @@ export interface SwapItemsPanelProps {
    * offering a button that would be.
    */
   selfService?: boolean;
-  /** Offer "Undo comp" on a comped item: Ski Swap admins on staff's Items page (Plan 53 D9). Comping is on Adjustments → Comps. */
-  canComp?: boolean;
   showSearch?: boolean;
   sellers?: SellerResponse[];
   emptyMessage?: string;
@@ -307,7 +305,7 @@ export function itemState(item: ItemResponse): {
 }
 
 export default function SwapItemsPanel({
-  orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService, canComp = false,
+  orgId, swapId, canManage, queryKeyPrefix, panelApi, selfService,
   showSearch = false, sellers, emptyMessage = 'No items found.', labelsPerItem = 1, batchPrint = false,
   tickets, actions = [], toolbarNote, addBlockedBecause, exportTo,
 }: SwapItemsPanelProps) {
@@ -413,26 +411,6 @@ export default function SwapItemsPanel({
 
   /** A delete or a print that was refused. Both used to fail without a word. */
   const [actionError, setActionError] = useState<string | null>(null);
-  const [compNote, setCompNote] = useState<{ ok: boolean; message: string } | null>(null);
-  const refreshAfterComp = () => {
-    qc.invalidateQueries({ queryKey: [queryKeyPrefix] });
-    qc.invalidateQueries({ queryKey: ['ski-swap/comps'] });
-    qc.invalidateQueries({ queryKey: ['ski-swap/payouts-summary'] });
-  };
-  const undoComp = async (item: ItemResponse) => {
-    const comp = item.comp!;
-    const note = prompt(`Undo the comp on ${item.sku}? It counts as unsold again, and Square’s stock goes back. Why?`);
-    if (!note?.trim() || !swapId) return;
-    try {
-      const res = await api.skiSwap.undoComp(orgId, swapId, comp.id, note.trim());
-      setCompNote(res.stockError
-        ? { ok: false, message: `Undone, but Square’s stock couldn’t be set (${res.stockError}). Set ${item.sku}’s stock in Square.` }
-        : { ok: true, message: `Undone. ${item.sku} counts as unsold again.` });
-    } catch (err) {
-      setCompNote({ ok: false, message: err instanceof ApiError ? err.message : 'Couldn’t undo it.' });
-    }
-    refreshAfterComp();
-  };
   const describe = (err: unknown, fallback: string) =>
     err instanceof Error && err.message ? err.message : fallback;
 
@@ -690,7 +668,6 @@ export default function SwapItemsPanel({
 
   return (
     <div className="space-y-4">
-      {compNote && <p className={`text-sm ${compNote.ok ? 'text-green-400' : 'text-red-300'}`}>{compNote.message}</p>}
       {actionError && (
         <p className="text-sm text-red-400 bg-red-900/20 border border-red-900/50 rounded px-3 py-2">
           {actionError}
@@ -843,10 +820,6 @@ export default function SwapItemsPanel({
                 </td>
                 {canManage && (
                   <td className="py-2 flex gap-2 items-center">
-                    {/* Comps (Plan 53): made on Adjustments → Comps; undone there or here. */}
-                    {canComp && !selfService && item.comp && (
-                      <button onClick={() => void undoComp(item)} className="text-xs text-teal-300 hover:underline">Undo comp</button>
-                    )}
                     {canUndoPickup(item) && panelApi.undoPickup && (
                       <button
                         onClick={() => { if (confirm(`Put "${item.name}" back on sale? It goes back in Square.`)) undoPickup.mutate(item.id); }}
