@@ -5,11 +5,11 @@ import { api, ApiError } from '../../lib/api';
 import SearchableSelect from '../../components/SearchableSelect';
 import type { IssueNote, IssueNotesResponse, ItemResponse, SalesCheckDecided, SalesCheckIssue, SalesCheckOutcome, SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
-import { BusyBanner, FoldHeader, NoteBox, SidePanel, Tombstone, useFolds } from './ReportCard';
+import { actionClass, BusyBanner, FoldHeader, NoteBox, SidePanel, Tombstone, useFolds } from './ReportCard';
 import { centsOf } from './swapDiagnosticsView';
 import PayOnceDialog from './PayOnceDialog';
 import {
-  acceptedText, byCategory, groupsOf, missedFeesText, money, paidPriceButtons, paidPriceDoneText, patrolKitSide, squarePriceOf, squareSide, suggestedLines, withDecided, type CategoryGroup, type SalesCheckGroup,
+  acceptedText, byCategory, groupsOf, issueActions, missedFeesText, money, paidPriceButtons, paidPriceDoneText, patrolKitSide, squarePriceOf, squareSide, suggestedLines, withDecided, type CategoryGroup, type IssueAction, type SalesCheckGroup,
 } from './salesCheckView';
 
 const key = (orgId: string, swapId: string) => ['ski-swap/sales-check', orgId, swapId];
@@ -18,8 +18,6 @@ function errorText(err: unknown): string {
   return err instanceof ApiError ? err.message : 'Something went wrong. Try again.';
 }
 
-const btn = 'bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-gray-200 px-2.5 py-1 rounded text-xs';
-const primary = 'bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-2.5 py-1 rounded text-xs font-medium';
 
 /**
  * Sales check (Plan 48): every sale at the swap's location that PatrolKit
@@ -131,7 +129,7 @@ function SalesCheck({ orgId, swapId, canFix }: { orgId: string; swapId: string; 
           </div>
           {canFix && suggested.length > 0 && (
             <div className="flex flex-wrap items-center gap-3">
-              <button type="button" className={primary} disabled={creditAll.isPending} onClick={confirmCreditAll}>
+              <button type="button" className={actionClass.primary} disabled={creditAll.isPending} onClick={confirmCreditAll}>
                 {creditAll.isPending ? 'Accepting…' : suggested.length === 1 ? 'Accept the suggestion' : `Accept all ${suggested.length} suggestions`}
               </button>
             </div>
@@ -258,7 +256,7 @@ function Category({ category: c, ignored, orgId, swapId, canFix, onDone, childre
         </button>
         <span className="text-xs text-gray-400">{c.issues.length} sale{c.issues.length === 1 ? '' : 's'} · {money(c.cents)}</span>
         {canFix && c.categoryId && (
-          <button type="button" className={`${btn} ml-auto`} disabled={ignore.isPending}
+          <button type="button" className={`${actionClass.secondary} ml-auto`} disabled={ignore.isPending}
             onClick={() => { if (window.confirm(`Never count sales from “${c.name}” as swap sales? They stop showing here. You can count them again below.`)) ignore.mutate(c.categoryId!); }}>
             {ignore.isPending ? 'Working…' : `Never count “${c.name}”`}
           </button>
@@ -298,12 +296,10 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
       r.pricedCents ? ` · priced ${money(r.pricedCents)}` : r.priceError ? ` · price not set: ${r.priceError}` : ''}`),
   });
   /** An unpriced suggestion is accepted with a price: Square's, or one asked for. */
-  const unpriced = !!issue.suggestion && issue.suggestion.priceCents === null;
   const squarePrice = squarePriceOf(issue);
   const accept = (priceCents?: number, replacePrice?: boolean) => credit.mutate({ item: { id: issue.suggestion!.itemId, ...issue.suggestion! }, accepted: true, priceCents, replacePrice });
   /** A priced suggestion Square charged something else for: keep PatrolKit's price, or take Square's. */
   const ourPrice = issue.suggestion?.priceCents ?? null;
-  const pricesDiffer = ourPrice !== null && squarePrice !== null && ourPrice !== squarePrice;
   function acceptWithPrice() {
     let ask = `A price for ${issue.suggestion!.sku}, in PatrolKit and Square:`;
     for (;;) {
@@ -338,6 +334,47 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
   /** Scanned twice in one sale, settled outside Square: the seller is paid once, for the line picked. */
   const twice = issue.kind === 'scanned_twice' && issue.oversold ? issue.oversold : null;
   const [payingOnce, setPayingOnce] = useState(false);
+  /** What each of the card's actions says and does (`issueActions` says which, and how much each stands out). */
+  function actionOf(action: IssueAction): { label: string; run: () => void; title?: string } {
+    switch (action) {
+      case 'mark_refunded':
+        return {
+          label: 'Mark refunded…',
+          run: () => { if (window.confirm(`Mark this ${issue.fee!.shopFeeName} refunded? Only when it was refunded some way Square doesn’t show; a refund in Square clears it by itself.`)) feeHandled.mutate(); },
+        };
+      case 'pay_once':
+        return { label: 'Pay once…', title: 'The rest was settled outside Square: pay the seller for one line, once.', run: () => setPayingOnce(true) };
+      case 'keep_price':
+        return { label: paidPriceButtons(issue.paid!).keep, run: () => paidPrice.mutate('keep') };
+      case 'use_paid_price':
+        return {
+          label: paidPrice.isPending ? 'Setting…' : paidPriceButtons(issue.paid!).use,
+          run: () => { if (window.confirm(`Set ${issue.paid!.sku}’s PatrolKit price from ${money(issue.paid!.priceCents)} to ${money(issue.paid!.paidCents)}? The seller is paid that. Square’s price is left as it sold.`)) paidPrice.mutate('use'); },
+        };
+      case 'accept':
+        return { label: credit.isPending ? 'Accepting…' : 'Accept suggestion', run: () => accept() };
+      case 'accept_keep_price':
+        return { label: `Accept keeping PatrolKit price (${money(ourPrice ?? 0)})`, run: () => accept() };
+      case 'accept_replace_price':
+        return {
+          label: `Accept with Square price (${money(squarePrice ?? 0)})`,
+          run: () => { if (window.confirm(`Accept this sale and change ${issue.suggestion!.sku}’s price from ${money(ourPrice!)} to ${money(squarePrice!)}, in PatrolKit and Square?`)) accept(squarePrice!, true); },
+        };
+      case 'accept_square_price':
+        return { label: credit.isPending ? 'Accepting…' : `Accept with Square price (${money(squarePrice ?? 0)})`, run: () => accept(squarePrice!) };
+      case 'accept_other_price':
+        return { label: squarePrice !== null ? 'Accept with different price…' : 'Accept with a price…', run: acceptWithPrice };
+      case 'pick_item':
+        return { label: `Pick ${issue.suggestion ? 'another' : 'an'} item…`, run: () => setPicking(picking === 'item' ? null : 'item') };
+      case 'issue_to_seller':
+        return { label: 'Issue to a seller…', run: () => setPicking(picking === 'seller' ? null : 'seller') };
+      case 'not_swap':
+        return {
+          label: 'Not a swap sale',
+          run: () => { const note = window.prompt('Not a swap sale. A note, if you like (e.g. “swag”):', ''); if (note !== null) notSwap.mutate(note.trim() || undefined); },
+        };
+    }
+  }
   const busy = credit.isPending || notSwap.isPending || issue_.isPending || feeHandled.isPending || paidPrice.isPending;
   const failed = credit.error ?? notSwap.error ?? issue_.error ?? feeHandled.error ?? paidPrice.error;
   const err = refused ?? (failed ? errorText(failed) : null);
@@ -357,69 +394,10 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-800 bg-surface-100/40 last:rounded-b-lg">
         <span className="text-xs text-gray-500 mr-auto">{when}</span>
         {err && <span className="text-xs text-red-400">{err}</span>}
-        {canFix && issue.fee && (
-          <button type="button" className={btn} disabled={busy}
-            onClick={() => { if (window.confirm(`Mark this ${issue.fee!.shopFeeName} refunded? Only when it was refunded some way Square doesn’t show; a refund in Square clears it by itself.`)) feeHandled.mutate(); }}>
-            Mark refunded…
-          </button>
-        )}
-        {canFix && twice && (
-          <button type="button" className={btn} disabled={busy} onClick={() => setPayingOnce(true)}
-            title="The rest was settled outside Square: pay the seller for one line, once.">
-            Pay once…
-          </button>
-        )}
-        {canFix && issue.paid && (
-          <>
-            <button type="button" className={btn} disabled={busy} onClick={() => paidPrice.mutate('keep')}>
-              {paidPriceButtons(issue.paid).keep}
-            </button>
-            <button type="button" className={primary} disabled={busy}
-              onClick={() => { if (window.confirm(`Set ${issue.paid!.sku}’s PatrolKit price from ${money(issue.paid!.priceCents)} to ${money(issue.paid!.paidCents)}? The seller is paid that. Square’s price is left as it sold.`)) paidPrice.mutate('use'); }}>
-              {paidPrice.isPending ? 'Setting…' : paidPriceButtons(issue.paid).use}
-            </button>
-          </>
-        )}
-        {canFix && !issue.oversold && !issue.fee && !issue.paid && (
-          <>
-            <button type="button" className={btn} disabled={busy}
-              onClick={() => { const note = window.prompt('Not a swap sale. A note, if you like (e.g. “swag”):', ''); if (note !== null) notSwap.mutate(note.trim() || undefined); }}>
-              Not a swap sale
-            </button>
-            <button type="button" className={btn} disabled={busy} onClick={() => setPicking(picking === 'item' ? null : 'item')}>
-              Pick {issue.suggestion ? 'another' : 'an'} item…
-            </button>
-            {issue.kind === 'unknown_ticket' && (
-              <button type="button" className={btn} disabled={busy} onClick={() => setPicking(picking === 'seller' ? null : 'seller')}>Issue to a seller…</button>
-            )}
-            {issue.suggestion && unpriced && issue.kind !== 'scanned_twice' && (
-              <>
-                <button type="button" className={btn} disabled={busy} onClick={acceptWithPrice}>Accept with different price…</button>
-                {squarePrice !== null && (
-                  <button type="button" className={primary} disabled={busy} onClick={() => accept(squarePrice)}>
-                    {credit.isPending ? 'Accepting…' : `Accept with Square price (${money(squarePrice)})`}
-                  </button>
-                )}
-              </>
-            )}
-            {issue.suggestion && !unpriced && issue.kind !== 'scanned_twice' && pricesDiffer && (
-              <>
-                <button type="button" className={btn} disabled={busy} onClick={() => accept()}>
-                  Accept keeping PatrolKit price ({money(ourPrice!)})
-                </button>
-                <button type="button" className={primary} disabled={busy}
-                  onClick={() => { if (window.confirm(`Accept this sale and change ${issue.suggestion!.sku}’s price from ${money(ourPrice!)} to ${money(squarePrice!)}, in PatrolKit and Square?`)) accept(squarePrice!, true); }}>
-                  {credit.isPending ? 'Accepting…' : `Accept with Square price (${money(squarePrice!)})`}
-                </button>
-              </>
-            )}
-            {issue.suggestion && !unpriced && issue.kind !== 'scanned_twice' && !pricesDiffer && (
-              <button type="button" className={primary} disabled={busy} onClick={() => accept()}>
-                {credit.isPending ? 'Accepting…' : 'Accept suggestion'}
-              </button>
-            )}
-          </>
-        )}
+        {canFix && issueActions(issue).map(({ action, tier }) => {
+          const a = actionOf(action);
+          return <button key={action} type="button" className={actionClass[tier]} disabled={busy} title={a.title} onClick={a.run}>{a.label}</button>;
+        })}
       </div>
 
       {payingOnce && twice && (
@@ -434,7 +412,7 @@ function Issue({ issue, orgId, swapId, canFix, sellers, onDone, note, onSaveNote
             <SearchableSelect value={seller} onChange={setSeller} placeholder="Whose ticket is it?" clearLabel="No seller chosen"
               options={sellers.map((s) => ({ value: s.id, label: s.displayName, sublabel: s.phone ?? undefined, keywords: s.email ?? undefined }))} />
           </div>
-          <button type="button" className={primary} disabled={!seller || busy}
+          <button type="button" className={actionClass.primary} disabled={!seller || busy}
             onClick={() => {
               const at = squarePrice !== null ? ` at ${money(squarePrice)}, the price Square sold it for,` : '';
               if (window.confirm(`Issue ticket ${issue.ticket} to this seller${at} put it in Square, and put this sale on it?`)) issue_.mutate();

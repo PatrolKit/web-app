@@ -319,6 +319,59 @@ export function missedFeesText(m: { orders: number; cardCents: number; feeCents:
   return `${m.orders.toLocaleString('en-US')} card sale${m.orders === 1 ? ' was' : 's were'} charged no fee${about}. Counted here, not flagged.`;
 }
 
+/**
+ * How much an action on the page stands out: the usual answer (primary, at
+ * most one per card), a real alternative (secondary), or a way out
+ * (tertiary). The same three looks everywhere on the Verify tab.
+ */
+export type ActionTier = 'primary' | 'secondary' | 'tertiary';
+
+export type IssueAction =
+  | 'pay_once' | 'mark_refunded' | 'keep_price' | 'use_paid_price'
+  | 'accept' | 'accept_keep_price' | 'accept_replace_price' | 'accept_square_price' | 'accept_other_price'
+  | 'pick_item' | 'issue_to_seller' | 'not_swap';
+
+const TIER_ORDER: Record<ActionTier, number> = { tertiary: 0, secondary: 1, primary: 2 };
+
+/**
+ * A card's actions, each with its tier, in the order they're shown: ways out
+ * first, the usual answer last, at the right. PatrolKit's price is the usual
+ * answer wherever a price is in question: it's what the seller agreed.
+ */
+export function issueActions(i: SalesCheckIssue): { action: IssueAction; tier: ActionTier }[] {
+  const out: [IssueAction, ActionTier][] = [];
+  const s = i.suggestion;
+  const squarePrice = squarePriceOf(i);
+  if (i.fee) {
+    // The fix is a refund in Square; this is for one made some other way.
+    out.push(['mark_refunded', 'secondary']);
+  } else if (i.paid) {
+    out.push(['keep_price', 'primary'], ['use_paid_price', 'secondary']);
+  } else if (i.oversold) {
+    if (i.kind === 'scanned_twice') out.push(['pay_once', 'primary']);
+  } else if (s && i.kind !== 'scanned_twice') {
+    if (s.priceCents === null) {
+      out.push(squarePrice !== null ? ['accept_square_price', 'primary'] : ['accept_other_price', 'primary']);
+      if (squarePrice !== null) out.push(['accept_other_price', 'secondary']);
+    } else if (squarePrice !== null && squarePrice !== s.priceCents) {
+      out.push(['accept_keep_price', 'primary'], ['accept_replace_price', 'secondary']);
+    } else {
+      out.push(['accept', 'primary']);
+    }
+    out.push(['pick_item', 'tertiary'], ['not_swap', 'tertiary']);
+  } else if (i.kind === 'scanned_twice') {
+    // On another copy: a second charge to set aside, or another ticket to find. Neither is the usual answer.
+    out.push(['pick_item', 'secondary'], ['not_swap', 'secondary']);
+  } else if (i.kind === 'unknown_ticket') {
+    out.push(['issue_to_seller', 'primary'], ['pick_item', 'secondary'], ['not_swap', 'tertiary']);
+  } else if (i.kind === 'other_item') {
+    out.push(['not_swap', 'primary'], ['pick_item', 'tertiary']);
+  } else {
+    out.push(['pick_item', 'primary'], ['not_swap', 'secondary']);
+  }
+  return out.map(([action, tier]) => ({ action, tier })).sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
+}
+
 type Repeat = NonNullable<SalesCheckIssue['oversold']>;
 
 /** A line of a sale that rang a ticket up more than once, to pay its seller for. */

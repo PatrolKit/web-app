@@ -1,8 +1,18 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import type { Side } from './salesCheckView';
+import type { ActionTier, Side } from './salesCheckView';
 import type { IssueNote } from '../../lib/api.types';
 import NewTabLink from '../../components/NewTabLink';
+
+/**
+ * The three looks an action takes on the Verify tab (`ActionTier`): the usual
+ * answer, filled; a real alternative, outlined; a way out, as plain text.
+ */
+export const actionClass: Record<ActionTier, string> = {
+  primary: 'bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-3 py-1 rounded text-xs font-medium',
+  secondary: 'border border-gray-600 hover:border-gray-500 bg-surface-100 hover:bg-surface-200 disabled:opacity-40 text-gray-100 px-3 py-1 rounded text-xs',
+  tertiary: 'text-gray-400 hover:text-white hover:underline disabled:opacity-40 px-1 py-1 text-xs',
+};
 
 /**
  * The Verify tab's cards (Plan 48), shared by Sales check and Catalog check:

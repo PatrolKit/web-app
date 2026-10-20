@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedText, byCategory, groupsOf, missedFeesText, paidPriceButtons, payOnceChoices, paidPriceDoneText, squarePriceOf, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
+import { acceptedText, byCategory, groupsOf, issueActions, missedFeesText, paidPriceButtons, payOnceChoices, paidPriceDoneText, squarePriceOf, patrolKitSide, squareSide, suggestedLines, withDecided } from './salesCheckView';
 import type { SalesCheckIssue } from '../../lib/api.types';
 
 const issue = (over: Partial<SalesCheckIssue>): SalesCheckIssue => ({
@@ -263,5 +263,50 @@ describe('Pay once: which line the seller is paid for', () => {
   it('leaves the pick to a person when none matches, or the ticket is unpriced', () => {
     expect(payOnceChoices(twice(2500, [sale('a', 1000), sale('b', 2000)])).picked).toBeNull();
     expect(payOnceChoices(twice(null, [sale('a', 1000), sale('b', 2000)])).picked).toBeNull();
+  });
+});
+
+describe('a card’s actions, by tier', () => {
+  const tiers = (i: SalesCheckIssue) => issueActions(i).map((a) => `${a.tier}:${a.action}`);
+  const suggestion = (priceCents: number | null) => ({ itemId: 'it', sku: '73475', name: 'Poles', priceCents, sellerName: 'Sara Finan', sellerId: 's' });
+  const repeat = { itemId: 'it', sku: '73190', name: 'Item #73190', sellerName: 'Carrie Will', priceCents: 2000, units: 2, quantity: 1, orders: ['iW'], sales: [] };
+
+  it('has at most one primary, shown last, after the ways out', () => {
+    const kinds: SalesCheckIssue[] = [
+      issue({ kind: 'other_copy', suggestion: suggestion(2200), unitPriceCents: 2200 }),
+      issue({ kind: 'unknown_ticket', ticket: '99999' }),
+      issue({ kind: 'custom_amount', rungUpAs: null }),
+      issue({ kind: 'other_item' }),
+      issue({ kind: 'scanned_twice', oversold: repeat }),
+    ];
+    for (const i of kinds) {
+      const t = issueActions(i).map((a) => a.tier);
+      expect(t.filter((x) => x === 'primary').length).toBeLessThanOrEqual(1);
+      expect([...t].sort((a, b) => ['tertiary', 'secondary', 'primary'].indexOf(a) - ['tertiary', 'secondary', 'primary'].indexOf(b))).toEqual(t);
+    }
+  });
+
+  it('makes Pay once the usual answer for a ticket rung up twice in one sale', () => {
+    expect(tiers(issue({ kind: 'scanned_twice', oversold: repeat }))).toEqual(['primary:pay_once']);
+  });
+
+  it('accepts a suggestion, at PatrolKit’s price when Square’s differs', () => {
+    expect(tiers(issue({ kind: 'other_copy', suggestion: suggestion(2200), unitPriceCents: 2200 }))).toEqual(['tertiary:pick_item', 'tertiary:not_swap', 'primary:accept']);
+    expect(tiers(issue({ kind: 'other_copy', suggestion: suggestion(2200), unitPriceCents: 1950 })))
+      .toEqual(['tertiary:pick_item', 'tertiary:not_swap', 'secondary:accept_replace_price', 'primary:accept_keep_price']);
+  });
+
+  it('keeps PatrolKit’s price on a sale paid at another', () => {
+    const paid = { itemId: 'it', sku: '59420', name: 'Boots', sellerName: null, sellerId: null, priceCents: 600, rungCents: 700, paidCents: 700 };
+    expect(tiers(issue({ kind: 'price_paid', paid }))).toEqual(['secondary:use_paid_price', 'primary:keep_price']);
+  });
+
+  it('offers no usual answer for a second scan on another copy', () => {
+    expect(tiers(issue({ kind: 'scanned_twice', suggestion: suggestion(2200) }))).toEqual(['secondary:pick_item', 'secondary:not_swap']);
+  });
+
+  it('issues an unknown ticket to its seller, and sets other items aside', () => {
+    expect(tiers(issue({ kind: 'unknown_ticket', ticket: '99999' }))).toEqual(['tertiary:not_swap', 'secondary:pick_item', 'primary:issue_to_seller']);
+    expect(tiers(issue({ kind: 'other_item' }))).toEqual(['tertiary:pick_item', 'primary:not_swap']);
   });
 });
