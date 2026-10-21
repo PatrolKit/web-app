@@ -520,6 +520,32 @@ const acrossDecided = (await api(`${O}/swaps/${swap.id}/sales-check`).then(unwra
 ok('...decided, on the sale picked, with the other sale’s $89 unpaid',
   acrossDecided?.lineUid === '#onceall:A2' && acrossDecided.orderId === 'stub-order-across-2' && acrossDecided.collectedCents === 8900, JSON.stringify(acrossDecided));
 
+console.log('\n── Approve all ───────────────────────────────────────────────');
+
+const { id: allRunId } = await post(`/swaps/${swap.id}/payout-runs`, { kind: 'CHECK' }).then(unwrap);
+await post(`/payout-runs/${allRunId}/sellers`, { sellerIds: [sellerIds.lines, sellerIds.across] });
+let allRun = await getRun(allRunId);
+const shownLines = line(allRun, 'lines');
+const shownAcross = line(allRun, 'across');
+const approveAll = (lines) => post(`/payout-runs/${allRunId}/approve-all`, { lines });
+const moved = await approveAll([
+  { lineId: shownLines.id, netCents: shownLines.totals.netCents },
+  { lineId: shownAcross.id, netCents: shownAcross.totals.netCents + 100 },
+]).then(unwrap);
+ok('approve all approves the sellers listed at the totals shown, and leaves one whose total moved, saying why',
+  moved.approved === 1 && moved.skipped.length === 1 && moved.skipped[0].lineId === shownAcross.id && /now/.test(moved.skipped[0].reason), JSON.stringify(moved));
+allRun = await getRun(allRunId);
+ok('...recording the total approved, as one by one would',
+  line(allRun, 'lines').status === 'APPROVED' && line(allRun, 'lines').approvedNetCents === shownLines.totals.netCents && line(allRun, 'across').status === 'PENDING',
+  JSON.stringify(allRun.lines.map((l) => [l.sellerName, l.status, l.approvedNetCents])));
+const rest = await approveAll([
+  { lineId: shownAcross.id, netCents: shownAcross.totals.netCents },
+  { lineId: shownLines.id, netCents: shownLines.totals.netCents },
+]).then(unwrap);
+ok('...and again approves the rest, leaving one already approved', rest.approved === 1 && rest.skipped.length === 1 && /not waiting/.test(rest.skipped[0].reason), JSON.stringify(rest));
+const none = await approveAll([]);
+ok('...an empty list is refused', none.status === 400, `HTTP ${none.status}`);
+
 const balance = await api(`${O}/paypal-balance`).then(unwrap);
 ok('the PayPal balance answers, as a number or with the reason it can’t',
   typeof balance.availableCents === 'number' || (balance.availableCents === null && typeof balance.message === 'string'),

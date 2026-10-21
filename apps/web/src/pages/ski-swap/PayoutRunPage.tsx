@@ -60,10 +60,17 @@ export default function PayoutRunPage() {
     qc.invalidateQueries({ queryKey: key });
     qc.invalidateQueries({ queryKey: ['ski-swap/payouts-summary'] });
   };
-  /** Runs a change, then reads the run again; an error is shown, not thrown. */
+  /**
+   * Runs a change, then reads the run again; an error is shown, not thrown.
+   * A change that resolves to a `Result` says what happened itself.
+   */
   const act = useMutation({
     mutationFn: async ({ fn }: { fn: () => Promise<unknown>; done?: string }) => fn(),
-    onSuccess: (_d, v) => { setResult(v.done ? { ok: true, message: v.done } : null); refresh(); },
+    onSuccess: (d, v) => {
+      const said = d && typeof d === 'object' && 'message' in d && 'ok' in d ? (d as NonNullable<Result>) : null;
+      setResult(said ?? (v.done ? { ok: true, message: v.done } : null));
+      refresh();
+    },
     onError: (err) => { setResult({ ok: false, message: err instanceof ApiError ? err.message : 'That didn’t work. Try again.' }); refresh(); },
   });
   const run$ = (fn: () => Promise<unknown>, done?: string) => act.mutate({ fn, done });
@@ -78,6 +85,22 @@ export default function PayoutRunPage() {
   const toPay = lines.filter((l) => !l.frozen);
   const approved = lines.filter((l) => l.status === 'APPROVED');
   const waiting = lines.filter((l) => l.status === 'PENDING').length;
+  /** Approve all: everyone waiting for review who isn't flagged, at the totals shown. */
+  const approvable = lines.filter((l) => l.status === 'PENDING' && !l.frozen && l.flags.length === 0);
+  const approveAll = () => {
+    const total = approvable.reduce((n, l) => n + l.totals.netCents, 0);
+    const left = waiting - approvable.length;
+    const ask = `Approve ${approvable.length} ${approvable.length === 1 ? 'seller' : 'sellers'}, ${usd(total)} in all, at the totals shown?`
+      + (left > 0 ? `\n\n${left} flagged ${left === 1 ? 'seller isn’t' : 'sellers aren’t'} included: resolve their flags, then approve them.` : '');
+    if (!confirm(ask)) return;
+    run$(async () => {
+      const r = await api.skiSwap.approveAllPayoutLines(orgId, run.id, approvable.map((l) => ({ lineId: l.id, netCents: l.totals.netCents })));
+      const not = r.skipped.length
+        ? ` Not approved: ${r.skipped.slice(0, 5).map((s) => `${s.seller} (${s.reason})`).join('; ')}${r.skipped.length > 5 ? `; and ${r.skipped.length - 5} more` : ''}.`
+        : '';
+      return { ok: r.skipped.length === 0, message: `Approved ${r.approved} ${r.approved === 1 ? 'seller' : 'sellers'}.${not}` };
+    });
+  };
   const exported = lines.filter((l) => l.status === 'EXPORTED');
   const flaggedCount = lines.filter((l) => l.flags.length).length;
   const changedCount = lines.filter((l) => l.changedSincePaidCents !== 0).length;
@@ -225,6 +248,13 @@ export default function PayoutRunPage() {
               <button type="button" disabled={run.sendingLocked || act.isPending}
                 onClick={() => run$(() => api.skiSwap.sendPayoutRun(orgId, run.id, 0), 'Sent to PayPal.')}
                 className="bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white px-3 py-2 rounded text-sm font-medium">Send again</button>
+            )}
+            {buildable && approvable.length > 0 && (
+              <button type="button" disabled={act.isPending} onClick={approveAll}
+                title="Approve everyone waiting for review who isn’t flagged, at the totals shown"
+                className="text-sm px-3 py-2 rounded border border-gray-600 bg-surface-100 hover:bg-surface-200 text-gray-200 disabled:opacity-40">
+                Approve all…
+              </button>
             )}
             {paypal && buildable && toPay.length > 0 && (
               <button type="button" disabled={!approved.length || waiting > 0 || run.sendingLocked || short || act.isPending}

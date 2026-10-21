@@ -1465,6 +1465,11 @@ export const api = {
       ),
     removePayoutSeller: (orgId: string, runId: string, sellerId: string) =>
       request<{ removed: boolean }>(`/orgs/${orgId}/ski-swap/payout-runs/${runId}/sellers/${sellerId}`, { method: 'DELETE' }),
+    /** Approve all: the sellers the confirmation listed, at the totals it showed. */
+    approveAllPayoutLines: (orgId: string, runId: string, lines: { lineId: string; netCents: number }[]) =>
+      request<{ approved: number; skipped: { lineId: string; seller: string; reason: string }[] }>(
+        `/orgs/${orgId}/ski-swap/payout-runs/${runId}/approve-all`, { method: 'POST', body: JSON.stringify({ lines }) },
+      ),
     approvePayoutLine: (orgId: string, runId: string, lineId: string, approved: boolean) =>
       request<{ status: string; approvedNetCents: number | null }>(
         `/orgs/${orgId}/ski-swap/payout-runs/${runId}/lines/${lineId}/approve`, { method: 'POST', body: JSON.stringify({ approved }) },

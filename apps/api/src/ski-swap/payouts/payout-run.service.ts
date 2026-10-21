@@ -347,6 +347,40 @@ export class PayoutRunService {
     return { status: approved ? 'APPROVED' : 'PENDING', approvedNetCents };
   }
 
+  /**
+   * Approve all (with the page's confirmation): each seller it listed, at the
+   * total it showed, as one by one would. Read once, then each line on its
+   * own: a seller already approved, flagged now, or whose total moved since
+   * the confirmation is left for review, and said why, rather than approved
+   * at a total nobody saw.
+   */
+  async approveAll(orgId: string, runId: string, listed: { lineId: string; netCents: number }[], actorId: string) {
+    const run = await this.runOrThrow(orgId, runId);
+    if (run.status !== 'OPEN') throw new ConflictException('This run is closed.');
+    const snap = await this.snapshot(orgId, run.swapId);
+    if (snap.salesError) throw new BadRequestException(`Sales couldn’t be read, so there’s no total to approve: ${snap.salesError}`);
+    const lines = new Map((await this.prisma.payoutLine.findMany({ where: { runId, id: { in: listed.map((l) => l.lineId) } } })).map((l) => [l.id, l]));
+    const approved: string[] = [];
+    const skipped: { lineId: string; seller: string; reason: string }[] = [];
+    for (const { lineId, netCents } of listed) {
+      const line = lines.get(lineId);
+      const seller = line ? snap.sellers.get(line.sellerId)?.name ?? 'A seller' : 'A seller';
+      if (!line) { skipped.push({ lineId, seller, reason: 'not in this run any more' }); continue; }
+      if (line.status !== 'PENDING') { skipped.push({ lineId, seller, reason: 'not waiting for review' }); continue; }
+      if (this.flagsOf(snap, run.kind as PayoutRunKind, line.sellerId).length) { skipped.push({ lineId, seller, reason: 'flagged' }); continue; }
+      const now = snap.lineBySeller.get(line.sellerId)?.netCents ?? 0;
+      if (now !== netCents) { skipped.push({ lineId, seller, reason: `their total is ${formatCents(now)} now, not ${formatCents(netCents)}` }); continue; }
+      const done = await this.prisma.payoutLine.updateMany({
+        where: { id: line.id, status: 'PENDING' },
+        data: { status: 'APPROVED', approvedBy: actorId, approvedAt: new Date(), approvedNetCents: now, statusNote: null },
+      });
+      if (done.count === 0) { skipped.push({ lineId, seller, reason: 'changed meanwhile' }); continue; }
+      await this.audit(orgId, actorId, 'payout_line.approved', runId, { lineId, approvedNetCents: now, all: true });
+      approved.push(lineId);
+    }
+    return { approved: approved.length, skipped };
+  }
+
   // ─── Paying ─────────────────────────────────────────────────────────────────
 
   /**

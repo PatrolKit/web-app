@@ -22,6 +22,7 @@ import { PayoutRunService } from './payout-run.service';
 import { PayoutNudgeService } from './payout-nudge.service';
 import {
   AddPayoutSellersDto,
+  ApproveAllDto,
   ApproveLineDto,
   CreatePayoutRunDto,
   SendPayoutRunDto,
@@ -111,6 +112,19 @@ export class PayoutRunController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.runs.removeSeller(orgId, runId, sellerId, user.userId);
+  }
+
+  /** Approve all: every seller the confirmation listed, at the totals it showed. */
+  @Post('payout-runs/:runId/approve-all')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:admin')
+  approveAll(
+    @Param('orgId') orgId: string,
+    @Param('runId') runId: string,
+    @Body() body: ApproveAllDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.runs.approveAll(orgId, runId, body.lines, user.userId);
   }
 
   @Post('payout-runs/:runId/lines/:lineId/approve')

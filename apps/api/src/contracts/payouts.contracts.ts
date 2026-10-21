@@ -73,6 +73,16 @@ export class AddPayoutSellersDto extends createZodDto(AddPayoutSellersSchema) {}
 export const ApproveLineSchema = z.object({ approved: z.boolean() }).strict();
 export class ApproveLineDto extends createZodDto(ApproveLineSchema) {}
 
+/**
+ * Approve all: exactly the sellers the confirmation listed, each with the
+ * total it showed. One whose total has changed since, or who is flagged now,
+ * is left for review rather than approved at a total nobody saw.
+ */
+export const ApproveAllSchema = z.object({
+  lines: z.array(z.object({ lineId: z.string().min(1).max(40), netCents: z.number().int() }).strict()).min(1).max(2000),
+}).strict();
+export class ApproveAllDto extends createZodDto(ApproveAllSchema) {}
+
 export const SendPayoutRunSchema = z
   .object({
     /**
