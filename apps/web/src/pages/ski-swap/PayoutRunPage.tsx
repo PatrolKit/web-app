@@ -141,12 +141,9 @@ export default function PayoutRunPage() {
 
   return (
     <div className="space-y-5 max-w-5xl">
-      <div className="flex items-center justify-between gap-4">
-        <Link to={PAYOUTS} className="text-sm text-gray-400 hover:text-white inline-flex items-center gap-1.5">
-          <FontAwesomeIcon icon={faArrowLeft} className="h-3 w-3" /> All payout runs
-        </Link>
-        <PayoutsExport orgId={orgId} scope={{ runId: run.id }} defaultEmail={user?.email ?? ''} />
-      </div>
+      <Link to={PAYOUTS} className="text-sm text-gray-400 hover:text-white inline-flex items-center gap-1.5">
+        <FontAwesomeIcon icon={faArrowLeft} className="h-3 w-3" /> All payout runs
+      </Link>
 
       {/* D13: the header. */}
       <div className="bg-surface-50 border border-gray-700 rounded-lg p-5 space-y-4">
@@ -327,6 +324,7 @@ export default function PayoutRunPage() {
             <option value="items">Number of items</option>
           </select>
         </label>
+        <PayoutsExport orgId={orgId} scope={{ runId: run.id }} defaultEmail={user?.email ?? ''} />
       </div>
 
       <div className="space-y-2">
