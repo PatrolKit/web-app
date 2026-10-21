@@ -301,6 +301,22 @@ export class MailService {
     return this.send(to, `${o.orgName}: ${o.swapTitle} items spreadsheet`, html, [o.file]);
   }
 
+  async sendPayoutsExport(to: string, o: { orgName: string; swapTitle: string; scope: string; senderName: string; sellers: number; file: MailAttachment }): Promise<SendOutcome> {
+    const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+    const html = emailShell({
+      title: `${o.swapTitle}: payouts`,
+      brand: { name: o.orgName },
+      heading: `${o.swapTitle}: payouts spreadsheet`,
+      body: [
+        `${esc(o.senderName)} sent you the payouts of ${esc(o.swapTitle)} as a spreadsheet: <strong>${o.sellers.toLocaleString('en-US')}</strong> seller${o.sellers === 1 ? '' : 's'} (${esc(o.scope)}).`,
+        `It's attached: <strong>${esc(o.file.filename)}</strong>. A seller already paid shows what was paid; everyone else, what they're owed now.`,
+      ],
+      footnote: 'It holds sellers’ names, contact details, mailing addresses and where they’re paid. Please keep it to the people who need it.',
+      poweredByUrl: this.brandMarkUrl(),
+    });
+    return this.send(to, `${o.orgName}: ${o.swapTitle} payouts spreadsheet`, html, [o.file]);
+  }
+
   async sendSellersExport(to: string, o: { orgName: string; senderName: string; sellers: number; filters: string; file: MailAttachment }): Promise<SendOutcome> {
     const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
     const html = emailShell({

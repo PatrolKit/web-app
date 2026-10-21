@@ -20,6 +20,7 @@ import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } f
 import { PAYOUTS_LOCKED_MESSAGE, PayPalClient, PayPalError, type PayoutItemRequest, type PayoutItemStatus } from './paypal.client';
 import { formatCents, splitCommission } from './money';
 import { addressText, addressToDestination, checksToCsv, destinationToAddress, type CheckAddress } from './checks-csv';
+import { lineStatusLabel, type PayoutExportSeller } from './payouts-export';
 import {
   activeKeyOf, allFinal, flagsFor, gapsForPayout, issuesBySeller, kindOf, notPaid,
   type PayoutMethodChoice, type SellerIssue,
@@ -54,6 +55,9 @@ interface SellerInfo {
   address: CheckAddress;
   verifiedEmail: string | null;
   verifiedPhone: string | null;
+  /** Their contact details as on file, for the export. */
+  email: string | null;
+  phone: string | null;
 }
 
 /** Everything a run's screens are worked out from, read once. */
@@ -188,6 +192,90 @@ export class PayoutRunService {
       ready,
       comps: [...snap.comps.values()].filter((c) => c.live).reduce((t, c) => ({ count: t.count + c.units, totalCents: t.totalCents + c.units * c.priceCents }), { count: 0, totalCents: 0 }),
     };
+  }
+
+  /**
+   * The Payouts export's rows: one run's sellers, or every seller of the swap
+   * with sales. A seller is shown by the line that counts for them (the one in
+   * a run now, else their latest): paid, at what was paid; otherwise at what
+   * they're owed now. A donation pays the seller nothing, so its total is 0
+   * and the patrol takes the whole of it.
+   */
+  async exportView(orgId: string, scope: { swapId: string } | { runId: string }): Promise<{
+    swapTitle: string; timeZone: string; run: { kind: string; createdAt: Date } | null; rows: PayoutExportSeller[];
+  }> {
+    const run = 'runId' in scope ? await this.runOrThrow(orgId, scope.runId) : null;
+    const swapId = run?.swapId ?? (scope as { swapId: string }).swapId;
+    const swap = await this.prisma.skiSwap.findFirst({ where: { id: swapId, orgId }, select: { title: true, timeZone: true } });
+    if (!swap) throw new NotFoundException('Swap not found');
+    const snap = await this.snapshot(orgId, swapId);
+    if (snap.salesError) throw new BadRequestException(`Sales couldn’t be read, so what sellers are owed isn’t known: ${snap.salesError}`);
+    const lines = await this.prisma.payoutLine.findMany({
+      where: run ? { runId: run.id } : { swapId },
+      include: {
+        items: { orderBy: { soldAt: 'asc' } },
+        notices: { where: { dayMark: 0 }, select: { createdAt: true } },
+        run: { select: { kind: true, createdAt: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const contact = (sellerId: string, fallback: string) => {
+      const s = snap.sellers.get(sellerId);
+      return {
+        name: s?.name ?? fallback, business: s?.business ?? false, email: s?.email ?? null, phone: s?.phone ?? null,
+        street: s?.address.street ?? null, city: s?.address.city ?? null, state: s?.address.state ?? null, zip: s?.address.zip ?? null,
+      };
+    };
+    const ofLine = (l: (typeof lines)[number]): PayoutExportSeller => {
+      const v = this.lineView(l.run.kind as PayoutRunKind, l, snap, []);
+      return {
+        ...contact(l.sellerId, v.sellerName),
+        method: v.method, paidTo: v.destination,
+        skus: v.items.map((i) => ({ sku: i.sku, quantity: i.quantity })), items: v.totals.items,
+        grossCents: v.totals.grossCents, commissionCents: v.totals.commissionCents, netCents: v.totals.netCents,
+        status: lineStatusLabel(v.status, l.run.kind), run: l.run, note: v.statusNote, changedSincePaidCents: v.changedSincePaidCents,
+      };
+    };
+    // Owed now, in no run: never in one, or PayPal didn't pay the last one (D19).
+    const owed = (sellerId: string, last: (typeof lines)[number] | undefined): PayoutExportSeller | null => {
+      const built = snap.lineBySeller.get(sellerId);
+      if (!built && !last) return null;
+      const s = snap.sellers.get(sellerId);
+      const donated = built?.method === 'DONATE';
+      const gross = built?.grossCents ?? 0;
+      return {
+        ...contact(sellerId, built?.sellerName ?? last?.sellerName ?? 'Unnamed seller'),
+        method: s?.method ?? null,
+        paidTo: s && !donated ? (s.method === 'CHECK' ? addressText(s.address) : resolveDestination(s.run).destination) : null,
+        skus: (built?.items ?? []).map((i) => ({ sku: i.sku, quantity: i.quantity })),
+        items: (built?.items ?? []).reduce((n, i) => n + i.quantity, 0),
+        grossCents: gross,
+        commissionCents: donated ? gross : built?.commissionCents ?? 0,
+        netCents: donated ? 0 : built?.netCents ?? 0,
+        status: donated ? 'Donated to the patrol' : last ? `Not paid: ${lineStatusLabel(last.status, last.run.kind)}` : 'Not in a run',
+        run: last?.run ?? null,
+        note: last?.statusNote ?? null,
+        changedSincePaidCents: 0,
+      };
+    };
+
+    let rows: PayoutExportSeller[];
+    if (run) {
+      rows = lines.map(ofLine);
+    } else {
+      // The line that counts for each seller: the one in a run now, else their latest.
+      const counts = new Map<string, (typeof lines)[number]>();
+      for (const l of lines) if (!counts.get(l.sellerId)?.activeKey) counts.set(l.sellerId, l);
+      const sellerIds = new Set([...snap.lineBySeller.keys(), ...counts.keys()]);
+      rows = [...sellerIds].flatMap((id) => {
+        const l = counts.get(id);
+        const row = l?.activeKey ? ofLine(l) : owed(id, l);
+        return row ? [row] : [];
+      });
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    return { swapTitle: swap.title, timeZone: swap.timeZone, run: run ? { kind: run.kind, createdAt: run.createdAt } : null, rows };
   }
 
   /** The sellers a run of this kind can take now (D3), for "Add sellers". */
@@ -1030,6 +1118,8 @@ function sellerInfo(s: Prisma.SellerProfileGetPayload<{ select: typeof SELLER_SE
       payoutHandleScanned: u.payoutHandleScannedAt !== null,
     },
     address: { street: u.street, city: u.city, state: u.state, zip: u.zip },
+    email: u.email,
+    phone: u.phone,
     verifiedEmail: u.verifiedEmail,
     verifiedPhone: u.verifiedPhone,
   };

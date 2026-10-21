@@ -26,6 +26,7 @@
 // approves, sends and reconciles perfectly while proving nothing.
 
 import { PrismaClient } from '@prisma/client';
+import ExcelJS from 'exceljs';
 import { createId } from '@paralleldrive/cuid2';
 import { writeFileSync, readFileSync, writeFileSync as write } from 'fs';
 
@@ -545,6 +546,43 @@ const rest = await approveAll([
 ok('...and again approves the rest, leaving one already approved', rest.approved === 1 && rest.skipped.length === 1 && /not waiting/.test(rest.skipped[0].reason), JSON.stringify(rest));
 const none = await approveAll([]);
 ok('...an empty list is refused', none.status === 400, `HTTP ${none.status}`);
+
+console.log('\n── Payouts export ────────────────────────────────────────────');
+
+const sheet = async (path) => {
+  const res = await api(`${O}${path}`);
+  if (res.status !== 200) return { status: res.status, rows: [] };
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await res.arrayBuffer());
+  const ws = wb.getWorksheet('Payouts');
+  const head = ws.getRow(1).values.slice(1);
+  const rows = [];
+  ws.eachRow((r, n) => { if (n > 1) rows.push(Object.fromEntries(head.map((h, i) => [h, r.getCell(i + 1).value]))); });
+  return { status: res.status, rows, disposition: res.headers.get('content-disposition') };
+};
+const swapSheet = await sheet(`/swaps/${swap.id}/payouts/export`);
+const bySeller = (key) => swapSheet.rows.find((r) => String(r.Seller).startsWith(key));
+ok('the swap’s payouts export downloads a spreadsheet', swapSheet.status === 200 && /payouts-\d{8}-\d{4}\.xlsx/.test(swapSheet.disposition ?? ''), swapSheet.disposition);
+ok('...with every seller who sold something, and nobody who didn’t',
+  ['paypal', 'venmo', 'check', 'donate', 'tiny', 'unverified', 'comp', 'twice', 'lines', 'across'].every((k) => bySeller(k)) && swapSheet.rows.length === 10,
+  JSON.stringify(swapSheet.rows.map((r) => r.Seller)));
+// The check seller's late $10 sale was settled by hand above, so nothing shows as changed.
+ok('...a check paid shows what was paid, not what’s owed since (settled by hand)',
+  bySeller('check')?.Status === 'Check exported' && bySeller('check')?.Total === 64 && bySeller('check')?.['Changed since paid'] === null,
+  JSON.stringify(bySeller('check')));
+ok('...a donor gets nothing, and the patrol takes it all',
+  bySeller('donate')?.Status === 'Donated to the patrol' && bySeller('donate')?.Total === 0 && bySeller('donate')?.['Patrol take'] === bySeller('donate')?.Subtotal,
+  JSON.stringify(bySeller('donate')));
+ok('...a seller in no run is owed what they’re owed now', bySeller('unverified')?.Status === 'Not in a run' && bySeller('unverified')?.Total === 24, JSON.stringify(bySeller('unverified')));
+ok('...with their contact details, address and tickets',
+  bySeller('check')?.Phone === '+15550198203' && bySeller('check')?.ZIP === '05672' && bySeller('check')?.SKUs === 'PAY-004' && bySeller('check')?.['Paid to'] === '12 Summit Rd, Stowe, VT 05672',
+  JSON.stringify(bySeller('check')));
+const runSheet = await sheet(`/payout-runs/${allRunId}/export`);
+ok('a run’s export has just its sellers, as the run stands',
+  runSheet.rows.length === 2 && runSheet.rows.every((r) => r.Status === 'Approved') && runSheet.rows.map((r) => r.SKUs).sort().join() === 'PAY-021,PAY-022',
+  JSON.stringify(runSheet.rows.map((r) => [r.Seller, r.Status, r.SKUs])));
+const mailed = await post(`/payout-runs/${allRunId}/export/email`, { to: 'staff@patrolkit.invalid' });
+ok('...and emailing it makes it, refused only for the test address', mailed.status === 400 && /\.invalid/.test(JSON.stringify(await mailed.json())), `HTTP ${mailed.status}`);
 
 const balance = await api(`${O}/paypal-balance`).then(unwrap);
 ok('the PayPal balance answers, as a number or with the reason it can’t',

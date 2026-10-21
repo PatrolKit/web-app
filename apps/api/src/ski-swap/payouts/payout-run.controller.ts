@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { PayoutsExportService } from './payouts-export.service';
 import { JwtAuthGuard, type AuthenticatedUser } from '../../common/guards/jwt-auth.guard';
 import { OrgContextGuard } from '../../common/guards/org-context.guard';
 import { ModuleEnabledGuard } from '../../common/guards/module-enabled.guard';
@@ -23,6 +24,7 @@ import { PayoutNudgeService } from './payout-nudge.service';
 import {
   AddPayoutSellersDto,
   ApproveAllDto,
+  EmailPayoutsExportDto,
   ApproveLineDto,
   CreatePayoutRunDto,
   SendPayoutRunDto,
@@ -44,6 +46,7 @@ export class PayoutRunController {
   constructor(
     private readonly runs: PayoutRunService,
     private readonly nudges: PayoutNudgeService,
+    private readonly exports: PayoutsExportService,
   ) {}
 
   /** The Payouts page: the runs, and everything to fix before paying. */
@@ -165,6 +168,34 @@ export class PayoutRunController {
     return this.runs.closeChecks(orgId, runId, body.expectedLineCount, user.userId);
   }
 
+  /** The Payouts export: payouts by seller, for every seller of the swap with sales. */
+  @Get('swaps/:swapId/payouts/export')
+  @RequirePermissions('ski_swap:report')
+  async exportPayouts(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @CurrentUser() user: AuthenticatedUser, @Res() res: Response) {
+    sendFile(res, await this.exports.download(orgId, { swapId }, user.userId));
+  }
+
+  @Post('swaps/:swapId/payouts/export/email')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:report')
+  emailPayouts(@Param('orgId') orgId: string, @Param('swapId') swapId: string, @Body() body: EmailPayoutsExportDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.exports.email(orgId, { swapId }, body.to, user.userId);
+  }
+
+  /** The same, for one run's sellers. */
+  @Get('payout-runs/:runId/export')
+  @RequirePermissions('ski_swap:report')
+  async exportRun(@Param('orgId') orgId: string, @Param('runId') runId: string, @CurrentUser() user: AuthenticatedUser, @Res() res: Response) {
+    sendFile(res, await this.exports.download(orgId, { runId }, user.userId));
+  }
+
+  @Post('payout-runs/:runId/export/email')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:report')
+  emailRun(@Param('orgId') orgId: string, @Param('runId') runId: string, @Body() body: EmailPayoutsExportDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.exports.email(orgId, { runId }, body.to, user.userId);
+  }
+
   @Get('payout-runs/:runId/checks.csv')
   @RequirePermissions('ski_swap:report')
   @Header('Content-Type', 'text/csv; charset=utf-8')
@@ -245,4 +276,12 @@ export class PayoutRunController {
   nudge(@Param('orgId') orgId: string) {
     return this.nudges.sweep(orgId);
   }
+}
+
+/** A spreadsheet, as a download. */
+function sendFile(res: Response, file: { filename: string; contentType: string; content: Buffer }) {
+  res.setHeader('Content-Type', file.contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(file.content);
 }

@@ -113,7 +113,7 @@ export function localDate(at: Date, timeZone: string): Date {
   return new Date(Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second));
 }
 
-const MONEY = '$#,##0.00';
+export const MONEY = '$#,##0.00';
 export const WHEN = 'mmm d, yyyy h:mm AM/PM';
 
 /** The workbook: an Items sheet (frozen, filterable header) and an About sheet saying what it holds. */

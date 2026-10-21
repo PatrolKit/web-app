@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+import PayoutsExport from './payouts/PayoutsExport';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowLeft, faArrowsRotate, faChevronDown, faChevronRight, faLock, faLockOpen } from '@fortawesome/pro-duotone-svg-icons';
@@ -33,6 +35,7 @@ export default function PayoutRunPage() {
   const { runId } = useParams();
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const qc = useQueryClient();
   const isAdmin = perms.has('ski_swap:admin');
   const [adding, setAdding] = useState(false);
@@ -138,9 +141,12 @@ export default function PayoutRunPage() {
 
   return (
     <div className="space-y-5 max-w-5xl">
-      <Link to={PAYOUTS} className="text-sm text-gray-400 hover:text-white inline-flex items-center gap-1.5">
-        <FontAwesomeIcon icon={faArrowLeft} className="h-3 w-3" /> All payout runs
-      </Link>
+      <div className="flex items-center justify-between gap-4">
+        <Link to={PAYOUTS} className="text-sm text-gray-400 hover:text-white inline-flex items-center gap-1.5">
+          <FontAwesomeIcon icon={faArrowLeft} className="h-3 w-3" /> All payout runs
+        </Link>
+        <PayoutsExport orgId={orgId} scope={{ runId: run.id }} defaultEmail={user?.email ?? ''} />
+      </div>
 
       {/* D13: the header. */}
       <div className="bg-surface-50 border border-gray-700 rounded-lg p-5 space-y-4">

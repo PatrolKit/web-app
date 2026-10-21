@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate, useOutletContext } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+import PayoutsExport from './payouts/PayoutsExport';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLock, faTriangleExclamation } from '@fortawesome/pro-duotone-svg-icons';
@@ -18,6 +20,7 @@ import { RUN_KIND_ICON, dayText, whenText } from './payouts/payoutView';
  */
 export default function PayoutsPage() {
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = perms.has('ski_swap:admin');
@@ -59,9 +62,12 @@ export default function PayoutsPage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div>
-        <h2 className="text-white font-semibold">Payouts</h2>
-        <p className="text-gray-500 text-sm mt-0.5">What {selectedSwap.title} sold, and what each seller is owed for it.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-white font-semibold">Payouts</h2>
+          <p className="text-gray-500 text-sm mt-0.5">What {selectedSwap.title} sold, and what each seller is owed for it.</p>
+        </div>
+        <PayoutsExport orgId={orgId} scope={{ swapId: selectedSwap.id }} defaultEmail={user?.email ?? ''} />
       </div>
 
       {isAdmin && paypal && !paypal.configured && (

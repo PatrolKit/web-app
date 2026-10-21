@@ -67,6 +67,7 @@ import { PayPalClient, HttpPayPalClient } from './payouts/paypal.client';
 import { PayPalConfigService } from './payouts/paypal-config.service';
 import { PayPalConfigController } from './payouts/paypal-config.controller';
 import { PayoutRunService } from './payouts/payout-run.service';
+import { PayoutsExportService } from './payouts/payouts-export.service';
 import { PayoutRunController } from './payouts/payout-run.controller';
 import { PayoutNudgeService } from './payouts/payout-nudge.service';
 import { PayoutWebhookController } from './payouts/payout-webhook.controller';
@@ -146,6 +147,7 @@ import { IndemnificationImportService } from './indemnification/indemnification-
     { provide: PayPalClient, useClass: payoutStubsEnabled() ? StubPayPalClient : HttpPayPalClient },
     PayPalConfigService,
     PayoutRunService,
+    PayoutsExportService,
     PayoutNudgeService,
     S3Service,
     {

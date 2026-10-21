@@ -960,6 +960,25 @@ export const api = {
     },
     emailItemsExport: (orgId: string, swapId: string, body: { to: string; query?: string; sellerId?: string; status?: string; sellerKind?: 'business' | 'individual'; printed?: 'true' | 'false'; sort?: string; dir?: string }) =>
       request<{ to: string; items: number; status: string }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/export/email`, { method: 'POST', body: JSON.stringify(body) }),
+    // ─── The Payouts export: payouts by seller, for the swap or one run ───
+    /** The spreadsheet, with the name the server gave it. */
+    exportPayouts: async (orgId: string, scope: { swapId: string } | { runId: string }) => {
+      const path = 'runId' in scope ? `payout-runs/${scope.runId}/export` : `swaps/${scope.swapId}/payouts/export`;
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      const res = await fetch(`/api/v1/orgs/${orgId}/ski-swap/${path}`, { credentials: 'include', headers });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? body?.error ?? body?.message ?? 'The spreadsheet couldn’t be made. Try again.');
+      }
+      const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'payouts.xlsx';
+      return { blob: await res.blob(), filename: name };
+    },
+    emailPayoutsExport: (orgId: string, scope: { swapId: string } | { runId: string }, to: string) =>
+      request<{ to: string; sellers: number; status: string }>(
+        `/orgs/${orgId}/ski-swap/${'runId' in scope ? `payout-runs/${scope.runId}` : `swaps/${scope.swapId}/payouts`}/export/email`,
+        { method: 'POST', body: JSON.stringify({ to }) },
+      ),
     // ─── The Sellers export: every seller matching the page's filters ───
     /** The spreadsheet, with the name the server gave it. */
     exportSellers: async (orgId: string, filters: import('@patrolkit/contracts/seller-filter').SellerFilters) => {

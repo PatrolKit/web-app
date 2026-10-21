@@ -83,6 +83,10 @@ export const ApproveAllSchema = z.object({
 }).strict();
 export class ApproveAllDto extends createZodDto(ApproveAllSchema) {}
 
+/** The Payouts export, emailed: the swap's or a run's, to the address typed. */
+export const EmailPayoutsExportSchema = z.object({ to: z.string().trim().email().max(254) }).strict();
+export class EmailPayoutsExportDto extends createZodDto(EmailPayoutsExportSchema) {}
+
 export const SendPayoutRunSchema = z
   .object({
     /**
