@@ -1526,6 +1526,20 @@ export const EmailItemsExportSchema = z.object({
 }).strict();
 export class EmailItemsExportDto extends createZodDto(EmailItemsExportSchema) {}
 
+/** The Sellers export's filters (`seller-filter.ts`), as the query string or the email's body carries them. */
+export const SellerExportFiltersSchema = z.object({
+  search: z.string().max(200).optional(),
+  type: z.enum(['individual', 'business']).optional(),
+  payout: z.enum(['PAYPAL', 'VENMO', 'CHECK', 'DONATE', 'NONE']).optional(),
+  incomplete: z.enum(['true', 'false']).optional(),
+  sort: z.enum(['displayName', 'email', 'phone', 'payoutMethod']).optional(),
+  dir: z.enum(['asc', 'desc']).optional(),
+}).strict();
+export class SellerExportFiltersDto extends createZodDto(SellerExportFiltersSchema) {}
+
+export const EmailSellersExportSchema = SellerExportFiltersSchema.extend({ to: z.string().trim().email().max(254) }).strict();
+export class EmailSellersExportDto extends createZodDto(EmailSellersExportSchema) {}
+
 /**
  * One seller's items still out, unsold, emailed from the pickup screen
  * (iOS Plan 38): the For sale filter and the seller are fixed.

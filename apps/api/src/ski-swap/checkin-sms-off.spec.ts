@@ -42,7 +42,7 @@ describe('staff verifying a phone with texting off', () => {
   it('is refused with a sentence, and nothing is issued', async () => {
     const issue = jest.fn();
     const sellers = { findOrThrow: async () => ({ membership: { userId: 'u1', user: { phone: '+18025550100', email: null } } }) };
-    const controller = new SellerController(sellers as never, { issue } as never, textingOff as never, {} as never);
+    const controller = new SellerController(sellers as never, { issue } as never, textingOff as never, {} as never, {} as never);
     const err = await controller.initiateVerification('org-1', 'seller-1', 'phone').catch((e: HttpException) => e);
     expect((err as HttpException).getResponse()).toEqual({ message: 'Texting is off. Verify their email.', code: 'CANNOT_TEXT' });
     expect(issue).not.toHaveBeenCalled();

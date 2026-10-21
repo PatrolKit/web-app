@@ -32,7 +32,10 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CurrentDevice } from '../common/decorators/current-device.decorator';
 import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
-import { TicketSpanDto, CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto } from '../contracts/ski-swap.contracts';
+import { TicketSpanDto, CreateSellerDto, PatchSellerDto, PersonSearchDto, AddSellerFromPersonDto, EmailSellersExportDto, SellerExportFiltersDto } from '../contracts/ski-swap.contracts';
+import { SellerExportService } from './seller-export.service';
+import { NoDeviceAccess } from '../common/decorators/require-device-role.decorator';
+import type { SellerFilters } from '../contracts/seller-filter';
 import { IssuedTicketService } from './issued-ticket.service';
 
 @Controller('orgs/:orgId/ski-swap/sellers')
@@ -45,6 +48,7 @@ export class SellerController {
     private readonly challenges: ContactChallengeService,
     private readonly sms: SmsService,
     private readonly issued: IssuedTicketService,
+    private readonly exports: SellerExportService,
   ) {}
 
   // ─── Legacy tickets (Plan 38) ──────────────────────────────────────────────
@@ -85,6 +89,32 @@ export class SellerController {
     return this.issued.remove(orgId, body.swapId, sellerId, body);
   }
 
+
+  /**
+   * The Sellers export: every seller matching the page's filters, as a
+   * spreadsheet. Anyone who can read the Sellers page; staff on the web only.
+   * Before `:sellerId`, which would take "export" for an id.
+   */
+  @Get('export')
+  @RequirePermissions('ski_swap:report')
+  @NoDeviceAccess()
+  async exportSellers(@Param('orgId') orgId: string, @CurrentUser() user: AuthenticatedUser, @Res() res: Response, @Query() query: SellerExportFiltersDto) {
+    const file = await this.exports.download(orgId, filtersOf(query), user.userId);
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(file.content);
+  }
+
+  /** The same spreadsheet, emailed to the address typed. */
+  @Post('export/email')
+  @HttpCode(200)
+  @RequirePermissions('ski_swap:report')
+  @NoDeviceAccess()
+  emailSellers(@Param('orgId') orgId: string, @CurrentUser() user: AuthenticatedUser, @Body() body: EmailSellersExportDto) {
+    const { to, ...filters } = body;
+    return this.exports.email(orgId, filtersOf(filters), to, user.userId);
+  }
 
   @Get()
   @RequirePermissions('ski_swap:report')
@@ -242,4 +272,9 @@ export function assertScanFromDevice(body: { payoutHandleSource?: 'SCAN' }, devi
   if (body.payoutHandleSource === 'SCAN' && !device) {
     throw new BadRequestException('Only the staff iPad can scan a Venmo code.');
   }
+}
+
+/** The query string's filters as the export takes them. */
+function filtersOf(q: SellerExportFiltersDto): SellerFilters {
+  return { ...q, incomplete: q.incomplete === 'true' };
 }

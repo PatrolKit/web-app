@@ -114,7 +114,7 @@ export function localDate(at: Date, timeZone: string): Date {
 }
 
 const MONEY = '$#,##0.00';
-const WHEN = 'mmm d, yyyy h:mm AM/PM';
+export const WHEN = 'mmm d, yyyy h:mm AM/PM';
 
 /** The workbook: an Items sheet (frozen, filterable header) and an About sheet saying what it holds. */
 export async function exportWorkbook(rows: ExportRow[], about: { swap: string; filters: string; exportedBy: string; at: Date; timeZone: string }): Promise<Buffer> {

@@ -82,6 +82,7 @@ import { SwapCompController } from './comps/swap-comp.controller';
 import { SwapCompService } from './comps/swap-comp.service';
 import { ExchangesService } from './exchanges.service';
 import { ItemExportService } from './item-export.service';
+import { SellerExportService } from './seller-export.service';
 import { IssueNotesService } from './issue-notes.service';
 import { SalesCheckService } from './sales-check.service';
 import { SwapDiagnosticsService } from './diagnostics/swap-diagnostics.service';
@@ -163,6 +164,7 @@ import { IndemnificationImportService } from './indemnification/indemnification-
     ExchangesService,
     SwapCompService,
     ItemExportService,
+    SellerExportService,
     PublicLookupService,
     PublicStatusService,
     PublicSellerService,

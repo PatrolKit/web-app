@@ -26,6 +26,8 @@ type Result = { ok: boolean; message: string } | null;
 
 const SORT_KEY = 'patrolkit:payout-sort';
 const smallButton = 'px-2.5 py-1 rounded border border-gray-600 bg-surface-100 hover:bg-surface-200 text-gray-200 disabled:opacity-40';
+/** The Payouts page. Not `..`: this route is `payouts/:runId`, so `..` is the Ski Swap dashboard. */
+const PAYOUTS = '/dashboard/ski-swap/payouts';
 
 export default function PayoutRunPage() {
   const { runId } = useParams();
@@ -68,7 +70,7 @@ export default function PayoutRunPage() {
 
   if (!perms.has('ski_swap:report')) return <Navigate to="/dashboard/ski-swap" replace />;
   if (isLoading) return <p className="text-gray-400">Loading…</p>;
-  if (error || !run) return <p className="text-gray-400">No such run. <Link to=".." className="underline">Back to payouts</Link></p>;
+  if (error || !run) return <p className="text-gray-400">No such run. <Link to={PAYOUTS} className="underline">Back to payouts</Link></p>;
 
   const paypal = run.kind === 'PAYPAL';
   const isOpen = run.status === 'OPEN';
@@ -113,7 +115,7 @@ export default function PayoutRunPage() {
 
   return (
     <div className="space-y-5 max-w-5xl">
-      <Link to=".." className="text-sm text-gray-400 hover:text-white inline-flex items-center gap-1.5">
+      <Link to={PAYOUTS} className="text-sm text-gray-400 hover:text-white inline-flex items-center gap-1.5">
         <FontAwesomeIcon icon={faArrowLeft} className="h-3 w-3" /> All payout runs
       </Link>
 
@@ -260,7 +262,7 @@ export default function PayoutRunPage() {
               <button type="button"
                 onClick={() => {
                   if (!confirm('Delete this empty run?')) return;
-                  api.skiSwap.deletePayoutRun(orgId, run.id).then(() => { refresh(); navigate('..'); })
+                  api.skiSwap.deletePayoutRun(orgId, run.id).then(() => { refresh(); navigate(PAYOUTS); })
                     .catch((err) => setResult({ ok: false, message: err instanceof ApiError ? err.message : 'Couldn’t delete it.' }));
                 }}
                 className="ml-auto text-sm px-3 py-2 rounded border border-gray-700 text-gray-400 hover:border-red-800 hover:bg-red-900/30 hover:text-red-200">Delete run</button>

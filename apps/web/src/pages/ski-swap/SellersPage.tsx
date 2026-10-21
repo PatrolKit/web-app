@@ -13,6 +13,9 @@ import PickupItemsModal from './PickupItemsModal';
 import { useFeatures } from '../../lib/features';
 import PrintReceiptModal from './PrintReceiptModal';
 import { payoutGaps } from '@patrolkit/contracts/payout-gaps';
+import { payoutKeyOf, sellerMatches, sortSellers, type SellerFilters, type SellerPayoutKey, type SellerSortKey } from '@patrolkit/contracts/seller-filter';
+import { useAuth } from '../../contexts/AuthContext';
+import SellersExport from './SellersExport';
 
 interface SellerForm {
   /** Drives the form only — a business seller is one whose businessName is set. */
@@ -37,9 +40,6 @@ const emptyForm: SellerForm = {
   sendInvite: false,
 };
 
-/** Sort keys the table exposes — all derived, so they are named explicitly. */
-type SellerSortKey = 'displayName' | 'email' | 'phone' | 'payoutMethod';
-
 /**
  * How a seller gets paid, including not having said.
  *
@@ -48,7 +48,7 @@ type SellerSortKey = 'displayName' | 'email' | 'phone' | 'payoutMethod';
  * it is the row a treasurer most needs to find, which is why it is a filter
  * option rather than a blank cell you have to go looking for.
  */
-type PayoutKey = 'CHECK' | 'PAYPAL' | 'VENMO' | 'DONATE' | 'NONE';
+type PayoutKey = SellerPayoutKey;
 
 const PAYOUT_FILTERS: { value: PayoutKey; label: string }[] = [
   { value: 'CHECK', label: 'Check' },
@@ -60,7 +60,7 @@ const PAYOUT_FILTERS: { value: PayoutKey; label: string }[] = [
 
 const payoutLabel = (k: PayoutKey) => PAYOUT_FILTERS.find((f) => f.value === k)!.label;
 
-const payoutOf = (s: SellerResponse): PayoutKey => (s.payoutMethod ?? 'NONE');
+const payoutOf = (s: SellerResponse): PayoutKey => payoutKeyOf(s);
 
 /**
  * PayPal, and which of its three destinations.
@@ -116,6 +116,7 @@ function payoutTitle(s: SellerResponse): string {
 
 export default function SellersPage() {
   const { orgId, perms, selectedSwap, swaps } = useOutletContext<SkiSwapContext>();
+  const { user } = useAuth();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'individual' | 'business'>('all');
@@ -337,20 +338,16 @@ export default function SellersPage() {
   const ticketSwaps = swaps.filter((w) => w.allowLegacyCheckin || w.allowLegacyWeb);
   const canIssueTickets = perms.has('ski_swap:admin') && ticketSwaps.length > 0;
 
-  const filtered = sellers.filter((s) => {
-    const q = search.toLowerCase();
-    const matchesSearch =
-      !q ||
-      s.displayName.toLowerCase().includes(q) ||
-      (s.phone ?? '').includes(q) ||
-      (s.email ?? '').toLowerCase().includes(q);
-    const sellerType = s.businessName ? 'business' : 'individual';
-    const matchesType = typeFilter === 'all' || sellerType === typeFilter;
-    // Through `payoutOf`, so the filter and the column cannot form different
-    // opinions about what an unanswered payout is.
-    const matchesPayout = payoutFilter === 'all' || payoutOf(s) === payoutFilter;
-    return matchesSearch && matchesType && matchesPayout;
-  });
+  // One rule with the export (`sellerMatches`), so the file is what's on screen.
+  const exportFilters: SellerFilters = {
+    search,
+    ...(typeFilter !== 'all' ? { type: typeFilter } : {}),
+    ...(payoutFilter !== 'all' ? { payout: payoutFilter } : {}),
+    incomplete: incompleteOnly,
+    sort: sortKey,
+    dir: sortDir,
+  };
+  const filtered = sellers.filter((s) => sellerMatches(s, exportFilters));
 
   return (
     <div className="space-y-4">
@@ -393,18 +390,21 @@ export default function SellersPage() {
             Cannot be paid
           </button>
         </div>
-        {canManage && (
-          <div className="flex gap-2">
-            <button onClick={() => setShowImport(true)}
-              className="bg-surface-100 hover:bg-surface-200 text-white px-4 py-2 rounded text-sm font-medium">
-              Import CSV
-            </button>
-            <button onClick={() => { setShowForm(true); setEditSeller(null); setForm(emptyForm); }}
-              className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">
-              + Add Seller
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <SellersExport orgId={orgId} filters={exportFilters} defaultEmail={user?.email ?? ''} />
+          {canManage && (
+            <>
+              <button onClick={() => setShowImport(true)}
+                className="bg-surface-100 hover:bg-surface-200 text-white px-4 py-2 rounded text-sm font-medium">
+                Import CSV
+              </button>
+              <button onClick={() => { setShowForm(true); setEditSeller(null); setForm(emptyForm); }}
+                className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded text-sm font-medium">
+                + Add Seller
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {(showForm || editSeller) && canManage && (
@@ -786,12 +786,7 @@ export default function SellersPage() {
               </td>
             </tr>
           )}
-          {filtered
-            .sort((a, b) => {
-              const av = a[sortKey] ?? '';
-              const bv = b[sortKey] ?? '';
-              return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-            })
+          {sortSellers(filtered, sortKey, sortDir)
             .map((s) => (
             <tr key={s.id} className="border-b border-gray-900 hover:bg-surface-50">
               <td className="py-2 pr-4 text-white">

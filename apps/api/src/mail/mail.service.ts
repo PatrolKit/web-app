@@ -301,6 +301,22 @@ export class MailService {
     return this.send(to, `${o.orgName}: ${o.swapTitle} items spreadsheet`, html, [o.file]);
   }
 
+  async sendSellersExport(to: string, o: { orgName: string; senderName: string; sellers: number; filters: string; file: MailAttachment }): Promise<SendOutcome> {
+    const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+    const html = emailShell({
+      title: `${o.orgName}: sellers`,
+      brand: { name: o.orgName },
+      heading: `${o.orgName}: sellers spreadsheet`,
+      body: [
+        `${esc(o.senderName)} sent you ${esc(o.orgName)}'s sellers as a spreadsheet: <strong>${o.sellers.toLocaleString('en-US')}</strong> seller${o.sellers === 1 ? '' : 's'}${o.filters ? ` (${esc(o.filters)})` : ''}.`,
+        `It's attached: <strong>${esc(o.file.filename)}</strong>.`,
+      ],
+      footnote: 'It holds sellers’ names, phone numbers, email and mailing addresses, and how they’re paid. Please keep it to the people who need it.',
+      poweredByUrl: this.brandMarkUrl(),
+    });
+    return this.send(to, `${o.orgName}: sellers spreadsheet`, html, [o.file]);
+  }
+
   async sendPayoutNudge(to: string, nudge: PayoutNudge): Promise<SendOutcome> {
     // The amount is in the subject on purpose. This is a message about money
     // the reader is owed, and it competes for attention with everything else in

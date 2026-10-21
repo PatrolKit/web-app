@@ -960,6 +960,24 @@ export const api = {
     },
     emailItemsExport: (orgId: string, swapId: string, body: { to: string; query?: string; sellerId?: string; status?: string; sellerKind?: 'business' | 'individual'; printed?: 'true' | 'false'; sort?: string; dir?: string }) =>
       request<{ to: string; items: number; status: string }>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/items/export/email`, { method: 'POST', body: JSON.stringify(body) }),
+    // ─── The Sellers export: every seller matching the page's filters ───
+    /** The spreadsheet, with the name the server gave it. */
+    exportSellers: async (orgId: string, filters: import('@patrolkit/contracts/seller-filter').SellerFilters) => {
+      const params = sellerExportParams(filters);
+      const headers: Record<string, string> = {};
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+      const res = await fetch(`/api/v1/orgs/${orgId}/ski-swap/sellers/export?${params.toString()}`, { credentials: 'include', headers });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? body?.message ?? 'The spreadsheet couldn’t be made. Try again.');
+      }
+      const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'sellers.xlsx';
+      return { blob: await res.blob(), filename: name };
+    },
+    emailSellersExport: (orgId: string, filters: import('@patrolkit/contracts/seller-filter').SellerFilters, to: string) =>
+      request<{ to: string; sellers: number; status: string }>(`/orgs/${orgId}/ski-swap/sellers/export/email`, {
+        method: 'POST', body: JSON.stringify({ to, ...Object.fromEntries(sellerExportParams(filters)) }),
+      }),
     // ─── Exchanges (Plan 49): the list is report; everything else is admin ───
     exchanges: (orgId: string, swapId: string) =>
       request<import('./api.types').ExchangesResponse>(`/orgs/${orgId}/ski-swap/swaps/${swapId}/exchanges`),
@@ -1652,3 +1670,15 @@ export const api = {
       ),
   },
 };
+
+/** The Sellers export's filters as the server reads them: only those set. */
+function sellerExportParams(f: import('@patrolkit/contracts/seller-filter').SellerFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  if (f.search?.trim()) params.set('search', f.search.trim());
+  if (f.type) params.set('type', f.type);
+  if (f.payout) params.set('payout', f.payout);
+  if (f.incomplete) params.set('incomplete', 'true');
+  if (f.sort) params.set('sort', f.sort);
+  if (f.dir) params.set('dir', f.dir);
+  return params;
+}
