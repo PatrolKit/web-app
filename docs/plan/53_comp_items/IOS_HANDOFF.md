@@ -46,3 +46,15 @@ Three more server and web changes went live. None changes the item contract abov
 - **The web's Reports tab is now Verify**, at `/dashboard/ski-swap/verify`. The iPad has no links to it.
 
 So the work for the iPad is still just the Comped state described above.
+
+## Since 2026-10-19 (2026-10-20)
+
+More server and web changes went live. **None changes the item or seller contract, and none needs work on the iPad.** The Comped work above is unchanged: `comp` on staff item responses is exactly as described.
+
+- **Sales check: Pay once.** A ticket rung up more than once can now be paid for once, for the sale line staff pick. That covers a ticket scanned twice in one sale (the same line as a quantity of 2, or several lines), and one sold in different sales. The sales stay as Square has them, and the seller is paid for one unit at the list price. Web only: Sales check isn't on the iPad, and an item's sold state and Square stock don't change.
+- **Sales check: buttons and wording.** Each card's actions are primary, secondary or tertiary, and the page has less text. Web only.
+- **Payout runs.** Approve all (with a confirmation), a breadcrumb back to Payouts, and the reason PayPal's balance can't be read. Web only; payouts aren't on the iPad.
+- **Sellers export.** The Sellers page has an Export menu (download or email), like Items. Web only: the new routes refuse device tokens.
+- **Unchanged for the iPad:** the pickup screen's "email remaining items" route (`items/awaiting-pickup/email`, `SERVER_REPLY_38`). The web's export menus were reworked, but the server's items spreadsheet and that route weren't.
+
+So the work for the iPad is still just the Comped state described above.
