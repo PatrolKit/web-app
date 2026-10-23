@@ -96,8 +96,12 @@ async function bootstrap() {
     exclude: ['healthz', 'readyz'],
   });
 
+  // In production only Caddy, on the same machine, talks to the API, so it
+  // listens on loopback alone. Anywhere else it listens on every interface, so
+  // the iPads on the LAN can reach a developer's machine. HOST overrides both.
   const port = process.env.PORT ?? 4000;
-  await app.listen(port);
+  const host = process.env.HOST ?? (process.env.NODE_ENV === 'production' ? '127.0.0.1' : undefined);
+  await (host ? app.listen(port, host) : app.listen(port));
 }
 
 bootstrap();
