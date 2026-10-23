@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import AddStationForm from './AddStationForm';
-import type { AddStationResult, StationKind } from './AddStationForm';
+import type { StationKind } from './AddStationForm';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -21,47 +22,40 @@ import { api } from '../../lib/api';
 import { SELLER_SITE_URL } from '../../lib/sellerSiteUrl';
 import { lastSeenTitle, OFFLINE_AFTER_TABLET_MS, recentlySeen, StatusLine, useClockTick } from './hardwareStatus';
 import type { HardwareStatus } from './hardwareStatus';
-import { deviceLabel } from '../../lib/api.types';
+import { tabletModeLabel, tabletRunsSkiSwap } from '../../lib/api.types';
 import { timeAgo } from '../../lib/timeAgo';
 import type {
   CheckinStationRecord,
   DeviceItem,
-  ProvisionedDevice,
   StationQueueStatus,
+  StationTabletOption,
 } from '../../lib/api.types';
 
 /** Hardware is only useful once bound to a station, and only to one. */
 const BRIDGE_ROLE = 'ski_swap.print_bridge';
-const ATTENDANT_ROLE = 'ski_swap.staff_check_in';
 
 /**
  * Check-in stations, in two tables.
  *
  * The two kinds are separate here because they are separate decisions, made
- * before any hardware exists: a kiosk sellers use alone, or a counter an iPad
- * is stationed at. A staffed station and its iPad are created together and stay
- * together — the iPad can be replaced, but the station is never without one.
- *
- * The server still derives the kind from whether an attendant is bound; nothing
- * about this layout needs a `kind` column.
+ * before any hardware exists: a kiosk sellers use alone, or a counter staff
+ * work on a tablet. The kind is stored (Plan 56 D6). A staffed station takes one
+ * of the org's tablets, which org administrators add on Tablets; until it has
+ * one it waits, still staffed.
  */
 export default function StationsTab({
   orgId,
   devices,
   swapId,
   canAdmin,
-  onStationAdded,
+  canManageTablets,
 }: {
   orgId: string;
   devices: DeviceItem[];
   swapId: string | null;
   canAdmin: boolean;
-  /**
-   * Handed anything just provisioned. A new iPad has a secret shown once, and a
-   * new bridge has never seen a Bluetooth radio; both need a screen this
-   * component does not own.
-   */
-  onStationAdded: (result: AddStationResult) => void;
+  /** An org administrator, who can open Tablets from a station's row. */
+  canManageTablets: boolean;
 }) {
   const qc = useQueryClient();
   const [adding, setAdding] = useState<StationKind | null>(null);
@@ -74,6 +68,14 @@ export default function StationsTab({
     enabled: !!orgId,
   });
 
+  // The org's tablets and where each serves. Only an admin chooses one.
+  const { data: tablets = [] } = useQuery({
+    queryKey: ['ski-swap/stations', orgId, 'tablet-options'],
+    queryFn: () => api.skiSwap.tabletOptions(orgId),
+    enabled: !!orgId && canAdmin,
+  });
+
+  // Invalidates the tablet options too: they share the key's prefix.
   const invalidate = () => qc.invalidateQueries({ queryKey: ['ski-swap/stations', orgId] });
   const refreshAll = () => {
     void invalidate();
@@ -87,49 +89,11 @@ export default function StationsTab({
   });
 
   /**
-   * A fresh pairing code for the iPad at a counter.
-   *
-   * One action, not two. "Replace iPad" used to provision a new device and
-   * revoke the old, which sounds more thorough for a lost tablet and is not:
-   * rotating the secret locks the old one out just as completely. All the
-   * second button bought was a new row in the devices table, at the cost of
-   * resetting the station's last-seen history — so the choice was between two
-   * spellings of the same thing, made at the moment someone is trying to get a
-   * counter working again.
-   */
-  const rotateSecret = useMutation({
-    mutationFn: async (v: { station: CheckinStationRecord; deviceId: string }) => {
-      const { clientSecret, rotatedAt } = await api.devices.rotateSecret(orgId, v.deviceId);
-      return { v, clientSecret, rotatedAt };
-    },
-    onSuccess: ({ v, clientSecret, rotatedAt }) => {
-      refreshAll();
-      onStationAdded({
-        stationId: v.station.id,
-        codeIssuedAt: rotatedAt,
-        newTablet: {
-          id: v.deviceId,
-          clientId: devices.find((d) => d.id === v.deviceId)?.clientId ?? '',
-          clientSecret,
-          name: v.station.name,
-          role: ATTENDANT_ROLE,
-          orgId,
-          createdAt: new Date().toISOString(),
-        } as ProvisionedDevice,
-      });
-    },
-  });
-
-  /**
-   * Retiring a station takes its iPad with it. The two were set up as one
-   * thing; leaving live credentials on a tablet with nowhere to check anyone in
-   * is the orphan this page exists to avoid.
+   * Retiring a station releases its tablet, which is the org's and can serve
+   * another station. Its bridge is released by the server.
    */
   const removeStation = useMutation({
-    mutationFn: async (station: CheckinStationRecord) => {
-      await api.skiSwap.deleteStation(orgId, station.id);
-      if (station.attendantDeviceId) await api.devices.revoke(orgId, station.attendantDeviceId);
-    },
+    mutationFn: (station: CheckinStationRecord) => api.skiSwap.deleteStation(orgId, station.id),
     onSuccess: refreshAll,
   });
 
@@ -150,8 +114,7 @@ export default function StationsTab({
   const selfStations = stations.filter((s) => s.kind === 'self_service');
   const staffStations = stations.filter((s) => s.kind === 'staffed');
 
-  const busyError =
-    patchStation.error ?? rotateSecret.error ?? removeStation.error;
+  const busyError = patchStation.error ?? removeStation.error;
 
   if (isLoading) return <p className="text-gray-400">Loading…</p>;
 
@@ -197,7 +160,7 @@ export default function StationsTab({
             kind="self_service"
             bridges={freeBridges}
             onCancel={() => setAdding(null)}
-            onDone={(result) => { setAdding(null); refreshAll(); onStationAdded(result); }}
+            onDone={() => { setAdding(null); refreshAll(); }}
           />
         )}
 
@@ -222,8 +185,9 @@ export default function StationsTab({
           <div>
             <h2 className="text-white font-medium">Staff check-in stations</h2>
             <p className="text-xs text-gray-500">
-              A volunteer checks sellers in on an iPad. Each station is created with its own
-              iPad and keeps it; a bridge is optional, since the iPad prints over Bluetooth.
+              A volunteer checks sellers in on a tablet. Choose one of the organization&apos;s tablets
+              for each station{canManageTablets ? <> (add tablets on <Link to="/dashboard/tablets" className="text-brand-500 hover:underline">Tablets</Link>)</> : null};
+              a bridge is optional, since the tablet prints over Bluetooth.
             </p>
           </div>
           {canAdmin && (
@@ -241,24 +205,25 @@ export default function StationsTab({
             orgId={orgId}
             kind="staffed"
             bridges={shareableBridges}
+            tablets={tablets.filter((t) => !t.stationId)}
             onCancel={() => setAdding(null)}
-            onDone={(result) => { setAdding(null); refreshAll(); onStationAdded(result); }}
+            onDone={() => { setAdding(null); refreshAll(); }}
           />
         )}
 
         <StationTable
           stations={staffStations}
           empty="No staff check-in stations yet."
-          columns={['Station', 'Code', 'iPad', 'Print bridge', 'Status', 'Last seen', '']}
+          columns={['Station', 'Code', 'Tablet', 'Print bridge', 'Status', 'Last seen', '']}
           renderRow={(station) => (
             <StaffStationRow
               key={station.id}
               station={station}
               {...rowProps}
               bridges={shareableBridges}
-              devices={devices}
-              onRotateSecret={(deviceId) => rotateSecret.mutate({ station, deviceId })}
-              working={rotateSecret.isPending}
+              tablets={tablets}
+              canManageTablets={canManageTablets}
+              working={patchStation.isPending}
             />
           )}
         />
@@ -403,7 +368,7 @@ function LastSeenCell({ orgId, station }: { orgId: string; station: CheckinStati
   return (
     <td className="py-3 pr-4 align-top whitespace-nowrap text-xs">
       {!queue ? <span className="text-gray-600">…</span>
-        : !station.attendantDeviceId ? <span className="text-gray-600">No iPad</span>
+        : !station.attendantDeviceId ? <span className="text-gray-600">No tablet</span>
           : at ? <span className="text-gray-300" title={new Date(at).toLocaleString()}>{timeAgo(at)}</span>
             : <span className="text-amber-400">Never</span>}
     </td>
@@ -421,7 +386,7 @@ function StatusCell({ orgId, station }: { orgId: string; station: CheckinStation
     <td className="py-3 pr-4 align-top min-w-[13rem]">
       {queue ? <StationStatus station={station} queue={queue} /> : <span className="text-gray-600">…</span>}
       {queue && station.kind === 'staffed' && appLabel(queue) && (
-        <span className="block text-xs text-gray-500" title="The app this station's iPad last reported running">
+        <span className="block text-xs text-gray-500" title="The app this station's tablet last reported running">
           {appLabel(queue)}
         </span>
       )}
@@ -493,32 +458,67 @@ function StaffStationRow({
   orgId,
   canAdmin,
   bridges,
-  devices,
+  tablets,
+  canManageTablets,
   onPatch,
   onConfirmRetire,
-  onRotateSecret,
   working,
 }: RowProps & {
   station: CheckinStationRecord;
-  devices: DeviceItem[];
-  onRotateSecret: (deviceId: string) => void;
+  tablets: StationTabletOption[];
+  canManageTablets: boolean;
   working: boolean;
 }) {
-  const tablet = devices.find((d) => d.id === station.attendantDeviceId);
+  /**
+   * Choosing a tablet already serving another station moves it, once someone
+   * has said so: that station is left waiting for another (Plan 56 D7).
+   */
+  function choose(id: string) {
+    if (!id) {
+      if (window.confirm(`Take ${station.attendantName ?? 'the tablet'} from ${station.name}? The station waits for another.`)) {
+        onPatch(station.id, { attendantDeviceId: null });
+      }
+      return;
+    }
+    const tablet = tablets.find((t) => t.id === id);
+    if (tablet?.stationId && tablet.stationId !== station.id) {
+      if (!window.confirm(`${tablet.name} serves ${tablet.stationName}. Move it to ${station.name}? ${tablet.stationName} will wait for another tablet.`)) return;
+      onPatch(station.id, { attendantDeviceId: id, takeTablet: true });
+      return;
+    }
+    onPatch(station.id, { attendantDeviceId: id });
+  }
+
   return (
     <tr className="border-b border-gray-800/60">
       <StationCells station={station} />
       <td className="py-3 pr-4 align-top">
-        <span className="text-gray-300">{tablet ? deviceLabel(tablet) : '—'}</span>
-        {canAdmin && tablet && (
-          <button
-            className="block text-xs text-brand-500 hover:underline disabled:opacity-40 mt-1"
+        {canAdmin ? (
+          <select
+            value={station.attendantDeviceId ?? ''}
             disabled={working}
-            onClick={() => onRotateSecret(tablet.id)}
-            title="Issues a new code and locks out the old one — for an iPad that was wiped, reinstalled, lost or swapped"
+            onChange={(e) => choose(e.target.value)}
+            aria-label={`Tablet at ${station.name}`}
+            className="bg-surface-100 border border-gray-700 rounded px-2 py-1 text-sm text-white max-w-[14rem] disabled:opacity-40"
           >
-            New pairing code
-          </button>
+            <option value="">No tablet</option>
+            {tablets.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}{t.stationId && t.stationId !== station.id ? ` — at ${t.stationName}` : ''}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-gray-300">{station.attendantName ?? '—'}</span>
+        )}
+        {station.attendantDeviceId && canManageTablets && (
+          <Link
+            to={`/dashboard/tablets#tablet-${station.attendantDeviceId}`}
+            className="block text-xs text-brand-500 hover:underline mt-1"
+            title="Pairing codes, renaming and removing are on Tablets"
+          >
+            On Tablets
+          </Link>
         )}
       </td>
       <BridgeCell
@@ -623,7 +623,7 @@ function RetireModal({
             An organization has 32 letters.
           </p>
           {station.attendantDeviceId && (
-            <p>Its iPad is revoked at the same time and will stop being able to check anyone in.</p>
+            <p>Its tablet, {station.attendantName}, is released and can serve another station.</p>
           )}
           {station.bridgeDeviceId && (
             <p>Its print bridge is released and can be bound to another station.</p>
@@ -664,24 +664,33 @@ function StationStatus({
 }
 
 function rollUp(station: CheckinStationRecord, queue: StationQueueStatus): HardwareStatus {
-  // A staffed station is its iPad: the row names the iPad, so its status is
-  // the iPad's. A bridge it may print through doesn't decide it: when the
-  // bridge is down the iPad prints over its own Bluetooth.
+  // A staffed station is its tablet: the row names the tablet, so its status is
+  // the tablet's. A bridge it may print through doesn't decide it: when the
+  // bridge is down the tablet prints over its own Bluetooth.
   if (station.kind === 'staffed') {
     if (!station.attendantDeviceId) {
-      return { icon: faLinkSlashDuo, label: 'No iPad', tone: 'unknown', title: 'Issue a new pairing code to set up its iPad.' };
+      return { icon: faLinkSlashDuo, label: 'Needs a tablet', tone: 'unknown', title: 'Choose one of the organization’s tablets in the Tablet column.' };
     }
     if (!recentlySeen(queue.attendantLastSeenAt, OFFLINE_AFTER_TABLET_MS)) {
       return {
         icon: faPlugCircleXmarkDuo,
-        label: 'iPad offline',
+        label: 'Tablet offline',
         tone: 'bad',
         title: lastSeenTitle(queue.attendantLastSeenAt),
       };
     }
+    // Online, but set to run something else: nobody can check in on it (Plan 56 D3).
+    if (!tabletRunsSkiSwap(station.attendantMode)) {
+      return {
+        icon: faCircleExclamationDuo,
+        label: `Tablet in ${tabletModeLabel(station.attendantMode)} mode`,
+        tone: 'warn',
+        title: 'Switch it to Ski Swap in its settings, behind the tablet PIN.',
+      };
+    }
     return {
       icon: faCircleCheckDuo,
-      label: 'iPad online',
+      label: 'Tablet online',
       tone: 'ok',
       title: lastSeenTitle(queue.attendantLastSeenAt),
     };

@@ -176,6 +176,10 @@ export interface DeviceItem {
    * for a display that has been provisioned but has never reached the server.
    */
   hardwareId: string | null;
+  /** What a tablet last said it is doing (Plan 56 D4), and the app it runs. Null until said. */
+  appMode?: string | null;
+  appVersion?: string | null;
+  appBuild?: string | null;
   imageName: string | null;
   imageVersion: string | null;
   /** The raw `name=version,…` the device sent. Rendered, never parsed for meaning. */
@@ -680,15 +684,52 @@ export interface RenderLabelResponse {
   pages: string[];
 }
 
+/** A tablet a Ski Swap admin can put at a station (Plan 56 D7). */
+export interface StationTabletOption {
+  id: string;
+  name: string;
+  appMode: string | null;
+  lastSeenAt: string | null;
+  /** The station it serves now, if any. */
+  stationId: string | null;
+  stationName: string | null;
+}
+
+/**
+ * What a tablet's mode is called on screen (Plan 56 D4): `time_clock` is
+ * "Time Clock", `ski_swap/end_of_swap_pickup` is "Ski Swap · End-of-Swap Pickup".
+ */
+export function tabletModeLabel(mode: string | null | undefined): string | null {
+  if (!mode) return null;
+  if (mode === 'time_clock') return 'Time Clock';
+  const [module, sub] = mode.split('/');
+  if (module !== 'ski_swap') return mode;
+  const SUB: Record<string, string> = {
+    check_in: 'Check-In',
+    binding_indemnification: 'Binding Indemnification',
+    end_of_swap_pickup: 'End-of-Swap Pickup',
+    item_status_kiosk: 'Item Status Kiosk',
+    seller_lookup: 'Seller Lookup',
+  };
+  return sub ? `Ski Swap · ${SUB[sub] ?? sub}` : 'Ski Swap';
+}
+
+/** Whether a tablet's last report has it running Ski Swap (or it hasn't said). */
+export function tabletRunsSkiSwap(mode: string | null | undefined): boolean {
+  return !mode || mode.startsWith('ski_swap');
+}
+
 export interface CheckinStationRecord {
   id: string;
   name: string;
   code: string;
-  /** Derived from whether a staff tablet is bound, never stored. */
+  /** Stored (Plan 56 D6): a staffed station can be waiting for its tablet. */
   kind: 'staffed' | 'self_service';
   attendantDeviceId: string | null;
   attendantName: string | null;
   attendantLastSeenAt: string | null;
+  /** What the station's tablet last said it is doing, e.g. `time_clock` (Plan 56 D4). */
+  attendantMode: string | null;
   bridgeDeviceId: string | null;
   bridgeName: string | null;
   bridgeLastSeenAt: string | null;

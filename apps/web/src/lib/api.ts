@@ -386,6 +386,21 @@ export const api = {
       request<{ clientSecret: string; rotatedAt: string }>(`/orgs/${orgId}/devices/${id}/rotate-secret`, { method: 'POST' }),
     revoke: (orgId: string, id: string) =>
       request<void>(`/orgs/${orgId}/devices/${id}`, { method: 'DELETE' }),
+    rename: (orgId: string, id: string, name: string) =>
+      request<import('./api.types').DeviceItem>(`/orgs/${orgId}/devices/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+      }),
+  },
+
+  /** The org's iPads and the PIN that guards them (Plan 56). Org administrators only. */
+  tablets: {
+    list: (orgId: string) => request<import('./api.types').DeviceItem[]>(`/orgs/${orgId}/tablets`),
+    getPin: (orgId: string) => request<import('./api.types').DevicePinResponse>(`/orgs/${orgId}/tablets/pin`),
+    setPin: (orgId: string, devicePin: string | null) =>
+      request<import('./api.types').DevicePinResponse>(`/orgs/${orgId}/tablets/pin`, {
+        method: 'PUT', body: JSON.stringify({ devicePin }),
+      }),
   },
 
   admin: {
@@ -1337,22 +1352,28 @@ export const api = {
     // Check-in stations (staff)
     listStations: (orgId: string) =>
       request<import('./api.types').CheckinStationRecord[]>(`/orgs/${orgId}/ski-swap/stations`),
-    createStation: (orgId: string, name: string) =>
+    createStation: (orgId: string, name: string, kind?: 'staffed' | 'self_service') =>
       request<import('./api.types').CheckinStationRecord>(`/orgs/${orgId}/ski-swap/stations`, {
-        method: 'POST', body: JSON.stringify({ name }),
+        method: 'POST', body: JSON.stringify({ name, ...(kind ? { kind } : {}) }),
       }),
     patchStation: (
       orgId: string,
       stationId: string,
       data: {
         name?: string;
+        kind?: 'staffed' | 'self_service';
         attendantDeviceId?: string | null;
+        /** Moves a tablet from the station it serves now (Plan 56 D7). */
+        takeTablet?: boolean;
         bridgeDeviceId?: string | null;
       },
     ) =>
       request<import('./api.types').CheckinStationRecord>(`/orgs/${orgId}/ski-swap/stations/${stationId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
+    /** The org's tablets, for choosing which serves a staffed station (Plan 56 D7). */
+    tabletOptions: (orgId: string) =>
+      request<import('./api.types').StationTabletOption[]>(`/orgs/${orgId}/ski-swap/stations/tablet-options`),
     deleteStation: (orgId: string, stationId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/stations/${stationId}`, { method: 'DELETE' }),
     stationQueue: (orgId: string, stationId: string) =>

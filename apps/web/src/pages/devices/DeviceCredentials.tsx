@@ -411,12 +411,12 @@ export function DeviceCredentialList({
 const PAIRED_CLOSE_MS = 2500;
 
 /**
- * Pairing a staff check-in iPad: its code in a popover that waits for the iPad.
- * When the iPad uses the code it says so and closes itself; closed before
- * then, it warns that the code is the only copy.
+ * Pairing a tablet: its code in a popover that waits for the iPad. When the
+ * iPad uses the code it says so and closes itself; closed before then, it warns
+ * that the code is the only copy.
  */
 export function PairingCodePopover({
-  orgId, deviceId, clientId, secret, issuedAt, stationName, onClose,
+  orgId, deviceId, clientId, secret, issuedAt, deviceName, onClose,
 }: {
   orgId: string;
   deviceId: string;
@@ -424,7 +424,8 @@ export function PairingCodePopover({
   secret: string;
   /** When the server issued the code (see `useCodeUsed`). */
   issuedAt: string | null;
-  stationName: string;
+  /** What the tablet is called: "iPad 4". */
+  deviceName: string;
   onClose: () => void;
 }) {
   const { confirmed } = useCodeUsed(orgId, deviceId, issuedAt);
@@ -450,7 +451,7 @@ export function PairingCodePopover({
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={close}>
       <div
-        role="dialog" aria-modal="true" aria-label={`Pair ${stationName}’s iPad`}
+        role="dialog" aria-modal="true" aria-label={`Pair ${deviceName}`}
         className={`rounded-lg p-5 w-full max-w-sm border ${confirmed ? 'bg-green-950 border-green-700' : 'bg-surface-50 border-gray-700'}`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -458,13 +459,13 @@ export function PairingCodePopover({
           <div className="flex flex-col items-center gap-3 py-8 text-center" role="status">
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-green-600 text-3xl text-white" aria-hidden="true">✓</span>
             <p className="text-lg font-semibold text-green-300">Success</p>
-            <p className="text-sm text-green-200/80">{stationName}’s iPad has checked in and is ready to use.</p>
+            <p className="text-sm text-green-200/80">{deviceName} has checked in and is ready to use.</p>
           </div>
         ) : (
           <>
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h3 className="text-white font-medium">Pair {stationName}’s iPad</h3>
+                <h3 className="text-white font-medium">Pair {deviceName}</h3>
                 <p className="text-xs text-gray-400 mt-0.5">Scan with PatrolKit on the iPad, or copy the code. It’s shown once.</p>
               </div>
               <button type="button" onClick={close} aria-label="Close" className="text-gray-400 hover:text-white text-lg leading-none">×</button>

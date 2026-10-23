@@ -165,6 +165,10 @@ export default function AppShell() {
           {perms.has('org:manage') && (
             <NavLink to="org-admin" className={navClass}>Org Admin</NavLink>
           )}
+          {/* Plan 56: the org's iPads, which serve Ski Swap and Time Tracking alike. */}
+          {perms.has('org:manage') && (
+            <NavLink to="tablets" className={navClass}>Tablets</NavLink>
+          )}
           {user.isSuperAdmin && (
             <NavLink to="admin" className={navClass}>Platform Admin</NavLink>
           )}

@@ -1,19 +1,8 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
-import type { DeviceItem, ProvisionedDevice } from '../../lib/api.types';
-
-const ATTENDANT_ROLE = 'ski_swap.staff_check_in' as const;
+import type { DeviceItem, StationTabletOption } from '../../lib/api.types';
 
 export type StationKind = 'self_service' | 'staffed';
-
-/** What the caller still has to show once the writes are done. */
-export type AddStationResult = {
-  stationId: string;
-  /** Provisioned here; its secret is shown once and has not been shown yet. */
-  newTablet: ProvisionedDevice | null;
-  /** When the server issued the tablet's code, so only its use confirms it. */
-  codeIssuedAt?: string | null;
-};
 
 const inputClass =
   'w-full bg-surface-100 border border-gray-700 rounded px-3 py-2 text-white text-sm';
@@ -23,8 +12,9 @@ const inputClass =
  *
  * The two kinds are separate tables with separate buttons, so this form never
  * asks which — it is told, and asks only for what that kind needs. A staffed
- * station always provisions its own iPad: the station and the tablet are one
- * thing being set up, and a tablet bound to nothing cannot check anyone in.
+ * station takes one of the org's tablets, which org administrators add on
+ * Tablets (Plan 56). It can be chosen later: the station stays staffed,
+ * waiting for one.
  *
  * A bridge is only ever chosen here, never created. Setting one up means
  * holding the board and sending it Wi-Fi over Bluetooth, which is the Printers
@@ -35,11 +25,14 @@ export default function AddStationForm({
   orgId,
   kind,
   bridges,
+  tablets = [],
   onCancel,
   onDone,
 }: {
   orgId: string;
   kind: StationKind;
+  /** Tablets serving no station: the ones a new staffed station may take. */
+  tablets?: StationTabletOption[];
   /**
    * The bridges this kind of station may choose: only free ones for a
    * self-service station, and for a staffed one also those already serving
@@ -47,18 +40,18 @@ export default function AddStationForm({
    */
   bridges: (DeviceItem & { alsoServes?: string[] })[];
   onCancel: () => void;
-  onDone: (result: AddStationResult) => void;
+  onDone: () => void;
 }) {
   const staffed = kind === 'staffed';
   const [name, setName] = useState('');
+  const [tabletChoice, setTabletChoice] = useState('');
   const [bridgeChoice, setBridgeChoice] = useState('');
   const sharedWith = bridges.find((b) => b.id === bridgeChoice)?.alsoServes ?? [];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   // A self-service station without a bridge is one a seller cannot use. The
-  // server has no opinion — the kind is derived from the hardware — so the
-  // requirement lives here.
+  // server lets one wait for its bridge, so the requirement lives here.
   const ready = !!name.trim() && (staffed || !!bridgeChoice);
 
   async function submit() {
@@ -67,23 +60,17 @@ export default function AddStationForm({
     try {
       // The station first, so everything after has something to bind to. A
       // failure part-way leaves real hardware in the list rather than nothing.
-      const station = await api.skiSwap.createStation(orgId, name.trim());
+      const station = await api.skiSwap.createStation(orgId, name.trim(), kind);
 
-      let newTablet: ProvisionedDevice | null = null;
-
-      if (staffed) {
-        newTablet = await api.devices.provision(orgId, {
-          name: `${name.trim()} iPad`,
-          role: ATTENDANT_ROLE,
-        });
-        await api.skiSwap.patchStation(orgId, station.id, { attendantDeviceId: newTablet.id });
+      if (staffed && tabletChoice) {
+        await api.skiSwap.patchStation(orgId, station.id, { attendantDeviceId: tabletChoice });
       }
 
       if (bridgeChoice) {
         await api.skiSwap.patchStation(orgId, station.id, { bridgeDeviceId: bridgeChoice });
       }
 
-      onDone({ stationId: station.id, newTablet, codeIssuedAt: newTablet?.createdAt ?? null });
+      onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not set that station up');
       setBusy(false);
@@ -106,6 +93,23 @@ export default function AddStationForm({
           className={inputClass}
         />
       </label>
+
+      {staffed && (
+        <label className="block">
+          <span className="block text-xs text-gray-400 mb-1">Tablet</span>
+          <select value={tabletChoice} onChange={(e) => setTabletChoice(e.target.value)} className={inputClass}>
+            <option value="">None yet — choose one later</option>
+            {tablets.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+          {tablets.length === 0 && (
+            <span className="block text-xs text-gray-500 mt-1">
+              No tablet is free. An org administrator adds tablets on the Tablets page.
+            </span>
+          )}
+        </label>
+      )}
 
       <label className="block">
         <span className="block text-xs text-gray-400 mb-1">
@@ -137,13 +141,6 @@ export default function AddStationForm({
         <p className="text-xs text-amber-400">
           No print bridge is free. Set one up on the Printers page first — it needs its Wi-Fi
           and its printer over Bluetooth, with the board to hand.
-        </p>
-      )}
-
-      {staffed && (
-        <p className="text-xs text-gray-500">
-          A provisioning code is shown once this is created. Scan it with the iPad that will
-          live at this counter.
         </p>
       )}
 

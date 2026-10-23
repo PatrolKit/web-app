@@ -25,7 +25,9 @@ const STATUSES: Record<string, string> = {
 
 /** What went wrong, and which terminals have gone quiet (Plan 55 D13). */
 export default function HealthPage() {
-  const { orgId } = useOutletContext<TimeTrackingContext>();
+  const { orgId, perms } = useOutletContext<TimeTrackingContext>();
+  // Tablets are the org administrators' (Plan 56): only they can open one.
+  const canManageTablets = perms.has('org:manage');
   const { data, isLoading, error } = useQuery({
     queryKey: ['time-clock/health', orgId],
     queryFn: () => api.timeClock.health(orgId),
@@ -56,7 +58,10 @@ export default function HealthPage() {
       <section className="space-y-2">
         <h2 className="text-white font-semibold">Terminals</h2>
         {data.terminals.length === 0 ? (
-          <p className="text-gray-500 text-sm">No time clock iPads are set up. Add one under Devices.</p>
+          <p className="text-gray-500 text-sm">
+            No iPad is running Time Clock. Switch a tablet to Time Clock in its settings
+            {canManageTablets ? <>; tablets are added on <Link to="/dashboard/tablets" className="underline hover:text-white">Tablets</Link></> : null}.
+          </p>
         ) : (
           <table className="w-full text-sm">
             <thead className="text-gray-500 border-b border-gray-800">
@@ -72,7 +77,11 @@ export default function HealthPage() {
                 const quiet = !t.lastSeenAt || now - new Date(t.lastSeenAt).getTime() > QUIET_MS;
                 return (
                   <tr key={t.id} className="border-b border-gray-900">
-                    <td className="py-2 text-white">{t.name}</td>
+                    <td className="py-2 text-white">
+                      {canManageTablets
+                        ? <Link to={`/dashboard/tablets#tablet-${t.id}`} className="hover:underline">{t.name}</Link>
+                        : t.name}
+                    </td>
                     <td className="py-2 text-gray-400">{t.resortName ?? <span className="text-yellow-400">Not placed</span>}</td>
                     <td className={`py-2 ${quiet ? 'text-yellow-400' : 'text-gray-300'}`}>
                       {t.lastSeenAt ? timeAgo(t.lastSeenAt) : 'Never'}
@@ -124,7 +133,7 @@ export default function HealthPage() {
         <h2 className="text-white font-semibold">Events from an iPad placed somewhere else</h2>
         <p className="text-gray-500 text-sm">
           Counted as normal. Usually an iPad moved between lodges with clock-ins still waiting to send;
-          if it keeps happening, check where the iPad is placed under Devices.
+          if it keeps happening, check the resort chosen on the iPad, in its Time Clock settings.
         </p>
         {data.mismatches.length === 0 ? (
           <p className="text-gray-500 text-sm">None.</p>

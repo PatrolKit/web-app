@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useOutletContext, Navigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
-import DevicePinCard from '../../components/DevicePinCard';
 import type { SkiSwapContext } from './SkiSwapLayout';
 
 export default function AdministrationPage() {
@@ -55,14 +54,6 @@ export default function AdministrationPage() {
 
   return (
     <div className="max-w-lg space-y-8">
-      <DevicePinCard
-        queryKey={['ski-swap/device-pin', orgId]}
-        get={() => api.skiSwap.getDevicePin(orgId)}
-        set={(devicePin) => api.skiSwap.setDevicePin(orgId, devicePin)}
-        deviceLabel="check-in iPads"
-      />
-
-
       <AcceptingItemsSection orgId={orgId} />
 
       <PrintingSection orgId={orgId} />

@@ -28,7 +28,6 @@ import SkiSwapDashboard from './pages/ski-swap/SkiSwapDashboard';
 import CheckinStationsPage from './pages/ski-swap/CheckinStationsPage';
 import BindingsPage from './pages/ski-swap/BindingsPage';
 import PrintersPage from './pages/ski-swap/PrintersPage';
-import TimeClockDevicesPage from './pages/time-tracking/DevicesPage';
 import TimeClockHealthPage from './pages/time-tracking/HealthPage';
 import SwapsPage from './pages/ski-swap/SwapsPage';
 import ItemsPage from './pages/ski-swap/ItemsPage';
@@ -50,6 +49,7 @@ import SellerItemsPage from './pages/public/SellerItemsPage';
 import OrgSellerLookupPage from './pages/public/OrgSellerLookupPage';
 import SkuStatusPage from './pages/public/SkuStatusPage';
 import OrgAdminLayout from './pages/org/OrgAdminLayout';
+import TabletsPage from './pages/tablets/TabletsPage';
 import OrgGeneralPage from './pages/org/OrgGeneralPage';
 import OrgResortsPage from './pages/org/OrgResortsPage';
 import OrgModulesPage from './pages/org/OrgModulesPage';
@@ -151,6 +151,7 @@ export default function App() {
           </Route>
           {/* Modules used to be its own nav item; keep old links working. */}
           <Route path="modules" element={<Navigate to="/dashboard/org-admin/modules" replace />} />
+          <Route path="tablets" element={<TabletsPage />} />
           <Route path="org-admin" element={<OrgAdminLayout />}>
             <Route index element={<OrgGeneralPage />} />
             <Route path="resorts" element={<OrgResortsPage />} />
@@ -186,7 +187,6 @@ export default function App() {
             <Route path="shifts" element={<ShiftsPage />} />
             <Route path="hours" element={<HoursReportPage />} />
             <Route path="roster" element={<RosterPage />} />
-            <Route path="devices" element={<TimeClockDevicesPage />} />
             <Route path="health" element={<TimeClockHealthPage />} />
             <Route path="settings" element={<TimeTrackingSettingsPage />} />
           </Route>

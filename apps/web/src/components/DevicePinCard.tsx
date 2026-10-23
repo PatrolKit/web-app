@@ -67,11 +67,11 @@ export default function DevicePinCard({ queryKey, get, set, deviceLabel }: Props
 
   return (
     <div className="space-y-3">
-      <h2 className="text-white font-semibold">Device PIN</h2>
+      <h2 className="text-white font-semibold">Tablet PIN</h2>
       <div className="bg-surface-50 border border-gray-700 rounded-lg p-4 space-y-3">
         <p className="text-sm text-gray-400">
-          Unlocks the settings screen on your {deviceLabel}. Everyone who needs it uses the same
-          four digits.
+          Unlocks settings, and switching between Ski Swap and Time Clock, on your {deviceLabel}.
+          Everyone who needs it uses the same four digits.
         </p>
 
         {isLoading ? (
@@ -98,7 +98,7 @@ export default function DevicePinCard({ queryKey, get, set, deviceLabel }: Props
                 inputMode="numeric"
                 autoComplete="off"
                 placeholder="••••"
-                aria-label="Device PIN"
+                aria-label="Tablet PIN"
                 className="w-24 bg-surface-100 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono tracking-[0.4em] text-center"
               />
               <button
