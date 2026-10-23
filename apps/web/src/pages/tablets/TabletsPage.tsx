@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Navigate, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   faCircleCheck as faCircleCheckDuo,
@@ -9,7 +9,7 @@ import {
 import { api } from '../../lib/api';
 import { tabletModeLabel } from '../../lib/api.types';
 import type { DeviceItem } from '../../lib/api.types';
-import DevicePinCard from '../../components/DevicePinCard';
+import type { TabletsContext } from './TabletsLayout';
 import { MutationError, PairingCodePopover } from '../devices/DeviceCredentials';
 import { lastSeenTitle, OFFLINE_AFTER_TABLET_MS, recentlySeen, StatusLine, useClockTick } from '../devices/hardwareStatus';
 import type { HardwareStatus } from '../devices/hardwareStatus';
@@ -30,13 +30,13 @@ const actionClass = 'text-xs px-2 py-1 bg-surface-100 hover:bg-surface-200 text-
  * The org's iPads (Plan 56).
  *
  * One set of iPads runs Ski Swap once a year and Time Clock the rest of it, so
- * they belong to neither module: org administrators add them here, see how each
- * is doing, and set the PIN that guards them. Which module an iPad runs is
+ * they belong to neither module: org administrators add them here and see how
+ * each is doing. The PIN that guards them is under Administration. Which module an iPad runs is
  * chosen on the iPad. Which station it serves is chosen on Ski Swap → Check-in,
  * and which resort it stands at, on the iPad in Time Clock mode.
  */
 export default function TabletsPage() {
-  const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
+  const { orgId } = useOutletContext<TabletsContext>();
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
@@ -46,7 +46,7 @@ export default function TabletsPage() {
   const { data: tablets = [], isLoading } = useQuery({
     queryKey: ['tablets', orgId],
     queryFn: () => api.tablets.list(orgId),
-    enabled: !!orgId && perms.has('org:manage'),
+    enabled: !!orgId,
     // Status is judged against the clock, so the list has to keep moving.
     refetchInterval: 10_000,
   });
@@ -88,27 +88,8 @@ export default function TabletsPage() {
 
   const closePairing = useCallback(() => setPairing(null), []);
 
-  if (!perms.has('org:manage')) return <Navigate to="/dashboard" replace />;
-
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Tablets</h1>
-        <p className="text-sm text-gray-400 mt-1 max-w-2xl">
-          The organization’s iPads. Each runs Ski Swap or Time Clock, chosen on the iPad behind the PIN below.
-          Put one at a check-in station on Ski Swap → Check-in; a Time Clock iPad picks its resort itself.
-        </p>
-      </div>
-
-      <section className="max-w-lg">
-        <DevicePinCard
-          queryKey={['tablets/pin', orgId]}
-          get={() => api.tablets.getPin(orgId)}
-          set={(pin) => api.tablets.setPin(orgId, pin)}
-          deviceLabel="tablets"
-        />
-      </section>
-
       <section className="space-y-3">
         <div className="flex items-start justify-between gap-4">
           <div>

@@ -49,7 +49,9 @@ import SellerItemsPage from './pages/public/SellerItemsPage';
 import OrgSellerLookupPage from './pages/public/OrgSellerLookupPage';
 import SkuStatusPage from './pages/public/SkuStatusPage';
 import OrgAdminLayout from './pages/org/OrgAdminLayout';
+import TabletsLayout from './pages/tablets/TabletsLayout';
 import TabletsPage from './pages/tablets/TabletsPage';
+import TabletsAdministrationPage from './pages/tablets/TabletsAdministrationPage';
 import OrgGeneralPage from './pages/org/OrgGeneralPage';
 import OrgResortsPage from './pages/org/OrgResortsPage';
 import OrgModulesPage from './pages/org/OrgModulesPage';
@@ -151,7 +153,10 @@ export default function App() {
           </Route>
           {/* Modules used to be its own nav item; keep old links working. */}
           <Route path="modules" element={<Navigate to="/dashboard/org-admin/modules" replace />} />
-          <Route path="tablets" element={<TabletsPage />} />
+          <Route path="tablets" element={<TabletsLayout />}>
+            <Route index element={<TabletsPage />} />
+            <Route path="administration" element={<TabletsAdministrationPage />} />
+          </Route>
           <Route path="org-admin" element={<OrgAdminLayout />}>
             <Route index element={<OrgGeneralPage />} />
             <Route path="resorts" element={<OrgResortsPage />} />
