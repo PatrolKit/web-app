@@ -1,17 +1,17 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { TimeClockFoldService } from './fold.service';
+import { TimeClockFoldService, writeAdminClose } from './fold.service';
 import { sweepAt } from './sweep.util';
 import { displayName } from '../common/util/person';
 import type { ShiftResponse } from '../contracts/time-clock.contracts';
 
-type ShiftWithRelations = Prisma.TimeClockShiftGetPayload<{
-  include: {
-    resort: { select: { name: true; timeZone: true } };
-    patroller: { include: { membership: { select: { user: true } } } };
-  };
-}>;
+const SHIFT_INCLUDE = {
+  resort: { select: { name: true, timeZone: true } },
+  patroller: { include: { membership: { select: { user: true } } } },
+} as const;
+
+type ShiftWithRelations = Prisma.TimeClockShiftGetPayload<{ include: typeof SHIFT_INCLUDE }>;
 
 export interface ShiftQuery {
   resortId?: string;
@@ -36,7 +36,9 @@ export class ShiftService {
    * was off overnight learns yesterday's shifts are closed.
    */
   async list(orgId: string, q: ShiftQuery): Promise<ShiftResponse[]> {
-    const where: Prisma.TimeClockShiftWhereInput = { orgId };
+    // Tombstones only in a delta (Plan 55 D6): a device holding a mirror has to be told a
+    // shift went, and a screen has no business showing one.
+    const where: Prisma.TimeClockShiftWhereInput = { orgId, ...(q.updatedSince ? {} : { deletedAt: null }) };
     if (q.resortId) where.resortId = q.resortId;
     if (q.dutyType) where.dutyType = q.dutyType;
     if (q.status) where.status = q.status;
@@ -56,10 +58,7 @@ export class ShiftService {
 
     const shifts = await this.prisma.timeClockShift.findMany({
       where,
-      include: {
-        resort: { select: { name: true, timeZone: true } },
-        patroller: { include: { membership: { select: { user: true } } } },
-      },
+      include: SHIFT_INCLUDE,
       orderBy: { clockInAt: 'desc' },
       take: 2000,
     });
@@ -89,8 +88,12 @@ export class ShiftService {
   /**
    * Admin correction (§6.2). Rewrites the underlying events rather than the shift row —
    * events are the source of truth, so a correction written straight onto the shift would
-   * be undone by the next recompute. Re-sourcing an event as `admin` also clears the
+   * be undone by the next recompute. Re-sourcing the close as `admin` also clears the
    * review flag, deterministically and in a way that survives replay.
+   *
+   * The close is the event the fold recorded as closing this shift (Plan 55 D1), never
+   * one found by time. Reopening sets it aside as `voided` rather than deleting it (D2), so
+   * a retry of the same id, or another iPad's late auto clock-out, cannot close it again.
    */
   async patch(
     orgId: string,
@@ -103,8 +106,15 @@ export class ShiftService {
       dutyNote?: string | null;
     },
   ): Promise<ShiftResponse> {
-    const shift = await this.prisma.timeClockShift.findFirst({ where: { id: shiftId, orgId } });
+    let shift = await this.prisma.timeClockShift.findFirst({
+      where: { id: shiftId, orgId, deletedAt: null },
+    });
     if (!shift) throw new NotFoundException('Shift not found');
+    // A shift folded before the fold recorded its close (D1) learns it from one replay.
+    if (shift.status === 'closed' && !shift.closeEventId && shift.closeReason !== 'superseded') {
+      await this.foldService.recomputeForPatroller(orgId, shift.patrollerId);
+      shift = await this.prisma.timeClockShift.findFirstOrThrow({ where: { id: shiftId } });
+    }
 
     const newClockIn = data.clockInAt ? new Date(data.clockInAt) : shift.clockInAt;
     const newClockOut =
@@ -117,7 +127,9 @@ export class ShiftService {
     if (newClockOut && newClockOut.getTime() < newClockIn.getTime()) {
       throw new BadRequestException('Clock-out cannot be before clock-in');
     }
-    if (data.dutyNote && data.dutyType && data.dutyType !== 'other') {
+    const dutyType = data.dutyType ?? shift.dutyType;
+    const dutyNote = data.dutyNote !== undefined ? data.dutyNote : dutyType === 'other' ? shift.dutyNote : null;
+    if (dutyNote && dutyType !== 'other') {
       throw new BadRequestException("A duty note is only allowed when the duty type is 'other'");
     }
 
@@ -126,47 +138,39 @@ export class ShiftService {
         // The shift id is its clock-in event id (§5.6).
         await tx.timeClockEvent.update({
           where: { id: shift.id },
-          data: {
-            occurredAt: newClockIn,
-            source: 'admin',
-            ...(data.dutyType !== undefined ? { dutyType: data.dutyType } : {}),
-            ...(data.dutyNote !== undefined ? { dutyNote: data.dutyNote } : {}),
-          },
+          data: { occurredAt: newClockIn, source: 'admin', dutyType, dutyNote },
         });
 
-        const closingEvent = await tx.timeClockEvent.findFirst({
-          where: {
-            orgId,
-            patrollerId: shift.patrollerId,
-            type: 'clock_out',
-            occurredAt: shift.clockOutAt ?? undefined,
-          },
-          orderBy: { occurredAt: 'desc' },
-        });
-
-        if (newClockOut) {
-          if (closingEvent) {
-            await tx.timeClockEvent.update({
-              where: { id: closingEvent.id },
-              data: { occurredAt: newClockOut, source: 'admin' },
-            });
-          } else {
-            await tx.timeClockEvent.create({
-              data: {
+        // The close side moves only when the correction names it: a duty-type fix on a
+        // superseded shift must not invent a clock-out at the next shift's clock-in.
+        if (data.clockOutAt !== undefined) {
+          if (newClockOut) {
+            if (shift.closeEventId) {
+              await tx.timeClockEvent.update({
+                where: { id: shift.closeEventId },
+                data: { occurredAt: newClockOut, source: 'admin' },
+              });
+            } else {
+              await writeAdminClose(tx, {
                 id: `admin-close:${shift.id}`,
                 orgId,
                 resortId: shift.resortId,
                 patrollerId: shift.patrollerId,
-                type: 'clock_out',
-                source: 'admin',
                 occurredAt: newClockOut,
                 statusNote: userId ? `Closed by user ${userId}` : 'Closed by an administrator',
+              });
+            }
+          } else if (shift.closeEventId) {
+            await tx.timeClockEvent.update({
+              where: { id: shift.closeEventId },
+              data: {
+                status: 'voided',
+                statusNote: userId
+                  ? `Set aside by user ${userId} when the shift was reopened`
+                  : 'Set aside when the shift was reopened',
               },
             });
           }
-        } else if (closingEvent) {
-          // Re-opening a shift: drop the close entirely.
-          await tx.timeClockEvent.delete({ where: { id: closingEvent.id } });
         }
 
         await this.foldService.recomputeForPatroller(orgId, shift.patrollerId, tx);
@@ -180,10 +184,7 @@ export class ShiftService {
 
     const updated = await this.prisma.timeClockShift.findFirstOrThrow({
       where: { id: shiftId },
-      include: {
-        resort: { select: { name: true, timeZone: true } },
-        patroller: { include: { membership: { select: { user: true } } } },
-      },
+      include: SHIFT_INCLUDE,
     });
     return toResponse(updated);
   }

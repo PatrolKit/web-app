@@ -13,8 +13,12 @@ export const ClockEventTypeSchema = z.enum(CLOCK_EVENT_TYPES);
 export const EVENT_SOURCES = ['device', 'device_auto', 'admin'] as const;
 export const EventSourceSchema = z.enum(EVENT_SOURCES);
 
-/** applied | duplicate | orphan | anomalous | rejected — set by the fold (§5.5). */
-export const EVENT_STATUSES = ['applied', 'duplicate', 'orphan', 'anomalous', 'rejected'] as const;
+/**
+ * Set by the fold (§5.5), except `rejected` (refused on arrival) and `voided` (a close an
+ * admin set aside by reopening its shift, Plan 55 D2). The iPad treats every status but
+ * `rejected` as accepted.
+ */
+export const EVENT_STATUSES = ['applied', 'duplicate', 'orphan', 'anomalous', 'rejected', 'voided'] as const;
 
 export const SHIFT_CLOSE_REASONS = ['manual', 'auto', 'superseded', 'admin'] as const;
 
@@ -120,6 +124,7 @@ export const ClockEventSchema = z
     id: z.string().min(1).max(120),
     resortId: z.string().min(1),
     patrollerId: z.string().min(1),
+    /// Accepted for older builds and ignored: a device speaks only for itself (Plan 55 D3).
     deviceId: z.string().nullable().optional(),
     type: ClockEventTypeSchema,
     dutyType: DutyTypeSchema.nullable().optional(),

@@ -15,6 +15,7 @@ export class TimeClockReportService {
   ): Promise<HoursReportRow[]> {
     const where: Prisma.TimeClockShiftWhereInput = {
       orgId,
+      deletedAt: null,
       status: 'closed',
       clockOutAt: { not: null },
       ...(q.resortId ? { resortId: q.resortId } : {}),

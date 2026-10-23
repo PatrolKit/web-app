@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TimeClockFoldService } from './fold.service';
+import { TimeClockFoldService, writeAdminClose } from './fold.service';
 import { PersonService } from '../common/identity/person.service';
 import { MembershipTouchService } from '../common/identity/membership-touch.service';
 import { ContactChallengeService, isTooManyCodes } from '../auth/contact-challenge.service';
@@ -236,7 +236,7 @@ export class PatrollerService {
    */
   private async closeOpenShift(orgId: string, patrollerId: string): Promise<string | null> {
     const open = await this.prisma.timeClockShift.findFirst({
-      where: { orgId, patrollerId, status: 'open' },
+      where: { orgId, patrollerId, status: 'open', deletedAt: null },
     });
     if (!open) return null;
 
@@ -244,18 +244,13 @@ export class PatrollerService {
     const occurredAt = now.getTime() > open.clockInAt.getTime() ? now : open.clockInAt;
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.timeClockEvent.create({
-        data: {
-          id: `admin-deactivate:${open.id}`,
-          orgId,
-          resortId: open.resortId,
-          patrollerId,
-          type: 'clock_out',
-          source: 'admin',
-          occurredAt,
-          status: 'applied',
-          statusNote: 'Closed automatically when the patroller was removed from the roster',
-        },
+      await writeAdminClose(tx, {
+        id: `admin-deactivate:${open.id}`,
+        orgId,
+        resortId: open.resortId,
+        patrollerId,
+        occurredAt,
+        statusNote: 'Closed automatically when the patroller was removed from the roster',
       });
       await this.foldService.recomputeForPatroller(orgId, patrollerId, tx);
     });

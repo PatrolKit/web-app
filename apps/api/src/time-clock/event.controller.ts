@@ -9,7 +9,8 @@ import { TimeClockEventService } from './event.service';
 import { SubmitEventsDto } from '../contracts/time-clock.contracts';
 
 /**
- * Devices only: clock events are recorded by the iPad that was there (§5.6).
+ * Devices only: clock events are recorded by the iPad that was there (§5.6), and speak
+ * for that iPad alone (Plan 55 D3).
  *
  * `OrDeviceAuthGuard` rather than `DeviceAuthGuard` because only the former checks the
  * token's org against the URL's; the device requirement is enforced here instead.

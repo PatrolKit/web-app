@@ -1,4 +1,4 @@
-import { foldEvents } from './fold.service';
+import { foldEvents, shiftChanges, type StoredShift } from './fold.service';
 
 type E = Parameters<typeof foldEvents>[0][number];
 
@@ -142,5 +142,46 @@ describe('foldEvents (§5.5)', () => {
     ]);
 
     expect(shifts.map((s) => s.status)).toEqual(['closed', 'closed', 'open']);
+  });
+
+  it('records which clock-out closed each shift (Plan 55 D1)', () => {
+    const { shifts } = foldEvents([
+      clockIn('d1', '2026-01-10T13:00:00Z'),
+      clockOut('d1x', '2026-01-10T21:00:00Z'),
+      clockIn('d2', '2026-01-11T13:30:00Z'),
+      clockIn('d3', '2026-01-11T15:00:00Z'),
+    ]);
+
+    expect(shifts.map((s) => s.closeEventId)).toEqual(['d1x', null, null]);
+  });
+});
+
+describe('shiftChanges (Plan 55 D5, D6)', () => {
+  const folded = () =>
+    foldEvents([clockIn('a', '2026-01-10T13:00:00Z'), clockOut('ax', '2026-01-10T19:00:00Z')]).shifts;
+  const stored = (opts: Partial<StoredShift> = {}): StoredShift => ({ ...folded()[0]!, deletedAt: null, ...opts });
+
+  it('writes nothing when the replay agrees with what is stored', () => {
+    expect(shiftChanges([stored()], folded())).toEqual({ create: [], update: [], tombstone: [] });
+  });
+
+  it('creates a shift it has not seen', () => {
+    expect(shiftChanges([], folded()).create.map((s) => s.id)).toEqual(['a']);
+  });
+
+  it('updates a shift whose close moved', () => {
+    const moved = stored({ clockOutAt: at('2026-01-10T18:00:00Z') });
+    expect(shiftChanges([moved], folded()).update.map((s) => s.id)).toEqual(['a']);
+  });
+
+  it('tombstones a shift the replay no longer produces, once', () => {
+    const gone = stored({ id: 'gone' });
+    expect(shiftChanges([stored(), gone], folded()).tombstone).toEqual(['gone']);
+    expect(shiftChanges([stored(), { ...gone, deletedAt: new Date() }], folded()).tombstone).toEqual([]);
+  });
+
+  it('revives a tombstone the replay produces again', () => {
+    const revived = shiftChanges([stored({ deletedAt: new Date() })], folded());
+    expect(revived.update.map((s) => s.id)).toEqual(['a']);
   });
 });

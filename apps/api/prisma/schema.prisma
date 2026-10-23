@@ -102,6 +102,10 @@ model Organization {
   indemnificationAllowed   Boolean   @default(false)
   indemnificationAllowedBy String?   @db.VarChar(191)
   indemnificationAllowedAt DateTime?
+  /// The month and day each season starts, as `MM-DD` (Plan 55 D12). A season
+  /// runs from here to the day before it next year, and is named by the years
+  /// it spans. Never February 29: a season has to start every year.
+  seasonCutover String @default("07-01") @db.VarChar(5)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1102,8 +1106,15 @@ model TimeClockEvent {
   occurredAt  DateTime
   recordedAt  DateTime @default(now())
   clockSkewMs Int?
+  /// applied | duplicate | orphan | anomalous | rejected | voided. `voided` is
+  /// a close an admin set aside by reopening its shift (Plan 55 D2): kept, so a
+  /// retry of the same id cannot close the shift again, and left out of the fold.
   status      String   @default("applied")
   statusNote  String?
+  /// The resort the submitting device was bound to when this arrived (Plan 55
+  /// D4). Recorded, never enforced: an event queued before a terminal moved is
+  /// still a real clock-in.
+  deviceResortId String?
 
   org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   resort    Resort           @relation(fields: [resortId], references: [id])
@@ -1126,7 +1137,13 @@ model TimeClockShift {
   status         String
   closeReason    String?
   flagged        Boolean   @default(false)
+  /// The clock-out event that closed this shift, set by the fold (Plan 55 D1).
+  /// Null while open, and for a shift a later clock-in superseded.
+  closeEventId   String?
   editedByUserId String?
+  /// Set when a replay no longer produces this shift (Plan 55 D6). A delta
+  /// carries it so a device drops its copy; screens and reports never see it.
+  deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1136,6 +1153,8 @@ model TimeClockShift {
 
   @@index([orgId, resortId, status])
   @@index([orgId, updatedAt])
+  /// The delta walk's order (Plan 55 D7).
+  @@index([orgId, updatedAt, id])
   @@index([orgId, patrollerId, status])
   @@index([resortId])
   @@index([patrollerId])

@@ -4,14 +4,34 @@
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@patrolkit/web", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "@patrolkit/web",
+        "dev"
+      ],
       "port": 3000
     },
     {
       "name": "api",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@patrolkit/api", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "@patrolkit/api",
+        "dev"
+      ],
       "port": 4000
+    },
+    {
+      "name": "api-4001",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=4001",
+        "pnpm",
+        "--filter",
+        "@patrolkit/api",
+        "dev"
+      ],
+      "port": 4001
     }
   ]
 }
