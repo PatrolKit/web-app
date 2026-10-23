@@ -537,6 +537,8 @@ class SquarePosAdapter implements IPosAdapter {
       });
     }
 
+    const processing = await this.processingFeesByOrder(locationId, from, to, now);
+
     return {
       lines: lines.map((line) => {
         const more = line.lineUid ? returned.get(`${line.orderId}:${line.lineUid}`) ?? 0 : 0;
@@ -544,9 +546,42 @@ class SquarePosAdapter implements IPosAdapter {
       }),
       fees: fees.map((f) => ({
         ...f,
+        // The Payments API's figure, net of what refunds returned, when it could be read.
+        ...(processing ? { processingFeeCents: processing.get(f.orderId) ?? 0, processingFeeRefundedCents: 0 } : {}),
         charges: f.charges.map((c) => ({ ...c, refundedCents: Math.min(c.cents, c.refundedCents + (returnedFees.get(`${f.orderId}:${c.uid}`) ?? 0)) })),
       })),
     };
+  }
+
+  /**
+   * What Square kept for processing, net, by order: the processing fees on the
+   * window's payments, plus the fee adjustments on their refunds since (Square
+   * signs them: positive assessed, negative returned). The order's own tender
+   * field is often left empty; the Payments API is where Square records it.
+   * Null when the payments can't be read, so the caller falls back to that.
+   */
+  private async processingFeesByOrder(locationId: string, from: Date, to: Date, now: Date): Promise<Map<string, number> | null> {
+    const feeOf = (fees?: Square.ProcessingFee[] | null) => (fees ?? []).reduce((n, f) => n + Number(f.amountMoney?.amount ?? 0n), 0);
+    try {
+      const out = new Map<string, number>();
+      const orderOfPayment = new Map<string, string>();
+      const payments = await withRateLimitRetry(() => this.client.payments.list({ locationId, beginTime: from.toISOString(), endTime: to.toISOString(), limit: 100 }));
+      for await (const p of payments) {
+        if (!p.orderId) continue;
+        if (p.id) orderOfPayment.set(p.id, p.orderId);
+        out.set(p.orderId, (out.get(p.orderId) ?? 0) + feeOf(p.processingFee));
+      }
+      // A refund made after the window still gives back a fee from inside it.
+      const refunds = await withRateLimitRetry(() => this.client.refunds.list({ locationId, beginTime: from.toISOString(), endTime: now.toISOString(), limit: 100 }));
+      for await (const r of refunds) {
+        const orderId = r.paymentId ? orderOfPayment.get(r.paymentId) : undefined;
+        if (orderId) out.set(orderId, (out.get(orderId) ?? 0) + feeOf(r.processingFee));
+      }
+      return out;
+    } catch (err) {
+      console.warn('[Square] processing fees couldn’t be read from payments; using the orders’ own figures:', err instanceof Error ? err.message : err);
+      return null;
+    }
   }
 
   /** Every completed order at the location closed in the window, page by page. */

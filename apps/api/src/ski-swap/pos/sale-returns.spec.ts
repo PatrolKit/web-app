@@ -18,9 +18,15 @@ const refund = (id: string, closedAt: string, sourceOrderId: string, lines: { ui
 
 type Order = ReturnType<typeof sale> | ReturnType<typeof refund>;
 
-function harness(orders: Order[]) {
+/** Square's payments and refunds, as pages to iterate; `fail` makes the payments list throw. */
+type Paid = { payments?: unknown[]; refunds?: unknown[]; fail?: boolean };
+const pageOf = (items: unknown[]) => ({ async *[Symbol.asyncIterator]() { yield* items; } });
+
+function harness(orders: Order[], paid: Paid = {}) {
   const searches: { startAt: string; endAt: string }[] = [];
   const client = {
+    payments: { list: async () => { if (paid.fail) throw new Error('forbidden'); return pageOf(paid.payments ?? []); } },
+    refunds: { list: async () => pageOf(paid.refunds ?? []) },
     orders: {
       search: async ({ query }: { query: { filter: { dateTimeFilter: { closedAt: { startAt: string; endAt: string } } } } }) => {
         const { startAt, endAt } = query.filter.dateTimeFilter.closedAt;
@@ -117,5 +123,28 @@ describe('Square’s processing fees on an order', () => {
       refunds: [{ id: 'r1', processingFeeMoney: { amount: 40n } }],
     } as never)!;
     expect([f.processingFeeCents, f.processingFeeRefundedCents, f.cardCents, f.cashCents]).toEqual([290, 40, 10_000, 500]);
+  });
+});
+
+describe('Square’s processing fees, from its payments', () => {
+  const withCharge = (id: string) => ({ ...sale(id, '2026-10-09T18:00:00Z', [{ uid: 'l1', variation: 'v1', cents: 10_000 }]), tenders: [{ id: `t-${id}`, type: 'CARD', amountMoney: money(10_000), processingFeeMoney: money(1) }] });
+  const fee = (cents: number) => ({ type: cents < 0 ? 'ADJUSTMENT' : 'INITIAL', amountMoney: money(cents) });
+
+  it('nets each order’s payment fees and what refunds gave back, over the orders’ own figure', async () => {
+    const { adapter } = harness([withCharge('o1'), withCharge('o2')], {
+      payments: [{ id: 'p1', orderId: 'o1', processingFee: [fee(290)] }, { id: 'p2', orderId: 'o2', processingFee: [fee(290)] }],
+      refunds: [{ id: 'r1', paymentId: 'p2', processingFee: [fee(-145)] }],
+    });
+    const { fees } = await (await adapter)!.readSales!('loc', FROM, TO);
+    expect(fees.map((f) => [f.orderId, f.processingFeeCents, f.processingFeeRefundedCents])).toEqual([['o1', 290, 0], ['o2', 145, 0]]);
+  });
+
+  it('falls back on the orders’ own figure when payments can’t be read', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { adapter } = harness([withCharge('o1')], { fail: true });
+    const { fees } = await (await adapter)!.readSales!('loc', FROM, TO);
+    expect(fees.map((f) => f.processingFeeCents)).toEqual([1]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

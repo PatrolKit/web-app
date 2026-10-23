@@ -14,19 +14,17 @@ export default function MoneyCard({ money }: { money: Money }) {
   const { incoming: i, outgoing: o } = money;
   const profitTone = money.profitCents >= 0 ? 'text-green-400' : 'text-red-400';
   return (
-    <div className="border border-gray-700 bg-surface-50 rounded-lg px-4 py-3 space-y-2.5 text-sm">
+    // One grid for all three, so each "= result" lines up under the others.
+    <div className="border border-gray-700 bg-surface-50 rounded-lg px-4 py-3 text-sm grid grid-cols-[4.5rem_minmax(0,max-content)_auto_auto] justify-start gap-x-3 gap-y-3 items-start">
       <Equation label="Incoming" tone="text-green-400" result={i.totalCents}>
         <Term cents={i.salesCents} what="Square sales" />
         {i.returnsCents > 0 && <Term op="−" cents={i.returnsCents} what="returns" />}
         <Term op="+" cents={i.feesChargedCents} what="shop and convenience fees" />
         <Term op="−" cents={i.squareFeesCents} what="Square’s fees" />
       </Equation>
-      <Equation label="Outgoing" tone="text-red-400" result={o.totalCents}
-        note={o.donatedCents > 0 ? `Not counting ${usd(o.donatedCents)} sold by sellers who donated it to the patrol.` : undefined}>
-        <Op>(</Op>
-        <Term cents={o.itemsCents} what="items sold" />
-        <Term op="+" cents={o.compsCents} what="comped" />
-        <Op>)</Op>
+      <Equation label="Outgoing" tone="text-red-400" result={o.totalCents}>
+        <Term open cents={o.itemsCents} what="items sold" />
+        <Term op="+" cents={o.compsCents} what="comped" close />
         <Together>
           <Op>×</Op>
           <Stacked top={`(1 − ${percentText(o.takeBps / 10_000)})`} label="patrol’s take" />
@@ -37,27 +35,24 @@ export default function MoneyCard({ money }: { money: Money }) {
         <Term cents={i.totalCents} what="incoming" />
         <Term op="−" cents={o.totalCents} what="outgoing" />
       </Equation>
+      {o.donatedCents > 0 && (
+        <p className="col-span-full text-xs text-gray-500">Outgoing doesn’t count {usd(o.donatedCents)} sold by sellers who donated it to the patrol.</p>
+      )}
     </div>
   );
 }
 
-function Equation({ label, tone, result, resultLabel, note, children }: {
-  label: string; tone: string; result: number; resultLabel?: string; note?: string; children: ReactNode;
+/** One row of the card's grid: the label, the terms (which wrap), "=", the result. */
+function Equation({ label, tone, result, resultLabel, children }: {
+  label: string; tone: string; result: number; resultLabel?: string; children: ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-x-3">
-      <span className="w-20 shrink-0 text-gray-400 leading-tight">{label}</span>
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-start gap-x-2 gap-y-1.5">
-          {children}
-          <Together>
-            <Op>=</Op>
-            <Stacked top={<span className={`font-semibold ${tone}`}>{usd(result)}</span>} label={resultLabel} />
-          </Together>
-        </div>
-        {note && <p className="text-xs text-gray-500">{note}</p>}
-      </div>
-    </div>
+    <>
+      <span className="text-gray-400 leading-tight">{label}</span>
+      <div className="flex flex-wrap items-start gap-x-2 gap-y-1.5">{children}</div>
+      <Op>=</Op>
+      <Stacked top={<span className={`font-semibold ${tone}`}>{usd(result)}</span>} label={resultLabel} />
+    </>
   );
 }
 
@@ -71,12 +66,14 @@ function Stacked({ top, label }: { top: ReactNode; label?: string }) {
   );
 }
 
-/** A figure and the operator before it, kept on one line when the equation wraps. */
-function Term({ op, cents, what }: { op?: '+' | '−'; cents: number; what: string }) {
+/** A figure, with the operator before it and any bracket, kept together when the equation wraps. */
+function Term({ op, cents, what, open, close }: { op?: '+' | '−'; cents: number; what: string; open?: boolean; close?: boolean }) {
   return (
     <Together>
       {op && <Op>{op}</Op>}
+      {open && <Op>(</Op>}
       <Stacked top={usd(cents)} label={what} />
+      {close && <Op>)</Op>}
     </Together>
   );
 }
