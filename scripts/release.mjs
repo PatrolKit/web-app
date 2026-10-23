@@ -4,7 +4,7 @@
 // Prerequisites: SSH key at ~/.ssh/patrolkit.pem, server set up per RESET_PLAN.md
 
 import { execSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 
 const SERVER = 'ec2-user@patrolkit.io';
 const KEY = `${process.env.HOME}/.ssh/patrolkit.pem`;
@@ -62,7 +62,7 @@ run(`rsync -az --delete -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
   apps/api/dist/ \
   ${SERVER}:/home/ec2-user/patrolkit/dist/`);
 
-// 3. Sync prisma migrations, web SPA, and package.json (for npm install on server)
+// 3. Sync prisma migrations, the web SPA, and the API's package.json (for the record)
 // --delete matters here: without it, migration folders removed locally survive
 // on the server and get replayed, which is how a squashed history collides with
 // its own baseline. Migrations were only ever added before, so this went unnoticed.
@@ -76,9 +76,26 @@ run(`rsync -az -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
   apps/api/package.json \
   ${SERVER}:/home/ec2-user/patrolkit/package.json`);
 
-// 4. Install any new server-side dependencies, run migrations, regenerate Prisma client
-console.log('Installing dependencies...');
-ssh('cd /home/ec2-user/patrolkit && npm install --omit=dev 2>&1 | tail -3');
+// 4. The API's production modules: exactly the lockfile's, built for the
+// server's platform (Plan 54 step 1). Never `npm install` on the server: that
+// resolved package.json's ranges afresh on every deploy, into versions nobody
+// had tested, and ran every package's install scripts.
+//
+// Sent only when they changed. They go next to the live ones (unchanged files
+// hard-linked, so only what changed crosses the network), then swap in; the
+// previous set stays as node_modules.prev, to swap back by hand if need be.
+run('node scripts/build-api-modules.mjs');
+const builtKey = readFileSync('.deploy/api/node_modules/.patrolkit-key', 'utf8');
+const serverKey = sshCapture('cat /home/ec2-user/patrolkit/node_modules/.patrolkit-key 2>/dev/null || true');
+if (serverKey === builtKey) {
+  console.log(`Server modules already current (${builtKey}).`);
+} else {
+  console.log(`Sending the API's modules (${serverKey || 'npm-installed'} → ${builtKey})...`);
+  run(`rsync -az --delete --link-dest=/home/ec2-user/patrolkit/node_modules -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
+    .deploy/api/node_modules/ \
+    ${SERVER}:/home/ec2-user/patrolkit/node_modules.next/`);
+  ssh('cd /home/ec2-user/patrolkit && rm -rf node_modules.prev && mv node_modules node_modules.prev && mv node_modules.next node_modules && rm -f package-lock.json');
+}
 
 // 5. Regenerate the Prisma client, run any pending migrations, then seed.
 // Generate has to come first: a deploy that adds models leaves the server's

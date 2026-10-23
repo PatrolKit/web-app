@@ -44,3 +44,6 @@ coverage/
 
 # Licensed binding-indemnification lists (Plan 44): kept privately, never in Git.
 apps/api/prisma/indemnification/
+
+# Production modules built for the server (scripts/build-api-modules.mjs)
+.deploy/
