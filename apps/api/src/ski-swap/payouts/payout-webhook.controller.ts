@@ -1,7 +1,7 @@
 import { Controller, Headers, HttpCode, Logger, Param, Post, Req } from '@nestjs/common';
 import { Limit } from '../../common/limits/limit.decorator';
 import type { Request } from 'express';
-import { PayPalClient } from './paypal.client';
+import { PayPalClient, itemErrorText } from './paypal.client';
 import { PayoutRunService } from './payout-run.service';
 
 /**
@@ -71,6 +71,14 @@ export class PayoutWebhookController {
 
   private async handle(orgId: string, event: PayPalWebhookEvent) {
     const type = event.event_type ?? '';
+    // Each verified event, so a payment's history can be read back from the log
+    // and a missing one noticed.
+    this.logger.log({
+      orgId, eventId: event.id, type,
+      batchId: event.resource?.payout_batch_id ?? event.resource?.batch_header?.payout_batch_id,
+      senderItemId: event.resource?.payout_item?.sender_item_id,
+      paypalStatus: event.resource?.transaction_status ?? event.resource?.batch_header?.batch_status,
+    }, 'PayPal webhook received');
 
     if (type.startsWith('PAYMENT.PAYOUTS-ITEM.')) {
       const resource = event.resource ?? {};
@@ -85,9 +93,9 @@ export class PayoutWebhookController {
           payoutItemId: resource.payout_item_id ?? '',
           transactionStatus: resource.transaction_status ?? '',
           transactionId: resource.transaction_id,
-          errorMessage: resource.errors?.message,
+          errorMessage: itemErrorText(resource.errors),
         },
-      ]);
+      ], { source: 'webhook' });
       return;
     }
 
@@ -95,7 +103,7 @@ export class PayoutWebhookController {
       // A batch event says nothing per-seller, so it is used as a prompt to go
       // and read the batch rather than as a fact about anybody's money.
       const batchId = event.resource?.batch_header?.payout_batch_id;
-      if (batchId) await this.runs.reconcileBatch(orgId, batchId);
+      if (batchId) await this.runs.reconcileBatch(orgId, batchId, 'webhook');
       return;
     }
 
@@ -105,15 +113,16 @@ export class PayoutWebhookController {
 
 /** Only the parts we read. PayPal sends a great deal more. */
 interface PayPalWebhookEvent {
+  id?: string;
   event_type?: string;
   resource?: {
     payout_item_id?: string;
     payout_batch_id?: string;
     transaction_status?: string;
     transaction_id?: string;
-    errors?: { message?: string };
+    errors?: { name?: string; message?: string };
     payout_item?: { sender_item_id?: string };
-    batch_header?: { payout_batch_id?: string };
+    batch_header?: { payout_batch_id?: string; batch_status?: string };
   };
 }
 

@@ -142,7 +142,9 @@ export class HttpPayPalClient extends PayPalClient {
       })),
     };
 
-    const res = await this.call(orgId, 'POST', '/v1/payments/payouts', body);
+    // PayPal's idempotency key: a retry after no answer gets the payout PayPal
+    // already has, rather than a rejection for reusing the batch id.
+    const res = await this.call(orgId, 'POST', '/v1/payments/payouts', body, { 'PayPal-Request-Id': senderBatchId });
     return this.toBatchResult(res);
   }
 
@@ -290,7 +292,7 @@ export class HttpPayPalClient extends PayPalClient {
         payout_item_id?: string;
         transaction_status?: string;
         transaction_id?: string;
-        errors?: { message?: string };
+        errors?: { name?: string; message?: string };
         payout_item?: { sender_item_id?: string };
       }[];
     };
@@ -303,18 +305,19 @@ export class HttpPayPalClient extends PayPalClient {
         payoutItemId: i.payout_item_id ?? '',
         transactionStatus: i.transaction_status ?? '',
         transactionId: i.transaction_id || undefined,
-        errorMessage: i.errors?.message,
+        errorMessage: itemErrorText(i.errors),
       })),
     };
   }
 
-  private async call(orgId: string, method: 'GET' | 'POST', path: string, body?: unknown) {
+  private async call(orgId: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) {
     const { host, token } = await this.authorise(orgId);
     const res = await fetch(`${host}${path}`, {
       method,
       headers: {
         authorization: `Bearer ${token}`,
         'content-type': 'application/json',
+        ...headers,
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
@@ -323,12 +326,13 @@ export class HttpPayPalClient extends PayPalClient {
     if (!res.ok) {
       // The status code is load-bearing: a 5xx is safely retryable with the
       // same `sender_batch_id`, and a 4xx is not. The caller decides, so it
-      // needs both.
-      const err = new PayPalError(
-        `PayPal ${method} ${path} failed: ${res.status} ${text.slice(0, 400)}`,
-        res.status,
-      );
-      this.logger.error({ orgId, path, status: res.status }, 'PayPal call failed');
+      // needs both. PayPal's debug id is what its support asks for.
+      const info = paypalErrorInfo(text, res.headers.get('paypal-debug-id'));
+      const said = info.name
+        ? `${info.name}${info.message ? `: ${info.message}` : ''}${info.details.length ? ` (${info.details.join('; ')})` : ''}`
+        : text.slice(0, 400);
+      const err = new PayPalError(`PayPal ${method} ${path} failed: ${res.status} ${said}${info.debugId ? ` [debug id ${info.debugId}]` : ''}`, res.status, info);
+      this.logger.error({ orgId, path, status: res.status, name: info.name, details: info.details, debugId: info.debugId, links: info.links }, 'PayPal call failed');
       throw err;
     }
     return text ? JSON.parse(text) : {};
@@ -366,9 +370,16 @@ export class HttpPayPalClient extends PayPalClient {
   }
 }
 
-/** Carries the HTTP status, because 5xx is retryable with the same batch id and 4xx is not. */
+/** What PayPal said about a failed call: its error name, the details, its debug id, and any links. */
+export interface PayPalErrorInfo { name?: string; message?: string; details: string[]; debugId?: string; links: string[] }
+
+/**
+ * Carries the HTTP status, because 5xx is retryable with the same batch id and
+ * 4xx is not, and what PayPal said: the name and details say why, and the debug
+ * id is what PayPal's support asks for.
+ */
 export class PayPalError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly info: PayPalErrorInfo = { details: [], links: [] }) {
     super(message);
     this.name = 'PayPalError';
   }
@@ -377,4 +388,36 @@ export class PayPalError extends Error {
   get retryable(): boolean {
     return this.status >= 500;
   }
+}
+
+/** PayPal's error body, read for what it says; never throws on a body that isn't JSON. */
+export function paypalErrorInfo(text: string, headerDebugId: string | null): PayPalErrorInfo {
+  let body: { name?: string; message?: string; debug_id?: string; details?: { field?: string; issue?: string; description?: string }[]; links?: { href?: string }[] } = {};
+  try { body = JSON.parse(text); } catch { /* not JSON */ }
+  return {
+    name: body.name,
+    message: body.message,
+    details: (body.details ?? []).map((d) => [d.field, d.issue, d.description].filter(Boolean).join(': ')).filter(Boolean),
+    debugId: headerDebugId ?? body.debug_id,
+    links: (body.links ?? []).map((l) => l.href ?? '').filter(Boolean),
+  };
+}
+
+/**
+ * The batch a rejected send points to, when PayPal rejected it for reusing a
+ * batch id it has already accepted: the payout is real, and this is its id.
+ */
+export function existingPayoutBatchId(err: PayPalError): string | null {
+  for (const href of err.info.links) {
+    const m = /\/v1\/payments\/payouts\/([A-Za-z0-9-]+)\/?$/.exec(href);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** A payout item's error as people and PayPal's support both read it: "Receiver is unregistered (RECEIVER_UNREGISTERED)". */
+export function itemErrorText(e?: { name?: string; message?: string }): string | undefined {
+  if (!e) return undefined;
+  if (e.message && e.name) return `${e.message} (${e.name})`;
+  return e.message ?? e.name;
 }

@@ -217,7 +217,7 @@ export default function PayoutRunPage() {
             🔒 Sending is locked on this server. Runs can be built and approved; nothing goes to PayPal until it’s unlocked.
           </p>
         )}
-        {run.batch?.reason && !run.batch.id && (
+        {run.batch?.reason && !run.batch.id && !run.awaitingAnswer && (
           <p className="text-sm text-red-200 bg-red-900/25 border border-red-800/60 rounded px-3 py-2">Not sent: {run.batch.reason}. Nothing was paid.</p>
         )}
         {result && <p className={`text-sm ${result.ok ? 'text-green-400' : 'text-red-300'}`}>{result.message}</p>}
@@ -226,6 +226,7 @@ export default function PayoutRunPage() {
         {run.awaitingAnswer && (
           <p className="text-sm text-amber-200 bg-amber-900/20 border border-amber-800/60 rounded px-3 py-2">
             PayPal didn’t answer, so it may or may not have the batch. Nobody is paid twice: Send again re-sends the same batch, and PayPal ignores a batch it already has.
+            {run.batch?.reason && <span className="block mt-1 text-amber-100/80">{run.batch.reason}.</span>}
           </p>
         )}
 

@@ -17,7 +17,7 @@ import { attributeSales, COMP_ORDER_PREFIX, paidOnceKeyOf, paidOnceLines, soldOn
 import { liveComps } from '../comps/live-comps';
 import { buildRun, discountsOf, exchangedKeyOf, resolveDestination, type BuiltLine, type BuiltRun, type RunItem, type RunSeller } from './build-run';
 import { buildRecipient, mapItemStatus, type PayoutMethod, type PayoutTarget } from './paypal-mapping';
-import { PAYOUTS_LOCKED_MESSAGE, PayPalClient, PayPalError, type PayoutItemRequest, type PayoutItemStatus } from './paypal.client';
+import { PAYOUTS_LOCKED_MESSAGE, PayPalClient, PayPalError, existingPayoutBatchId, type PayoutBatchResult, type PayoutItemRequest, type PayoutItemStatus } from './paypal.client';
 import { formatCents, splitCommission } from './money';
 import { addressText, addressToDestination, checksToCsv, destinationToAddress, type CheckAddress } from './checks-csv';
 import { lineStatusLabel, type PayoutExportSeller } from './payouts-export';
@@ -501,6 +501,8 @@ export class PayoutRunService {
     // Bumping the attempt here is precisely how a double payment happens.
     const inFlight = await this.prisma.payoutLine.count({ where: { runId, status: 'SENDING' } });
     const attempt = inFlight > 0 ? run.sendAttempt : run.sendAttempt + 1;
+    // What we expect PayPal to charge, logged beside what it does charge.
+    let feeEstimateCents: number | undefined;
 
     if (inFlight === 0) {
       const lines = await this.prisma.payoutLine.findMany({ where: { runId } });
@@ -524,6 +526,8 @@ export class PayoutRunService {
           throw new BadRequestException(`PayPal holds ${formatCents(balance.availableCents)}, short of the ${formatCents(needed)} this run needs. Add money to PayPal first.`);
         }
       }
+
+      feeEstimateCents = approved.reduce((n, l) => n + feeCents(l.approvedNetCents!, snap.feeRate), 0);
 
       await this.prisma.$transaction(async (tx) => {
         await tx.payoutRun.update({ where: { id: runId }, data: { sendAttempt: attempt, batchReason: null } });
@@ -552,39 +556,78 @@ export class PayoutRunService {
     }
     if (!items.length) throw new BadRequestException('No sendable payouts in this run');
 
-    await this.audit(orgId, actorId, 'payout_run.sent', runId, {
-      senderBatchId, count: items.length, totalCents: items.reduce((s, i) => s + i.amountCents, 0),
-    });
+    const totalCents = items.reduce((s, i) => s + i.amountCents, 0);
+    await this.audit(orgId, actorId, 'payout_run.sent', runId, { senderBatchId, count: items.length, totalCents });
+    this.logger.log({ orgId, runId, senderBatchId, resend: inFlight > 0, count: items.length, totalCents }, 'Sending a payout batch');
 
-    let result;
+    const startedAt = Date.now();
+    let result: PayoutBatchResult;
     try {
       result = await this.paypal.createBatch(orgId, senderBatchId, items);
     } catch (err) {
-      if (err instanceof PayPalError && !err.retryable) {
-        // D19: refused outright. Nothing was queued and nothing moved, so
-        // everyone goes back to approved, unfrozen, to Send again.
-        const reason = `PayPal refused the batch: ${err.message}`;
-        await this.prisma.$transaction(async (tx) => {
-          const sendingIds = (await tx.payoutLine.findMany({ where: { runId, status: 'SENDING' }, select: { id: true } })).map((l) => l.id);
-          await tx.payoutLineItem.deleteMany({ where: { lineId: { in: sendingIds } } });
-          await tx.payoutLine.updateMany({ where: { id: { in: sendingIds } }, data: { status: 'APPROVED', ...UNFROZEN } });
-          await tx.payoutRun.update({ where: { id: runId }, data: { batchReason: reason } });
-        });
-        throw new BadRequestException(`${reason}. Nothing was paid.`);
-      }
-      // Anything else — a 5xx, a timeout, a dropped socket — leaves the lines
-      // in SENDING on purpose. Sending again re-posts the same batch id, which
-      // PayPal will not honour twice.
-      this.logger.error({ runId, senderBatchId, err }, 'Payout batch did not come back');
-      throw new ConflictException('PayPal did not answer. The payouts are marked as sending; use Send again to retry safely.');
+      result = await this.afterSendFailed(orgId, runId, senderBatchId, inFlight > 0, err);
     }
 
     await this.prisma.payoutRun.update({
       where: { id: runId },
-      data: { payoutBatchId: result.batchId || null, batchStatus: result.batchStatus || null, paypalFeeCents: result.feesCents ?? null },
+      data: { payoutBatchId: result.batchId || null, batchStatus: result.batchStatus || null, paypalFeeCents: result.feesCents ?? null, batchReason: null },
     });
-    await this.applyBatchResult(result.batchId, result.items, { batchStatus: result.batchStatus, feesCents: result.feesCents });
+    this.logger.log({
+      orgId, runId, senderBatchId, batchId: result.batchId, batchStatus: result.batchStatus, count: items.length, totalCents,
+      feeEstimateCents, paypalFeeCents: result.feesCents, ms: Date.now() - startedAt,
+    }, 'PayPal accepted the payout batch');
+    await this.applyBatchResult(result.batchId, result.items, { batchStatus: result.batchStatus, feesCents: result.feesCents, source: 'send' });
     return this.get(orgId, runId);
+  }
+
+  /**
+   * What a failed Send means, which depends on whether PayPal could already
+   * have the batch. Returns the batch when PayPal does have it; otherwise
+   * throws, saying why on the run.
+   */
+  private async afterSendFailed(orgId: string, runId: string, senderBatchId: string, resend: boolean, err: unknown): Promise<PayoutBatchResult> {
+    const paypalSaid = err instanceof PayPalError ? { status: err.status, ...err.info } : undefined;
+
+    // PayPal already has this batch id, so an earlier attempt reached it and
+    // that payout is the real one. It's adopted and read, never sent again.
+    const existing = err instanceof PayPalError ? existingPayoutBatchId(err) : null;
+    if (existing) {
+      this.logger.warn({ orgId, runId, senderBatchId, batchId: existing, paypalSaid }, 'PayPal already had this payout batch; adopting it');
+      // Recorded before reading it, so Check with PayPal can find it if the read fails.
+      await this.prisma.payoutRun.update({ where: { id: runId }, data: { payoutBatchId: existing, batchReason: null } });
+      return this.paypal.getBatch(orgId, existing);
+    }
+
+    if (err instanceof PayPalError && !err.retryable && !resend) {
+      // D19: a first attempt refused outright. PayPal never had this batch id,
+      // so nothing was queued: everyone goes back to approved, unfrozen.
+      const reason = `PayPal refused the batch: ${err.message}`;
+      this.logger.error({ orgId, runId, senderBatchId, paypalSaid }, 'PayPal refused the payout batch; nothing was paid');
+      await this.prisma.$transaction(async (tx) => {
+        const sendingIds = (await tx.payoutLine.findMany({ where: { runId, status: 'SENDING' }, select: { id: true } })).map((l) => l.id);
+        await tx.payoutLineItem.deleteMany({ where: { lineId: { in: sendingIds } } });
+        await tx.payoutLine.updateMany({ where: { id: { in: sendingIds } }, data: { status: 'APPROVED', ...UNFROZEN } });
+        await tx.payoutRun.update({ where: { id: runId }, data: { batchReason: reason } });
+      });
+      throw new BadRequestException(`${reason}. Nothing was paid.`);
+    }
+
+    if (err instanceof PayPalError && !err.retryable) {
+      // A resend refused. The attempt before it may have paid, so nothing is
+      // released: the payouts stay sending until a person has looked.
+      const reason = `PayPal refused the resend (${err.message}). The first attempt may have paid, so the payouts stay marked as sending. Look in PayPal's activity for batch ${senderBatchId} before doing anything else`;
+      this.logger.error({ orgId, runId, senderBatchId, paypalSaid }, 'PayPal refused a payout resend; payouts stay sending');
+      await this.prisma.payoutRun.update({ where: { id: runId }, data: { batchReason: reason } });
+      throw new ConflictException(`${reason}.`);
+    }
+
+    // Anything else (a 5xx, a timeout, a dropped socket) leaves the lines in
+    // SENDING on purpose. Sending again re-posts the same batch id with the same
+    // idempotency key, and PayPal answers with the batch it already has.
+    const said = err instanceof Error ? err.message : String(err);
+    this.logger.error({ orgId, runId, senderBatchId, paypalSaid, err }, 'Payout batch did not come back');
+    await this.prisma.payoutRun.update({ where: { id: runId }, data: { batchReason: `No answer from PayPal: ${said}` } });
+    throw new ConflictException('PayPal did not answer. The payouts are marked as sending; use Send again to retry safely.');
   }
 
   /**
@@ -676,7 +719,12 @@ export class PayoutRunService {
    * two ways. A batch PayPal denies fails everyone in it (D19); a run whose
    * payments are all final closes (D15).
    */
-  async applyBatchResult(batchId: string, items: PayoutItemStatus[], header?: { batchStatus?: string; feesCents?: number }) {
+  async applyBatchResult(
+    batchId: string,
+    items: PayoutItemStatus[],
+    header?: { batchStatus?: string; feesCents?: number; source?: 'send' | 'webhook' | 'check' },
+  ) {
+    const source = header?.source ?? 'check';
     const runIds = new Set<string>();
     for (const item of items) {
       if (!item.senderItemId) continue;
@@ -694,6 +742,7 @@ export class PayoutRunService {
         continue;
       }
       const ended = notPaid(mapped.status);
+      const before = await this.prisma.payoutLine.findUnique({ where: { id: item.senderItemId }, select: { status: true, runId: true, frozenAt: true } });
       const res = await this.prisma.payoutLine.updateMany({
         // Never overwrite a line that has already arrived somewhere final. A
         // late webhook must not walk SENT backwards.
@@ -709,9 +758,19 @@ export class PayoutRunService {
           ...(ended ? { activeKey: null } : {}),
         },
       });
-      if (res.count) {
-        const line = await this.prisma.payoutLine.findUnique({ where: { id: item.senderItemId }, select: { runId: true } });
-        if (line) runIds.add(line.runId);
+      if (res.count && before) {
+        runIds.add(before.runId);
+        // Every payment's way through PayPal, whichever path brought the news:
+        // what a slow, stuck or failed payment did, and how long it took.
+        if (before.status !== mapped.status) {
+          const fields = {
+            source, runId: before.runId, lineId: item.senderItemId, from: before.status, to: mapped.status,
+            paypalStatus: item.transactionStatus, batchId, payoutItemId: item.payoutItemId, transactionId: item.transactionId,
+            error: item.errorMessage, minutesSinceSent: before.frozenAt ? Math.round((Date.now() - before.frozenAt.getTime()) / 60000) : undefined,
+          };
+          if (ended) this.logger.warn(fields, 'Payout payment did not pay');
+          else this.logger.log(fields, 'Payout payment moved');
+        }
       }
     }
 
@@ -720,6 +779,9 @@ export class PayoutRunService {
       if (run) {
         runIds.add(run.id);
         const denied = header.batchStatus === 'DENIED' || header.batchStatus === 'CANCELED';
+        if (run.batchStatus !== header.batchStatus) {
+          this.logger[denied ? 'warn' : 'log']({ source, runId: run.id, batchId, from: run.batchStatus, to: header.batchStatus, paypalFeeCents: header.feesCents }, 'Payout batch moved');
+        }
         await this.prisma.payoutRun.update({
           where: { id: run.id },
           data: {
@@ -748,9 +810,9 @@ export class PayoutRunService {
    * occasionally never sent, and a line stuck in SENDING is indistinguishable
    * from money that vanished — so the answer is always available by asking.
    */
-  async reconcileBatch(orgId: string, batchId: string) {
+  async reconcileBatch(orgId: string, batchId: string, source: 'webhook' | 'check' = 'check') {
     const result = await this.paypal.getBatch(orgId, batchId);
-    await this.applyBatchResult(result.batchId || batchId, result.items, { batchStatus: result.batchStatus, feesCents: result.feesCents });
+    await this.applyBatchResult(result.batchId || batchId, result.items, { batchStatus: result.batchStatus, feesCents: result.feesCents, source });
     return { batchId, items: result.items.length };
   }
 
