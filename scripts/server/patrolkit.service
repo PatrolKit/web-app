@@ -1,0 +1,48 @@
+# The API, as the unprivileged `patrolkit` user (Plan 54, M8).
+#
+# Installed by hand once (scripts/server/README.md); deploys only restart it.
+# The app reads its code from /opt/patrolkit (owned by the deploy user, readable
+# by the patrolkit group) and its settings from /etc/patrolkit/patrolkit.env
+# (root:patrolkit, 640). It writes nothing to disk, so the filesystem is
+# read-only to it; logs go to journald.
+[Unit]
+Description=PatrolKit API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=patrolkit
+Group=patrolkit
+WorkingDirectory=/opt/patrolkit
+EnvironmentFile=/etc/patrolkit/patrolkit.env
+ExecStart=/usr/bin/node dist/src/main.js
+Restart=always
+RestartSec=2
+
+# No way up: no capabilities, no privilege gain, no setuid.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+# A read-only view of the system, without /home (the deploy user's files).
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+UMask=0077
+# Not MemoryDenyWriteExecute: V8's JIT needs writable, executable memory.
+
+[Install]
+WantedBy=multi-user.target

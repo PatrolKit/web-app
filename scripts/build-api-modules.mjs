@@ -18,9 +18,9 @@ const run = (cmd) => execSync(cmd, { stdio: 'inherit' });
 const OUT = '.deploy/api';
 const IMAGE = 'patrolkit-api-modules:al2023-node22-pnpm11';
 const SERVER_NODE = process.env.SERVER_NODE ?? '22';
-const SERVER_DIR = '/home/ec2-user/patrolkit';
+const SERVER_DIR = '/opt/patrolkit';
 
-const inputs = ['pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json', 'apps/api/package.json', 'scripts/api-modules/Dockerfile'];
+const inputs = ['pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json', 'apps/api/package.json', 'scripts/api-modules/Dockerfile', 'scripts/build-api-modules.mjs'];
 const key = createHash('sha256').update(inputs.map((f) => readFileSync(f)).join('\0')).digest('hex').slice(0, 16);
 const stamp = `${OUT}/.key`;
 
