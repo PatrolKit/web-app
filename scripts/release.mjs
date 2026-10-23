@@ -11,13 +11,14 @@ const KEY = `${process.env.HOME}/.ssh/patrolkit.pem`;
 const SSH = `ssh -i ${KEY} -o StrictHostKeyChecking=no`;
 // The app lives in /opt/patrolkit and runs as the unprivileged `patrolkit` user
 // under systemd (scripts/server/). Files are the deploy user's, readable by the
-// patrolkit group: the setgid directory gives them the group, and rsync, told
-// not to copy the Mac's owner and group, gives the group read and nobody else
-// anything. Settings live in /etc/patrolkit/patrolkit.env, readable by root and
-// the patrolkit group only.
+// patrolkit group. Its directories are setgid, so what's created in them takes
+// the group. rsync copies no owner, group or permissions from the Mac (copying
+// a directory's mode clears its setgid bit, and everything below it loses the
+// group), and writes under umask 027: the group reads, nobody else does.
+// Settings live in /etc/patrolkit/patrolkit.env, root's, readable by the group.
 const APP = '/opt/patrolkit';
 const ENV_FILE = '/etc/patrolkit/patrolkit.env';
-const RSYNC = `rsync -az --no-o --no-g --chmod=Dg+rx,Fg+rX,o-rwx -e "ssh -i ${KEY} -o StrictHostKeyChecking=no"`;
+const RSYNC = `rsync -rltz --rsync-path="umask 027 && rsync" -e "ssh -i ${KEY} -o StrictHostKeyChecking=no"`;
 /** A command in the app's directory as `patrolkit`, with the app's settings. */
 const asApp = (cmd) =>
   ssh(`sudo systemd-run --quiet --wait --pipe --collect --uid=patrolkit --gid=patrolkit -p EnvironmentFile=${ENV_FILE} -p WorkingDirectory=${APP} ${cmd}`);
@@ -106,6 +107,9 @@ if (serverKey === builtKey) {
 console.log('Regenerating Prisma client...');
 // Generate writes into node_modules, which is the deploy user's; umask keeps it from others.
 ssh(`cd ${APP} && umask 027 && node_modules/.bin/prisma generate`);
+// Then make sure: everything the group's, readable by it, by nobody else. A file
+// the app can't read surfaces as a crash on its first lazy require, long after.
+ssh(`sudo chgrp -R patrolkit ${APP} && sudo chmod -R g+rX,g-w,o-rwx ${APP} && sudo find ${APP} -type d ! -perm -g+s -exec chmod g+s {} +`);
 console.log('Running migrations...');
 asApp(`/usr/bin/node ${APP}/node_modules/prisma/build/index.js migrate deploy`);
 console.log('Seeding database...');
