@@ -95,3 +95,9 @@ export function batchStatusText(status: string | null): string {
     default: return status ?? 'Not sent';
   }
 }
+
+/** "20%", "12.3%", "−4.5%": a share as people say it, to a tenth at most. */
+export function percentText(share: number): string {
+  const pct = Math.round(share * 1000) / 10;
+  return `${pct < 0 ? '−' : ''}${Math.abs(pct)}%`;
+}

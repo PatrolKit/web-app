@@ -21,6 +21,7 @@ import { PAYOUTS_LOCKED_MESSAGE, PayPalClient, PayPalError, type PayoutItemReque
 import { formatCents, splitCommission } from './money';
 import { addressText, addressToDestination, checksToCsv, destinationToAddress, type CheckAddress } from './checks-csv';
 import { lineStatusLabel, type PayoutExportSeller } from './payouts-export';
+import { moneySummary, type MoneySummary } from './money-summary';
 import {
   activeKeyOf, allFinal, flagsFor, gapsForPayout, issuesBySeller, kindOf, notPaid,
   type PayoutMethodChoice, type SellerIssue,
@@ -79,6 +80,8 @@ interface Snapshot {
   comps: Map<string, { reason: string; note: string; live: boolean; units: number; priceCents: number }>;
   /** Tickets scanned twice in one sale and paid once in Sales check, and the line paid: their held extra is settled. */
   paidOnce: Map<string, string>;
+  /** Incoming, outgoing and profit, for the Payouts page; null when Square couldn't be read. */
+  money: MoneySummary | null;
 }
 
 const SELLER_SELECT = {
@@ -191,6 +194,7 @@ export class PayoutRunService {
         .map((l) => ({ sellerId: l.sellerId, name: l.sellerName, items: l.items.reduce((n, i) => n + i.quantity, 0), grossCents: l.items.reduce((n, i) => n + i.priceCents * i.quantity, 0) })),
       ready,
       comps: [...snap.comps.values()].filter((c) => c.live).reduce((t, c) => ({ count: t.count + c.units, totalCents: t.totalCents + c.units * c.priceCents }), { count: 0, totalCents: 0 }),
+      money: snap.money,
     };
   }
 
@@ -815,18 +819,21 @@ export class PayoutRunService {
     // Tickets paid once in Sales check, and the line each is paid for.
     const paidOnce = paidOnceLines(decisions as DecisionRef[]);
     let built = EMPTY_BUILT;
+    let money: MoneySummary | null = null;
     let salesError: string | null = null;
     try {
       const raw = await this.breakdown.rawSales(orgId, swapId);
+      const ourVariations = new Set(itemRows.map((i) => i.squareVariationId).filter((v): v is string => !!v));
       const sales = attributeSales(
         raw.lines,
         decisions as DecisionRef[],
         exchanges,
-        new Set(itemRows.map((i) => i.squareVariationId).filter((v): v is string => !!v)),
+        ourVariations,
         new Map(itemRows.filter((i) => i.squareVariationId).map((i) => [i.id, i.squareVariationId!])),
         comps,
       );
       built = buildRun(itemRows, [...sellers.values()].map((s) => s.run), sales, { commissionBasisPoints: bps, paidOnce });
+      money = moneySummary({ sales, ourVariations, fees: raw.fees ?? null, lines: built.lines, takeBps: bps });
     } catch (err) {
       salesError = err instanceof Error ? err.message : 'Square couldn’t be read.';
     }
@@ -861,6 +868,7 @@ export class PayoutRunService {
       discounts: discountsOf(built.lines, exchangedKeys).discounts,
       comps: new Map(compRows.map((c) => [c.id, { reason: c.reason, note: c.note, live: !!c.liveKey, units: c.units, priceCents: c.priceCents }])),
       paidOnce,
+      money,
     };
   }
 

@@ -224,6 +224,13 @@ ok('the seller with an unverified PayPal email is listed to fix, not offered',
 ok('a sale matching no ticket is shown, not dropped',
   before.salesCheck?.unmatched?.some((u) => u.collectedCents === 2500), JSON.stringify(before.salesCheck?.unmatched));
 ok('the donor is listed, not paid', before.donated?.length === 1 && before.donated[0].sellerId === sellerIds.donate);
+const m = before.money;
+const swapSalesCents = sales.filter((x) => x.variationId !== 'var-not-ours').reduce((n, x) => n + Math.round(x.collectedCents * (x.quantity - x.refundedQuantity) / x.quantity), 0);
+ok('the money card: incoming is swap sales less returns, without the orphan sale',
+  m?.incoming.salesCents - m?.incoming.returnsCents === swapSalesCents && m.incoming.totalCents === swapSalesCents, JSON.stringify(m?.incoming));
+ok('...outgoing leaves the donor out, and profit is incoming less outgoing',
+  m?.outgoing.donatedCents === 6000 && m.profitCents === m.incoming.totalCents - m.outgoing.totalCents
+    && m.outgoing.totalCents === m.outgoing.itemsCents + m.outgoing.compsCents - m.outgoing.takeCents, JSON.stringify(m?.outgoing));
 ok('the discount report finds the item sold under its listed price',
   before.discounts?.length === 1 && before.discounts[0].sku === 'PAY-002', JSON.stringify(before.discounts));
 

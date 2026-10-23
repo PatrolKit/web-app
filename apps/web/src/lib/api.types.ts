@@ -887,6 +887,8 @@ export interface PayoutsSummary {
   swapId: string;
   swapTitle: string;
   salesError: string | null;
+  /** Incoming, outgoing and profit (the money card); null when Square couldn't be read. */
+  money: import('@patrolkit/contracts/payouts.contracts').PayoutsSummaryView['money'];
   runs: PayoutRunSummary[];
   missingDetails: { sellerId: string; name: string; key: string; problem: string; fix: string }[];
   salesCheck: {

@@ -60,6 +60,13 @@ export interface PosOrderFees {
   hasLines: boolean;
   cardCents: number;
   cashCents: number;
+  /**
+   * What Square kept for processing the order's card payments, and what it
+   * gave back on refunds. Square fills it in a few seconds after a payment;
+   * absent from adapters that can't say.
+   */
+  processingFeeCents?: number;
+  processingFeeRefundedCents?: number;
   charges: {
     uid: string;
     name: string;

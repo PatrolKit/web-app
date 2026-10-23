@@ -768,6 +768,8 @@ export function feesOf(order: Square.Order): PosOrderFees | null {
     hasLines,
     cardCents: tendered('CARD'),
     cashCents: tendered('CASH'),
+    processingFeeCents: (order.tenders ?? []).reduce((n, t) => n + Number(t.processingFeeMoney?.amount ?? 0n), 0),
+    processingFeeRefundedCents: (order.refunds ?? []).reduce((n, r) => n + Number(r.processingFeeMoney?.amount ?? 0n), 0),
     charges: charges.map((c) => ({
       uid: c.uid!,
       name: c.name ?? '',

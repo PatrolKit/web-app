@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, Navigate, useNavigate, useOutletContext } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import PayoutsExport from './payouts/PayoutsExport';
+import MoneyCard from './payouts/MoneyCard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLock, faTriangleExclamation } from '@fortawesome/pro-duotone-svg-icons';
@@ -166,6 +167,9 @@ export default function PayoutsPage() {
           )}
         </div>
       )}
+
+      {/* The swap's money: incoming, outgoing, profit. */}
+      {data?.money && <MoneyCard money={data.money} />}
 
       {/* D1: a run is checks or PayPal, and starts empty. */}
       {data && (

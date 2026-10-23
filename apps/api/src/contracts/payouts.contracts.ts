@@ -234,6 +234,13 @@ export interface PayoutsSummaryView {
   swapId: string;
   swapTitle: string;
   salesError: string | null;
+  /** Incoming, outgoing and profit; null when Square couldn't be read. See ski-swap/payouts/money-summary.ts. */
+  money: {
+    incoming: { salesCents: number; returnsCents: number; feesChargedCents: number; squareFeesCents: number; totalCents: number };
+    outgoing: { itemsCents: number; compsCents: number; takeBps: number; takeCents: number; totalCents: number; donatedCents: number };
+    profitCents: number;
+    profitShare: number | null;
+  } | null;
   runs: PayoutRunSummaryView[];
   /** D16: sellers with sales whose details stop their own payout method. */
   missingDetails: { sellerId: string; name: string; key: string; problem: string; fix: string }[];

@@ -1,4 +1,4 @@
-import { SquarePosAdapterFactory } from './square.pos.adapter';
+import { feesOf, SquarePosAdapterFactory } from './square.pos.adapter';
 
 /**
  * Square refunds an item as an order of its own, its return pointing back at
@@ -105,3 +105,17 @@ describe('fees, and refunds of them', () => {
   });
 });
 
+
+describe('Square’s processing fees on an order', () => {
+  it('adds up what Square kept on its payments, and what it gave back on refunds', () => {
+    const f = feesOf({
+      id: 'o1', closedAt: '2026-10-09T18:00:00Z', lineItems: [{ uid: 'l1' }],
+      tenders: [
+        { id: 't1', type: 'CARD', amountMoney: { amount: 10_000n }, processingFeeMoney: { amount: 290n } },
+        { id: 't2', type: 'CASH', amountMoney: { amount: 500n } },
+      ],
+      refunds: [{ id: 'r1', processingFeeMoney: { amount: 40n } }],
+    } as never)!;
+    expect([f.processingFeeCents, f.processingFeeRefundedCents, f.cardCents, f.cashCents]).toEqual([290, 40, 10_000, 500]);
+  });
+});

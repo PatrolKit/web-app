@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { batchStatusText, feeCents, feeRateText, fundingFor, sortSellers, statusView } from './payoutView';
+import { batchStatusText, feeCents, feeRateText, fundingFor, percentText, sortSellers, statusView } from './payoutView';
 
 const US = { flatCents: 25, bps: 0, capCents: 0 };
 
@@ -49,5 +49,11 @@ describe('status words (D18, D19)', () => {
   it('puts PayPal’s batch status in plain words', () => {
     expect(batchStatusText('SUCCESS')).toBe('Processed');
     expect(batchStatusText('DENIED')).toBe('Refused by PayPal');
+  });
+});
+
+describe('a share as a percentage', () => {
+  it('rounds to a tenth, and drops a trailing zero', () => {
+    expect([percentText(0.2), percentText(0.1234), percentText(-0.045), percentText(0)]).toEqual(['20%', '12.3%', '−4.5%', '0%']);
   });
 });
