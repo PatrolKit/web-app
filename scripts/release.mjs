@@ -91,7 +91,8 @@ if (serverKey === builtKey) {
   console.log(`Server modules already current (${builtKey}).`);
 } else {
   console.log(`Sending the API's modules (${serverKey || 'npm-installed'} → ${builtKey})...`);
-  run(`rsync -az --delete --link-dest=/home/ec2-user/patrolkit/node_modules -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
+  // --checksum: a rebuild has new file times, so compare contents to reuse what's unchanged.
+  run(`rsync -az --checksum --delete --link-dest=/home/ec2-user/patrolkit/node_modules -e "ssh -i ${KEY} -o StrictHostKeyChecking=no" \
     .deploy/api/node_modules/ \
     ${SERVER}:/home/ec2-user/patrolkit/node_modules.next/`);
   ssh('cd /home/ec2-user/patrolkit && rm -rf node_modules.prev && mv node_modules node_modules.prev && mv node_modules.next node_modules && rm -f package-lock.json');

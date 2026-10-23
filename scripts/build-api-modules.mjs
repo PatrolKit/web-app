@@ -17,7 +17,7 @@ import { basename, dirname } from 'path';
 const run = (cmd) => execSync(cmd, { stdio: 'inherit' });
 const OUT = '.deploy/api';
 const IMAGE = 'patrolkit-api-modules:al2023-node22-pnpm11';
-const SERVER_NODE = process.env.SERVER_NODE ?? '18';
+const SERVER_NODE = process.env.SERVER_NODE ?? '22';
 const SERVER_DIR = '/home/ec2-user/patrolkit';
 
 const inputs = ['pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json', 'apps/api/package.json', 'scripts/api-modules/Dockerfile'];
@@ -57,7 +57,7 @@ console.log(`\nAPI modules ready: ${OUT}/node_modules (${key})`);
 function verify() {
   run(
     `docker run --rm --platform linux/amd64 -v "$PWD/${OUT}":${SERVER_DIR}:ro -w ${SERVER_DIR} amazonlinux:2023 bash -c ` +
-    `"dnf install -y -q nodejs${SERVER_NODE === '18' ? '' : SERVER_NODE} >/dev/null && node -v && node -e '` +
+    `"dnf install -y -q nodejs${SERVER_NODE} >/dev/null && node -v && node -e '` +
     `for (const m of [\\"argon2\\", \\"sharp\\", \\"@napi-rs/canvas\\", \\"exceljs\\", \\"@nestjs/core\\", \\"@prisma/client\\"]) { require(m); console.log(\\"ok\\", m); }'"`,
   );
 }

@@ -1,7 +1,7 @@
 # Builds the API's production node_modules from the pnpm lockfile, on the
 # server's platform: Amazon Linux 2023, x86-64. Native modules (argon2, sharp,
 # @napi-rs/canvas) and Prisma's engines are fetched or built for this platform,
-# not the Mac's. Node 22 runs pnpm 11; the modules are N-API, so they load on
+# not the Mac's. Node 22 runs pnpm 11; the modules are N-API, and are checked on
 # the server's Node too (checked by scripts/build-api-modules.mjs).
 FROM --platform=linux/amd64 amazonlinux:2023
 RUN dnf install -y nodejs22 nodejs22-npm tar gzip findutils && dnf clean all \
