@@ -4,7 +4,7 @@ import { SquareClient, SquareError } from 'square';
 import { SquareClientService } from '../square-client.service';
 import { PosAdapterFactory, type IPosAdapter, type PosItemSync } from './pos.adapter';
 import type { Square } from 'square';
-import type { PosCatalogItem, PosOrderFees, PosSaleLine, PosUpsertResult, PosVariationInfo } from './pos.adapter';
+import type { PosCatalogItem, PosOrderFees, PosPaymentKind, PosSaleLine, PosUpsertResult, PosVariationInfo } from './pos.adapter';
 import { withRateLimitRetry } from './square-retry';
 
 function isSquareMissingReferenceError(err: unknown): boolean {
@@ -546,8 +546,8 @@ class SquarePosAdapter implements IPosAdapter {
       }),
       fees: fees.map((f) => ({
         ...f,
-        // The Payments API's figure, net of what refunds returned, when it could be read.
-        ...(processing ? { processingFeeCents: processing.get(f.orderId) ?? 0, processingFeeRefundedCents: 0 } : {}),
+        // The Payments API's figures, when they could be read: each payment's fee, and what refunds returned.
+        ...(processing ? paymentFeesOf(processing.get(f.orderId)) : {}),
         charges: f.charges.map((c) => ({ ...c, refundedCents: Math.min(c.cents, c.refundedCents + (returnedFees.get(`${f.orderId}:${c.uid}`) ?? 0)) })),
       })),
     };
@@ -560,22 +560,28 @@ class SquarePosAdapter implements IPosAdapter {
    * field is often left empty; the Payments API is where Square records it.
    * Null when the payments can't be read, so the caller falls back to that.
    */
-  private async processingFeesByOrder(locationId: string, from: Date, to: Date, now: Date): Promise<Map<string, number> | null> {
+  private async processingFeesByOrder(locationId: string, from: Date, to: Date, now: Date): Promise<Map<string, ProcessingByOrder> | null> {
     const feeOf = (fees?: Square.ProcessingFee[] | null) => (fees ?? []).reduce((n, f) => n + Number(f.amountMoney?.amount ?? 0n), 0);
     try {
-      const out = new Map<string, number>();
+      const out = new Map<string, ProcessingByOrder>();
+      const of = (orderId: string) => out.get(orderId) ?? out.set(orderId, { payments: [], returnedCents: 0 }).get(orderId)!;
       const orderOfPayment = new Map<string, string>();
       const payments = await withRateLimitRetry(() => this.client.payments.list({ locationId, beginTime: from.toISOString(), endTime: to.toISOString(), limit: 100 }));
       for await (const p of payments) {
         if (!p.orderId) continue;
         if (p.id) orderOfPayment.set(p.id, p.orderId);
-        out.set(p.orderId, (out.get(p.orderId) ?? 0) + feeOf(p.processingFee));
+        of(p.orderId).payments.push({
+          kind: paymentKindOf(p),
+          amountCents: Number(p.totalMoney?.amount ?? p.amountMoney?.amount ?? 0n),
+          feeCents: feeOf(p.processingFee),
+        });
       }
       // A refund made after the window still gives back a fee from inside it.
+      // Square signs a returned fee negative.
       const refunds = await withRateLimitRetry(() => this.client.refunds.list({ locationId, beginTime: from.toISOString(), endTime: now.toISOString(), limit: 100 }));
       for await (const r of refunds) {
         const orderId = r.paymentId ? orderOfPayment.get(r.paymentId) : undefined;
-        if (orderId) out.set(orderId, (out.get(orderId) ?? 0) + feeOf(r.processingFee));
+        if (orderId) of(orderId).returnedCents -= feeOf(r.processingFee);
       }
       return out;
     } catch (err) {
@@ -788,6 +794,29 @@ export function feesReturned(order: Square.Order): Map<string, number> {
     }
   }
   return out;
+}
+
+/** One order's payments and what its refunds gave back of their fees, from the Payments API. */
+type ProcessingByOrder = { payments: { kind: PosPaymentKind; amountCents: number; feeCents: number }[]; returnedCents: number };
+
+/** The fee fields an order's PosOrderFees takes from the Payments API. */
+function paymentFeesOf(p: ProcessingByOrder | undefined): Pick<PosOrderFees, 'processingFeeCents' | 'processingFeeRefundedCents' | 'payments'> {
+  return {
+    processingFeeCents: (p?.payments ?? []).reduce((n, x) => n + x.feeCents, 0),
+    processingFeeRefundedCents: p?.returnedCents ?? 0,
+    payments: p?.payments ?? [],
+  };
+}
+
+/** How Square took a payment, which sets its rate. */
+export function paymentKindOf(p: Pick<Square.Payment, 'sourceType' | 'cardDetails'>): PosPaymentKind {
+  if (p.sourceType !== 'CARD') return 'other';
+  switch (p.cardDetails?.entryMethod) {
+    case 'EMV': case 'CONTACTLESS': case 'SWIPED': return 'in_person';
+    case 'KEYED': return 'keyed';
+    case 'ON_FILE': return 'on_file';
+    default: return 'other';
+  }
 }
 
 /** An order's fees and how it was paid, or null for one with neither lines nor charges. */

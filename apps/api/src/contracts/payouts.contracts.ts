@@ -236,7 +236,14 @@ export interface PayoutsSummaryView {
   salesError: string | null;
   /** Incoming, outgoing and profit; null when Square couldn't be read. See ski-swap/payouts/money-summary.ts. */
   money: {
-    incoming: { salesCents: number; returnsCents: number; feesChargedCents: number; squareFeesCents: number; totalCents: number };
+    incoming: {
+      salesCents: number; returnsCents: number; feesChargedCents: number; squareFeesCents: number; totalCents: number;
+      /** Square's fees by how the card was taken, and what refunds returned; null when only the total is known. */
+      squareFeesDetail: {
+        kinds: { kind: 'in_person' | 'keyed' | 'on_file' | 'other'; payments: number; amountCents: number; feeCents: number }[];
+        returnedCents: number;
+      } | null;
+    };
     outgoing: { itemsCents: number; compsCents: number; takeBps: number; takeCents: number; totalCents: number; donatedCents: number };
     profitCents: number;
     profitShare: number | null;

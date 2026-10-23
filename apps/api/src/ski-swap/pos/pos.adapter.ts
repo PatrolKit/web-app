@@ -48,6 +48,13 @@ export interface PosSaleLine {
 }
 
 /**
+ * How a payment was taken, which sets Square's rate: a card present (tapped,
+ * chip or swiped), keyed in, a card on file, or anything else (a wallet, an
+ * external tender, cash).
+ */
+export type PosPaymentKind = 'in_person' | 'keyed' | 'on_file' | 'other';
+
+/**
  * One order's fees (Plan 48 fee check): its service charges, Square's card
  * surcharge among them, with what has been refunded of each, and how it was
  * paid.
@@ -67,6 +74,8 @@ export interface PosOrderFees {
    */
   processingFeeCents?: number;
   processingFeeRefundedCents?: number;
+  /** The order's payments, each with how the card was taken and its fee; absent when not known. */
+  payments?: { kind: PosPaymentKind; amountCents: number; feeCents: number }[];
   charges: {
     uid: string;
     name: string;

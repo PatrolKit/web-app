@@ -29,14 +29,24 @@ describe('the Payouts page’s money card', () => {
       ],
       ourVariations: new Set(['v1', 'v2']),
       fees: [
-        fees('o1', { charges: [{ uid: 'f', name: 'Shop Fee', surcharge: false, percentage: '3', cents: 300, refundedCents: 0 }], processingFeeCents: 290 }),
-        fees('o2', { charges: [{ uid: 'f', name: 'Shop Fee', surcharge: false, percentage: '3', cents: 120, refundedCents: 60 }], processingFeeCents: 120, processingFeeRefundedCents: 10 }),
-        fees('o3', { charges: [{ uid: 'f', name: 'Shop Fee', surcharge: false, percentage: '3', cents: 75, refundedCents: 0 }], processingFeeCents: 70 }),
+        fees('o1', { charges: [{ uid: 'f', name: 'Shop Fee', surcharge: false, percentage: '3', cents: 300, refundedCents: 0 }], processingFeeCents: 290,
+          payments: [{ kind: 'in_person', amountCents: 10_300, feeCents: 290 }] }),
+        fees('o2', { charges: [{ uid: 'f', name: 'Shop Fee', surcharge: false, percentage: '3', cents: 120, refundedCents: 60 }], processingFeeCents: 120, processingFeeRefundedCents: 10,
+          payments: [{ kind: 'keyed', amountCents: 4_120, feeCents: 120 }] }),
+        fees('o3', { charges: [{ uid: 'f', name: 'Shop Fee', surcharge: false, percentage: '3', cents: 75, refundedCents: 0 }], processingFeeCents: 70,
+          payments: [{ kind: 'in_person', amountCents: 2_575, feeCents: 70 }] }),
       ],
       lines: [],
       takeBps: 2000,
     });
-    expect(m.incoming).toEqual({ salesCents: 14_000, returnsCents: 2_000, feesChargedCents: 360, squareFeesCents: 400, totalCents: 12_000 + 360 - 400 });
+    expect(m.incoming).toEqual({
+      salesCents: 14_000, returnsCents: 2_000, feesChargedCents: 360, squareFeesCents: 400, totalCents: 12_000 + 360 - 400,
+      // By how the card was taken, for swap orders only (o3 sold swag), and the fee returned on o2's refund.
+      squareFeesDetail: {
+        kinds: [{ kind: 'in_person', payments: 1, amountCents: 10_300, feeCents: 290 }, { kind: 'keyed', payments: 1, amountCents: 4_120, feeCents: 120 }],
+        returnedCents: 10,
+      },
+    });
   });
 
   it('pays sellers their items and comps less the take, and leaves donors out', () => {
@@ -54,5 +64,10 @@ describe('the Payouts page’s money card', () => {
 
   it('has no share of nothing', () => {
     expect(moneySummary({ sales: [], ourVariations: new Set(), fees: null, lines: [], takeBps: 2000 }).profitShare).toBeNull();
+  });
+
+  it('has no detail when only the total is known', () => {
+    const m = moneySummary({ sales: [sale('o1', 'v1', 1_000)], ourVariations: new Set(['v1']), fees: [fees('o1', { processingFeeCents: 5 })], lines: [], takeBps: 2000 });
+    expect([m.incoming.squareFeesDetail, m.incoming.squareFeesCents]).toEqual([null, 5]);
   });
 });

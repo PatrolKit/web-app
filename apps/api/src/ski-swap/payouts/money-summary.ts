@@ -1,4 +1,4 @@
-import type { PosOrderFees, PosSaleLine } from '../pos/pos.adapter';
+import type { PosOrderFees, PosPaymentKind, PosSaleLine } from '../pos/pos.adapter';
 import { netOf } from '../sales-heatmap';
 import { COMP_ORDER_PREFIX, isComp } from '../sales-check';
 import type { BuiltLine } from './build-run';
@@ -25,6 +25,12 @@ export interface MoneySummary {
     feesChargedCents: number;
     /** What Square kept for processing card payments, less what it gave back. */
     squareFeesCents: number;
+    /**
+     * Square's fees in detail, from its payments: by how the card was taken
+     * (each kind's payments, what they charged, their fees), and the fees
+     * returned on refunds. Null when only the total is known.
+     */
+    squareFeesDetail: { kinds: { kind: PosPaymentKind; payments: number; amountCents: number; feeCents: number }[]; returnedCents: number } | null;
     totalCents: number;
   };
   outgoing: {
@@ -61,11 +67,26 @@ export function moneySummary(input: {
   }
   let feesChargedCents = 0;
   let squareFeesCents = 0;
+  let detailed = false;
+  let returnedCents = 0;
+  const kinds = new Map<PosPaymentKind, { kind: PosPaymentKind; payments: number; amountCents: number; feeCents: number }>();
   for (const f of input.fees ?? []) {
     if (!swapOrders.has(f.orderId)) continue;
     for (const c of f.charges) feesChargedCents += c.cents - c.refundedCents;
     squareFeesCents += (f.processingFeeCents ?? 0) - (f.processingFeeRefundedCents ?? 0);
+    if (!f.payments) continue;
+    detailed = true;
+    returnedCents += f.processingFeeRefundedCents ?? 0;
+    for (const p of f.payments) {
+      const k = kinds.get(p.kind) ?? { kind: p.kind, payments: 0, amountCents: 0, feeCents: 0 };
+      k.payments += 1; k.amountCents += p.amountCents; k.feeCents += p.feeCents;
+      kinds.set(p.kind, k);
+    }
   }
+  const order: PosPaymentKind[] = ['in_person', 'keyed', 'on_file', 'other'];
+  const squareFeesDetail = detailed
+    ? { kinds: order.flatMap((k) => (kinds.has(k) ? [kinds.get(k)!] : [])), returnedCents }
+    : null;
   const incoming = netCents + feesChargedCents - squareFeesCents;
 
   let itemsCents = 0;
@@ -86,7 +107,7 @@ export function moneySummary(input: {
 
   const profitCents = incoming - outgoing;
   return {
-    incoming: { salesCents, returnsCents: salesCents - netCents, feesChargedCents, squareFeesCents, totalCents: incoming },
+    incoming: { salesCents, returnsCents: salesCents - netCents, feesChargedCents, squareFeesCents, squareFeesDetail, totalCents: incoming },
     outgoing: { itemsCents, compsCents, takeBps: input.takeBps, takeCents, totalCents: outgoing, donatedCents },
     profitCents,
     profitShare: incoming !== 0 ? profitCents / incoming : null,

@@ -130,13 +130,20 @@ describe('Square’s processing fees, from its payments', () => {
   const withCharge = (id: string) => ({ ...sale(id, '2026-10-09T18:00:00Z', [{ uid: 'l1', variation: 'v1', cents: 10_000 }]), tenders: [{ id: `t-${id}`, type: 'CARD', amountMoney: money(10_000), processingFeeMoney: money(1) }] });
   const fee = (cents: number) => ({ type: cents < 0 ? 'ADJUSTMENT' : 'INITIAL', amountMoney: money(cents) });
 
-  it('nets each order’s payment fees and what refunds gave back, over the orders’ own figure', async () => {
+  it('takes each payment’s fee and how the card was taken, and what refunds gave back, over the orders’ own figure', async () => {
+    const card = (entryMethod: string) => ({ sourceType: 'CARD', cardDetails: { entryMethod } });
     const { adapter } = harness([withCharge('o1'), withCharge('o2')], {
-      payments: [{ id: 'p1', orderId: 'o1', processingFee: [fee(290)] }, { id: 'p2', orderId: 'o2', processingFee: [fee(290)] }],
+      payments: [
+        { id: 'p1', orderId: 'o1', totalMoney: money(10_000), processingFee: [fee(290)], ...card('CONTACTLESS') },
+        { id: 'p2', orderId: 'o2', totalMoney: money(10_000), processingFee: [fee(365)], ...card('KEYED') },
+      ],
       refunds: [{ id: 'r1', paymentId: 'p2', processingFee: [fee(-145)] }],
     });
     const { fees } = await (await adapter)!.readSales!('loc', FROM, TO);
-    expect(fees.map((f) => [f.orderId, f.processingFeeCents, f.processingFeeRefundedCents])).toEqual([['o1', 290, 0], ['o2', 145, 0]]);
+    expect(fees.map((f) => [f.orderId, f.processingFeeCents, f.processingFeeRefundedCents, f.payments])).toEqual([
+      ['o1', 290, 0, [{ kind: 'in_person', amountCents: 10_000, feeCents: 290 }]],
+      ['o2', 365, 145, [{ kind: 'keyed', amountCents: 10_000, feeCents: 365 }]],
+    ]);
   });
 
   it('falls back on the orders’ own figure when payments can’t be read', async () => {
