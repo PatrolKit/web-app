@@ -32,6 +32,15 @@
         "dev"
       ],
       "port": 4001
+    },
+    {
+      "name": "web-4001",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd apps/web && API_PORT=4001 exec npx vite --config vite.config.ts"
+      ],
+      "port": 3000
     }
   ]
 }

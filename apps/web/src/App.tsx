@@ -29,6 +29,7 @@ import CheckinStationsPage from './pages/ski-swap/CheckinStationsPage';
 import BindingsPage from './pages/ski-swap/BindingsPage';
 import PrintersPage from './pages/ski-swap/PrintersPage';
 import TimeClockDevicesPage from './pages/time-tracking/DevicesPage';
+import TimeClockHealthPage from './pages/time-tracking/HealthPage';
 import SwapsPage from './pages/ski-swap/SwapsPage';
 import ItemsPage from './pages/ski-swap/ItemsPage';
 import SellersPage from './pages/ski-swap/SellersPage';
@@ -186,6 +187,7 @@ export default function App() {
             <Route path="hours" element={<HoursReportPage />} />
             <Route path="roster" element={<RosterPage />} />
             <Route path="devices" element={<TimeClockDevicesPage />} />
+            <Route path="health" element={<TimeClockHealthPage />} />
             <Route path="settings" element={<TimeTrackingSettingsPage />} />
           </Route>
           <Route path="signage" element={<SignageLayout />}>

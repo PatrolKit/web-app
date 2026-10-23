@@ -9,36 +9,30 @@ import { RequireDeviceRole } from '../common/decorators/require-device-role.deco
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ShiftService } from './shift.service';
-import { PatchShiftDto } from '../contracts/time-clock.contracts';
+import { PatchShiftDto, ShiftListQueryDto } from '../contracts/time-clock.contracts';
 
+/**
+ * `@RequireDeviceRole` sits on the one route a terminal reads, not on the class:
+ * `PermissionsGuard` passes a device on its role alone, so a class-wide role let a
+ * terminal correct shifts. Routes that name no role refuse devices outright.
+ */
 @Controller('orgs/:orgId/time-clock/shifts')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('time_clock.terminal')
 @RequireModule('time_tracking')
 export class ShiftController {
   constructor(private readonly shiftService: ShiftService) {}
 
   @Get()
+  @RequireDeviceRole('time_clock.terminal')
   @RequirePermissions('time_tracking:report')
-  list(
-    @Param('orgId') orgId: string,
-    @Query('resortId') resortId?: string,
-    @Query('status') status?: string,
-    @Query('updatedSince') updatedSince?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('dutyType') dutyType?: string,
-    @Query('pastSweep') pastSweep?: string,
-  ) {
-    return this.shiftService.list(orgId, {
-      resortId,
-      status,
-      updatedSince,
-      from,
-      to,
-      dutyType,
-      pastSweep: pastSweep === 'true',
-    });
+  list(@Param('orgId') orgId: string, @Query() query: ShiftListQueryDto) {
+    return this.shiftService.list(orgId, query);
+  }
+
+  @Get(':shiftId/history')
+  @RequirePermissions('time_tracking:report')
+  history(@Param('orgId') orgId: string, @Param('shiftId') shiftId: string) {
+    return this.shiftService.history(orgId, shiftId);
   }
 
   @Patch(':shiftId')

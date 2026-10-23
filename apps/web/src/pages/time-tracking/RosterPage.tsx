@@ -24,11 +24,12 @@ export default function RosterPage() {
     queryFn: () => api.timeClock.listPatrollers(orgId),
   });
 
-  const { data: openShifts = [] } = useQuery({
+  // The same query as On Shift, so the two share one cache entry and one shape.
+  const { data: openShifts } = useQuery({
     queryKey: ['time-clock/on-shift', orgId],
-    queryFn: () => api.timeClock.listShifts(orgId, { status: 'open' }),
+    queryFn: () => api.timeClock.listShifts(orgId, { status: 'open', take: 500 }),
   });
-  const onShiftIds = new Set(openShifts.map((s) => s.patrollerId));
+  const onShiftIds = new Set((openShifts?.shifts ?? []).map((s) => s.patrollerId));
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['time-clock/patrollers', orgId] });

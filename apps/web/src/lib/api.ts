@@ -280,7 +280,7 @@ export const api = {
 
   orgs: {
     get: (orgId: string) => request<import('./api.types').OrgResponse>(`/orgs/${orgId}`),
-    patch: (orgId: string, data: { name?: string; status?: string; slug?: string }) =>
+    patch: (orgId: string, data: { name?: string; status?: string; slug?: string; seasonCutover?: string }) =>
       request<import('./api.types').OrgResponse>(`/orgs/${orgId}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
@@ -1634,18 +1634,26 @@ export const api = {
         { method: 'POST', body: JSON.stringify({ rows, strategy }) },
       ),
 
-    // Shifts
+    // Shifts — always a page: the bare array is for older iPads (Plan 55 D7).
     listShifts: (
       orgId: string,
-      params: { resortId?: string; status?: string; from?: string; to?: string; dutyType?: string; pastSweep?: boolean } = {},
+      params: {
+        resortId?: string; status?: string; from?: string; to?: string; dutyType?: string;
+        season?: number; flagged?: boolean; pastSweep?: boolean; skip?: number; take?: number;
+      } = {},
     ) => {
-      const qs = new URLSearchParams();
+      const qs = new URLSearchParams({ take: String(params.take ?? 100) });
       Object.entries(params).forEach(([k, v]) => {
-        if (v !== undefined && v !== '' && v !== false) qs.set(k, String(v));
+        if (k !== 'take' && v !== undefined && v !== '' && v !== false) qs.set(k, String(v));
       });
-      const suffix = qs.toString() ? `?${qs}` : '';
-      return request<import('./api.types').ShiftResponse[]>(`/orgs/${orgId}/time-clock/shifts${suffix}`);
+      return request<import('./api.types').ShiftPageResponse>(`/orgs/${orgId}/time-clock/shifts?${qs}`);
     },
+    shiftHistory: (orgId: string, shiftId: string) =>
+      request<import('./api.types').ShiftHistoryResponse>(`/orgs/${orgId}/time-clock/shifts/${shiftId}/history`),
+    seasons: (orgId: string) =>
+      request<import('./api.types').SeasonsResponse>(`/orgs/${orgId}/time-clock/seasons`),
+    health: (orgId: string) =>
+      request<import('./api.types').TimeClockHealthResponse>(`/orgs/${orgId}/time-clock/health`),
     patchShift: (
       orgId: string,
       shiftId: string,
@@ -1656,7 +1664,7 @@ export const api = {
       }),
 
     // Reports
-    hours: (orgId: string, params: { from?: string; to?: string; resortId?: string; dutyType?: string } = {}) => {
+    hours: (orgId: string, params: { from?: string; to?: string; season?: number; resortId?: string; dutyType?: string } = {}) => {
       const qs = new URLSearchParams();
       Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, String(v)); });
       const suffix = qs.toString() ? `?${qs}` : '';

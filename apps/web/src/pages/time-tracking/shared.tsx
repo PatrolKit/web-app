@@ -42,3 +42,62 @@ export function toLocalInput(iso: string | null): string {
 export function fromLocalInput(value: string): string {
   return new Date(value).toISOString();
 }
+
+/** A season by its start year, or custom dates (Plan 55 D12). */
+export type Period = { kind: 'season'; startYear: number } | { kind: 'custom'; from: string; to: string };
+
+/** The query a period asks for: a season, or the dates as local midnights. */
+export function periodParams(period: Period | null): { season?: number; from?: string; to?: string } {
+  if (!period) return {};
+  if (period.kind === 'season') return { season: period.startYear };
+  return {
+    from: period.from ? new Date(`${period.from}T00:00`).toISOString() : undefined,
+    // Through the end of the last day asked for.
+    to: period.to ? new Date(`${period.to}T23:59:59.999`).toISOString() : undefined,
+  };
+}
+
+/**
+ * Seasons first, current one preselected by the caller, then "Custom dates".
+ * `seasons` comes from `GET time-clock/seasons`.
+ */
+export function PeriodPicker({
+  seasons,
+  period,
+  onChange,
+  className,
+}: {
+  seasons: import('../../lib/api.types').Season[];
+  period: Period | null;
+  onChange: (p: Period) => void;
+  className: string;
+}) {
+  const value = period?.kind === 'season' ? String(period.startYear) : 'custom';
+  return (
+    <>
+      <label className="sr-only" htmlFor="period">Season</label>
+      <select
+        id="period"
+        className={className}
+        value={value}
+        onChange={(e) =>
+          onChange(e.target.value === 'custom'
+            ? { kind: 'custom', from: '', to: '' }
+            : { kind: 'season', startYear: Number(e.target.value) })}
+      >
+        {seasons.map((s) => <option key={s.startYear} value={s.startYear}>{s.label} season</option>)}
+        <option value="custom">Custom dates</option>
+      </select>
+      {period?.kind === 'custom' && (
+        <>
+          <label className="sr-only" htmlFor="period-from">From</label>
+          <input id="period-from" type="date" className={className} value={period.from}
+            onChange={(e) => onChange({ ...period, from: e.target.value })} />
+          <label className="sr-only" htmlFor="period-to">To</label>
+          <input id="period-to" type="date" className={className} value={period.to}
+            onChange={(e) => onChange({ ...period, to: e.target.value })} />
+        </>
+      )}
+    </>
+  );
+}

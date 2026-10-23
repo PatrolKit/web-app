@@ -17,6 +17,9 @@ function buildId(): string {
 }
 
 // https://vitejs.dev/config/
+/** Where the dev server sends `/api`. `API_PORT` points it at an API on another port. */
+const API_TARGET = `http://localhost:${process.env.API_PORT ?? 4000}`;
+
 export default defineConfig(({ command }) => {
   const BUILD_ID = command === 'build' ? buildId() : 'dev';
   return {
@@ -64,14 +67,14 @@ export default defineConfig(({ command }) => {
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: API_TARGET,
         changeOrigin: true,
       },
       // Health probes deliberately sit outside the /api prefix, so they need
       // naming here or the dev server answers them with index.html — which is
       // a 200, and would make the "server unreachable" banner never fire.
-      '/healthz': { target: 'http://localhost:4000', changeOrigin: true },
-      '/readyz': { target: 'http://localhost:4000', changeOrigin: true },
+      '/healthz': { target: API_TARGET, changeOrigin: true },
+      '/readyz': { target: API_TARGET, changeOrigin: true },
     },
   },
   resolve: {

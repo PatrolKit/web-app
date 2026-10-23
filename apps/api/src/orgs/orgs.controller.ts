@@ -5,6 +5,8 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { OrgsService } from './orgs.service';
 import { PatchOrgDto } from '../contracts/org.contracts';
 import type { OrgResponse } from '../contracts/org.contracts';
@@ -23,8 +25,12 @@ export class OrgsController {
   @Patch()
   @HttpCode(200)
   @RequirePermissions('org:manage')
-  patchOrg(@Param('orgId') orgId: string, @Body() body: PatchOrgDto): Promise<OrgResponse> {
-    return this.orgsService.patchOrg(orgId, body);
+  patchOrg(
+    @Param('orgId') orgId: string,
+    @Body() body: PatchOrgDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<OrgResponse> {
+    return this.orgsService.patchOrg(orgId, body, user.userId);
   }
 
   @Get('logo')

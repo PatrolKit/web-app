@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { OrgAdminContext } from './OrgAdminLayout';
+import { SeasonCutoverSection } from './SeasonCutoverSection';
 
 export default function OrgGeneralPage() {
   const { orgId } = useOutletContext<OrgAdminContext>();
@@ -31,7 +32,7 @@ export default function OrgGeneralPage() {
   }
 
   const patchMutation = useMutation({
-    mutationFn: (data: { name?: string; slug?: string }) => api.orgs.patch(orgId, data),
+    mutationFn: (data: { name?: string; slug?: string; seasonCutover?: string }) => api.orgs.patch(orgId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['org', orgId] });
       setSuccess('Saved.');
@@ -179,6 +180,12 @@ export default function OrgGeneralPage() {
         )}
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoChange} />
       </section>
+
+      <SeasonCutoverSection
+        cutover={org.seasonCutover}
+        busy={busy}
+        onSave={(seasonCutover) => { setError(null); patchMutation.mutate({ seasonCutover }); }}
+      />
 
       {/* Slug confirm dialog */}
       {slugPendingConfirm && (

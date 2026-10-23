@@ -9,12 +9,14 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
+import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
@@ -23,30 +25,41 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { RequireModule } from '../common/decorators/require-module.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { PatrollerService } from './patroller.service';
 import {
   CreatePatrollerDto,
   ImportPatrollersDto,
   PatchPatrollerDto,
+  PatrollerListQueryDto,
 } from '../contracts/time-clock.contracts';
 
 @Controller('orgs/:orgId/time-clock/patrollers')
+/**
+ * `@RequireDeviceRole` on the roster read only: a class-wide role let a terminal edit
+ * the roster, because `PermissionsGuard` passes a device on its role alone.
+ */
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('time_clock.terminal')
 @RequireModule('time_tracking')
 export class PatrollerController {
   constructor(private readonly patrollerService: PatrollerService) {}
 
   @Get()
+  @RequireDeviceRole('time_clock.terminal')
   @RequirePermissions('time_tracking:report')
-  list(@Param('orgId') orgId: string, @Query('updatedSince') updatedSince?: string) {
-    return this.patrollerService.list(orgId, updatedSince);
+  list(
+    @Param('orgId') orgId: string,
+    @Query() query: PatrollerListQueryDto,
+    @Req() req: Request & { device?: AuthenticatedDevice },
+  ) {
+    return this.patrollerService.list(orgId, query, { forDevice: !!req.device });
   }
 
   @Post()
   @RequirePermissions('time_tracking:manage')
-  create(@Param('orgId') orgId: string, @Body() body: CreatePatrollerDto) {
-    return this.patrollerService.create(orgId, body);
+  create(@Param('orgId') orgId: string, @Body() body: CreatePatrollerDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.patrollerService.create(orgId, body, user.userId);
   }
 
   @Get('import/template')
@@ -69,8 +82,8 @@ export class PatrollerController {
   @Post('import')
   @HttpCode(200)
   @RequirePermissions('time_tracking:manage')
-  import(@Param('orgId') orgId: string, @Body() body: ImportPatrollersDto) {
-    return this.patrollerService.importRows(orgId, body.rows, body.strategy);
+  import(@Param('orgId') orgId: string, @Body() body: ImportPatrollersDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.patrollerService.importRows(orgId, body.rows, body.strategy, user.userId);
   }
 
   @Patch(':patrollerId')
@@ -79,14 +92,19 @@ export class PatrollerController {
     @Param('orgId') orgId: string,
     @Param('patrollerId') patrollerId: string,
     @Body() body: PatchPatrollerDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.patrollerService.patch(orgId, patrollerId, body);
+    return this.patrollerService.patch(orgId, patrollerId, body, user.userId);
   }
 
   @Delete(':patrollerId')
   @HttpCode(200)
   @RequirePermissions('time_tracking:manage')
-  remove(@Param('orgId') orgId: string, @Param('patrollerId') patrollerId: string) {
-    return this.patrollerService.remove(orgId, patrollerId);
+  remove(
+    @Param('orgId') orgId: string,
+    @Param('patrollerId') patrollerId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.patrollerService.remove(orgId, patrollerId, user.userId);
   }
 }

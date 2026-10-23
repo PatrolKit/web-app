@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { isValidCutover } from '../common/util/season';
 
 // ─── Permission key enum (matches §6 exactly) ─────────────────────────────────
 
@@ -80,6 +81,8 @@ export const OrgResponseSchema = z.object({
   slug: z.string(),
   status: z.string(),
   logoUrl: z.string().url().nullable(),
+  /** `MM-DD`: the day each season starts (Plan 55 D12). */
+  seasonCutover: z.string(),
   modules: z.array(OrgModuleSummarySchema),
 });
 
@@ -88,9 +91,14 @@ export const PatchOrgSchema = z
     name: z.string().min(1).max(100).optional(),
     status: z.enum(['active', 'suspended']).optional(),
     slug: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Slug may only contain lowercase letters, numbers, and hyphens').optional(),
+    /** The month and day each season starts. Never February 29: a season has to start every year. */
+    seasonCutover: z
+      .string()
+      .refine(isValidCutover, 'Must be a month and day, as MM-DD, and not February 29')
+      .optional(),
   })
   .strict()
-  .refine((v) => v.name !== undefined || v.status !== undefined || v.slug !== undefined, {
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
     message: 'At least one field must be provided',
   });
 

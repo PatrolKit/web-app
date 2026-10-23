@@ -2,17 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { displayName } from '../common/util/person';
-import type { HoursReportRow } from '../contracts/time-clock.contracts';
+import { seasonWhere } from './season.service';
+import type { HoursReportQuery, HoursReportRow } from '../contracts/time-clock.contracts';
 
 @Injectable()
 export class TimeClockReportService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Closed shifts only — an open shift has no duration to report yet. */
-  async hours(
-    orgId: string,
-    q: { from?: string; to?: string; resortId?: string; dutyType?: string },
-  ): Promise<HoursReportRow[]> {
+  async hours(orgId: string, q: HoursReportQuery): Promise<HoursReportRow[]> {
     const where: Prisma.TimeClockShiftWhereInput = {
       orgId,
       deletedAt: null,
@@ -27,6 +25,7 @@ export class TimeClockReportService {
         ...(q.to ? { lte: new Date(q.to) } : {}),
       };
     }
+    if (q.season !== undefined) where.AND = [await seasonWhere(this.prisma, orgId, q.season)];
 
     const shifts = await this.prisma.timeClockShift.findMany({
       where,
@@ -67,10 +66,7 @@ export class TimeClockReportService {
     );
   }
 
-  async hoursCsv(
-    orgId: string,
-    q: { from?: string; to?: string; resortId?: string; dutyType?: string },
-  ): Promise<string> {
+  async hoursCsv(orgId: string, q: HoursReportQuery): Promise<string> {
     const rows = await this.hours(orgId, q);
     const dutyTypes = [...new Set(rows.flatMap((r) => Object.keys(r.minutesByDutyType)))].sort();
 

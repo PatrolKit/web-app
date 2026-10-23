@@ -8,11 +8,12 @@ import { DutyBadge, elapsedLabel, formatTime } from './shared';
 export default function OnShiftPage() {
   const { orgId } = useOutletContext<TimeTrackingContext>();
 
-  const { data: shifts = [], isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['time-clock/on-shift', orgId],
-    queryFn: () => api.timeClock.listShifts(orgId, { status: 'open' }),
+    queryFn: () => api.timeClock.listShifts(orgId, { status: 'open', take: 500 }),
     refetchInterval: 30_000,
   });
+  const shifts = data?.shifts ?? [];
 
   const byResort = shifts.reduce<Record<string, typeof shifts>>((acc, shift) => {
     const key = shift.resortName ?? 'Unknown resort';

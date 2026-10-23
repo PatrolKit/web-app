@@ -35,7 +35,7 @@ function zoneOffsetMs(instant: Date, timeZone: string): number {
 }
 
 /** The instant at which the given local wall time occurs in the zone. */
-function instantForLocal(
+export function instantForLocal(
   year: number,
   month: number,
   day: number,
@@ -50,7 +50,8 @@ function instantForLocal(
   return instant;
 }
 
-function localParts(instant: Date, timeZone: string): { year: number; month: number; day: number } {
+/** The calendar date an instant falls on in the zone. */
+export function localParts(instant: Date, timeZone: string): { year: number; month: number; day: number } {
   const fmt = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',

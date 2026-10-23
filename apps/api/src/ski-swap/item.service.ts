@@ -54,33 +54,8 @@ function idempotencyScope(orgId: string, swapId: string): string {
 /** What a Square push did: landed, was not configured, or errored. */
 export type PosSyncResult = 'synced' | 'skipped' | 'failed';
 
-/**
- * A place in a keyset walk: the `(updatedAt, id)` of the last row handed out.
- *
- * Base64 rather than the two values in the open, so a client treats it as a
- * bookmark it received rather than as two fields it may compose. What it is
- * made of is ours to change; that it round-trips is the contract.
- */
-export function encodeCursor(updatedAt: Date, id: string): string {
-  return Buffer.from(`${updatedAt.toISOString()}|${id}`).toString('base64url');
-}
-
-export function decodeCursor(cursor: string): { updatedAt: Date; id: string } | null {
-  try {
-    const raw = Buffer.from(cursor, 'base64url').toString('utf8');
-    // The first separator, not every one. An id containing a `|` would
-    // otherwise come back truncated, and seek to a different row than the one
-    // the walk stopped at — quietly, since a shorter id is still a valid id.
-    const at = raw.indexOf('|');
-    if (at < 0) return null;
-    const updatedAt = new Date(raw.slice(0, at));
-    const id = raw.slice(at + 1);
-    if (!id || Number.isNaN(updatedAt.getTime())) return null;
-    return { updatedAt, id };
-  } catch {
-    return null;
-  }
-}
+export { encodeCursor, decodeCursor } from '../common/util/cursor';
+import { encodeCursor } from '../common/util/cursor';
 
 /** A collision on `@@unique([swapId, sku])` — one number, two items. */
 function isDuplicateSku(err: unknown): boolean {

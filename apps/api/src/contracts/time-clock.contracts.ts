@@ -85,10 +85,44 @@ export const ImportPatrollersSchema = z
   })
   .strict();
 
+/**
+ * A patroller as a terminal gets it (Plan 55 D10): no contact details. The iPad matches
+ * on name and NSP ID, and has no use for anyone's email or phone.
+ */
+export const DevicePatrollerResponseSchema = PatrollerResponseSchema.omit({
+  email: true,
+  phone: true,
+  contactVerified: true,
+});
+
+/** `walk=true` on the roster (D7): a page of a keyset walk, with the cursor to keep. */
+export const PatrollerWalkResponseSchema = z.object({
+  patrollers: z.array(PatrollerResponseSchema.or(DevicePatrollerResponseSchema)),
+  /** Taken before the read: the `updatedSince` to send next time, once the last page lands. */
+  syncedAt: z.string(),
+  /** Absent on the last page. */
+  nextAfter: z.string().optional(),
+});
+
+const bool = z.enum(['true', 'false']).transform((v) => v === 'true');
+const instant = z.string().datetime({ offset: true, message: 'Must be an ISO date and time' });
+/** A season by its start year (D12). */
+const seasonYear = z.coerce.number().int().min(2000).max(2100);
+
+export const PatrollerListQuerySchema = z
+  .object({
+    updatedSince: instant.optional(),
+    walk: bool.optional(),
+    after: z.string().max(400).optional(),
+  })
+  .strict();
+
 export class CreatePatrollerDto extends createZodDto(CreatePatrollerSchema) {}
 export class PatchPatrollerDto extends createZodDto(PatchPatrollerSchema) {}
 export class ImportPatrollersDto extends createZodDto(ImportPatrollersSchema) {}
+export class PatrollerListQueryDto extends createZodDto(PatrollerListQuerySchema) {}
 export type PatrollerResponse = z.infer<typeof PatrollerResponseSchema>;
+export type DevicePatrollerResponse = z.infer<typeof DevicePatrollerResponseSchema>;
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
@@ -166,6 +200,10 @@ export type EventResult = z.infer<typeof EventResultSchema>;
 
 // ─── Shifts ──────────────────────────────────────────────────────────────────
 
+/**
+ * No `nspId` (Plan 55 D10): it is the clock-in verifier, and nothing that reads a shift
+ * needs it. The hours report, an admin export, keeps it.
+ */
 export const ShiftResponseSchema = z.object({
   id: z.string(),
   orgId: z.string(),
@@ -174,7 +212,6 @@ export const ShiftResponseSchema = z.object({
   patrollerId: z.string(),
   patrollerName: z.string().nullable(),
   patrolLevel: z.string().nullable(),
-  nspId: z.string().nullable(),
   dutyType: z.string(),
   dutyNote: z.string().nullable(),
   clockInAt: z.string(),
@@ -182,7 +219,66 @@ export const ShiftResponseSchema = z.object({
   status: z.string(),
   closeReason: z.string().nullable(),
   flagged: z.boolean(),
+  /** Corrected by staff at least once; the history says how (D11). */
+  edited: z.boolean(),
+  /** Only ever set in a delta (`updatedSince`): the device drops its copy (D6). */
+  deletedAt: z.string().nullable(),
   updatedAt: z.string(),
+});
+
+export const SHIFT_STATUSES = ['open', 'closed'] as const;
+
+export const ShiftListQuerySchema = z
+  .object({
+    resortId: z.string().max(64).optional(),
+    status: z.enum(SHIFT_STATUSES).optional(),
+    dutyType: DutyTypeSchema.optional(),
+    from: instant.optional(),
+    to: instant.optional(),
+    season: seasonYear.optional(),
+    flagged: bool.optional(),
+    pastSweep: bool.optional(),
+    updatedSince: instant.optional(),
+    /** A device's delta, as a keyset walk (D7). */
+    walk: bool.optional(),
+    after: z.string().max(400).optional(),
+    /** A screen's page. */
+    skip: z.coerce.number().int().min(0).optional(),
+    take: z.coerce.number().int().min(1).max(500).optional(),
+  })
+  .strict();
+
+/** `walk` or `take` (D7). Without either, the list is a bare array, for older iPads. */
+export const ShiftPageResponseSchema = z.object({
+  shifts: z.array(ShiftResponseSchema),
+  total: z.number(),
+  syncedAt: z.string(),
+  nextAfter: z.string().optional(),
+});
+
+/** Everything that happened to one shift, oldest first (D11). */
+export const ShiftHistoryResponseSchema = z.object({
+  events: z.array(
+    z.object({
+      id: z.string(),
+      type: z.string(),
+      source: z.string(),
+      status: z.string(),
+      statusNote: z.string().nullable(),
+      occurredAt: z.string(),
+      recordedAt: z.string(),
+      deviceName: z.string().nullable(),
+    }),
+  ),
+  changes: z.array(
+    z.object({
+      action: z.string(),
+      actorName: z.string().nullable(),
+      at: z.string(),
+      before: z.record(z.string(), z.unknown()).nullable(),
+      after: z.record(z.string(), z.unknown()).nullable(),
+    }),
+  ),
 });
 
 export const PatchShiftSchema = z
@@ -196,7 +292,11 @@ export const PatchShiftSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field must be provided' });
 
 export class PatchShiftDto extends createZodDto(PatchShiftSchema) {}
+export class ShiftListQueryDto extends createZodDto(ShiftListQuerySchema) {}
+export type ShiftListQuery = z.infer<typeof ShiftListQuerySchema>;
 export type ShiftResponse = z.infer<typeof ShiftResponseSchema>;
+export type ShiftPageResponse = z.infer<typeof ShiftPageResponseSchema>;
+export type ShiftHistoryResponse = z.infer<typeof ShiftHistoryResponseSchema>;
 
 // ─── Reports ─────────────────────────────────────────────────────────────────
 
@@ -210,4 +310,79 @@ export const HoursReportRowSchema = z.object({
   minutesByDutyType: z.record(z.string(), z.number()),
 });
 
+export const HoursReportQuerySchema = z
+  .object({
+    from: instant.optional(),
+    to: instant.optional(),
+    season: seasonYear.optional(),
+    resortId: z.string().max(64).optional(),
+    dutyType: DutyTypeSchema.optional(),
+  })
+  .strict();
+
+export class HoursReportQueryDto extends createZodDto(HoursReportQuerySchema) {}
+export type HoursReportQuery = z.infer<typeof HoursReportQuerySchema>;
 export type HoursReportRow = z.infer<typeof HoursReportRowSchema>;
+
+// ─── Seasons (Plan 55 D12) ──────────────────────────────────────────────────
+
+export const SeasonSchema = z.object({
+  startYear: z.number(),
+  label: z.string(),
+  /** Inclusive calendar dates, `YYYY-MM-DD`. */
+  startsOn: z.string(),
+  endsOn: z.string(),
+});
+
+export const SeasonsResponseSchema = z.object({
+  cutover: z.string(),
+  current: SeasonSchema,
+  /** From the earliest shift's season to the current one, newest first. */
+  seasons: z.array(SeasonSchema),
+});
+
+export type Season = z.infer<typeof SeasonSchema>;
+export type SeasonsResponse = z.infer<typeof SeasonsResponseSchema>;
+
+// ─── Health (Plan 55 D13) ───────────────────────────────────────────────────
+
+export const TimeClockHealthResponseSchema = z.object({
+  /** Events the fold did not apply in the last 30 days, newest first. */
+  unapplied: z.array(
+    z.object({
+      id: z.string(),
+      type: z.string(),
+      status: z.string(),
+      statusNote: z.string().nullable(),
+      occurredAt: z.string(),
+      recordedAt: z.string(),
+      patrollerName: z.string().nullable(),
+      resortName: z.string().nullable(),
+      deviceName: z.string().nullable(),
+    }),
+  ),
+  terminals: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      resortName: z.string().nullable(),
+      lastSeenAt: z.string().nullable(),
+      appVersion: z.string().nullable(),
+    }),
+  ),
+  /** Events whose resort is not where their terminal was bound (D4), last 30 days. */
+  mismatches: z.array(
+    z.object({
+      id: z.string(),
+      type: z.string(),
+      occurredAt: z.string(),
+      patrollerName: z.string().nullable(),
+      resortName: z.string().nullable(),
+      boundResortName: z.string().nullable(),
+      deviceName: z.string().nullable(),
+    }),
+  ),
+  stillOpenPastSweep: z.number(),
+});
+
+export type TimeClockHealthResponse = z.infer<typeof TimeClockHealthResponseSchema>;

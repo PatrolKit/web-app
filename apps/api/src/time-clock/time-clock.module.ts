@@ -12,6 +12,10 @@ import { ShiftService } from './shift.service';
 import { ShiftController } from './shift.controller';
 import { TimeClockReportService } from './report.service';
 import { TimeClockReportController } from './report.controller';
+import { SeasonService } from './season.service';
+import { SeasonController } from './season.controller';
+import { TimeClockHealthService } from './health.service';
+import { TimeClockHealthController } from './health.controller';
 
 @Module({
   imports: [AuthModule, PermissionsModule],
@@ -21,6 +25,8 @@ import { TimeClockReportController } from './report.controller';
     TimeClockEventController,
     ShiftController,
     TimeClockReportController,
+    SeasonController,
+    TimeClockHealthController,
   ],
   providers: [
     TimeClockFoldService,
@@ -29,6 +35,8 @@ import { TimeClockReportController } from './report.controller';
     TimeClockEventService,
     ShiftService,
     TimeClockReportService,
+    SeasonService,
+    TimeClockHealthService,
   ],
 })
 export class TimeClockModule {}

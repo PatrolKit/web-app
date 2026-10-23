@@ -62,7 +62,7 @@ const summit = await prisma.resort.create({
 });
 
 const { user: staff } = await smokeStaff(prisma, org, [
-  'time_tracking:report', 'time_tracking:manage', 'time_tracking:admin', 'ski_swap:admin',
+  'time_tracking:report', 'time_tracking:manage', 'time_tracking:admin', 'ski_swap:admin', 'org:manage',
 ]);
 const staffToken = await smokeSession(prisma, BASE, staff, unwrap);
 const H = { authorization: `Bearer ${staffToken}`, 'content-type': 'application/json' };
@@ -230,7 +230,172 @@ ok('an event days in the future is refused as a bad clock',
 const kept = await prisma.timeClockEvent.findUnique({ where: { id: future.id } });
 ok('and kept, so staff can see the clock', kept?.status === 'rejected', kept?.status);
 
+// ─── D11: corrections and roster changes are on record ───────────────────────
+
+const history = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts/${todayIn.id}/history`, { headers: H }).then(unwrap);
+const correction = history.changes?.find((c) => c.action === 'time_clock.shift.corrected');
+ok("a shift's history lists the correction, with what it replaced",
+   correction?.before?.clockOutAt === null && correction?.after?.clockOutAt === fixAt && !!correction?.actorName,
+   JSON.stringify(correction));
+ok('and the events behind it', history.events?.some((e) => e.id === `admin-close:${todayIn.id}` && e.source === 'admin'));
+const chenHistory = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts/${chenIn.id}/history`, { headers: H }).then(unwrap);
+ok('a reopened shift keeps the close it set aside in its history',
+   chenHistory.events?.some((e) => e.id === auto.id && e.status === 'voided')
+     && chenHistory.changes?.some((c) => c.action === 'time_clock.shift.reopened'));
+
+const listed = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?take=50`, { headers: H }).then(unwrap);
+const mariaToday = listed.shifts?.find((s) => s.id === todayIn.id);
+ok('a corrected shift reads as edited', mariaToday?.edited === true);
+ok('and no shift carries an NSP ID (D10)', listed.shifts?.length > 0 && listed.shifts.every((s) => !('nspId' in s)));
+
+await fetch(`${BASE}/orgs/${org.id}/time-clock/patrollers/${tom.id}`, {
+  method: 'PATCH', headers: H, body: JSON.stringify({ patrolLevel: 'Candidate' }),
+});
+const rosterAudit = await prisma.auditLog.findFirst({
+  where: { orgId: org.id, action: 'time_clock.patroller.updated', targetId: tom.id },
+  orderBy: { createdAt: 'desc' },
+});
+ok('a roster edit is audited with before and after',
+   rosterAudit?.metadata?.before?.patrolLevel === 'Senior' && rosterAudit?.metadata?.after?.patrolLevel === 'Candidate');
+
+// ─── Corrections that would break the fold are refused ───────────────────────
+
+const overlap = await patchShift(yesterdayIn.id, { clockOutAt: hoursAgo(3) });
+ok("a correction running into the patroller's next shift is refused", overlap.status === 400, String(overlap.status));
+const badQuery = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?from=yesterday`, { headers: H });
+ok('a list with a date that is not one is a 400, not a 500 (D9)', badQuery.status === 400, String(badQuery.status));
+const badStatus = await fetch(`${BASE}/orgs/${org.id}/time-clock/reports/hours?dutyType=napping`, { headers: H });
+ok('and so is a report for a duty type that does not exist', badStatus.status === 400, String(badStatus.status));
+
+// ─── D7: the walk ────────────────────────────────────────────────────────────
+
+const walk = (term, params) => fetch(
+  `${BASE}/orgs/${org.id}/time-clock/shifts?walk=true&${new URLSearchParams(params)}`, { headers: term.H },
+).then(unwrap);
+
+const start = await walk(termA, {});
+let cursor = start.syncedAt;
+// The rest of the cursor's millisecond, so a write in it is not mistaken for this one's.
+await new Promise((r) => setTimeout(r, 20));
+const janeAgain = clockIn(jane, hoursAgo(1));
+await submit(termA, [janeAgain]);
+const delta = await walk(termA, { updatedSince: cursor });
+ok("a delta after one clock-in carries that shift alone, not the patroller's history (D5)",
+   delta.shifts?.length === 1 && delta.shifts[0].id === janeAgain.id,
+   JSON.stringify(delta.shifts?.map((s) => s.id)));
+
+const seen = new Map();
+let page = await walk(termA, { take: 2 });
+let pages = 1;
+for (;;) {
+  for (const s of page.shifts) seen.set(s.id, (seen.get(s.id) ?? 0) + 1);
+  if (!page.nextAfter) break;
+  page = await walk(termA, { take: 2, after: page.nextAfter });
+  pages++;
+}
+const live = await prisma.timeClockShift.count({ where: { orgId: org.id, deletedAt: null } });
+ok('a walk in pages of two returns every shift exactly once',
+   pages > 1 && seen.size === live && [...seen.values()].every((n) => n === 1),
+   `${pages} pages, ${seen.size} of ${live}`);
+
+const lucy = await patroller('Lucy');
+const tie = hoursAgo(2);
+const later = clockIn(lucy, tie, { id: `smoke-z-${randomUUID()}` });
+await submit(termA, [later]);
+cursor = (await walk(termA, {})).syncedAt;
+await new Promise((r) => setTimeout(r, 20));
+const earlier = clockIn(lucy, tie, { id: `smoke-a-${randomUUID()}` });
+await submit(termB, [earlier]);
+const tombstones = await walk(termA, { updatedSince: cursor });
+const gone = tombstones.shifts?.find((s) => s.id === later.id);
+ok('a shift the replay no longer produces arrives as a tombstone (D6)',
+   !!gone?.deletedAt && tombstones.shifts?.some((s) => s.id === earlier.id && !s.deletedAt),
+   JSON.stringify(tombstones.shifts?.map((s) => [s.id.slice(0, 10), s.deletedAt])));
+const screen = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?take=200`, { headers: H }).then(unwrap);
+ok('and never reaches a screen', !screen.shifts?.some((s) => s.id === later.id));
+const legacy = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?updatedSince=${encodeURIComponent(cursor)}`, { headers: termA.H }).then(unwrap);
+ok('nor an older iPad, which still gets a bare array', Array.isArray(legacy) && !legacy.some((s) => s.id === later.id));
+
+const roster = await fetch(`${BASE}/orgs/${org.id}/time-clock/patrollers?walk=true`, { headers: termA.H }).then(unwrap);
+ok("a terminal's roster carries no contact details (D10)",
+   roster.patrollers?.length > 0 && roster.patrollers.every((p) => !('email' in p) && !('phone' in p)) && !!roster.syncedAt);
+const staffRoster = await fetch(`${BASE}/orgs/${org.id}/time-clock/patrollers`, { headers: H }).then(unwrap);
+ok("staff's still does", staffRoster.some((p) => p.email?.startsWith('clock-smoke-')));
+
+// ─── What a terminal may not do ──────────────────────────────────────────────
+
+const refusedTo = async (label, method, path, body) => {
+  const r = await fetch(`${BASE}/orgs/${org.id}${path}`, {
+    method, headers: termA.H, ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  // 403 where a route lets devices in and refuses this one; 401 where it takes people only.
+  ok(`a terminal cannot ${label}`, r.status === 403 || r.status === 401, String(r.status));
+};
+await refusedTo('correct a shift', 'PATCH', `/time-clock/shifts/${janeAgain.id}`, { clockOutAt: hoursAgo(0.5) });
+await refusedTo('read a shift history', 'GET', `/time-clock/shifts/${janeAgain.id}/history`);
+await refusedTo('add a patroller', 'POST', '/time-clock/patrollers', { firstName: 'X', lastName: 'Y', nspId: 'NOPE1' });
+await refusedTo('edit one', 'PATCH', `/time-clock/patrollers/${tom.id}`, { patrolLevel: 'Hacked' });
+await refusedTo('delete one', 'DELETE', `/time-clock/patrollers/${tom.id}`);
+await refusedTo('import a roster', 'POST', '/time-clock/patrollers/import', { rows: [], strategy: 'preserve' });
+await refusedTo('read the hours report', 'GET', '/time-clock/reports/hours');
+await refusedTo('read Health', 'GET', '/time-clock/health');
+await refusedTo('read the seasons', 'GET', '/time-clock/seasons');
+
+// ─── D12: seasons ────────────────────────────────────────────────────────────
+
+const setCutover = (seasonCutover) => fetch(`${BASE}/orgs/${org.id}`, {
+  method: 'PATCH', headers: { ...H }, body: JSON.stringify({ seasonCutover }),
+});
+const leap = await setCutover('02-29');
+ok('a cutover of February 29 is refused', leap.status === 400, String(leap.status));
+const impossible = await setCutover('04-31');
+ok('and so is a day that does not exist', impossible.status === 400, String(impossible.status));
+const set = await setCutover('07-01');
+ok('July 1 is a cutover', set.status === 200, String(set.status));
+
+const seasons = await fetch(`${BASE}/orgs/${org.id}/time-clock/seasons`, { headers: H }).then(unwrap);
+const now = new Date();
+const startYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+ok('the current season is named by the years it spans',
+   seasons.current?.label === `${startYear}–${startYear + 1}` && seasons.current?.startsOn === `${startYear}-07-01`
+     && seasons.current?.endsOn === `${startYear + 1}-06-30`,
+   JSON.stringify(seasons.current));
+const thisSeason = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?take=200&season=${startYear}`, { headers: H }).then(unwrap);
+const lastSeason = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?take=200&season=${startYear - 1}`, { headers: H }).then(unwrap);
+ok("this season's shifts are in this season", thisSeason.shifts?.some((s) => s.id === janeAgain.id));
+ok("and not in last season's", !lastSeason.shifts?.some((s) => s.id === janeAgain.id));
+const hoursThisSeason = await fetch(`${BASE}/orgs/${org.id}/time-clock/reports/hours?season=${startYear}`, { headers: H }).then(unwrap);
+ok('the hours report takes a season', hoursThisSeason.some?.((r) => r.patrollerId === jane.id));
+
+// Tomorrow as a cutover, kept inside the month so it is a real date in every year.
+const tomorrow = now.getDate() < 28
+  ? { month: now.getMonth() + 1, day: now.getDate() + 1 }
+  : { month: (now.getMonth() + 1) % 12 + 1, day: 1 };
+const moved = await setCutover(`${String(tomorrow.month).padStart(2, '0')}-${String(tomorrow.day).padStart(2, '0')}`);
+const movedSeasons = await fetch(`${BASE}/orgs/${org.id}/time-clock/seasons`, { headers: H }).then(unwrap);
+ok('moving the cutover regroups at once: tomorrow starts the next season, so today is still in the old one',
+   // Tomorrow is the cutover, so today is the last day of the season that began a year ago:
+   // unless tomorrow is January 1, when today ends the calendar-year season it is named for.
+   moved.status === 200 && movedSeasons.current?.startYear === (tomorrow.month === 1 && tomorrow.day === 1 ? now.getFullYear() : now.getFullYear() - 1),
+   JSON.stringify(movedSeasons.current));
+const cutoverAudit = await prisma.auditLog.findFirst({
+  where: { orgId: org.id, action: 'org.season_cutover.changed' }, orderBy: { createdAt: 'desc' },
+});
+ok('and the change is audited', cutoverAudit?.metadata?.before === '07-01');
+await setCutover('07-01');
+
+// ─── D13: Health ─────────────────────────────────────────────────────────────
+
+const health = await fetch(`${BASE}/orgs/${org.id}/time-clock/health`, { headers: H }).then(unwrap);
+ok('Health lists the event from a broken clock', health.unapplied?.some((e) => e.id === future.id && e.statusNote === 'clock_implausible'));
+ok('and the close a reopen set aside', health.unapplied?.some((e) => e.id === auto.id && e.status === 'voided'));
+ok('and the event from a terminal bound elsewhere',
+   health.mismatches?.some((e) => e.id === elsewhere.id && e.boundResortName === `${PREFIX} lodge` && e.resortName === `${PREFIX} summit`));
+ok('and every terminal', [`${PREFIX} A`, `${PREFIX} B`].every((n) => health.terminals?.some((t) => t.name === n && t.resortName === `${PREFIX} lodge`)));
+ok('and a count of shifts no device closed', typeof health.stillOpenPastSweep === 'number');
+
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
+await prisma.auditLog.deleteMany({ where: { orgId: org.id, action: { startsWith: 'time_clock.' } } });
 await cleanup();
 await prisma.$disconnect();
 console.log(failures ? `\n${failures} FAILED` : '\nall passed');

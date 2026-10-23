@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TimeClockFoldService, writeAdminClose } from './fold.service';
 import { PersonService } from '../common/identity/person.service';
@@ -8,7 +9,8 @@ import { displayName, normalizeNamePart, normalizeNspId, normalizePhone } from '
 import { createId } from '@paralleldrive/cuid2';
 import { parse as parseCsv } from 'csv-parse/sync';
 import { SmsService } from '../sms/sms.service';
-import type { PatrollerResponse } from '../contracts/time-clock.contracts';
+import type { DevicePatrollerResponse, PatrollerResponse } from '../contracts/time-clock.contracts';
+import { decodeCursor, encodeCursor } from '../common/util/cursor';
 import { unverifyChangedContacts } from '../common/identity/contact-verification';
 
 export { normalizeNspId };
@@ -39,6 +41,22 @@ type RosterRow = {
     };
   };
 };
+
+/** What an audit row keeps of a roster entry. */
+function rosterFields(p: PatrollerResponse) {
+  return {
+    firstName: p.firstName, lastName: p.lastName, nspId: p.nspId, patrolLevel: p.patrolLevel,
+    email: p.email, phone: p.phone, active: p.active,
+  };
+}
+
+/** A walk's page of the roster: a big patrol's whole roster in a request or two. */
+const WALK_PAGE = 500;
+
+function forDevice(p: PatrollerResponse): DevicePatrollerResponse {
+  const { email: _email, phone: _phone, contactVerified: _verified, ...rest } = p;
+  return rest;
+}
 
 function toResponse(p: RosterRow): PatrollerResponse {
   const u = p.membership.user;
@@ -76,22 +94,58 @@ export class PatrollerService {
   /**
    * Tombstones are included unconditionally: a device that only ever sees live
    * rows can never learn that someone left the roster.
+   *
+   * A terminal gets no contact details (Plan 55 D10), and `walk=true` pages the
+   * delta in `(membership.updatedAt, id)` order with a cursor taken before the
+   * read (D7), as the shift walk does.
    */
-  async list(orgId: string, updatedSince?: string): Promise<PatrollerResponse[]> {
+  async list(
+    orgId: string,
+    q: { updatedSince?: string; walk?: boolean; after?: string },
+    opts: { forDevice: boolean },
+  ): Promise<(PatrollerResponse | DevicePatrollerResponse)[] | {
+    patrollers: (PatrollerResponse | DevicePatrollerResponse)[]; syncedAt: string; nextAfter?: string;
+  }> {
+    const shape = (r: RosterRow) => (opts.forDevice ? forDevice(toResponse(r)) : toResponse(r));
+    const since = q.updatedSince ? { updatedAt: { gt: new Date(q.updatedSince) } } : {};
+
+    if (!q.walk && !q.after) {
+      const rows = await this.prisma.patrollerProfile.findMany({
+        where: { membership: { orgId, ...since } },
+        include: ROSTER_INCLUDE,
+        orderBy: [
+          { membership: { user: { lastName: 'asc' } } },
+          { membership: { user: { firstName: 'asc' } } },
+        ],
+      });
+      return rows.map(shape);
+    }
+
+    const syncedAt = new Date();
+    const cursor = q.after ? decodeCursor(q.after) : null;
+    if (q.after && !cursor) throw new BadRequestException('That page cursor is not one of ours.');
     const rows = await this.prisma.patrollerProfile.findMany({
       where: {
-        membership: {
-          orgId,
-          ...(updatedSince ? { updatedAt: { gt: new Date(updatedSince) } } : {}),
-        },
+        membership: { orgId, ...since },
+        ...(cursor
+          ? {
+              OR: [
+                { membership: { updatedAt: { gt: cursor.updatedAt } } },
+                { membership: { updatedAt: cursor.updatedAt }, id: { gt: cursor.id } },
+              ],
+            }
+          : {}),
       },
       include: ROSTER_INCLUDE,
-      orderBy: [
-        { membership: { user: { lastName: 'asc' } } },
-        { membership: { user: { firstName: 'asc' } } },
-      ],
+      orderBy: [{ membership: { updatedAt: 'asc' } }, { id: 'asc' }],
+      take: WALK_PAGE,
     });
-    return rows.map(toResponse);
+    const last = rows[rows.length - 1];
+    return {
+      patrollers: rows.map(shape),
+      syncedAt: syncedAt.toISOString(),
+      ...(last && rows.length === WALK_PAGE ? { nextAfter: encodeCursor(last.membership.updatedAt, last.id) } : {}),
+    };
   }
 
   async create(
@@ -101,6 +155,7 @@ export class PatrollerService {
       patrolLevel?: string | null; email?: string | null; phone?: string | null;
       active: boolean;
     },
+    actorId?: string,
   ): Promise<PatrollerResponse> {
     const nspId = normalizeNspId(data.nspId);
     if (!nspId) throw new ConflictException('NSP ID cannot be empty');
@@ -126,7 +181,9 @@ export class PatrollerService {
     });
     await this.touch.touch(membership.id);
 
-    return toResponse(await this.findByIdOrThrow(profile.id));
+    const created = toResponse(await this.findByIdOrThrow(profile.id));
+    await this.audit(orgId, actorId, 'time_clock.patroller.created', profile.id, { after: rosterFields(created) });
+    return created;
   }
 
   async patch(
@@ -137,8 +194,10 @@ export class PatrollerService {
       patrolLevel?: string | null; email?: string | null; phone?: string | null;
       active?: boolean;
     },
+    actorId?: string,
   ): Promise<PatrollerResponse & { closedShiftId: string | null }> {
     const existing = await this.findOrThrow(orgId, patrollerId);
+    const before = rosterFields(toResponse(existing));
     const userId = existing.membership.userId;
 
     const nspId = data.nspId !== undefined ? normalizeNspId(data.nspId) : undefined;
@@ -171,13 +230,17 @@ export class PatrollerService {
 
     // No open shift outlives its patroller.
     const closedShiftId =
-      data.active === false ? await this.closeOpenShift(orgId, patrollerId) : null;
+      data.active === false ? await this.closeOpenShift(orgId, patrollerId, actorId) : null;
 
-    return { ...toResponse(await this.findByIdOrThrow(patrollerId)), closedShiftId };
+    const after = toResponse(await this.findByIdOrThrow(patrollerId));
+    await this.audit(orgId, actorId, 'time_clock.patroller.updated', patrollerId, {
+      before, after: rosterFields(after), closedShiftId,
+    });
+    return { ...after, closedShiftId };
   }
 
   /** Soft delete: the device needs the tombstone to drop the row from its roster. */
-  async remove(orgId: string, patrollerId: string): Promise<{ closedShiftId: string | null }> {
+  async remove(orgId: string, patrollerId: string, actorId?: string): Promise<{ closedShiftId: string | null }> {
     const existing = await this.findOrThrow(orgId, patrollerId);
 
     await this.prisma.patrollerProfile.update({
@@ -186,7 +249,11 @@ export class PatrollerService {
     });
     await this.touch.touch(existing.membershipId);
 
-    return { closedShiftId: await this.closeOpenShift(orgId, patrollerId) };
+    const closedShiftId = await this.closeOpenShift(orgId, patrollerId, actorId);
+    await this.audit(orgId, actorId, 'time_clock.patroller.deleted', patrollerId, {
+      before: rosterFields(toResponse(existing)), closedShiftId,
+    });
+    return { closedShiftId };
   }
 
   /**
@@ -234,7 +301,7 @@ export class PatrollerService {
    * shift directly — events stay the single source of truth, so the next
    * recompute agrees with this one.
    */
-  private async closeOpenShift(orgId: string, patrollerId: string): Promise<string | null> {
+  private async closeOpenShift(orgId: string, patrollerId: string, actorId?: string): Promise<string | null> {
     const open = await this.prisma.timeClockShift.findFirst({
       where: { orgId, patrollerId, status: 'open', deletedAt: null },
     });
@@ -253,6 +320,18 @@ export class PatrollerService {
         statusNote: 'Closed automatically when the patroller was removed from the roster',
       });
       await this.foldService.recomputeForPatroller(orgId, patrollerId, tx);
+      // On the shift itself, so its history says why it ended (D11).
+      await tx.auditLog.create({
+        data: {
+          actorType: 'user',
+          actorId: actorId ?? null,
+          orgId,
+          action: 'time_clock.shift.closed_by_roster',
+          targetType: 'time_clock_shift',
+          targetId: open.id,
+          metadata: { closedAt: occurredAt.toISOString() },
+        },
+      });
     });
 
     return open.id;
@@ -312,6 +391,7 @@ export class PatrollerService {
       patrolLevel?: string | null; email?: string | null; phone?: string | null;
     }[],
     strategy: 'preserve' | 'overwrite',
+    actorId?: string,
   ): Promise<{ created: number; updated: number; skipped: number; errors: string[] }> {
     let created = 0;
     let updated = 0;
@@ -376,10 +456,35 @@ export class PatrollerService {
       }
     }
 
+    // One row with the counts, not one per patroller: an import is one decision.
+    await this.audit(orgId, actorId, 'time_clock.roster.imported', null, {
+      strategy, rows: rows.length, created, updated, skipped, errors: errors.length,
+    });
     return { created, updated, skipped, errors };
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  /** Every roster change is audited with what it replaced (Plan 55 D11). */
+  private async audit(
+    orgId: string,
+    actorId: string | undefined,
+    action: string,
+    patrollerId: string | null,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    await this.prisma.auditLog.create({
+      data: {
+        actorType: 'user',
+        actorId: actorId ?? null,
+        orgId,
+        action,
+        targetType: patrollerId ? 'patroller' : null,
+        targetId: patrollerId,
+        metadata: metadata as Prisma.InputJsonValue,
+      },
+    });
+  }
 
   private async findOrThrow(orgId: string, patrollerId: string) {
     const profile = await this.prisma.patrollerProfile.findFirst({

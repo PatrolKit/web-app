@@ -24,6 +24,7 @@ export class OrgsService {
       slug: org.slug,
       status: org.status,
       logoUrl: org.logoUrl ?? null,
+      seasonCutover: org.seasonCutover,
       modules: org.orgModules.map((om) => ({
         key: om.moduleKey,
         name: om.module.name,
@@ -33,16 +34,32 @@ export class OrgsService {
     };
   }
 
-  async patchOrg(orgId: string, data: PatchOrgRequest): Promise<OrgResponse> {
+  async patchOrg(orgId: string, data: PatchOrgRequest, actorId?: string): Promise<OrgResponse> {
     try {
+      const before = await this.prisma.organization.findUnique({ where: { id: orgId }, select: { seasonCutover: true } });
       await this.prisma.organization.update({
         where: { id: orgId },
         data: {
           ...(data.name !== undefined && { name: data.name }),
           ...(data.status !== undefined && { status: data.status }),
           ...(data.slug !== undefined && { slug: data.slug }),
+          ...(data.seasonCutover !== undefined && { seasonCutover: data.seasonCutover }),
         },
       });
+      // Moving the cutover regroups every season's shifts and hours at once (Plan 55 D12).
+      if (data.seasonCutover !== undefined && before && before.seasonCutover !== data.seasonCutover) {
+        await this.prisma.auditLog.create({
+          data: {
+            actorType: 'user',
+            actorId: actorId ?? null,
+            orgId,
+            action: 'org.season_cutover.changed',
+            targetType: 'organization',
+            targetId: orgId,
+            metadata: { before: before.seasonCutover, after: data.seasonCutover },
+          },
+        });
+      }
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException('That slug is already in use by another organization');

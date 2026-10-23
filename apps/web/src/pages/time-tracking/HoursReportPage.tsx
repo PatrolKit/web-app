@@ -3,14 +3,14 @@ import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { TimeTrackingContext } from './TimeTrackingLayout';
+import { PeriodPicker, periodParams, type Period } from './shared';
 
 const DUTY_TYPES = ['patrol', 'training', 'instruction', 'other'];
 
 export default function HoursReportPage() {
   const { orgId } = useOutletContext<TimeTrackingContext>();
 
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [chosen, setChosen] = useState<Period | null>(null);
   const [resortId, setResortId] = useState('');
 
   const { data: resorts = [] } = useQuery({
@@ -18,15 +18,20 @@ export default function HoursReportPage() {
     queryFn: () => api.orgs.listResorts(orgId),
   });
 
-  const params = {
-    from: from ? new Date(from).toISOString() : undefined,
-    to: to ? new Date(to).toISOString() : undefined,
-    resortId: resortId || undefined,
-  };
+  const { data: seasons } = useQuery({
+    queryKey: ['time-clock/seasons', orgId],
+    queryFn: () => api.timeClock.seasons(orgId),
+  });
+
+  // This season's hours until someone picks another (Plan 55 D12).
+  const period: Period | null =
+    chosen ?? (seasons ? { kind: 'season', startYear: seasons.current.startYear } : null);
+  const params = { ...periodParams(period), resortId: resortId || undefined };
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['time-clock/hours', orgId, params],
     queryFn: () => api.timeClock.hours(orgId, params),
+    enabled: !!period,
   });
 
   const csvHref = (() => {
@@ -40,8 +45,7 @@ export default function HoursReportPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} />
-        <input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} />
+        {seasons && <PeriodPicker seasons={seasons.seasons} period={period} onChange={setChosen} className={inputClass} />}
         <select className={inputClass} value={resortId} onChange={(e) => setResortId(e.target.value)}>
           <option value="">All resorts</option>
           {resorts.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -53,7 +57,9 @@ export default function HoursReportPage() {
       {isLoading ? (
         <p className="text-gray-400 text-sm">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="text-gray-500 text-sm py-8 text-center">No closed shifts in this range.</p>
+        <p className="text-gray-500 text-sm py-8 text-center">
+          {period?.kind === 'season' ? 'No closed shifts this season.' : 'No closed shifts in this range.'}
+        </p>
       ) : (
         <table className="w-full text-sm">
           <thead className="text-gray-500 border-b border-gray-800">

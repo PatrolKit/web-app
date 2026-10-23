@@ -95,6 +95,8 @@ export interface OrgResponse {
   slug: string;
   status: string;
   logoUrl: string | null;
+  /** `MM-DD`: the day each season starts (Plan 55 D12). */
+  seasonCutover: string;
   modules: ModuleItem[];
 }
 
@@ -1080,7 +1082,6 @@ export interface ShiftResponse {
   patrollerId: string;
   patrollerName: string | null;
   patrolLevel: string | null;
-  nspId: string | null;
   dutyType: string;
   dutyNote: string | null;
   clockInAt: string;
@@ -1088,7 +1089,82 @@ export interface ShiftResponse {
   status: string;
   closeReason: string | null;
   flagged: boolean;
+  /** Corrected by staff at least once; its history says how. */
+  edited: boolean;
+  deletedAt: string | null;
   updatedAt: string;
+}
+
+export interface ShiftPageResponse {
+  shifts: ShiftResponse[];
+  total: number;
+  syncedAt: string;
+  nextAfter?: string;
+}
+
+export interface ShiftHistoryResponse {
+  events: {
+    id: string;
+    type: string;
+    source: string;
+    status: string;
+    statusNote: string | null;
+    occurredAt: string;
+    recordedAt: string;
+    deviceName: string | null;
+  }[];
+  changes: {
+    action: string;
+    actorName: string | null;
+    at: string;
+    before: Record<string, unknown> | null;
+    after: Record<string, unknown> | null;
+  }[];
+}
+
+export interface Season {
+  startYear: number;
+  label: string;
+  /** Inclusive calendar dates, `YYYY-MM-DD`. */
+  startsOn: string;
+  endsOn: string;
+}
+
+export interface SeasonsResponse {
+  cutover: string;
+  current: Season;
+  seasons: Season[];
+}
+
+export interface TimeClockHealthResponse {
+  unapplied: {
+    id: string;
+    type: string;
+    status: string;
+    statusNote: string | null;
+    occurredAt: string;
+    recordedAt: string;
+    patrollerName: string | null;
+    resortName: string | null;
+    deviceName: string | null;
+  }[];
+  terminals: {
+    id: string;
+    name: string;
+    resortName: string | null;
+    lastSeenAt: string | null;
+    appVersion: string | null;
+  }[];
+  mismatches: {
+    id: string;
+    type: string;
+    occurredAt: string;
+    patrollerName: string | null;
+    resortName: string | null;
+    boundResortName: string | null;
+    deviceName: string | null;
+  }[];
+  stillOpenPastSweep: number;
 }
 
 export interface HoursReportRow {
