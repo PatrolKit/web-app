@@ -165,10 +165,6 @@ export default function AppShell() {
           {perms.has('org:manage') && (
             <NavLink to="org-admin" className={navClass}>Org Admin</NavLink>
           )}
-          {/* Plan 56: the org's iPads, which serve Ski Swap and Time Tracking alike. */}
-          {perms.has('org:manage') && (
-            <NavLink to="tablets" className={navClass}>Tablets</NavLink>
-          )}
           {user.isSuperAdmin && (
             <NavLink to="admin" className={navClass}>Platform Admin</NavLink>
           )}
@@ -180,6 +176,10 @@ export default function AppShell() {
               to={perms.has('ski_swap:report') ? 'ski-swap' : 'ski-swap/my-items'}
               className={navClass}
             >Ski Swap</NavLink>
+          )}
+          {/* Plan 56: the org's iPads, which serve Ski Swap and Time Tracking alike. */}
+          {perms.has('org:manage') && (
+            <NavLink to="tablets" className={navClass}>Tablets</NavLink>
           )}
           {perms.has('time_tracking:report') && isModuleEnabled('time_tracking') && (
             <NavLink to="time-tracking" className={navClass}>Time Tracking</NavLink>
