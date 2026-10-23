@@ -14,6 +14,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CurrentSeller } from '../common/decorators/current-seller.decorator';
 import { ReceiptService } from './receipt.service';
 import { CreateReceiptDto, SendReceiptDto } from '../contracts/receipt.contracts';
+import { SKI_SWAP_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
  * Receipts, from the staff side.
@@ -51,7 +52,7 @@ export class ReceiptController {
    */
   @Post('sellers/:sellerId/receipts')
   @RequirePermissions('ski_swap:manage')
-  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
   create(
     @Param('orgId') orgId: string,
     @Param('sellerId') sellerId: string,
@@ -62,7 +63,7 @@ export class ReceiptController {
 
   @Post('sellers/:sellerId/receipts/send')
   @RequirePermissions('ski_swap:manage')
-  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
   send(
     @Param('orgId') orgId: string,
     @Param('sellerId') sellerId: string,

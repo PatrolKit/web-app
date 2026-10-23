@@ -37,10 +37,11 @@ import { SellerExportService } from './seller-export.service';
 import { NoDeviceAccess } from '../common/decorators/require-device-role.decorator';
 import type { SellerFilters } from '../contracts/seller-filter';
 import { IssuedTicketService } from './issued-ticket.service';
+import { SKI_SWAP_TABLET_ROLES } from '../contracts/devices.contracts';
 
 @Controller('orgs/:orgId/ski-swap/sellers')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('ski_swap.staff_check_in')
+@RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
 @RequireModule('ski_swap')
 export class SellerController {
   constructor(

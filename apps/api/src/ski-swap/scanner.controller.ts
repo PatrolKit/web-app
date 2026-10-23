@@ -13,6 +13,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ScannerService } from './scanner.service';
 import { CreateScannerDto, PatchScannerDto } from '../contracts/ski-swap.contracts';
+import { SKI_SWAP_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
  * Reading is open to the check-in iPad. Writing is not.
@@ -39,7 +40,7 @@ export class ScannerController {
    */
   @Get()
   @RequirePermissions('ski_swap:manage')
-  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
   list(@Param('orgId') orgId: string) {
     return this.scannerService.list(orgId);
   }

@@ -12,6 +12,7 @@ import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { SkiSwapSettingsService } from './ski-swap-settings.service';
 import { UpdateSkiSwapSettingsDto } from '../contracts/ski-swap.contracts';
 import { UpdateDevicePinDto } from '../contracts/devices.contracts';
+import { SKI_SWAP_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
  * `@RequireDeviceRole` sits on the methods rather than the class: the check-in
@@ -26,7 +27,7 @@ export class SkiSwapSettingsController {
   constructor(private readonly settingsService: SkiSwapSettingsService) {}
 
   @Get()
-  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
   @RequirePermissions('ski_swap:report')
   get(@Param('orgId') orgId: string) {
     return this.settingsService.get(orgId);
@@ -51,7 +52,7 @@ export class SkiSwapSettingsController {
    * response shape that varies by caller.
    */
   @Get('device-pin')
-  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
   @RequirePermissions('ski_swap:admin')
   getDevicePin(@Param('orgId') orgId: string) {
     return this.settingsService.getDevicePin(orgId);

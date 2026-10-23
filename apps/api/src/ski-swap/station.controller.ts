@@ -54,7 +54,14 @@ export class StationController {
   @HttpCode(201)
   @RequirePermissions('ski_swap:admin')
   create(@Param('orgId') orgId: string, @Body() body: CreateStationDto) {
-    return this.stations.create(orgId, body.name);
+    return this.stations.create(orgId, body.name, body.kind);
+  }
+
+  /** The org's tablets, for choosing which serves a staffed station (Plan 56 D7). */
+  @Get('tablet-options')
+  @RequirePermissions('ski_swap:admin')
+  tabletOptions(@Param('orgId') orgId: string) {
+    return this.stations.tabletOptions(orgId);
   }
 
   @Patch(':stationId')

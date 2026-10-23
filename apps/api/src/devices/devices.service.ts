@@ -20,7 +20,8 @@ import type {
   ProvisionDeviceRequest,
   ProvisionDeviceResponse,
 } from '../contracts/devices.contracts';
-import { moduleOfRole } from '../contracts/devices.contracts';
+import { IPAD_ROLES, TABLET_ROLE, isIpadRole, moduleOfRole } from '../contracts/devices.contracts';
+import type { Prisma } from '@prisma/client';
 import { PermissionsService } from '../permissions/permissions.service';
 import { BRIDGE_ONLINE_MS } from '../ski-swap/print-queue.service';
 import { ModuleAccessService } from '../common/services/module-access.service';
@@ -36,15 +37,23 @@ import { ModuleAccessService } from '../common/services/module-access.service';
  *
  * The module key is not the role prefix: a `time_clock.*` device belongs to the
  * `time_tracking` module.
+ *
+ * A tablet belongs to no module (Plan 56 D2): the same iPad runs Ski Swap in
+ * the winter and Time Clock the rest of the year, so the org's administrators
+ * own it, whichever modules are on.
  */
-const ROLE_OWNER: Record<string, { moduleKey: string; permission: string }> = {
+const ROLE_OWNER: Record<string, { moduleKey: string | null; permission: string }> = {
   ski_swap: { moduleKey: 'ski_swap', permission: 'ski_swap:admin' },
   time_clock: { moduleKey: 'time_tracking', permission: 'time_tracking:manage' },
   // `manage` rather than `admin`, following time tracking: whoever runs the
   // displays supplies the hardware for them. A separate `signage:admin` gate
   // would mean the person who publishes to a screen cannot provision one.
   signage: { moduleKey: 'signage', permission: 'signage:manage' },
+  org: { moduleKey: null, permission: 'org:manage' },
 };
+
+/** The modules a tablet can run, as the iPad names its modes (Plan 56 D3). */
+const TABLET_MODULES = ['ski_swap', 'time_tracking'] as const;
 
 /**
  * The roles that stand somewhere, and whether a resort is required to provision
@@ -57,6 +66,7 @@ const ROLE_OWNER: Record<string, { moduleKey: string; permission: string }> = {
  */
 const RESORT_BOUND: Record<string, { required: boolean }> = {
   'time_clock.terminal': { required: false },
+  [TABLET_ROLE]: { required: false },
   'signage.display': { required: true },
 };
 
@@ -84,7 +94,11 @@ export class DevicesService {
     const owner = ROLE_OWNER[moduleOfRole(role as DeviceRole)];
     if (!owner) throw new ForbiddenException('Unknown device role');
 
-    if (!(await this.moduleAccess.isEnabled(orgId, owner.moduleKey))) {
+    // Every iPad is the org administrators' to manage (Plan 56 D2), including
+    // one still on a module's own role until it is converted.
+    if (isIpadRole(role) && (await this.permissions.getPermissions(userId, orgId)).includes('org:manage')) return;
+
+    if (owner.moduleKey && !(await this.moduleAccess.isEnabled(orgId, owner.moduleKey))) {
       throw new ForbiddenException(`Module '${owner.moduleKey}' is not enabled`);
     }
 
@@ -110,7 +124,7 @@ export class DevicesService {
     const owned = Object.entries(ROLE_OWNER).filter(([, o]) => granted.includes(o.permission));
 
     const enabled = await Promise.all(
-      owned.map(([, o]) => this.moduleAccess.isEnabled(orgId, o.moduleKey)),
+      owned.map(([, o]) => (o.moduleKey ? this.moduleAccess.isEnabled(orgId, o.moduleKey) : true)),
     );
     return owned.filter((_, i) => enabled[i]).map(([prefix]) => prefix);
   }
@@ -180,11 +194,27 @@ export class DevicesService {
   async listDevices(orgId: string, userId: string): Promise<DeviceListItem[]> {
     const modules = await this.manageableRoles(orgId, userId);
     if (modules.length === 0) return [];
+    return this.listWhere({ orgId, OR: modules.map((m) => ({ role: { startsWith: `${m}.` } })) });
+  }
 
+  /**
+   * Every iPad in the org, tablets and those still on a module's role (Plan 56
+   * D9). For the Tablets page, whose callers hold `org:manage`.
+   */
+  async listTablets(orgId: string): Promise<DeviceListItem[]> {
+    return this.listWhere({ orgId, role: { in: [...IPAD_ROLES] } });
+  }
+
+  private async listWhere(where: Prisma.DeviceWhereInput): Promise<DeviceListItem[]> {
     const devices = await this.prisma.device.findMany({
-      where: { orgId, OR: modules.map((m) => ({ role: { startsWith: `${m}.` } })) },
+      where,
       orderBy: { createdAt: 'desc' },
-      include: { bridgedPrinter: true, bridgedStations: BRIDGED_STATIONS_SELECT, resort: true },
+      include: {
+        bridgedPrinter: true,
+        bridgedStations: BRIDGED_STATIONS_SELECT,
+        resort: true,
+        attendedStation: { select: { name: true, deletedAt: true } },
+      },
     });
 
     return devices.map((d) => ({
@@ -198,11 +228,15 @@ export class DevicesService {
       printerLink: (d.printerLink as 'ready' | 'down' | null) ?? null,
       printerLinkAt: d.printerLinkAt,
       printerName: d.bridgedPrinter?.name ?? null,
-      ...bridgedStationNames(d.bridgedStations),
+      // A tablet serves the station it attends; a bridge, the stations it prints for.
+      ...bridgedStationNames(isIpadRole(d.role) ? (d.attendedStation ? [d.attendedStation] : []) : d.bridgedStations),
       // A retired resort reads as unbound, the same way a retired station does.
       resortId: d.resort && !d.resort.deletedAt ? d.resort.id : null,
       resortName: d.resort && !d.resort.deletedAt ? d.resort.name : null,
       hardwareId: d.hardwareId,
+      appMode: d.appMode,
+      appVersion: d.appVersion,
+      appBuild: d.appBuild,
       imageName: d.imageName,
       imageVersion: d.imageVersion,
       installedPackages: d.installedPackages,
@@ -233,6 +267,20 @@ export class DevicesService {
     // The server's clock, so "used since" compares like with like (the device
     // list's `lastTokenAt` is stamped by the same clock).
     return { clientSecret: newSecret, rotatedAt: new Date() };
+  }
+
+  // ─── Rename ──────────────────────────────────────────────────────────────────
+
+  /** What people call the device: for a tablet, what's written on its case. */
+  async rename(orgId: string, deviceId: string, name: string, actorUserId: string): Promise<DeviceListItem> {
+    await this.assertMayManageDevice(orgId, deviceId, actorUserId);
+    await this.prisma.device.update({ where: { id: deviceId }, data: { name } });
+    await this.auditService.log({
+      actorType: 'user', actorId: actorUserId, orgId,
+      action: 'device.renamed', targetType: 'device', targetId: deviceId, metadata: { name },
+    });
+    const [updated] = (await this.listDevices(orgId, actorUserId)).filter((d) => d.id === deviceId);
+    return updated;
   }
 
   // ─── Revoke ──────────────────────────────────────────────────────────────────
@@ -270,6 +318,10 @@ export class DevicesService {
     if (!device) throw new NotFoundException('Device not found');
 
     await this.assertMayManage(orgId, actorUserId, device.role as DeviceRole);
+    // Plan 56 D8: a tablet is placed by whoever is holding it, on the iPad.
+    if (device.role === TABLET_ROLE) {
+      throw new BadRequestException('A tablet’s resort is chosen on the iPad, in Time Clock mode');
+    }
     if (resortId !== null) {
       await this.assertResortBindable(orgId, device.role as DeviceRole, resortId);
     }
@@ -351,7 +403,7 @@ export class DevicesService {
 
   // ─── Device me ───────────────────────────────────────────────────────────────
 
-  async getDeviceMe(deviceId: string, app: { version?: string; build?: string } = {}): Promise<DeviceMeResponse> {
+  async getDeviceMe(deviceId: string, app: { version?: string; build?: string; mode?: string } = {}): Promise<DeviceMeResponse> {
     const device = await this.prisma.device.findUnique({
       where: { id: deviceId },
       include: {
@@ -373,8 +425,15 @@ export class DevicesService {
         // Only what it said: a request that reports nothing leaves the last report standing.
         ...(app.version ? { appVersion: app.version } : {}),
         ...(app.build ? { appBuild: app.build } : {}),
+        ...(app.mode ? { appMode: app.mode } : {}),
       },
     });
+
+    // Only an iPad chooses a module to run; a bridge or a display has its one job.
+    const modules = isIpadRole(device.role)
+      ? (await Promise.all(TABLET_MODULES.map(async (m) => ((await this.moduleAccess.isEnabled(device.orgId, m)) ? m : null))))
+          .filter((m): m is (typeof TABLET_MODULES)[number] => m !== null)
+      : [];
 
     // A device is bound through one slot or the other, never both. Which one it
     // is depends on what kind of device it is, and neither caller needs to care.
@@ -440,6 +499,9 @@ export class DevicesService {
         : null,
       sellerSiteUrl: this.config.get<string>('app.sellerSiteUrl')!,
       orgLogoUrl: device.org.logoUrl ?? null,
+      modules,
+      tabletPin: device.org.tabletPin ?? null,
     };
   }
 }
+

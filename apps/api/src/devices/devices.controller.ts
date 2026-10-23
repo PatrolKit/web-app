@@ -7,7 +7,7 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { DevicesService } from './devices.service';
-import { ProvisionDeviceDto, BindResortDto } from '../contracts/devices.contracts';
+import { ProvisionDeviceDto, BindResortDto, RenameDeviceDto } from '../contracts/devices.contracts';
 import type { DeviceListItem, ProvisionDeviceResponse } from '../contracts/devices.contracts';
 
 @Controller('orgs/:orgId/devices')
@@ -62,6 +62,18 @@ export class DevicesController {
     @Body() body: BindResortDto,
   ): Promise<DeviceListItem> {
     return this.devicesService.bindResort(orgId, user.userId, id, body.resortId);
+  }
+
+  /** Renames a device. Who may is decided by its role, as everywhere here. */
+  @Patch(':id')
+  @HttpCode(200)
+  rename(
+    @Param('orgId') orgId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: RenameDeviceDto,
+  ): Promise<DeviceListItem> {
+    return this.devicesService.rename(orgId, id, body.name, user.userId);
   }
 
   @Delete(':id')

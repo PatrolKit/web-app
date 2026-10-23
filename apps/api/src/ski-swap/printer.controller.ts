@@ -19,6 +19,7 @@ import {
   PatchPrinterPaperSizeDto,
   RenderLabelDto,
 } from '../contracts/ski-swap.contracts';
+import { SKI_SWAP_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
  * Reading is open to the check-in iPad. Writing is not.
@@ -45,7 +46,7 @@ export class PrinterController {
 
   @Get()
   @RequirePermissions('ski_swap:manage')
-  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
   list(@Param('orgId') orgId: string, @CurrentUser() user?: AuthenticatedUser) {
     return this.printerService.list(orgId, user?.userId);
   }

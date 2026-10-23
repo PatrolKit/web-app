@@ -1209,12 +1209,32 @@ export type SellerFindResponse = z.infer<typeof SellerFindResponseSchema>;
 
 // ─── Check-in stations ───────────────────────────────────────────────────────
 
-export const CreateStationSchema = z.object({ name: z.string().min(1).max(60) }).strict();
+/** Whether staff work a counter, or sellers check themselves in at a QR code. */
+export const StationKindSchema = z.enum(['staffed', 'self_service']);
+
+export const CreateStationSchema = z
+  .object({
+    name: z.string().min(1).max(60),
+    /** Self-service when omitted, for clients that set the kind by attaching a tablet afterwards. */
+    kind: StationKindSchema.optional(),
+  })
+  .strict();
 
 export const UpdateStationSchema = z
   .object({
     name: z.string().min(1).max(60).optional(),
+    /**
+     * Changing what kind of station this is (Plan 56 D6). Becoming self-service
+     * releases its tablet. Attaching a tablet makes a station staffed.
+     */
+    kind: StationKindSchema.optional(),
     attendantDeviceId: z.string().nullable().optional(),
+    /**
+     * Takes the tablet from the station it serves now, which is left waiting
+     * for another (Plan 56 D7). Without it, a tablet in use elsewhere is refused
+     * with `TABLET_IN_USE`, naming that station.
+     */
+    takeTablet: z.boolean().optional(),
     bridgeDeviceId: z.string().nullable().optional(),
   })
   .strict();
@@ -1224,13 +1244,15 @@ export const StationResponseSchema = z.object({
   name: z.string(),
   code: z.string(),
   /**
-   * Derived from whether a staff tablet is bound, never stored — a flag could
-   * disagree with the hardware actually attached.
+   * Stored (Plan 56 D6): a staffed station whose tablet hasn't been chosen yet
+   * is still staffed, with a null `attendantDeviceId`.
    */
-  kind: z.enum(['staffed', 'self_service']),
+  kind: StationKindSchema,
   attendantDeviceId: z.string().nullable(),
   attendantName: z.string().nullable(),
   attendantLastSeenAt: z.string().nullable(),
+  /** What the station's tablet last said it is doing (Plan 56 D4), e.g. `time_clock`. */
+  attendantMode: z.string().nullable(),
   bridgeDeviceId: z.string().nullable(),
   /**
    * A bridge has no name of its own — it is one printer's network adapter and
@@ -1257,6 +1279,22 @@ export const StationResponseSchema = z.object({
   helperLabelsOnly: z.boolean(),
   createdAt: z.string(),
 });
+
+/**
+ * A tablet a Ski Swap admin can put at a station (Plan 56 D7): the org's iPads,
+ * with no credentials.
+ */
+export const StationTabletOptionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** What it last said it is doing, e.g. `ski_swap/check_in` or `time_clock`. */
+  appMode: z.string().nullable(),
+  lastSeenAt: z.string().nullable(),
+  /** The station it serves now, if any. */
+  stationId: z.string().nullable(),
+  stationName: z.string().nullable(),
+});
+export type StationTabletOption = z.infer<typeof StationTabletOptionSchema>;
 
 export class CreateStationDto extends createZodDto(CreateStationSchema) {}
 export class UpdateStationDto extends createZodDto(UpdateStationSchema) {}

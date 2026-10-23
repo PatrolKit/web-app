@@ -37,6 +37,7 @@ import {
   MergeTaxonomyNodeDto,
   PatchTaxonomyNodeDto,
 } from '../../contracts/taxonomy.contracts';
+import { SKI_SWAP_TABLET_ROLES } from '../../contracts/devices.contracts';
 
 /**
  * The tree, as one org sees and curates it.
@@ -70,7 +71,7 @@ export class TaxonomyController {
    * membership by the time this runs.
    */
   @Get()
-  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
   resolve(@Param('orgId') orgId: string, @Query() query: TaxonomyDepthQueryDto) {
     // `?depth=full` expands every deferred branch inline, for a client that
     // prefetches rather than loading on open. The default is unchanged.
@@ -81,7 +82,7 @@ export class TaxonomyController {
   // Same reasoning as the resolve above: a seller opening a manufacturer's model
   // list is the same seller, one tap later.
   @Get('nodes/:nodeId/children')
-  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
   children(@Param('orgId') orgId: string, @Param('nodeId') nodeId: string) {
     return this.taxonomy.children(orgId, nodeId);
   }
@@ -184,7 +185,7 @@ export class TaxonomyController {
    * to. The bytes for a key never change, so they are served immutable.
    */
   @Get('icons/:file')
-  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
   @RequirePermissions('ski_swap:report')
   async getRegistryIcon(@Param('file') file: string, @Res() res: Response): Promise<void> {
     const key = file.replace(/\.png$/i, '');
@@ -241,7 +242,7 @@ export class TaxonomyController {
    * phone fetching thirteen of these on arrival should fetch them once.
    */
   @Get('nodes/:nodeId/icon')
-  @RequireDeviceRole('ski_swap.staff_check_in')
+  @RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
   @RequirePermissions('ski_swap:report')
   async getIcon(@Param('nodeId') nodeId: string, @Res() res: Response): Promise<void> {
     const bytes = await this.icons.read(nodeId);

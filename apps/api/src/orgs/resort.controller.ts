@@ -6,6 +6,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { ResortService } from './resort.service';
 import { CreateResortDto, PatchResortDto } from '../contracts/org.contracts';
+import { TIME_CLOCK_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
  * Resorts belong to the org, not to time tracking — the time-clock module
@@ -14,7 +15,7 @@ import { CreateResortDto, PatchResortDto } from '../contracts/org.contracts';
  */
 @Controller('orgs/:orgId/resorts')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, PermissionsGuard)
-@RequireDeviceRole('time_clock.terminal')
+@RequireDeviceRole(...TIME_CLOCK_TABLET_ROLES)
 export class ResortController {
   constructor(private readonly resortService: ResortService) {}
 

@@ -6,6 +6,7 @@ import { CurrentDevice } from '../common/decorators/current-device.decorator';
 import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import { PrintQueueService } from './print-queue.service';
 import { StationPrintRequestDto } from '../contracts/ski-swap.contracts';
+import { SKI_SWAP_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
  * Labels a station's iPad drew, printed through the station's bridge as sent
@@ -21,7 +22,7 @@ import { StationPrintRequestDto } from '../contracts/ski-swap.contracts';
  */
 @Controller('orgs/:orgId/ski-swap/stations/:stationId/print')
 @UseGuards(DeviceAuthGuard, PermissionsGuard)
-@RequireDeviceRole('ski_swap.staff_check_in')
+@RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
 export class StationPrintController {
   constructor(private readonly queue: PrintQueueService) {}
 

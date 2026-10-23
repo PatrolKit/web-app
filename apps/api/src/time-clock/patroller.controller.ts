@@ -34,6 +34,7 @@ import {
   PatchPatrollerDto,
   PatrollerListQueryDto,
 } from '../contracts/time-clock.contracts';
+import { TIME_CLOCK_TABLET_ROLES } from '../contracts/devices.contracts';
 
 @Controller('orgs/:orgId/time-clock/patrollers')
 /**
@@ -46,7 +47,7 @@ export class PatrollerController {
   constructor(private readonly patrollerService: PatrollerService) {}
 
   @Get()
-  @RequireDeviceRole('time_clock.terminal')
+  @RequireDeviceRole(...TIME_CLOCK_TABLET_ROLES)
   @RequirePermissions('time_tracking:report')
   list(
     @Param('orgId') orgId: string,

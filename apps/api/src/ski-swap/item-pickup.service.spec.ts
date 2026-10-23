@@ -219,7 +219,7 @@ describe('a locked session’s list (Plan 43 D5)', () => {
 describe('the awaiting-pickup route (iOS Plan 37)', () => {
   it('lets a staff check-in iPad in, as the pickup route does', () => {
     const reflector = new Reflector();
-    expect(reflector.getAllAndOverride(DEVICE_ROLES_KEY, [ItemController.prototype.awaitingPickup, ItemController])).toEqual(['ski_swap.staff_check_in']);
-    expect(reflector.getAllAndOverride(DEVICE_ROLES_KEY, [ItemController.prototype.pickUp, ItemController])).toEqual(['ski_swap.staff_check_in']);
+    expect(reflector.getAllAndOverride(DEVICE_ROLES_KEY, [ItemController.prototype.awaitingPickup, ItemController])).toEqual(['ski_swap.staff_check_in', 'org.tablet']);
+    expect(reflector.getAllAndOverride(DEVICE_ROLES_KEY, [ItemController.prototype.pickUp, ItemController])).toEqual(['ski_swap.staff_check_in', 'org.tablet']);
   });
 });

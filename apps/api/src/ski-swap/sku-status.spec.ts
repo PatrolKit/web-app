@@ -56,7 +56,7 @@ describe('the sku-status route', () => {
 
   it('is a GET open to staff check-in iPads, and refuses a person’s token', () => {
     expect(Reflect.getMetadata(METHOD_METADATA, ItemController.prototype.skuStatus)).toBe(RequestMethod.GET);
-    expect(reflector.getAllAndOverride(DEVICE_ROLES_KEY, [ItemController.prototype.skuStatus, ItemController])).toEqual(['ski_swap.staff_check_in']);
+    expect(reflector.getAllAndOverride(DEVICE_ROLES_KEY, [ItemController.prototype.skuStatus, ItemController])).toEqual(['ski_swap.staff_check_in', 'org.tablet']);
     const controller = new ItemController({} as never, {} as never, {} as never, {} as never, {} as never, {} as never, harness({}) as never);
     expect(() => controller.skuStatus('org', 'swap', { user: { userId: 'u' } } as never, '75040')).toThrow(ForbiddenException);
   });

@@ -7,10 +7,11 @@ import { RequireModule } from '../common/decorators/require-module.decorator';
 import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import { TimeClockEventService } from './event.service';
 import { SubmitEventsDto } from '../contracts/time-clock.contracts';
+import { TIME_CLOCK_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
  * Devices only: clock events are recorded by the iPad that was there (§5.6), and speak
- * for that iPad alone (Plan 55 D3).
+ * for that iPad alone (Plan 55 D3). A time-clock iPad, that is: a terminal or a tablet.
  *
  * `OrDeviceAuthGuard` rather than `DeviceAuthGuard` because only the former checks the
  * token's org against the URL's; the device requirement is enforced here instead.
@@ -29,6 +30,10 @@ export class TimeClockEventController {
     @Req() req: Request & { device?: AuthenticatedDevice },
   ) {
     if (!req.device) throw new ForbiddenException('Clock events may only be submitted by a device');
+    // Only an iPad clocks anyone in: a print bridge or a display may not (Plan 56).
+    if (!(TIME_CLOCK_TABLET_ROLES as readonly string[]).includes(req.device.role)) {
+      throw new ForbiddenException(`Requires a device of role: ${TIME_CLOCK_TABLET_ROLES.join(' or ')}`);
+    }
     return this.eventService.submit(orgId, req.device.deviceId, body.events);
   }
 }

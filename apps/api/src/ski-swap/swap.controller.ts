@@ -21,10 +21,11 @@ import { RequireModule } from '../common/decorators/require-module.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { SwapService } from './swap.service';
 import { CreateSwapDto, PatchSwapDto } from '../contracts/ski-swap.contracts';
+import { SKI_SWAP_TABLET_ROLES } from '../contracts/devices.contracts';
 
 @Controller('orgs/:orgId/ski-swap/swaps')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('ski_swap.staff_check_in')
+@RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
 @RequireModule('ski_swap')
 export class SwapController {
   constructor(private readonly swapService: SwapService) {}

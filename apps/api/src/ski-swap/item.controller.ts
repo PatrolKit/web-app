@@ -25,10 +25,11 @@ import { ItemExportService } from './item-export.service';
 import { PublicStatusService } from './public-status.service';
 import type { Request, Response } from 'express';
 import { isImportGuideFile } from './import-guide';
+import { SKI_SWAP_TABLET_ROLES } from '../contracts/devices.contracts';
 
 @Controller('orgs/:orgId/ski-swap/swaps/:swapId/items')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
-@RequireDeviceRole('ski_swap.staff_check_in')
+@RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
 @RequireModule('ski_swap')
 // Item responses to a device carry no stock, and read none (Plan 39 D8).
 @UseInterceptors(DeviceStockInterceptor)

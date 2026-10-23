@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { createId } from '@paralleldrive/cuid2';
 import type { TimeClockSettingsResponse } from '../contracts/time-clock.contracts';
 import type { DevicePinResponse } from '../contracts/devices.contracts';
+import { getTabletPin, setTabletPin } from '../devices/tablet-pin';
 
 @Injectable()
 export class TimeClockSettingsService {
@@ -37,40 +38,13 @@ export class TimeClockSettingsService {
     };
   }
 
-  /** Null for an org that has never set one, which means the sheet opens unguarded. */
+  /** The org's tablet PIN (Plan 56 D5), for iPad builds that still ask their module. */
   async getDevicePin(orgId: string): Promise<DevicePinResponse> {
-    const row = await this.prisma.timeClockSettings.findUnique({ where: { orgId } });
-    return { devicePin: row?.devicePin ?? null };
+    return getTabletPin(this.prisma, orgId);
   }
 
-  /**
-   * `null` removes the gate.
-   *
-   * Audited, and the value never is: a PIN nobody can account for is worse than
-   * one everybody knows, but the log is not the place to leak it to readers who
-   * were refused the endpoint that returns it.
-   */
-  async setDevicePin(
-    orgId: string,
-    devicePin: string | null,
-    actorId: string,
-    ipAddress?: string,
-  ): Promise<DevicePinResponse> {
-    await this.get(orgId); // ensure the row exists
-    const row = await this.prisma.timeClockSettings.update({
-      where: { orgId },
-      data: { devicePin },
-    });
-    await this.prisma.auditLog.create({
-      data: {
-        actorType: 'user',
-        actorId,
-        orgId,
-        action:
-          devicePin === null ? 'time_clock.device_pin.cleared' : 'time_clock.device_pin.updated',
-        ipAddress: ipAddress ?? null,
-      },
-    });
-    return { devicePin: row.devicePin };
+  /** Sets the org's tablet PIN (Plan 56 D5); this module's own column is no longer read. */
+  async setDevicePin(orgId: string, devicePin: string | null, actorId: string, ipAddress?: string): Promise<DevicePinResponse> {
+    return setTabletPin(this.prisma, orgId, devicePin, actorId, ipAddress);
   }
 }

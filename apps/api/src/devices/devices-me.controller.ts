@@ -5,7 +5,7 @@ import { CurrentDevice } from '../common/decorators/current-device.decorator';
 import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import { DevicesService } from './devices.service';
 import { BootstrapService } from '../bootstrap/bootstrap.service';
-import { RebindDeviceDto } from '../contracts/devices.contracts';
+import { RebindDeviceDto, TIME_CLOCK_TABLET_ROLES } from '../contracts/devices.contracts';
 import type { DeviceMeResponse } from '../contracts/devices.contracts';
 
 @Controller('devices')
@@ -28,8 +28,12 @@ export class DevicesMeController {
     @Headers('x-app-version') appVersion?: string,
     @Headers('x-app-build') appBuild?: string,
     @Headers('user-agent') userAgent?: string,
+    @Headers('x-app-mode') appMode?: string,
   ): Promise<DeviceMeResponse> {
-    return this.devicesService.getDeviceMe(device.deviceId, appReport(appVersion, appBuild, userAgent));
+    return this.devicesService.getDeviceMe(device.deviceId, {
+      ...appReport(appVersion, appBuild, userAgent),
+      mode: modeField(appMode),
+    });
   }
 
   /**
@@ -51,7 +55,7 @@ export class DevicesMeController {
     @CurrentDevice() device: AuthenticatedDevice,
     @Body() body: RebindDeviceDto,
   ): Promise<DeviceMeResponse> {
-    if (device.role !== 'time_clock.terminal') {
+    if (!(TIME_CLOCK_TABLET_ROLES as readonly string[]).includes(device.role)) {
       throw new ForbiddenException('Only a time clock terminal has a resort to change');
     }
     return this.devicesService.rebindSelf(device.deviceId, body.resortId);
@@ -146,4 +150,14 @@ function appField(raw: string | undefined): string | undefined {
 export function appReport(version?: string, build?: string, userAgent?: string): { version?: string; build?: string } {
   const fromAgent = /^PatrolKit\/(\S+)/.exec(userAgent ?? '')?.[1];
   return { version: appField(version), build: appField(build) ?? appField(fromAgent) };
+}
+
+/**
+ * A tablet's mode as it reports it (Plan 56 D4): `time_clock`, or
+ * `ski_swap/<mode>`. Lower-case words, underscores and one slash, at most 64.
+ * Anything else is ignored, so the last good report stands.
+ */
+function modeField(raw: string | undefined): string | undefined {
+  const clean = raw?.trim();
+  return clean && /^[a-z_]{1,32}(\/[a-z_]{1,31})?$/.test(clean) ? clean : undefined;
 }

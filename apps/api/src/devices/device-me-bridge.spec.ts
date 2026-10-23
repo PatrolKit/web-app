@@ -16,7 +16,7 @@ function service(devices: Row[]) {
   };
   const config = { get: () => 'https://patrolkit.io/sell' };
   const unused = {} as never;
-  return new DevicesService(prisma as never, unused, unused, unused, unused, config as never);
+  return new DevicesService(prisma as never, unused, unused, unused, { isEnabled: async () => true } as never, config as never);
 }
 
 const ORG = { name: 'Org', logoUrl: null };

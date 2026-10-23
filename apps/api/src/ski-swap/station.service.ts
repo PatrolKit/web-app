@@ -2,13 +2,12 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { createId } from '@paralleldrive/cuid2';
 import { PrismaService } from '../prisma/prisma.service';
 import { SkuService } from './sku.service';
-import type { DeviceRole } from '../contracts/devices.contracts';
-import type { StationResponse } from '../contracts/ski-swap.contracts';
+import { IPAD_ROLES, isIpadRole, type DeviceRole } from '../contracts/devices.contracts';
+import type { StationResponse, StationTabletOption } from '../contracts/ski-swap.contracts';
 import { BRIDGED_STATIONS_SELECT } from './bridge-stations.util';
 import { LABEL_SIZE, isPaperSize } from './printing/geometry';
 
-/** Which slot a device occupies is decided by what kind of device it is. */
-const ATTENDANT_ROLE: DeviceRole = 'ski_swap.staff_check_in';
+/** Which slot a device occupies is decided by what kind of device it is: any iPad attends, a bridge prints. */
 const BRIDGE_ROLE: DeviceRole = 'ski_swap.print_bridge';
 
 // The printer hangs off the bridge: a station reaches it through the box that
@@ -23,9 +22,10 @@ type StationRow = {
   name: string;
   code: string;
   createdAt: Date;
+  staffed: boolean;
   attendantDeviceId: string | null;
   bridgeDeviceId: string | null;
-  attendant: { name: string; lastSeenAt: Date | null } | null;
+  attendant: { name: string; lastSeenAt: Date | null; appMode: string | null } | null;
   bridge: {
     name: string;
     lastSeenAt: Date | null;
@@ -37,10 +37,10 @@ type StationRow = {
 /**
  * Check-in stations: a counter, its hardware, and the SKU namespace it mints in.
  *
- * One concept covers both kinds. A station with a staff tablet is *staffed*; one
- * without is *self-service* and needs a bridge, because a seller has no other way
- * to get a tag. The kind is derived rather than stored, so it cannot contradict
- * the hardware actually bound to it.
+ * One concept covers both kinds. Staff work a *staffed* station on a tablet; a
+ * *self-service* one needs a bridge, because a seller has no other way to get a
+ * tag. The kind is stored (Plan 56 D6): tablets are the org's, provisioned apart
+ * from stations, so a staffed station can be waiting for its tablet.
  *
  * The station is also the layer that survives replacing either piece of hardware
  * beneath it, which is why it owns the code that namespaces every SKU checked in
@@ -62,14 +62,14 @@ export class StationService {
     return stations.map(toResponse);
   }
 
-  async create(orgId: string, name: string): Promise<StationResponse> {
+  async create(orgId: string, name: string, kind: 'staffed' | 'self_service' = 'self_service'): Promise<StationResponse> {
     // Two stations added at once can be handed the same letter; the unique
     // index on live letters refuses the second, which then takes the next.
     for (let attempt = 0; ; attempt++) {
       const code = await this.skuService.allocateCode(orgId);
       try {
         const station = await this.prisma.checkinStation.create({
-          data: { id: createId(), orgId, name, code, liveCode: code },
+          data: { id: createId(), orgId, name, code, liveCode: code, staffed: kind === 'staffed' },
           include: INCLUDE,
         });
         return toResponse(station);
@@ -90,35 +90,72 @@ export class StationService {
     stationId: string,
     data: {
       name?: string;
+      kind?: 'staffed' | 'self_service';
       attendantDeviceId?: string | null;
+      takeTablet?: boolean;
       bridgeDeviceId?: string | null;
     },
   ): Promise<StationResponse> {
     const station = await this.find(orgId, stationId);
 
-    if (data.attendantDeviceId) {
-      await this.assertAttendantFree(orgId, data.attendantDeviceId, station.id);
+    // What the station will be once the patch lands: the sharing rule is about
+    // that, not about now. Attaching a tablet makes it staffed; becoming
+    // self-service lets its tablet go.
+    const willBeStaffed = data.attendantDeviceId ? true : data.kind ? data.kind === 'staffed' : station.staffed;
+    if (data.attendantDeviceId && data.kind === 'self_service') {
+      throw new BadRequestException('A self-service station has no tablet');
+    }
+    const attendantDeviceId = !willBeStaffed ? null : data.attendantDeviceId;
+
+    let takeFrom: { id: string; name: string } | null = null;
+    if (attendantDeviceId) {
+      takeFrom = await this.assertAttendantFree(orgId, attendantDeviceId, station.id, !!data.takeTablet);
     }
 
-    // Staffed is having an attendant, so this is what the station will be once
-    // the patch lands — the sharing rule is about that, not about now.
-    const willBeStaffed =
-      data.attendantDeviceId !== undefined ? !!data.attendantDeviceId : !!station.attendantDeviceId;
     const bridgeId = data.bridgeDeviceId !== undefined ? data.bridgeDeviceId : station.bridgeDeviceId;
     if (bridgeId && (data.bridgeDeviceId || !willBeStaffed)) {
       await this.assertBridgeShareable(orgId, bridgeId, station.id, station.name, willBeStaffed);
     }
 
-    const updated = await this.prisma.checkinStation.update({
-      where: { id: station.id },
-      data: {
-        ...(data.name !== undefined ? { name: data.name } : {}),
-        ...(data.attendantDeviceId !== undefined ? { attendantDeviceId: data.attendantDeviceId } : {}),
-        ...(data.bridgeDeviceId !== undefined ? { bridgeDeviceId: data.bridgeDeviceId } : {}),
-      },
-      include: INCLUDE,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // The station it came from keeps being staffed, waiting for another tablet.
+      if (takeFrom) await tx.checkinStation.update({ where: { id: takeFrom.id }, data: { attendantDeviceId: null } });
+      return tx.checkinStation.update({
+        where: { id: station.id },
+        data: {
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          staffed: willBeStaffed,
+          ...(attendantDeviceId !== undefined ? { attendantDeviceId } : {}),
+          ...(data.bridgeDeviceId !== undefined ? { bridgeDeviceId: data.bridgeDeviceId } : {}),
+        },
+        include: INCLUDE,
+      });
     });
     return toResponse(updated);
+  }
+
+  /**
+   * The tablets a Ski Swap admin may put at a station (Plan 56 D7): every iPad
+   * in the org, and where each serves now. No credentials, so this needs only
+   * `ski_swap:admin`, not the org administrators' Tablets page.
+   */
+  async tabletOptions(orgId: string): Promise<StationTabletOption[]> {
+    const tablets = await this.prisma.device.findMany({
+      where: { orgId, role: { in: [...IPAD_ROLES] } },
+      select: { id: true, name: true, appMode: true, lastSeenAt: true, attendedStation: { select: { id: true, name: true, deletedAt: true } } },
+      orderBy: { name: 'asc' },
+    });
+    return tablets.map((t) => {
+      const at = t.attendedStation && !t.attendedStation.deletedAt ? t.attendedStation : null;
+      return {
+        id: t.id,
+        name: t.name,
+        appMode: t.appMode,
+        lastSeenAt: t.lastSeenAt?.toISOString() ?? null,
+        stationId: at?.id ?? null,
+        stationName: at?.name ?? null,
+      };
+    });
   }
 
   /**
@@ -169,22 +206,32 @@ export class StationService {
 
   // ─── Guards ────────────────────────────────────────────────────────────────
 
-  /** A tablet serves one station. */
-  private async assertAttendantFree(orgId: string, deviceId: string, stationId: string): Promise<void> {
+  /**
+   * A tablet serves one station. Returns the station it would be taken from,
+   * when `take` says to move it; otherwise refuses, naming that station.
+   */
+  private async assertAttendantFree(
+    orgId: string,
+    deviceId: string,
+    stationId: string,
+    take: boolean,
+  ): Promise<{ id: string; name: string } | null> {
     const device = await this.prisma.device.findFirst({
       where: { id: deviceId, orgId },
       include: { attendedStation: true },
     });
     if (!device) throw new NotFoundException('Device not found');
-    if (device.role !== ATTENDANT_ROLE) {
-      throw new BadRequestException(`That slot takes a "${ATTENDANT_ROLE}" device`);
+    if (!isIpadRole(device.role)) {
+      throw new BadRequestException('Only a tablet can serve a staffed station');
     }
     const held = device.attendedStation;
-    if (held && held.id !== stationId && !held.deletedAt) {
-      throw new ConflictException(
-        `That device already serves station "${held.name}". Release it there first.`,
-      );
-    }
+    if (!held || held.id === stationId || held.deletedAt) return null;
+    if (take) return { id: held.id, name: held.name };
+    throw new ConflictException({
+      code: 'TABLET_IN_USE',
+      stationName: held.name,
+      message: `${device.name} serves "${held.name}". Move it here, and "${held.name}" waits for another tablet.`,
+    });
   }
 
   /**
@@ -225,7 +272,7 @@ export class StationService {
           'A self-service station keeps its bridge to itself: give it its own bridge, or keep a tablet at it.',
       );
     }
-    const selfService = others.find((o) => !o.attendantDeviceId);
+    const selfService = others.find((o) => !o.staffed);
     if (selfService) {
       throw new ConflictException(
         `That bridge serves the self-service station "${selfService.name}". ` +
@@ -248,12 +295,11 @@ function toResponse(s: StationRow): StationResponse {
     id: s.id,
     name: s.name,
     code: s.code,
-    // Derived, never stored: a tablet at the counter is what makes it staffed,
-    // and a stored flag could disagree with the hardware bound to it.
-    kind: s.attendantDeviceId ? 'staffed' : 'self_service',
+    kind: s.staffed ? 'staffed' : 'self_service',
     attendantDeviceId: s.attendantDeviceId,
     attendantName: s.attendant?.name ?? null,
     attendantLastSeenAt: s.attendant?.lastSeenAt?.toISOString() ?? null,
+    attendantMode: s.attendant?.appMode ?? null,
     bridgeDeviceId: s.bridgeDeviceId,
     bridgeName: s.bridge?.bridgedPrinter?.name ?? null,
     bridgeLastSeenAt: s.bridge?.lastSeenAt?.toISOString() ?? null,

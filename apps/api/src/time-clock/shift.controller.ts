@@ -10,6 +10,7 @@ import { RequireModule } from '../common/decorators/require-module.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { ShiftService } from './shift.service';
 import { PatchShiftDto, ShiftListQueryDto } from '../contracts/time-clock.contracts';
+import { TIME_CLOCK_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
  * `@RequireDeviceRole` sits on the one route a terminal reads, not on the class:
@@ -23,7 +24,7 @@ export class ShiftController {
   constructor(private readonly shiftService: ShiftService) {}
 
   @Get()
-  @RequireDeviceRole('time_clock.terminal')
+  @RequireDeviceRole(...TIME_CLOCK_TABLET_ROLES)
   @RequirePermissions('time_tracking:report')
   list(@Param('orgId') orgId: string, @Query() query: ShiftListQueryDto) {
     return this.shiftService.list(orgId, query);

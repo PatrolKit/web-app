@@ -42,7 +42,7 @@ describe('recording it', () => {
     };
     const config = { get: () => 'https://patrolkit.io/sell' };
     const unused = {} as never;
-    return { svc: new DevicesService(prisma as never, unused, unused, unused, unused, config as never), writes };
+    return { svc: new DevicesService(prisma as never, unused, unused, unused, { isEnabled: async () => true } as never, config as never), writes };
   }
 
   it('stores what the device said', async () => {

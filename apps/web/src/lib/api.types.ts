@@ -9,6 +9,12 @@
  */
 export const DEVICE_ROLES = [
   {
+    // Plan 56: every new iPad. It runs Ski Swap or Time Clock, as set on the iPad.
+    value: 'org.tablet',
+    label: 'Tablet',
+    hint: 'An iPad that runs Ski Swap or Time Clock, chosen on the iPad. Put it at a check-in station on Ski Swap → Check-in.',
+  },
+  {
     // "Station" is the counter, not the tablet. Calling the hardware a station
     // too put two different things behind one word on the same page, on a
     // button that provisions a tablet.

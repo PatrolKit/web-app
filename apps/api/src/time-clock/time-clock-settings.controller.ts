@@ -12,6 +12,7 @@ import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { TimeClockSettingsService } from './time-clock-settings.service';
 import { UpdateTimeClockSettingsDto } from '../contracts/time-clock.contracts';
 import { UpdateDevicePinDto } from '../contracts/devices.contracts';
+import { TIME_CLOCK_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
  * `@RequireDeviceRole` sits on the methods rather than the class: a terminal
@@ -26,7 +27,7 @@ export class TimeClockSettingsController {
   constructor(private readonly settingsService: TimeClockSettingsService) {}
 
   @Get()
-  @RequireDeviceRole('time_clock.terminal')
+  @RequireDeviceRole(...TIME_CLOCK_TABLET_ROLES)
   @RequirePermissions('time_tracking:report')
   get(@Param('orgId') orgId: string) {
     return this.settingsService.get(orgId);
@@ -44,7 +45,7 @@ export class TimeClockSettingsController {
    * and a PIN stored in the clear (Plan 14 D4) should not travel with it.
    */
   @Get('device-pin')
-  @RequireDeviceRole('time_clock.terminal')
+  @RequireDeviceRole(...TIME_CLOCK_TABLET_ROLES)
   @RequirePermissions('time_tracking:admin')
   getDevicePin(@Param('orgId') orgId: string) {
     return this.settingsService.getDevicePin(orgId);

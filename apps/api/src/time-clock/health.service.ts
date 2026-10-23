@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { displayName } from '../common/util/person';
 import { sweepAt } from './sweep.util';
 import type { TimeClockHealthResponse } from '../contracts/time-clock.contracts';
+import { TABLET_ROLE } from '../contracts/devices.contracts';
 
 /** How far back Health looks. A season's problems are found in days, not months. */
 const WINDOW_MS = 30 * 24 * 3600_000;
@@ -45,7 +46,14 @@ export class TimeClockHealthService {
         orderBy: { recordedAt: 'desc' },
       }),
       this.prisma.device.findMany({
-        where: { orgId, role: 'time_clock.terminal' },
+        // Terminals, and tablets running Time Clock or placed at a resort (Plan 56).
+        where: {
+          orgId,
+          OR: [
+            { role: 'time_clock.terminal' },
+            { role: TABLET_ROLE, OR: [{ appMode: 'time_clock' }, { resortId: { not: null } }] },
+          ],
+        },
         include: { resort: { select: { name: true } } },
         orderBy: { name: 'asc' },
       }),

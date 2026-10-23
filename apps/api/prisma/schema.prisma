@@ -106,6 +106,10 @@ model Organization {
   /// runs from here to the day before it next year, and is named by the years
   /// it spans. Never February 29: a season has to start every year.
   seasonCutover String @default("07-01") @db.VarChar(5)
+  /// The PIN that unlocks settings and the mode on every one of the org's
+  /// tablets (Plan 56 D5). Four digits; null leaves those screens unguarded.
+  /// Replaces the two module PINs, which it was seeded from.
+  tabletPin     String? @db.VarChar(4)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -361,6 +365,10 @@ model Device {
   /// (CFBundleVersion). Null until the device has said.
   appVersion        String?   @db.VarChar(32)
   appBuild          String?   @db.VarChar(32)
+  /// What a tablet last said it is doing (Plan 56 D4): `time_clock`, or
+  /// `ski_swap/<mode>`. Chosen on the iPad and only reported here, never set
+  /// from the web. Null until it has said.
+  appMode           String?   @db.VarChar(64)
 
   /// The composite unique on (orgId, skiSwapDeviceCode) used to double as the
   /// index MySQL requires behind the orgId foreign key. With the code gone,
@@ -725,10 +733,13 @@ model CheckinStation {
   /// It's what stops two live stations sharing a letter.
   liveCode String? @db.VarChar(1)
 
-  /// The staff tablet stationed at this counter. Its presence is what makes the
-  /// station staffed rather than self-service — a stored `kind` could contradict
-  /// the hardware attached to it, so the kind is derived instead.
+  /// The staff tablet stationed at this counter, chosen on Check-in from the
+  /// org's tablets. A tablet serves one station. Only a staffed station has one.
   attendantDeviceId String?   @unique
+  /// Whether staff work this counter (Plan 56 D6). Stored, because tablets are
+  /// provisioned apart from stations: a staffed station waiting for its tablet
+  /// is still staffed, and must not quietly become a self-service one.
+  staffed           Boolean   @default(false)
   /// The bridge that prints for this station. Re-bindable: hardware dies
   /// mid-swap, and queued jobs survive because they belong to the station, not
   /// the bridge. Required for self-service, where a seller has no other way to

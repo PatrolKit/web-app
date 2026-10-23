@@ -70,8 +70,14 @@ const selfBind = await patchStation(selfService.id, { bridgeDeviceId: bridge.id 
 ok('a self-service station is refused a shared bridge', selfBind.status === 409,
   `HTTP ${selfBind.status} ${JSON.stringify(await selfBind.json()).slice(0, 160)}`);
 
-const unstaff = await patchStation(stationB.id, { attendantDeviceId: null });
-ok('taking the iPad from a station that shares its bridge is refused', unstaff.status === 409, `HTTP ${unstaff.status}`);
+const unstaff = await patchStation(stationB.id, { kind: 'self_service' });
+ok('making a station that shares its bridge self-service is refused', unstaff.status === 409, `HTTP ${unstaff.status}`);
+
+// Plan 56 D6: releasing its iPad leaves it staffed, waiting for another.
+const released = await patchStation(stationB.id, { attendantDeviceId: null });
+const releasedBody = await unwrap(released);
+ok('...while releasing its iPad leaves it staffed, still sharing', released.status === 200 && releasedBody.kind === 'staffed' && releasedBody.bridgeDeviceId === bridge.id,
+  `HTTP ${released.status} ${releasedBody.kind}`);
 
 // ─── Two counters, one printer ───────────────────────────────────────────────
 const addItem = (stationId, priceCents) =>

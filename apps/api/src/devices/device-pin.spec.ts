@@ -6,6 +6,7 @@ import { SkiSwapSettingsService } from '../ski-swap/ski-swap-settings.service';
 import { SkiSwapSettingsController } from '../ski-swap/ski-swap-settings.controller';
 import { TimeClockSettingsService } from '../time-clock/time-clock-settings.service';
 import { TimeClockSettingsController } from '../time-clock/time-clock-settings.controller';
+import { TabletsController } from './tablets.controller';
 
 /**
  * The PIN that unlocks a device's settings screen.
@@ -47,41 +48,19 @@ describe('the PIN itself', () => {
 // ─── Reading and writing ──────────────────────────────────────────────────────
 
 /**
- * Enough Prisma for a settings row and the audit entry the write leaves.
- *
- * The rest of the row travels along because `TimeClockSettingsService.get` is
- * on the write path — it is what creates the row before the update lands — and
- * it renders the whole response.
+ * Enough Prisma for the org's tablet PIN and the audit entry the write leaves
+ * (Plan 56 D5). Both modules' PIN routes read and write that one value.
  */
-function stubPrisma(pin: string | null, exists = true) {
-  const rest = {
-    orgId: 'org-1',
-    autoCloseLocalTime: '03:00',
-    autoCloseAfterHours: 4,
-    updatedAt: new Date('2026-09-01T00:00:00Z'),
-  };
-  let current: (typeof rest & { devicePin: string | null }) | null = exists
-    ? { ...rest, devicePin: pin }
-    : null;
+function stubPrisma(pin: string | null) {
+  let current = pin;
   const audits: string[] = [];
   return {
     audits,
-    skiSwapSettings: {
-      findUnique: async () => current,
-      upsert: async ({ update }: { update: { devicePin: string | null } }) => {
-        current = { ...rest, ...(current ?? {}), devicePin: update.devicePin };
-        return current;
-      },
-    },
-    timeClockSettings: {
-      findUnique: async () => current,
-      create: async () => {
-        current = { ...rest, devicePin: null };
-        return current;
-      },
-      update: async ({ data }: { data: { devicePin: string | null } }) => {
-        current = { ...rest, ...(current ?? {}), devicePin: data.devicePin };
-        return current;
+    organization: {
+      findUnique: async () => ({ tabletPin: current }),
+      update: async ({ data }: { data: { tabletPin: string | null } }) => {
+        current = data.tabletPin;
+        return { tabletPin: current };
       },
     },
     auditLog: {
@@ -96,12 +75,15 @@ function stubPrisma(pin: string | null, exists = true) {
   };
 }
 
+const makeSkiSwap = (p: unknown) => new SkiSwapSettingsService(p as never, { smsEnabled: async () => false } as never);
+const makeTimeClock = (p: unknown) => new TimeClockSettingsService(p as never);
+
 describe.each([
-  ['ski swap', (p: unknown) => new SkiSwapSettingsService(p as never, { smsEnabled: async () => false } as never), 'ski_swap'],
-  ['time clock', (p: unknown) => new TimeClockSettingsService(p as never), 'time_clock'],
-])('%s settings', (_name, make, prefix) => {
+  ['ski swap', makeSkiSwap],
+  ['time clock', makeTimeClock],
+])('%s settings', (_name, make) => {
   it('reports null for an org that has never set one', async () => {
-    const svc = make(stubPrisma(null, false));
+    const svc = make(stubPrisma(null));
     await expect(svc.getDevicePin('org-1')).resolves.toEqual({ devicePin: null });
   });
 
@@ -124,10 +106,15 @@ describe.each([
     const svc = make(prisma);
     await svc.setDevicePin('org-1', '4021', 'user-1');
     await svc.setDevicePin('org-1', null, 'user-1');
-    expect(prisma.audits).toEqual([
-      `${prefix}.device_pin.updated`,
-      `${prefix}.device_pin.cleared`,
-    ]);
+    expect(prisma.audits).toEqual(['org.tablet_pin.updated', 'org.tablet_pin.cleared']);
+  });
+});
+
+describe('one PIN for every tablet', () => {
+  it('is the same answer from either module', async () => {
+    const prisma = stubPrisma(null);
+    await makeSkiSwap(prisma).setDevicePin('org-1', '4021', 'user-1');
+    await expect(makeTimeClock(prisma).getDevicePin('org-1')).resolves.toEqual({ devicePin: '4021' });
   });
 });
 
@@ -240,5 +227,38 @@ describe('the time-clock PIN route', () => {
     await expect(
       guardFor(controller, 'get', { device: { role: 'time_clock.terminal' } })(),
     ).resolves.toBe(true);
+  });
+});
+
+describe('a tablet (Plan 56)', () => {
+  it('reads either module’s PIN and settings', async () => {
+    for (const [controller, method] of [
+      [SkiSwapSettingsController.prototype, 'getDevicePin'],
+      [SkiSwapSettingsController.prototype, 'get'],
+      [TimeClockSettingsController.prototype, 'getDevicePin'],
+      [TimeClockSettingsController.prototype, 'get'],
+    ] as const) {
+      await expect(guardFor(controller, method, { device: { role: 'org.tablet' } })()).resolves.toBe(true);
+    }
+  });
+
+  it('writes neither', async () => {
+    await expect(guardFor(SkiSwapSettingsController.prototype, 'setDevicePin', { device: { role: 'org.tablet' } })()).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guardFor(TimeClockSettingsController.prototype, 'setDevicePin', { device: { role: 'org.tablet' } })()).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe('the Tablets page’s routes', () => {
+  const controller = TabletsController.prototype;
+
+  it('are for org administrators only', async () => {
+    for (const method of ['list', 'getPin', 'setPin']) {
+      await expect(guardFor(controller, method, { user: { userId: 'u1' } }, ['ski_swap:admin', 'time_tracking:admin'])()).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(guardFor(controller, method, { user: { userId: 'u1' } }, ['org:manage'])()).resolves.toBe(true);
+    }
+  });
+
+  it('refuse every device, a tablet included', async () => {
+    await expect(guardFor(controller, 'getPin', { device: { role: 'org.tablet' } })()).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

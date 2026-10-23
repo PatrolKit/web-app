@@ -9,7 +9,7 @@ import { PrintQueueService } from './print-queue.service';
  * ones, never a mix, and its claim prints for all of them.
  */
 
-type Station = { id: string; orgId: string; name: string; code: string; attendantDeviceId: string | null; bridgeDeviceId: string | null; deletedAt: Date | null };
+type Station = { id: string; orgId: string; name: string; code: string; staffed: boolean; attendantDeviceId: string | null; bridgeDeviceId: string | null; deletedAt: Date | null };
 type Device = { id: string; orgId: string; role: string };
 
 function stationHarness(stations: Station[], devices: Device[]) {
@@ -39,13 +39,17 @@ function stationHarness(stations: Station[], devices: Device[]) {
       },
     },
   };
-  return new StationService(prisma as never, {} as never);
+  const withTx = { ...prisma, $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma) };
+  return new StationService(withTx as never, {} as never);
 }
 
 const BRIDGE = { id: 'bridge-1', orgId: 'org-1', role: 'ski_swap.print_bridge' };
 const IPAD = (n: number) => ({ id: `ipad-${n}`, orgId: 'org-1', role: 'ski_swap.staff_check_in' });
 const station = (id: string, over: Partial<Station> = {}): Station => ({
-  id, orgId: 'org-1', name: `Station ${id}`, code: id, attendantDeviceId: null, bridgeDeviceId: null, deletedAt: null, ...over,
+  id, orgId: 'org-1', name: `Station ${id}`, code: id, attendantDeviceId: null, bridgeDeviceId: null, deletedAt: null,
+  // Plan 56 D6: the kind is stored. These fixtures are staffed when they have a tablet.
+  staffed: over.staffed ?? !!over.attendantDeviceId,
+  ...over,
 });
 
 describe('sharing a bridge', () => {
@@ -80,14 +84,23 @@ describe('sharing a bridge', () => {
     expect((err as Error).message).toMatch(/self-service station "Station A"/);
   });
 
-  it('refuses to take the tablet from a station that shares its bridge', async () => {
+  it('refuses to make a station that shares its bridge self-service', async () => {
     const stations = [
       station('A', { attendantDeviceId: 'ipad-1', bridgeDeviceId: 'bridge-1' }),
       station('B', { attendantDeviceId: 'ipad-2', bridgeDeviceId: 'bridge-1' }),
     ];
-    await expect(stationHarness(stations, [BRIDGE, IPAD(1), IPAD(2)]).update('org-1', 'B', { attendantDeviceId: null }))
+    await expect(stationHarness(stations, [BRIDGE, IPAD(1), IPAD(2)]).update('org-1', 'B', { kind: 'self_service' }))
       .rejects.toBeInstanceOf(ConflictException);
     expect(stations[1].attendantDeviceId).toBe('ipad-2');
+  });
+
+  it('lets a station that shares its bridge wait for a tablet: it stays staffed (Plan 56 D6)', async () => {
+    const stations = [
+      station('A', { attendantDeviceId: 'ipad-1', bridgeDeviceId: 'bridge-1' }),
+      station('B', { attendantDeviceId: 'ipad-2', bridgeDeviceId: 'bridge-1' }),
+    ];
+    await stationHarness(stations, [BRIDGE, IPAD(1), IPAD(2)]).update('org-1', 'B', { attendantDeviceId: null });
+    expect([stations[1].staffed, stations[1].attendantDeviceId, stations[1].bridgeDeviceId]).toEqual([true, null, 'bridge-1']);
   });
 
   it('lets a station with a bridge of its own lose its tablet', async () => {

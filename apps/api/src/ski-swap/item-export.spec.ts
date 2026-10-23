@@ -100,7 +100,7 @@ describe('the export routes', () => {
     expect(roles('emailItems')).toEqual([]);
     expect(roles('exportItems')).toEqual([]);
     expect(route('emailRemaining')).toEqual([RequestMethod.POST, ['ski_swap:manage']]);
-    expect(roles('emailRemaining')).toEqual(['ski_swap.staff_check_in']);
+    expect(roles('emailRemaining')).toEqual(['ski_swap.staff_check_in', 'org.tablet']);
   });
 });
 

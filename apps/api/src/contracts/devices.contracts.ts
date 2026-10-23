@@ -23,8 +23,28 @@ export const DeviceRoleSchema = z.enum([
   /// what software to run by `GET /devices/me/bootstrap` rather than by having
   /// an image built for it.
   'signage.display',
+  /// An iPad the org owns, which runs Ski Swap or Time Clock as set on the
+  /// iPad itself (Plan 56). It replaces the two single-module iPad roles above,
+  /// which stay accepted until every iPad has been converted.
+  'org.tablet',
 ]);
 export type DeviceRole = z.infer<typeof DeviceRoleSchema>;
+
+/** The role every new iPad is provisioned with (Plan 56 D1). */
+export const TABLET_ROLE = 'org.tablet' as const satisfies DeviceRole;
+
+/**
+ * Who may call an iPad route of each module: the module's own legacy iPad,
+ * and a tablet. Named once, so a route can't accept one and forget the other.
+ */
+export const SKI_SWAP_TABLET_ROLES = ['ski_swap.staff_check_in', TABLET_ROLE] as const satisfies readonly DeviceRole[];
+export const TIME_CLOCK_TABLET_ROLES = ['time_clock.terminal', TABLET_ROLE] as const satisfies readonly DeviceRole[];
+
+/** Every role an iPad may hold, legacy or not. */
+export const IPAD_ROLES: readonly DeviceRole[] = ['ski_swap.staff_check_in', 'time_clock.terminal', TABLET_ROLE];
+export function isIpadRole(role: string): boolean {
+  return (IPAD_ROLES as readonly string[]).includes(role);
+}
 
 /** The module a device belongs to, without matching on prose. */
 export function moduleOfRole(role: DeviceRole): string {
@@ -118,6 +138,10 @@ export const DeviceListItemSchema = z.object({
    * are different claims, and this page is the only place either is visible.
    */
   hardwareId: z.string().nullable(),
+  /** What a tablet last said it is doing (Plan 56 D4), and the app it runs. Null until said. */
+  appMode: z.string().nullable(),
+  appVersion: z.string().nullable(),
+  appBuild: z.string().nullable(),
   imageName: z.string().nullable(),
   imageVersion: z.string().nullable(),
   installedPackages: z.string().nullable(),
@@ -208,6 +232,13 @@ export const DeviceMeResponseSchema = z.object({
     .nullable(),
   sellerSiteUrl: z.string(),
   orgLogoUrl: z.string().nullable().optional(),
+  /**
+   * The modules this org has on that a tablet can run (Plan 56 D3):
+   * `ski_swap`, `time_tracking`. The iPad offers only these as its mode.
+   */
+  modules: z.array(z.string()),
+  /** The org's tablet PIN (Plan 56 D5); null leaves settings unguarded. */
+  tabletPin: z.string().nullable(),
 });
 
 /** A terminal moved between lodges, rebinding itself. */
@@ -221,6 +252,9 @@ export const RebindDeviceSchema = z.object({ resortId: z.string().min(1) }).stri
  * itself.
  */
 export const BindResortSchema = z.object({ resortId: z.string().min(1).nullable() }).strict();
+
+/** Renaming a device: what people call the iPad, written on its case. */
+export const RenameDeviceSchema = z.object({ name: z.string().trim().min(1).max(100) }).strict();
 
 // ─── Device PIN ───────────────────────────────────────────────────────────────
 
@@ -260,6 +294,7 @@ export const UpdateDevicePinSchema = z
 export class ProvisionDeviceDto extends createZodDto(ProvisionDeviceSchema) {}
 export class RebindDeviceDto extends createZodDto(RebindDeviceSchema) {}
 export class BindResortDto extends createZodDto(BindResortSchema) {}
+export class RenameDeviceDto extends createZodDto(RenameDeviceSchema) {}
 export class UpdateDevicePinDto extends createZodDto(UpdateDevicePinSchema) {}
 
 // ─── Types ───────────────────────────────────────────────────────────────────

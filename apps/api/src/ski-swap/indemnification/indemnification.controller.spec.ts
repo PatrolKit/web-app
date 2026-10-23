@@ -20,7 +20,7 @@ describe('the bindings lookup routes', () => {
   });
 
   it('admit a check-in iPad, and no other device', () => {
-    expect(reflector.get(DEVICE_ROLES_KEY, IndemnificationController)).toEqual(['ski_swap.staff_check_in']);
+    expect(reflector.get(DEVICE_ROLES_KEY, IndemnificationController)).toEqual(['ski_swap.staff_check_in', 'org.tablet']);
   });
 
   it('check both, through the guards that read them', () => {

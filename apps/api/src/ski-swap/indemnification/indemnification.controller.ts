@@ -9,6 +9,7 @@ import { RequireDeviceRole } from '../../common/decorators/require-device-role.d
 import { IndemnificationLookupService } from './indemnification-lookup.service';
 import { LookupSearchQueryDto } from '../../contracts/indemnification.contracts';
 import { IndemnificationAccessGuard } from './indemnification-access';
+import { SKI_SWAP_TABLET_ROLES } from '../../contracts/devices.contracts';
 
 /**
  * The lookup, for the patrol's staff and its check-in iPads (Plan 44 D10).
@@ -24,7 +25,7 @@ import { IndemnificationAccessGuard } from './indemnification-access';
  */
 @Controller('orgs/:orgId/ski-swap/bindings/indemnification')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard, IndemnificationAccessGuard)
-@RequireDeviceRole('ski_swap.staff_check_in')
+@RequireDeviceRole(...SKI_SWAP_TABLET_ROLES)
 @RequirePermissions('ski_swap:report')
 @RequireModule('ski_swap')
 export class IndemnificationController {

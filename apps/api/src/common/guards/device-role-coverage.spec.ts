@@ -63,4 +63,12 @@ describe('device role coverage', () => {
 
     expect(stale).toEqual([]);
   });
+
+  it('no route names an iPad role on its own, so a tablet is never left out (Plan 56)', () => {
+    const literal = files
+      .filter((f) => /@RequireDeviceRole\([^)]*'(ski_swap\.staff_check_in|time_clock\.terminal|org\.tablet)'/.test(f.src))
+      .map((f) => f.file);
+
+    expect(literal).toEqual([]);
+  });
 });
