@@ -23,14 +23,17 @@ export default function MoneyCard({ money }: { money: Money }) {
       </Equation>
       <Equation label="Outgoing" tone="text-red-400" result={o.totalCents}
         note={o.donatedCents > 0 ? `Not counting ${usd(o.donatedCents)} sold by sellers who donated it to the patrol.` : undefined}>
-        <span className="text-gray-500">(</span>
+        <Op>(</Op>
         <Term cents={o.itemsCents} what="items sold" />
         <Term op="+" cents={o.compsCents} what="comped" />
-        <span className="text-gray-500">)</span>
-        <span className="text-gray-400">× (1 − {percentText(o.takeBps / 10_000)} patrol’s take)</span>
+        <Op>)</Op>
+        <Together>
+          <Op>×</Op>
+          <Stacked top={`(1 − ${percentText(o.takeBps / 10_000)})`} label="patrol’s take" />
+        </Together>
       </Equation>
       <Equation label="Profit" tone={profitTone} result={money.profitCents}
-        suffix={money.profitShare !== null ? `${percentText(money.profitShare)} of incoming` : undefined}>
+        resultLabel={money.profitShare !== null ? `${percentText(money.profitShare)} of incoming` : undefined}>
         <Term cents={i.totalCents} what="incoming" />
         <Term op="−" cents={o.totalCents} what="outgoing" />
       </Equation>
@@ -38,26 +41,51 @@ export default function MoneyCard({ money }: { money: Money }) {
   );
 }
 
-function Equation({ label, tone, result, suffix, note, children }: {
-  label: string; tone: string; result: number; suffix?: string; note?: string; children: ReactNode;
+function Equation({ label, tone, result, resultLabel, note, children }: {
+  label: string; tone: string; result: number; resultLabel?: string; note?: string; children: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-      <span className="w-20 shrink-0 text-gray-400">{label}</span>
-      <span className="flex flex-wrap items-baseline gap-x-1.5 min-w-0 flex-1">{children}</span>
-      <span className="text-gray-500">=</span>
-      <span className={`font-semibold tabular-nums ${tone}`}>{usd(result)}</span>
-      {suffix && <span className="text-xs text-gray-400">({suffix})</span>}
-      {note && <p className="basis-full pl-20 text-xs text-gray-500">{note}</p>}
+    <div className="flex items-start gap-x-3">
+      <span className="w-20 shrink-0 text-gray-400 leading-tight">{label}</span>
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-start gap-x-2 gap-y-1.5">
+          {children}
+          <Together>
+            <Op>=</Op>
+            <Stacked top={<span className={`font-semibold ${tone}`}>{usd(result)}</span>} label={resultLabel} />
+          </Together>
+        </div>
+        {note && <p className="text-xs text-gray-500">{note}</p>}
+      </div>
     </div>
   );
 }
 
-function Term({ op, cents, what }: { op?: '+' | '−'; cents: number; what: string }) {
+/** A figure, with what it is in small type underneath. */
+function Stacked({ top, label }: { top: ReactNode; label?: string }) {
   return (
-    <span className="whitespace-nowrap">
-      {op && <span className="text-gray-500 mr-1.5">{op}</span>}
-      <span className="text-white tabular-nums">{usd(cents)}</span> <span className="text-gray-500 text-xs">{what}</span>
+    <span className="inline-flex flex-col items-center leading-tight">
+      <span className="text-white tabular-nums whitespace-nowrap">{top}</span>
+      {label && <span className="text-[11px] text-gray-500 whitespace-nowrap">{label}</span>}
     </span>
   );
+}
+
+/** A figure and the operator before it, kept on one line when the equation wraps. */
+function Term({ op, cents, what }: { op?: '+' | '−'; cents: number; what: string }) {
+  return (
+    <Together>
+      {op && <Op>{op}</Op>}
+      <Stacked top={usd(cents)} label={what} />
+    </Together>
+  );
+}
+
+function Together({ children }: { children: ReactNode }) {
+  return <span className="inline-flex items-start gap-x-2">{children}</span>;
+}
+
+/** An operator or bracket, on the figures' line. */
+function Op({ children }: { children: ReactNode }) {
+  return <span className="text-gray-500 leading-tight">{children}</span>;
 }
