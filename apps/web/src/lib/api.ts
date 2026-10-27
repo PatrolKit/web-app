@@ -888,6 +888,15 @@ export const api = {
       }),
     deleteSeller: (orgId: string, sellerId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, { method: 'DELETE' }),
+    /** What merging `otherId` into `keepId` would do (Plan 57). Nothing changes. */
+    mergeSellersPreview: (orgId: string, keepId: string, otherId: string) =>
+      request<import('@patrolkit/contracts/seller-merge.contracts').SellerMergePreviewResponse>(
+        `/orgs/${orgId}/ski-swap/sellers/${keepId}/merge-preview?other=${encodeURIComponent(otherId)}`,
+      ),
+    mergeSellers: (orgId: string, keepId: string, body: import('@patrolkit/contracts/seller-merge.contracts').MergeSellersRequest) =>
+      request<import('@patrolkit/contracts/seller-merge.contracts').SellerMergeResult>(`/orgs/${orgId}/ski-swap/sellers/${keepId}/merge`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
 
     // Issued tickets (Plan 38): a block becomes its tickets, on sale at once.
     ticketSummary: (orgId: string, sellerId: string, swapId: string) =>

@@ -16,6 +16,7 @@ import { payoutGaps } from '@patrolkit/contracts/payout-gaps';
 import { payoutKeyOf, sellerMatches, sortSellers, type SellerFilters, type SellerPayoutKey, type SellerSortKey } from '@patrolkit/contracts/seller-filter';
 import { useAuth } from '../../contexts/AuthContext';
 import SellersExport from './SellersExport';
+import MergeSellersModal from './MergeSellersModal';
 
 interface SellerForm {
   /** Drives the form only — a business seller is one whose businessName is set. */
@@ -128,6 +129,8 @@ export default function SellersPage() {
   const [ticketSeller, setTicketSeller] = useState<SellerResponse | null>(null);
   /** This seller picking up their unsold items (Plan 43): the pickup screen, locked to them. */
   const [pickupSeller, setPickupSeller] = useState<SellerResponse | null>(null);
+  /** Merging this seller with another (Plan 57), opened from their Edit dialog. */
+  const [mergeSeller, setMergeSeller] = useState<SellerResponse | null>(null);
   const [form, setForm] = useState<SellerForm>(emptyForm);
   const [sortKey, setSortKey] = useState<SellerSortKey>('displayName');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -735,10 +738,16 @@ export default function SellersPage() {
                 </button>
                 <button type="button" onClick={closeForm}
                   className="text-gray-400 hover:text-white text-sm px-3 py-2">Cancel</button>
+{editSeller && perms.has('ski_swap:admin') && (
+                  <button type="button"
+                    onClick={() => { const s = editSeller; closeForm(); setMergeSeller(s); }}
+                    title="For two records that are one seller"
+                    className="text-xs text-brand-500 hover:underline ml-auto">Merge…</button>
+                )}
 {editSeller && editSeller.businessName === null && (
                   <button type="button"
                     onClick={() => { if (confirm(`Remove "${editSeller.displayName}"?`)) { deleteMutation.mutate(editSeller.id); closeForm(); } }}
-                    className="text-xs text-red-500 hover:underline ml-auto">Delete</button>
+                    className={`text-xs text-red-500 hover:underline ${perms.has('ski_swap:admin') ? '' : 'ml-auto'}`}>Delete</button>
                 )}
               </div>
             )}
@@ -750,6 +759,16 @@ export default function SellersPage() {
             )}
           </form>
         </div>
+      )}
+
+      {mergeSeller && (
+        <MergeSellersModal
+          orgId={orgId}
+          start={mergeSeller}
+          onClose={() => setMergeSeller(null)}
+          // The kept seller's Edit dialog opens once the list has them again.
+          onMerged={(keptId) => { setMergeSeller(null); setSearchParams((p) => { p.set('edit', keptId); return p; }, { replace: true }); }}
+        />
       )}
 
       {deleteError && (
