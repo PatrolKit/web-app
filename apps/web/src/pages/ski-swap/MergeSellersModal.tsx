@@ -60,17 +60,26 @@ export default function MergeSellersModal({
       .slice(0, 8);
   }, [query, sellers, start.id]);
 
-  const pair = otherId ? (keepId === otherId ? { keep: otherId, other: start.id } : { keep: start.id, other: otherId }) : null;
-  const { data: preview, isFetching, error } = useQuery({
-    queryKey: ['ski-swap/seller-merge', orgId, pair?.keep, pair?.other],
-    queryFn: () => api.skiSwap.mergeSellersPreview(orgId, pair!.keep, pair!.other),
-    enabled: !!pair,
+  // Both directions are loaded together, so choosing which one stays is instant.
+  const previewOf = (keep: string | null, other: string | null) => ({
+    queryKey: ['ski-swap/seller-merge', orgId, keep, other],
+    queryFn: () => api.skiSwap.mergeSellersPreview(orgId, keep!, other!),
+    enabled: !!otherId,
   });
+  const keepingStart = useQuery(previewOf(start.id, otherId));
+  const keepingOther = useQuery(previewOf(otherId, start.id));
+  const shown = keepId === otherId ? keepingOther : keepingStart;
+  const preview = keepId ? shown.data : undefined;
+  const isFetching = keepingStart.isFetching || keepingOther.isFetching;
+  const error = shown.error;
+
+  const inCardOrder = <T,>(keep: T, other: T): T[] => (preview?.keep.sellerId === start.id ? [keep, other] : [other, keep]);
 
   // The first preview says which looks like the one to keep; after that it's the admin's call.
+  const suggestedKeepId = (keepingStart.data ?? keepingOther.data)?.suggestedKeepId;
   useEffect(() => {
-    if (preview && keepId === null) setKeepId(preview.suggestedKeepId);
-  }, [preview, keepId]);
+    if (suggestedKeepId && keepId === null) setKeepId(suggestedKeepId);
+  }, [suggestedKeepId, keepId]);
 
   // Sensible starting choices for whichever pair is shown: an address or payout the kept seller lacks.
   useEffect(() => {
@@ -157,38 +166,39 @@ export default function MergeSellersModal({
               <section className="space-y-2">
                 <h4 className="text-sm text-gray-300">Which one stays?</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[preview.keep, preview.other].map((side) => (
+                  {/* The seller this was opened from is always on the left; only "Stays" moves. */}
+                  {inCardOrder(preview.keep, preview.other).map((side) => (
                     <SideCard
                       key={side.sellerId}
                       side={side}
                       kept={side.sellerId === preview.keep.sellerId}
                       suggested={side.sellerId === preview.suggestedKeepId}
-                      onKeep={() => { setKeepId(side.sellerId === start.id ? start.id : otherId); merge.reset(); }}
+                      onKeep={() => { setKeepId(side.sellerId); merge.reset(); }}
                     />
                   ))}
                 </div>
               </section>
 
-              {/* 3. What carries over */}
+              {/* 3. What carries over, each option in the same order as the cards */}
               <section className="space-y-3">
                 <h4 className="text-sm text-gray-300">What {namesOf(preview).keep} keeps</h4>
                 <Choice
                   label="Address"
                   value={choices.address}
                   onChange={(v) => setChoices({ ...choices, address: v as SellerMergeChoices['address'] })}
-                  options={[
+                  options={inCardOrder(
                     { value: 'keep', label: preview.choices.address.keep ?? 'No address' },
                     { value: 'other', label: preview.choices.address.other ?? 'No address', disabled: !preview.choices.address.offered },
-                  ]}
+                  )}
                 />
                 <Choice
                   label="Payout"
                   value={choices.payout}
                   onChange={(v) => setChoices({ ...choices, payout: v as SellerMergeChoices['payout'] })}
-                  options={[
+                  options={inCardOrder(
                     { value: 'keep', label: preview.choices.payout.keep ?? 'Not set' },
                     { value: 'other', label: preview.choices.payout.other ?? 'Not set', disabled: !preview.choices.payout.offered, why: preview.choices.payout.why },
-                  ]}
+                  )}
                 />
                 {(preview.choices.businessName.keep || preview.choices.businessName.other) && (
                   <Choice
@@ -196,9 +206,14 @@ export default function MergeSellersModal({
                     value={choices.businessName}
                     onChange={(v) => setChoices({ ...choices, businessName: v as SellerMergeChoices['businessName'] })}
                     options={[
-                      { value: 'keep', label: preview.choices.businessName.keep ?? 'None (a person)' },
-                      ...(preview.choices.businessName.other ? [{ value: 'other', label: preview.choices.businessName.other }] : []),
-                      ...(preview.choices.businessName.keep ? [{ value: 'none', label: 'None (a person)' }] : []),
+                      // A side without a business name stands for "none".
+                      ...inCardOrder(
+                        { value: 'keep', label: preview.choices.businessName.keep ?? 'None (a person)' },
+                        preview.choices.businessName.other
+                          ? { value: 'other', label: preview.choices.businessName.other }
+                          : { value: 'none', label: 'None (a person)' },
+                      ),
+                      ...(preview.choices.businessName.keep && preview.choices.businessName.other ? [{ value: 'none', label: 'None (a person)' }] : []),
                     ]}
                   />
                 )}
