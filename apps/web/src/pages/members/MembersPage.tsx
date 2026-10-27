@@ -156,12 +156,12 @@ export default function MembersPage() {
         <table className="w-full text-sm">
           <thead><tr className="text-left text-gray-500 border-b border-gray-800">
             <th className="py-2 pr-4">Name</th><th className="py-2 pr-4">NSP ID</th><th className="py-2 pr-4">Contact</th>
-            <th className="py-2 pr-4">Status</th><th className="py-2 pr-4">Invited</th><th className="py-2 pr-4">Last active</th><th className="py-2 pr-4">Permissions</th>
+            <th className="py-2 pr-4">Invited</th><th className="py-2 pr-4">Last active</th><th className="py-2 pr-4">Permissions</th>
             {(perms.has('users:manage') || perms.has('permissions:assign') || perms.has('users:invite')) && <th className="py-2">Actions</th>}
           </tr></thead>
           <tbody>
           {shown.length === 0 && (
-            <tr><td colSpan={8} className="py-4 text-gray-500">
+            <tr><td colSpan={7} className="py-4 text-gray-500">
               {search.trim() ? `No members match “${search.trim()}”.` : 'No members yet.'}
             </td></tr>
           )}
@@ -178,18 +178,6 @@ export default function MembersPage() {
                 <td className="py-2 pr-4 text-gray-400">
                   {m.email ?? (!m.phone && <span className="text-gray-600">None</span>)}
                   {m.phone && <div className="text-xs text-gray-500">{m.phone}</div>}
-                </td>
-                <td className="py-2 pr-4 whitespace-nowrap">
-                  {m.inactive ? (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400">Inactive</span>
-                  ) : m.onShift ? (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-900 text-green-400">On shift</span>
-                  ) : !m.canClockIn ? (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-900/60 text-amber-300"
-                      title="No NSP ID or PIN: they choose a PIN on My account after signing in">Can't clock in</span>
-                  ) : (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-500">Active</span>
-                  )}
                 </td>
                 <td className="py-2 pr-4 text-xs whitespace-nowrap">
                   {m.inviteSentAt
@@ -234,7 +222,7 @@ export default function MembersPage() {
               </tr>
               {editingPermsFor === m.userId && (
                 <tr className="border-b border-gray-800 bg-surface-50">
-                  <td colSpan={8} className="px-4 py-3">
+                  <td colSpan={7} className="px-4 py-3">
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1.5 mb-3">
                       {allPerms.map((p) => (
                         <label key={p.key} className="flex items-center gap-2 text-xs cursor-pointer">
