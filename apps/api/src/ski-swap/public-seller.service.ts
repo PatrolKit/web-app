@@ -16,8 +16,10 @@ export class PublicSellerService {
   ) {}
 
   async getById(sellerId: string): Promise<PublicSellerDetailResponse> {
+    // A link sent before a merge shows the seller everything moved to (Plan 57).
+    const merged = await this.prisma.sellerProfile.findUnique({ where: { id: sellerId }, select: { mergedIntoId: true } });
     const profile = await this.prisma.sellerProfile.findUnique({
-      where: { id: sellerId },
+      where: { id: merged?.mergedIntoId ?? sellerId },
       include: { membership: { include: { user: true, org: true } } },
     });
     if (!profile || profile.deletedAt || profile.membership.deletedAt) {

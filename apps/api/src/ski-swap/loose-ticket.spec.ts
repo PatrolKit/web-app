@@ -43,6 +43,8 @@ function harness(
   const prisma = {
 
     swapComp: { findMany: async () => [] },
+    // No seller here has been merged into another (Plan 57).
+    sellerProfile: { findFirst: async () => null },
     skiSwap: { findFirst: async () => SWAP },
     checkinStation: { findFirst: async () => STATION },
     swapItem: {

@@ -13,6 +13,7 @@ import { receiptEmail, receiptSms } from './receipt-templates';
 import { emailHint, RECEIPT_SIGN_IN_SELECT, receiptLayout, receiptSignInEmail, RECEIPTS_OFF, type ReceiptLayout } from './receipt-layout';
 import { LIMITS } from '../common/limits/limits';
 import { LimitUsageService } from '../common/limits/limit-usage.service';
+import { followMerge } from './seller-merge.util';
 
 /** What a seller's receipt is worth putting in front of them. */
 export interface ReceiptView {
@@ -186,6 +187,8 @@ export class ReceiptService {
     stationId?: string | null,
   ): Promise<Receipt> {
     await this.assertReceiptsOn(orgId, swapId);
+    // A merged seller's receipt is the kept seller's (Plan 57).
+    sellerId = await followMerge(this.prisma, orgId, sellerId);
     const latest = await this.prisma.receipt.findFirst({
       where: { orgId, swapId, sellerId },
       orderBy: { createdAt: 'desc' },
@@ -239,7 +242,8 @@ export class ReceiptService {
      */
     limitPerDestination?: boolean;
   }): Promise<SendResult> {
-    const { orgId, swapId, sellerId } = params;
+    const { orgId, swapId } = params;
+    const sellerId = await followMerge(this.prisma, orgId, params.sellerId);
 
     /*
      * The one write here that is not idempotent by nature.
@@ -378,6 +382,7 @@ export class ReceiptService {
     stationId?: string | null,
   ): Promise<ReceiptView> {
     await this.assertReceiptsOn(orgId, swapId);
+    sellerId = await followMerge(this.prisma, orgId, sellerId);
     const existing = await this.prisma.receipt.findFirst({
       where: { orgId, swapId, sellerId },
       orderBy: { createdAt: 'desc' },
@@ -421,6 +426,7 @@ export class ReceiptService {
 
   /** A seller's receipts, newest first, with what happened to each. */
   async listForSeller(orgId: string, swapId: string, sellerId: string) {
+    sellerId = await followMerge(this.prisma, orgId, sellerId);
     const receipts = await this.prisma.receipt.findMany({
       where: { orgId, swapId, sellerId },
       orderBy: { createdAt: 'desc' },

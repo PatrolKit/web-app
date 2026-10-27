@@ -56,6 +56,7 @@ export type PosSyncResult = 'synced' | 'skipped' | 'failed';
 
 export { encodeCursor, decodeCursor } from '../common/util/cursor';
 import { encodeCursor } from '../common/util/cursor';
+import { followMerge } from './seller-merge.util';
 
 /** A collision on `@@unique([swapId, sku])` — one number, two items. */
 function isDuplicateSku(err: unknown): boolean {
@@ -536,6 +537,8 @@ export class ItemService {
     }
 
     const swap = await this.findSwapOrThrow(orgId, swapId);
+    // A merged seller's items go to the one it was merged into (Plan 57).
+    if (data.sellerId) data = { ...data, sellerId: await followMerge(this.prisma, orgId, data.sellerId) };
     if (data.sellerId) await this.sellerService.findOrThrow(orgId, data.sellerId);
 
     let sku: string;
@@ -696,6 +699,7 @@ export class ItemService {
     if (!existing) throw new NotFoundException('Item not found');
     // Said before anything is redescribed; the write below checks again.
     if (data.ifUnpriced && existing.priceCents !== null) throw ticketPriced(existing.sku, existing.priceCents);
+    if (data.sellerId) data = { ...data, sellerId: await followMerge(this.prisma, orgId, data.sellerId) };
     if (data.sellerId) await this.sellerService.findOrThrow(orgId, data.sellerId);
 
     /**
@@ -979,6 +983,7 @@ export class ItemService {
     if (!swap.allowLegacyWeb && !opts.generateSkus) {
       throw new BadRequestException('This swap doesn’t take legacy tickets on the web.');
     }
+    sellerId = await followMerge(this.prisma, orgId, sellerId);
     await this.sellerService.findOrThrow(orgId, sellerId);
     // Staff uploaded it, so the goods are already accounted for.
     return this.importItems(orgId, swapId, sellerId, file.rows, {

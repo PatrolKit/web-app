@@ -525,6 +525,12 @@ model SellerProfile {
   businessName String?
 
   deletedAt DateTime?
+  /// The seller this one was merged into (Plan 57), when it was, and by whom.
+  /// A merged seller is also `deletedAt`. Writes naming it go to the kept one,
+  /// so an iPad's offline queue and old receipt links still land.
+  mergedIntoId String?
+  mergedAt     DateTime?
+  mergedBy     String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -533,6 +539,8 @@ model SellerProfile {
   assignedPrinters SwapPrinter[]
   receipts         Receipt[]
   payoutLines      PayoutLine[]
+
+  @@index([mergedIntoId])
 }
 
 model SwapItem {

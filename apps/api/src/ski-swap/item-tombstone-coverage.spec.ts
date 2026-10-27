@@ -27,6 +27,14 @@ describe('item tombstone coverage', () => {
    * widen the exemption to a new call added next to it.
    */
   const EXEMPT: Record<string, { count: number; because: string }> = {
+    'ski-swap/seller-merge.service.ts': {
+      count: 2,
+      because:
+        'Merging sellers (Plan 57) moves every item the retired seller holds, ' +
+        'deleted ones too: a deleted item that sold is still that seller\'s ' +
+        'sale, and left behind it would be paid to nobody. One count for the ' +
+        'preview, one read inside the move.',
+    },
     'ski-swap/comps/live-comps.ts': {
       count: 1,
       because:

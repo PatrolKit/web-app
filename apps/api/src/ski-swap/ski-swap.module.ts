@@ -11,6 +11,7 @@ import { SquareConfigController } from './square-config.controller';
 import { SwapService } from './swap.service';
 import { SwapController } from './swap.controller';
 import { SellerService } from './seller.service';
+import { SellerMergeService } from './seller-merge.service';
 import { SellerController } from './seller.controller';
 import { ItemService } from './item.service';
 import { ItemCategorizeService } from './item-categorize.service';
@@ -132,6 +133,7 @@ import { IndemnificationImportService } from './indemnification/indemnification-
     IndemnificationAdminController,
   ],
   providers: [
+    SellerMergeService,
     ReceiptService,
     IdempotencyService,
     SkuService,

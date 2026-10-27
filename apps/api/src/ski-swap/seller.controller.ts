@@ -38,6 +38,8 @@ import { NoDeviceAccess } from '../common/decorators/require-device-role.decorat
 import type { SellerFilters } from '../contracts/seller-filter';
 import { IssuedTicketService } from './issued-ticket.service';
 import { SKI_SWAP_TABLET_ROLES } from '../contracts/devices.contracts';
+import { SellerMergeService } from './seller-merge.service';
+import { MergeSellersDto } from '../contracts/seller-merge.contracts';
 
 @Controller('orgs/:orgId/ski-swap/sellers')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
@@ -50,6 +52,7 @@ export class SellerController {
     private readonly sms: SmsService,
     private readonly issued: IssuedTicketService,
     private readonly exports: SellerExportService,
+    private readonly merges: SellerMergeService,
   ) {}
 
   // ─── Legacy tickets (Plan 38) ──────────────────────────────────────────────
@@ -144,6 +147,31 @@ export class SellerController {
   @RequirePermissions('ski_swap:report')
   get(@Param('orgId') orgId: string, @Param('sellerId') sellerId: string) {
     return this.sellerService.get(orgId, sellerId);
+  }
+
+  // ─── Merging (Plan 57) ─────────────────────────────────────────────────────
+
+  /** What merging `other` into this seller would do, before anything changes (D7). */
+  @Get(':sellerId/merge-preview')
+  @NoDeviceAccess()
+  @RequirePermissions('ski_swap:admin')
+  mergePreview(@Param('orgId') orgId: string, @Param('sellerId') sellerId: string, @Query('other') other: string) {
+    if (!other) throw new BadRequestException('Say which seller to merge in: ?other=');
+    return this.merges.preview(orgId, sellerId, other);
+  }
+
+  /** Merges another seller into this one: theirs moves here, and they're retired. */
+  @Post(':sellerId/merge')
+  @HttpCode(200)
+  @NoDeviceAccess()
+  @RequirePermissions('ski_swap:admin')
+  merge(
+    @Param('orgId') orgId: string,
+    @Param('sellerId') sellerId: string,
+    @Body() body: MergeSellersDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.merges.merge(orgId, sellerId, body.otherSellerId, body.choices, body.expected, user.userId);
   }
 
   @Patch(':sellerId')
