@@ -131,6 +131,8 @@ export default function SellersPage() {
   const [pickupSeller, setPickupSeller] = useState<SellerResponse | null>(null);
   /** Merging this seller with another (Plan 57), opened from their Edit dialog. */
   const [mergeSeller, setMergeSeller] = useState<SellerResponse | null>(null);
+  /** What the last merge did, shown above the list until dismissed. */
+  const [mergedNotice, setMergedNotice] = useState<string | null>(null);
   const [form, setForm] = useState<SellerForm>(emptyForm);
   const [sortKey, setSortKey] = useState<SellerSortKey>('displayName');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -766,9 +768,16 @@ export default function SellersPage() {
           orgId={orgId}
           start={mergeSeller}
           onClose={() => setMergeSeller(null)}
-          // The kept seller's Edit dialog opens once the list has them again.
-          onMerged={(keptId) => { setMergeSeller(null); setSearchParams((p) => { p.set('edit', keptId); return p; }, { replace: true }); }}
+          // Done: back to the list, which says what happened.
+          onMerged={(summary) => { setMergeSeller(null); setMergedNotice(summary); }}
         />
+      )}
+
+      {mergedNotice && (
+        <div className="flex items-start gap-3 text-sm text-green-300 bg-green-900/20 border border-green-800 rounded px-3 py-2">
+          <span className="flex-1">{mergedNotice}</span>
+          <button type="button" onClick={() => setMergedNotice(null)} aria-label="Dismiss" className="text-green-500 hover:text-white leading-none">✕</button>
+        </div>
       )}
 
       {deleteError && (

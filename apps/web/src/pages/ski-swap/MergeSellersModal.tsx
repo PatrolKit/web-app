@@ -34,8 +34,8 @@ export default function MergeSellersModal({
   /** The seller whose Edit dialog this was opened from. */
   start: SellerResponse;
   onClose: () => void;
-  /** The kept seller's id, once merged. */
-  onMerged: (keptSellerId: string) => void;
+  /** Once merged: what happened, in a sentence for the Sellers page. */
+  onMerged: (summary: string) => void;
 }) {
   const qc = useQueryClient();
   const [query, setQuery] = useState('');
@@ -94,10 +94,11 @@ export default function MergeSellersModal({
   const merge = useMutation({
     mutationFn: (p: SellerMergePreviewResponse) =>
       api.skiSwap.mergeSellers(orgId, p.keep.sellerId, { otherSellerId: p.other.sellerId, choices, expected: p.expected }),
-    onSuccess: async (result) => {
-      // Waited for, so the kept seller opens with what they hold now, not the list from before.
+    onSuccess: async (_result, p) => {
+      // Waited for, so the list shows the merge as soon as the dialogs close.
       await qc.invalidateQueries({ queryKey: ['ski-swap/sellers', orgId] });
-      onMerged(result.keptSellerId);
+      const name = namesOf(p);
+      onMerged(`Merged ${name.other} into ${name.keep}: ${movesText(p)} moved.`);
     },
   });
 

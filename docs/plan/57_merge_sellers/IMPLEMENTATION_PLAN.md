@@ -65,7 +65,7 @@ Each phase ships alone.
   3. **What carries over.** D3's three choices, each showing both values.
   4. **What happens.** The preview's counts in plain words ("60 items, 1 pending check-run line removed…"), and any refusal in red.
   5. **Merge into {name}.** A red button; the confirm names both sellers.
-- After a merge, the Sellers list refreshes and the kept seller's Edit dialog opens.
+- After a merge, the dialog closes and the refreshed Sellers list says what moved and into whom.
 
 ## Out of scope
 
