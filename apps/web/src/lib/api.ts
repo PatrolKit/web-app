@@ -60,7 +60,8 @@ async function fetchCsv(url: string): Promise<Blob> {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    // A file upload sets its own multipart type, boundary and all.
+    ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(init.headers as Record<string, string>),
   };
   if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
@@ -271,6 +272,13 @@ export const api = {
 
   me: {
     get: () => request<import('./api.types').MeResponse>('/me'),
+    /** How I clock in at each org where I'm a member (Plan 57 D7). */
+    clock: () => request<import('./api.types').MyClockResponse>('/me/clock'),
+    setClockPin: (orgId: string, pin: string) =>
+      request<import('./api.types').MyClockResponse>(`/me/orgs/${orgId}/clock-pin`, {
+        method: 'PUT',
+        body: JSON.stringify({ pin }),
+      }),
     patch: (name: string) =>
       request<import('./api.types').MeResponse>('/me', {
         method: 'PATCH',
@@ -321,30 +329,46 @@ export const api = {
     /** Emails a member where and how to sign in. Doesn't expire. */
     sendInvite: (orgId: string, userId: string) =>
       request<{ sentTo: string; status: string; inviteSentAt: string | null }>(`/orgs/${orgId}/members/${userId}/invite`, { method: 'POST' }),
-    invite: (orgId: string, data: { email: string; firstName?: string; lastName?: string; phone?: string; permissions: string[] }) =>
+    /** Contact is optional: an email, a phone or an NSP ID will do (Plan 57 D4). */
+    invite: (orgId: string, data: import('./api.types').MemberInput & { permissions: string[] }) =>
       request<import('./api.types').MemberResponse>(`/orgs/${orgId}/members`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    update: (orgId: string, userId: string, data: { removed?: boolean; permissions?: string[] }) =>
+    update: (
+      orgId: string,
+      userId: string,
+      data: import('./api.types').MemberInput & {
+        removed?: boolean; permissions?: string[]; inactive?: boolean; clearClockPin?: true;
+      },
+    ) =>
       request<import('./api.types').MemberResponse>(`/orgs/${orgId}/members/${userId}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
       }),
     remove: (orgId: string, userId: string) =>
       request<void>(`/orgs/${orgId}/members/${userId}`, { method: 'DELETE' }),
-    importCsv: (orgId: string, file: File, sendInvites = false) => {
+    /** Reads the file and guesses its columns; nothing is written. */
+    parseImport: (orgId: string, file: File) => {
       const form = new FormData();
       form.append('file', file);
-      const headers: Record<string, string> = {};
-      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-      return fetch(`/api/v1/orgs/${orgId}/members/import?sendInvites=${sendInvites}`, {
+      return request<import('./api.types').MemberImportParse>(`/orgs/${orgId}/members/import/parse`, {
         method: 'POST',
-        credentials: 'include',
-        headers,
         body: form,
-      }).then((r) => r.json() as Promise<{ success: boolean; data: import('./api.types').ImportOutcome[] }>);
+      });
     },
+    importRows: (
+      orgId: string,
+      body: {
+        rows: Partial<Record<import('./api.types').MemberImportField, string | null>>[];
+        strategy: 'preserve' | 'overwrite';
+        sendInvites: boolean;
+      },
+    ) =>
+      request<import('./api.types').ImportOutcome[]>(`/orgs/${orgId}/members/import`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
     permissions: (orgId: string) =>
       request<{ key: string; description: string }[]>(`/orgs/${orgId}/permissions`),
   },
@@ -1624,36 +1648,6 @@ export const api = {
       request<import('./api.types').DevicePinResponse>(`/orgs/${orgId}/time-clock/settings/device-pin`, {
         method: 'PUT', body: JSON.stringify({ devicePin }),
       }),
-
-    // Roster
-    listPatrollers: (orgId: string) =>
-      request<import('./api.types').PatrollerResponse[]>(`/orgs/${orgId}/time-clock/patrollers`),
-    createPatroller: (orgId: string, data: { firstName: string; lastName: string; nspId: string; patrolLevel?: string | null }) =>
-      request<import('./api.types').PatrollerResponse>(`/orgs/${orgId}/time-clock/patrollers`, {
-        method: 'POST', body: JSON.stringify(data),
-      }),
-    patchPatroller: (
-      orgId: string,
-      patrollerId: string,
-      data: { firstName?: string; lastName?: string; nspId?: string; patrolLevel?: string | null; active?: boolean },
-    ) =>
-      request<import('./api.types').PatrollerResponse & { closedShiftId: string | null }>(
-        `/orgs/${orgId}/time-clock/patrollers/${patrollerId}`,
-        { method: 'PATCH', body: JSON.stringify(data) },
-      ),
-    deletePatroller: (orgId: string, patrollerId: string) =>
-      request<{ closedShiftId: string | null }>(`/orgs/${orgId}/time-clock/patrollers/${patrollerId}`, {
-        method: 'DELETE',
-      }),
-    importPatrollers: (
-      orgId: string,
-      rows: { firstName: string; lastName: string; nspId: string; patrolLevel?: string | null }[],
-      strategy: 'preserve' | 'overwrite',
-    ) =>
-      request<{ created: number; updated: number; skipped: number; errors: string[] }>(
-        `/orgs/${orgId}/time-clock/patrollers/import`,
-        { method: 'POST', body: JSON.stringify({ rows, strategy }) },
-      ),
 
     // Shifts — always a page: the bare array is for older iPads (Plan 55 D7).
     listShifts: (

@@ -49,6 +49,8 @@ async function person(email, businessName, opts = {}) {
   const user = await prisma.user.create({ data: { id: createId(), email, firstName: 'Status', lastName: 'Smoke', phone: opts.phone ?? null } });
   const membership = await prisma.membership.create({ data: { id: createId(), userId: user.id, orgId: org.id, updatedAt: new Date() } });
   const seller = opts.member ? null : await prisma.sellerProfile.create({ data: { id: createId(), membershipId: membership.id, businessName } });
+  // A member is a membership with a member record (Plan 57 D2), as an invite makes one.
+  if (opts.member) await prisma.patrollerProfile.create({ data: { id: createId(), membershipId: membership.id } });
   return { user, seller };
 }
 const individual = await person(EMAILS.seller, null, { phone: '+15550190142' });

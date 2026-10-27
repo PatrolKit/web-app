@@ -1086,14 +1086,23 @@ model Resort {
   @@index([orgId, updatedAt])
 }
 
-/// The patroller role, granted on a membership. Deliberately thin: nspId,
-/// patrolLevel and the person's name live on User. `active` is genuinely
-/// org-scoped — on the roster at this mountain, but not currently patrolling.
+/// A member's record (Plan 57 D2): every member of an org has one, and having
+/// one is what makes a membership a member, whatever else it holds — so a
+/// member who later sells at the swap stays a member. Named for the time clock
+/// it started as, whose events point at it; every member is on that clock.
+/// Deliberately thin: nspId, patrolLevel and the person's name live on User.
 model PatrollerProfile {
   id           String @id @default(cuid())
   membershipId String @unique
 
+  /// False is "inactive" on Members (Plan 57 D5): still a member, off the clock.
   active Boolean @default(true)
+
+  /// The 6-digit code a member with no NSP ID clocks in with, chosen by them on
+  /// My account (Plan 57 D7). Unique in the org against PINs and NSP IDs, which
+  /// the service enforces: this row carries no org of its own. In the clear,
+  /// because the iPad verifies it offline exactly as it does an NSP ID.
+  clockPin String? @db.VarChar(6)
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())

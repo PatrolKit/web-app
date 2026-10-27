@@ -130,6 +130,24 @@ export class PersonService {
   }
 
   /**
+   * Makes a membership a member (Plan 57 D2): gives it a member record, or
+   * brings a removed one back. Every way of becoming a member calls this; the
+   * time clock's roster read calls it too, for any member a path here missed.
+   */
+  async ensureMemberRecord(membershipId: string): Promise<void> {
+    try {
+      await this.prisma.patrollerProfile.upsert({
+        where: { membershipId },
+        update: { deletedAt: null },
+        create: { id: createId(), membershipId },
+      });
+    } catch (err) {
+      // Two requests making the same person a member at once: the loser's row exists.
+      if (!isUniqueViolation(err)) throw err;
+    }
+  }
+
+  /**
    * An unverified claim may collide with another unverified claim, but never
    * with a contact someone else has already proved they control.
    */

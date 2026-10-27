@@ -66,6 +66,31 @@ export const PatchMeSchema = z
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field must be provided' });
 
+/**
+ * How the signed-in person clocks in at each org where they're a member (Plan
+ * 57 D7): by the NSP ID their patrol set, or by a PIN they choose here.
+ */
+export const MyClockResponseSchema = z.object({
+  orgs: z.array(
+    z.object({
+      orgId: z.string(),
+      orgName: z.string(),
+      /// Whether the org uses the time clock at all.
+      timeTracking: z.boolean(),
+      nspId: z.string().nullable(),
+      clockPinSet: z.boolean(),
+      inactive: z.boolean(),
+    }),
+  ),
+});
+
+export const SetClockPinSchema = z
+  .object({ pin: z.string().regex(/^\d{6}$/, 'A PIN is six digits') })
+  .strict();
+
+export class SetClockPinDto extends createZodDto(SetClockPinSchema) {}
+export type MyClockResponse = z.infer<typeof MyClockResponseSchema>;
+
 // ─── Org schemas ─────────────────────────────────────────────────────────────
 
 export const OrgModuleSummarySchema = z.object({

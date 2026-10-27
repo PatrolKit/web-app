@@ -64,6 +64,14 @@ export class TimeClockHealthService {
       }),
       this.prisma.timeClockSettings.findUnique({ where: { orgId } }),
     ]);
+    const membersCantClockIn = await this.prisma.patrollerProfile.count({
+      where: {
+        deletedAt: null,
+        active: true,
+        clockPin: null,
+        membership: { orgId, deletedAt: null, user: { nspId: null } },
+      },
+    });
 
     const mismatches = candidates.filter((e) => e.deviceResortId !== e.resortId).slice(0, LIMIT);
     const resortName = new Map(resorts.map((r) => [r.id, r.name]));
@@ -109,6 +117,7 @@ export class TimeClockHealthService {
       stillOpenPastSweep: open.filter(
         (s) => sweepAt(s.clockInAt, s.resort.timeZone, localTime).getTime() < now,
       ).length,
+      membersCantClockIn,
     };
   }
 }

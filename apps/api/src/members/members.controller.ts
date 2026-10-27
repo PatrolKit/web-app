@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,7 +8,6 @@ import {
   Param,
   Patch,
   Post,
-  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -20,7 +20,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import { MembersService } from './members.service';
-import { InviteMemberDto, UpdateMemberDto } from '../contracts/members.contracts';
+import { ImportMembersDto, InviteMemberDto, UpdateMemberDto } from '../contracts/members.contracts';
 import type { MemberResponse, ImportOutcome } from '../contracts/members.contracts';
 
 @Controller('orgs/:orgId/members')
@@ -45,17 +45,27 @@ export class MembersController {
     return this.membersService.inviteMember(orgId, user.userId, body);
   }
 
+  /** Reads the file and guesses its columns; nothing is written (Plan 57 D10). */
+  @Post('import/parse')
+  @HttpCode(200)
+  @RequirePermissions('users:import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  parseImport(@UploadedFile() file: Express.Multer.File) {
+    if (!file?.buffer) throw new BadRequestException('No file uploaded');
+    const { headers, rows, mapping } = this.membersService.parseImportFile(file.buffer);
+    return { headers, mapping, preview: rows.slice(0, 5), rows, totalRows: rows.length };
+  }
+
+  /** The mapped rows, once someone has checked them. */
   @Post('import')
   @HttpCode(200)
   @RequirePermissions('users:import')
-  @UseInterceptors(FileInterceptor('file'))
-  async bulkImport(
+  importMembers(
     @Param('orgId') orgId: string,
-    @UploadedFile() file: Express.Multer.File,
-    @Query('sendInvites') sendInvitesParam?: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: ImportMembersDto,
   ): Promise<ImportOutcome[]> {
-    const sendInvites = sendInvitesParam === 'true';
-    return this.membersService.bulkImport(orgId, file.buffer, sendInvites);
+    return this.membersService.importRows(orgId, user.userId, body);
   }
 
   /** Emails the member where and how to sign in. Doesn't expire, unlike a sign-in link. */
@@ -83,8 +93,9 @@ export class MembersController {
   removeMember(
     @Param('orgId') orgId: string,
     @Param('userId') userId: string,
+    @CurrentUser() actor: AuthenticatedUser,
   ): Promise<void> {
-    return this.membersService.removeMember(orgId, userId);
+    return this.membersService.removeMember(orgId, userId, actor.userId);
   }
 }
 

@@ -63,6 +63,7 @@ const summit = await prisma.resort.create({
 
 const { user: staff } = await smokeStaff(prisma, org, [
   'time_tracking:report', 'time_tracking:manage', 'time_tracking:admin', 'ski_swap:admin', 'org:manage',
+  'users:read', 'users:invite', 'users:manage',
 ]);
 const staffToken = await smokeSession(prisma, BASE, staff, unwrap);
 const H = { authorization: `Bearer ${staffToken}`, 'content-type': 'application/json' };
@@ -82,17 +83,19 @@ const termA = await terminal('A', lodge.id);
 const termB = await terminal('B', lodge.id);
 
 let nsp = 0;
+// Patrollers are members (Plan 57): added on Members, and on the clock by being one.
 async function patroller(first) {
   nsp++;
-  const p = await fetch(`${BASE}/orgs/${org.id}/time-clock/patrollers`, {
+  const m = await fetch(`${BASE}/orgs/${org.id}/members`, {
     method: 'POST', headers: H,
     body: JSON.stringify({
       firstName: first, lastName: 'Smoke', nspId: `CLKSMOKE${nsp}${Date.now() % 100000}`,
-      email: MAIL(`${first.toLowerCase()}-${nsp}`), patrolLevel: 'Senior',
+      email: MAIL(`${first.toLowerCase()}-${nsp}`), patrolLevel: 'Senior', permissions: [],
     }),
   }).then(unwrap);
-  if (!p.id) throw new Error(`could not create patroller: ${JSON.stringify(p)}`);
-  return p;
+  if (!m.membershipId) throw new Error(`could not add member: ${JSON.stringify(m)}`);
+  const record = await prisma.patrollerProfile.findUnique({ where: { membershipId: m.membershipId } });
+  return { id: record.id, userId: m.userId };
 }
 
 const hoursAgo = (h) => new Date(Date.now() - h * 3600_000).toISOString();
@@ -248,14 +251,14 @@ const mariaToday = listed.shifts?.find((s) => s.id === todayIn.id);
 ok('a corrected shift reads as edited', mariaToday?.edited === true);
 ok('and no shift carries an NSP ID (D10)', listed.shifts?.length > 0 && listed.shifts.every((s) => !('nspId' in s)));
 
-await fetch(`${BASE}/orgs/${org.id}/time-clock/patrollers/${tom.id}`, {
+await fetch(`${BASE}/orgs/${org.id}/members/${tom.userId}`, {
   method: 'PATCH', headers: H, body: JSON.stringify({ patrolLevel: 'Candidate' }),
 });
 const rosterAudit = await prisma.auditLog.findFirst({
-  where: { orgId: org.id, action: 'time_clock.patroller.updated', targetId: tom.id },
+  where: { orgId: org.id, action: 'member.updated', targetId: tom.userId },
   orderBy: { createdAt: 'desc' },
 });
-ok('a roster edit is audited with before and after',
+ok('a member edit is audited with before and after',
    rosterAudit?.metadata?.before?.patrolLevel === 'Senior' && rosterAudit?.metadata?.after?.patrolLevel === 'Candidate');
 
 // ─── Corrections that would break the fold are refused ───────────────────────
@@ -333,10 +336,16 @@ const refusedTo = async (label, method, path, body) => {
 };
 await refusedTo('correct a shift', 'PATCH', `/time-clock/shifts/${janeAgain.id}`, { clockOutAt: hoursAgo(0.5) });
 await refusedTo('read a shift history', 'GET', `/time-clock/shifts/${janeAgain.id}/history`);
-await refusedTo('add a patroller', 'POST', '/time-clock/patrollers', { firstName: 'X', lastName: 'Y', nspId: 'NOPE1' });
-await refusedTo('edit one', 'PATCH', `/time-clock/patrollers/${tom.id}`, { patrolLevel: 'Hacked' });
-await refusedTo('delete one', 'DELETE', `/time-clock/patrollers/${tom.id}`);
-await refusedTo('import a roster', 'POST', '/time-clock/patrollers/import', { rows: [], strategy: 'preserve' });
+await refusedTo('add a member', 'POST', '/members', { firstName: 'X', lastName: 'Y', nspId: 'NOPE1', permissions: [] });
+await refusedTo('edit one', 'PATCH', `/members/${tom.userId}`, { patrolLevel: 'Hacked' });
+await refusedTo('remove one', 'DELETE', `/members/${tom.userId}`);
+// The roster's own writes are gone (Plan 57 D3): people are edited on Members.
+for (const [method, path] of [['POST', ''], ['PATCH', `/${tom.id}`], ['DELETE', `/${tom.id}`], ['POST', '/import']]) {
+  const r = await fetch(`${BASE}/orgs/${org.id}/time-clock/patrollers${path}`, {
+    method, headers: H, ...(method === 'DELETE' ? {} : { body: '{}' }),
+  });
+  ok(`the old roster route ${method} patrollers${path ? path.replace(tom.id, ':id') : ''} is gone`, r.status === 404, String(r.status));
+}
 await refusedTo('read the hours report', 'GET', '/time-clock/reports/hours');
 await refusedTo('read Health', 'GET', '/time-clock/health');
 await refusedTo('read the seasons', 'GET', '/time-clock/seasons');
@@ -395,7 +404,9 @@ ok('and every terminal', [`${PREFIX} A`, `${PREFIX} B`].every((n) => health.term
 ok('and a count of shifts no device closed', typeof health.stillOpenPastSweep === 'number');
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
-await prisma.auditLog.deleteMany({ where: { orgId: org.id, action: { startsWith: 'time_clock.' } } });
+await prisma.auditLog.deleteMany({
+  where: { orgId: org.id, OR: [{ action: { startsWith: 'time_clock.' } }, { action: { startsWith: 'member.' } }] },
+});
 await cleanup();
 await prisma.$disconnect();
 console.log(failures ? `\n${failures} FAILED` : '\nall passed');

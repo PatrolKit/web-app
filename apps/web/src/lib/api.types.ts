@@ -123,6 +123,17 @@ export interface MemberResponse {
   inviteSentAt: string | null;
   permissions: string[];
   roles: OrgRole[];
+  /** What the time clock knows them by (Plan 57). */
+  nspId: string | null;
+  patrolLevel: string | null;
+  /** Still a member, but off the iPad's clock-in list. */
+  inactive: boolean;
+  /** They chose a clock-in PIN. Never the PIN itself. */
+  clockPinSet: boolean;
+  /** Live, not inactive, and an NSP ID or a PIN to verify them by. */
+  canClockIn: boolean;
+  /** Their open shift, so taking them off the clock can warn first. */
+  onShift?: { resortName: string; since: string } | null;
   /** Last sign-in or session renewal, accurate to 15 minutes. Null ⇒ never. */
   lastActiveAt?: string | null;
   /** A session is still open on some device. */
@@ -131,9 +142,44 @@ export interface MemberResponse {
 
 export interface ImportOutcome {
   row: number;
+  /** Who the row was: a name, or the contact it gave. */
+  name: string;
   email: string;
-  outcome: 'created' | 'already_member' | 'invited' | 'error';
+  outcome: 'created' | 'updated' | 'already_member' | 'invited' | 'error';
   error?: string;
+}
+
+/** The fields a Members import maps columns to (Plan 57 D10). */
+export type MemberImportField =
+  'firstName' | 'lastName' | 'email' | 'phone' | 'nspId' | 'patrolLevel' | 'inactive' | 'permissions';
+
+export interface MemberImportParse {
+  headers: string[];
+  mapping: Partial<Record<MemberImportField, string | null>>;
+  preview: Record<string, string>[];
+  rows: Record<string, string>[];
+  totalRows: number;
+}
+
+/** How the signed-in person clocks in at each org where they're a member. */
+export interface MyClockResponse {
+  orgs: {
+    orgId: string;
+    orgName: string;
+    timeTracking: boolean;
+    nspId: string | null;
+    clockPinSet: boolean;
+    inactive: boolean;
+  }[];
+}
+
+export interface MemberInput {
+  firstName?: string;
+  lastName?: string;
+  email?: string | null;
+  phone?: string | null;
+  nspId?: string | null;
+  patrolLevel?: string | null;
 }
 
 export interface ModuleItem {
@@ -1212,6 +1258,8 @@ export interface TimeClockHealthResponse {
     deviceName: string | null;
   }[];
   stillOpenPastSweep: number;
+  /** Active members with neither an NSP ID nor a PIN. */
+  membersCantClockIn: number;
 }
 
 export interface HoursReportRow {

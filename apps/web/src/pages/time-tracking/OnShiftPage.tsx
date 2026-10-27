@@ -1,4 +1,4 @@
-import { useOutletContext } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { TimeTrackingContext } from './TimeTrackingLayout';
@@ -28,6 +28,10 @@ export default function OnShiftPage() {
       <div className="py-16 text-center space-y-2">
         <p className="text-xl font-semibold text-gray-300">No one is on shift</p>
         <p className="text-gray-500 text-sm">Clock-ins from any iPad appear here within a minute.</p>
+        <p className="text-gray-500 text-sm">
+          Every member can clock in. People are added and edited under{' '}
+          <Link to="/dashboard/members" className="text-brand-500 hover:underline">Members</Link>.
+        </p>
       </div>
     );
   }

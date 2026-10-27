@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { MembersController, PermissionsCatalogController } from './members.controller';
 import { MembersService } from './members.service';
 import { AuthModule } from '../auth/auth.module';
+import { TimeClockModule } from '../time-clock/time-clock.module';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, TimeClockModule],
   controllers: [MembersController, PermissionsCatalogController],
   providers: [MembersService],
 })

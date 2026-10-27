@@ -50,6 +50,7 @@ const lodge = await prisma.resort.create({
 });
 const { user: staff } = await smokeStaff(prisma, org, [
   'time_tracking:report', 'time_tracking:manage', 'time_tracking:admin', 'ski_swap:admin', 'org:manage',
+  'users:invite',
 ]);
 const H = { authorization: `Bearer ${await smokeSession(prisma, BASE, staff, unwrap)}`, 'content-type': 'application/json' };
 
@@ -67,13 +68,15 @@ async function terminal(name) {
 const A = await terminal('A');
 const B = await terminal('B');
 
-const p = await fetch(`${BASE}/orgs/${org.id}/time-clock/patrollers`, {
+// A member is a patroller (Plan 57): added on Members, clocked by their record.
+const added = await fetch(`${BASE}/orgs/${org.id}/members`, {
   method: 'POST', headers: H,
   body: JSON.stringify({
     firstName: 'Race', lastName: 'Smoke', nspId: `CLKRACE${Date.now() % 1000000}`,
-    email: `clock-race-${Date.now()}@patrolkit.invalid`,
+    email: `clock-race-${Date.now()}@patrolkit.invalid`, permissions: [],
   }),
 }).then(unwrap);
+const p = await prisma.patrollerProfile.findUnique({ where: { membershipId: added.membershipId } });
 
 const submit = (h, events) => fetch(`${BASE}/orgs/${org.id}/time-clock/events`, {
   method: 'POST', headers: h, body: JSON.stringify({ events }),

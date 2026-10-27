@@ -12,6 +12,7 @@ import { ShiftService } from './shift.service';
 import { ShiftController } from './shift.controller';
 import { TimeClockReportService } from './report.service';
 import { TimeClockReportController } from './report.controller';
+import { ShiftCloserService } from './shift-closer.service';
 import { SeasonService } from './season.service';
 import { SeasonController } from './season.controller';
 import { TimeClockHealthService } from './health.service';
@@ -37,6 +38,8 @@ import { TimeClockHealthController } from './health.controller';
     TimeClockReportService,
     SeasonService,
     TimeClockHealthService,
+    ShiftCloserService,
   ],
+  exports: [ShiftCloserService],
 })
 export class TimeClockModule {}

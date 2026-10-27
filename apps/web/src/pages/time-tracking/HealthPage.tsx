@@ -12,7 +12,7 @@ const REASONS: Record<string, string> = {
   clock_implausible: "The iPad's clock was wrong: dated days ahead",
   source_not_allowed: 'Claimed to be a staff correction',
   unknown_resort: 'For a resort this org does not have',
-  unknown_patroller: 'For someone not on the roster',
+  unknown_patroller: 'For someone who is not a member here',
   id_conflict: 'An event id already used elsewhere',
 };
 
@@ -51,6 +51,20 @@ export default function HealthPage() {
             {data.stillOpenPastSweep} shift{data.stillOpenPastSweep === 1 ? ' is' : 's are'} still open past the
             automatic clock-out time.{' '}
             <Link to="../shifts" className="underline hover:text-yellow-200">Review them on Shifts</Link>
+          </p>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-white font-semibold">Members who can't clock in</h2>
+        {data.membersCantClockIn === 0 ? (
+          <p className="text-gray-500 text-sm">None. Every active member has an NSP ID or a PIN.</p>
+        ) : (
+          <p className="text-sm text-yellow-300">
+            {data.membersCantClockIn} active member{data.membersCantClockIn === 1 ? ' has' : 's have'} no NSP ID and no
+            PIN. Give them an NSP ID on{' '}
+            <Link to="/dashboard/members" className="underline hover:text-yellow-200">Members</Link>, or have them choose
+            a PIN on My account.
           </p>
         )}
       </section>

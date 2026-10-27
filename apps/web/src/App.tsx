@@ -13,7 +13,6 @@ import TimeTrackingLayout from './pages/time-tracking/TimeTrackingLayout';
 import OnShiftPage from './pages/time-tracking/OnShiftPage';
 import ShiftsPage from './pages/time-tracking/ShiftsPage';
 import HoursReportPage from './pages/time-tracking/HoursReportPage';
-import RosterPage from './pages/time-tracking/RosterPage';
 import TimeTrackingSettingsPage from './pages/time-tracking/SettingsPage';
 import DeviceSoftwareTab from './pages/admin/DeviceSoftwareTab';
 import ItemTaxonomyTab from './pages/admin/ItemTaxonomyTab';
@@ -29,6 +28,7 @@ import CheckinStationsPage from './pages/ski-swap/CheckinStationsPage';
 import BindingsPage from './pages/ski-swap/BindingsPage';
 import PrintersPage from './pages/ski-swap/PrintersPage';
 import TimeClockHealthPage from './pages/time-tracking/HealthPage';
+import AccountPage from './pages/account/AccountPage';
 import SwapsPage from './pages/ski-swap/SwapsPage';
 import ItemsPage from './pages/ski-swap/ItemsPage';
 import SellersPage from './pages/ski-swap/SellersPage';
@@ -138,6 +138,7 @@ export default function App() {
         <Route path="dashboard" element={<AppShell />}>
           <Route index element={<DefaultDashboardRedirect />} />
           <Route path="members" element={<MembersPage />} />
+          <Route path="account" element={<AccountPage />} />
           <Route path="admin" element={<AdminLayout />}>
             <Route index element={<OrganizationsTab />} />
             <Route path="users" element={<UsersTab />} />
@@ -191,7 +192,6 @@ export default function App() {
             <Route index element={<OnShiftPage />} />
             <Route path="shifts" element={<ShiftsPage />} />
             <Route path="hours" element={<HoursReportPage />} />
-            <Route path="roster" element={<RosterPage />} />
             <Route path="health" element={<TimeClockHealthPage />} />
             <Route path="settings" element={<TimeTrackingSettingsPage />} />
           </Route>

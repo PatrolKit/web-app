@@ -190,7 +190,10 @@ export default function AppShell() {
         <div className="p-4 border-t border-gray-800 text-xs text-gray-500">
           <PrinterStatusBar />
           <ScannerStatusBar />
-          <div className="mb-1 truncate">{user.email}</div>
+          {/* Their own page: how they clock in, for now (Plan 57). */}
+          <NavLink to="account" className="mb-1 block truncate hover:text-white" title="My account">
+            {user.email ?? user.displayName}
+          </NavLink>
           <button onClick={handleLogout} className="text-brand-600 hover:underline">Sign out</button>
         </div>
       </aside>

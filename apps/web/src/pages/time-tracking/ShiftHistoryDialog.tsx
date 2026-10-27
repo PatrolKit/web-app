@@ -6,7 +6,7 @@ import { formatDateTime } from './shared';
 const ACTIONS: Record<string, string> = {
   'time_clock.shift.corrected': 'Corrected',
   'time_clock.shift.reopened': 'Reopened',
-  'time_clock.shift.closed_by_roster': 'Closed when removed from the roster',
+  'time_clock.shift.closed_by_roster': 'Closed when they were made inactive or removed',
 };
 
 const SOURCES: Record<string, string> = {

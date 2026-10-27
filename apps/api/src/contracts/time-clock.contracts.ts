@@ -24,31 +24,7 @@ export const SHIFT_CLOSE_REASONS = ['manual', 'auto', 'superseded', 'admin'] as 
 
 // ─── Patrollers (the roster) ─────────────────────────────────────────────────
 
-export const CreatePatrollerSchema = z
-  .object({
-    firstName: z.string().min(1).max(60),
-    lastName: z.string().min(1).max(60),
-    nspId: z.string().min(1).max(32),
-    patrolLevel: z.string().max(60).nullable().optional(),
-    /// Contact is optional on the roster but is what makes onboarding possible.
-    email: z.string().trim().toLowerCase().email().nullable().optional(),
-    phone: z.string().trim().max(32).nullable().optional(),
-    active: z.boolean().default(true),
-  })
-  .strict();
-
-export const PatchPatrollerSchema = z
-  .object({
-    firstName: z.string().min(1).max(60).optional(),
-    lastName: z.string().min(1).max(60).optional(),
-    nspId: z.string().min(1).max(32).optional(),
-    patrolLevel: z.string().max(60).nullable().optional(),
-    email: z.string().trim().toLowerCase().email().nullable().optional(),
-    phone: z.string().trim().max(32).nullable().optional(),
-    active: z.boolean().optional(),
-  })
-  .strict()
-  .refine((v) => Object.keys(v).length > 0, { message: 'At least one field must be provided' });
+// ─── The roster: the org's members, read-only here (Plan 57) ─────────────────
 
 export const PatrollerResponseSchema = z.object({
   id: z.string(),
@@ -67,24 +43,6 @@ export const PatrollerResponseSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const ImportPatrollersSchema = z
-  .object({
-    rows: z
-      .array(
-        z.object({
-          firstName: z.string(),
-          lastName: z.string(),
-          nspId: z.string(),
-          patrolLevel: z.string().nullable().optional(),
-          email: z.string().nullable().optional(),
-          phone: z.string().nullable().optional(),
-        }),
-      )
-      .max(5000),
-    strategy: z.enum(['preserve', 'overwrite']).default('preserve'),
-  })
-  .strict();
-
 /**
  * A patroller as a terminal gets it (Plan 55 D10): no contact details. The iPad matches
  * on name and NSP ID, and has no use for anyone's email or phone.
@@ -93,6 +51,10 @@ export const DevicePatrollerResponseSchema = PatrollerResponseSchema.omit({
   email: true,
   phone: true,
   contactVerified: true,
+}).extend({
+  /// The PIN a member with no NSP ID clocks in with (Plan 57 D7); null for
+  /// everyone with an NSP ID, and for anyone who hasn't chosen one.
+  clockPin: z.string().nullable(),
 });
 
 /** `walk=true` on the roster (D7): a page of a keyset walk, with the cursor to keep. */
@@ -117,9 +79,6 @@ export const PatrollerListQuerySchema = z
   })
   .strict();
 
-export class CreatePatrollerDto extends createZodDto(CreatePatrollerSchema) {}
-export class PatchPatrollerDto extends createZodDto(PatchPatrollerSchema) {}
-export class ImportPatrollersDto extends createZodDto(ImportPatrollersSchema) {}
 export class PatrollerListQueryDto extends createZodDto(PatrollerListQuerySchema) {}
 export type PatrollerResponse = z.infer<typeof PatrollerResponseSchema>;
 export type DevicePatrollerResponse = z.infer<typeof DevicePatrollerResponseSchema>;
@@ -383,6 +342,8 @@ export const TimeClockHealthResponseSchema = z.object({
     }),
   ),
   stillOpenPastSweep: z.number(),
+  /** Active members with neither an NSP ID nor a PIN, who the iPad can't verify (Plan 57). */
+  membersCantClockIn: z.number(),
 });
 
 export type TimeClockHealthResponse = z.infer<typeof TimeClockHealthResponseSchema>;

@@ -26,11 +26,14 @@ real delivery, set `OUTBOUND_NOTIFICATIONS=on`; email then goes to **Mailpit** a
 | `time-manager@example.com` | `+15550201002` | Time Manager | `time_tracking:report`, `time_tracking:manage` |
 | `time-admin@example.com` | `+15550201003` | Time Admin | `time_tracking:report`, `time_tracking:manage`, `time_tracking:admin` |
 
-## Demo roster (Time Tracking)
+## Demo patrol members (Time Tracking)
 
-Six patrollers, deliberately varied so contact-matching and onboarding can be
-exercised. NSP IDs are **globally** unique — one per human — so they double as a
-matching key on import.
+Six patrollers, deliberately varied so contact-matching and invites can be
+exercised. They're ordinary members (Plan 57): every member of the org is on the
+time clock, and they're edited on Members. NSP IDs are **globally** unique — one
+per human — so they double as a matching key on import. The staff users above
+have no NSP ID, so they show as "Can't clock in" until they choose a PIN on My
+account.
 
 | NSP ID | Name | Level | Contact |
 |---|---|---|---|
@@ -41,8 +44,8 @@ matching key on import.
 | 100005 | Aisha Patel | Senior | email only |
 | 100006 | Tom Anderson | Basic | **none** — the permitted contactless case |
 
-Tom cannot log in or be paid, and bulk onboarding will skip him. That is the
-intended behaviour, not a seeding gap.
+Tom cannot log in or be paid, and gets no invite. He can still clock in, with
+his NSP ID. That is the intended behaviour, not a seeding gap.
 
 ## Notes
 

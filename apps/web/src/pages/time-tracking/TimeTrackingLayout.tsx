@@ -88,7 +88,6 @@ export default function TimeTrackingLayout() {
         <NavLink to="shifts" className={navClass}>Shifts</NavLink>
         <NavLink to="hours" className={navClass}>Hours</NavLink>
         <span className="mx-2 text-gray-700 select-none">|</span>
-        {perms.has('time_tracking:manage') && <NavLink to="roster" className={navClass}>Roster</NavLink>}
         {perms.has('time_tracking:manage') && <NavLink to="health" className={navClass}>Health</NavLink>}
         {perms.has('time_tracking:admin') && <NavLink to="settings" className={navClass}>Settings</NavLink>}
       </nav>
