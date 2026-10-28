@@ -9,7 +9,7 @@ import { decodeCursor, encodeCursor } from '../common/util/cursor';
 /**
  * The time clock's roster is the org's members (Plan 57 D1). People are added,
  * edited and removed on Members; this only reads them, for the iPads and for
- * staff screens that name who is on shift.
+ * staff screens that name who is on entry.
  *
  * A roster row is assembled from three tables: the person (`User`), their
  * membership, and the member record. `Membership.updatedAt` is the watermark
@@ -83,7 +83,7 @@ export class PatrollerService {
    * rows can never learn that someone left the roster.
    *
    * `walk=true` pages the delta in `(membership.updatedAt, id)` order with a
-   * cursor taken before the read (Plan 55 D7), as the shift walk does.
+   * cursor taken before the read (Plan 55 D7), as the entry walk does.
    */
   async list(
     orgId: string,

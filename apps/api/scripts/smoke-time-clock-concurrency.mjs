@@ -31,7 +31,7 @@ async function cleanup() {
   });
   const ids = profiles.map((p) => p.id);
   await prisma.timeClockEvent.deleteMany({ where: { patrollerId: { in: ids } } });
-  await prisma.timeClockShift.deleteMany({ where: { patrollerId: { in: ids } } });
+  await prisma.timeEntry.deleteMany({ where: { patrollerId: { in: ids } } });
   await prisma.patrollerProfile.deleteMany({ where: { id: { in: ids } } });
   await prisma.membership.deleteMany({ where: { userId: { in: users.map((u) => u.id) } } });
   await prisma.user.deleteMany({ where: { id: { in: users.map((u) => u.id) } } });
@@ -84,7 +84,7 @@ const submit = (h, events) => fetch(`${BASE}/orgs/${org.id}/time-clock/events`, 
 const day = (n, h) => new Date(Date.now() - (ROUNDS + 2 - n) * 24 * 3600_000 + h * 3600_000).toISOString();
 
 // Each round is one day: A sends the clock-in while B sends the clock-out, at the same
-// moment. Whatever order they commit in, the day must end up one closed shift.
+// moment. Whatever order they commit in, the day must end up one closed entry.
 let statusErrors = 0;
 for (let n = 0; n < ROUNDS; n++) {
   const inId = randomUUID();
@@ -96,10 +96,10 @@ for (let n = 0; n < ROUNDS; n++) {
 }
 ok('parallel batches for one patroller never fail', statusErrors === 0, `${statusErrors} server errors`);
 
-const shifts = await prisma.timeClockShift.findMany({ where: { patrollerId: p.id, deletedAt: null } });
-ok(`${ROUNDS} racing days fold to ${ROUNDS} closed shifts`,
-   shifts.length === ROUNDS && shifts.every((s) => s.status === 'closed' && s.closeReason === 'manual'),
-   `${shifts.length} shifts: ${[...new Set(shifts.map((s) => `${s.status}/${s.closeReason}`))].join(', ')}`);
+const entries = await prisma.timeEntry.findMany({ where: { patrollerId: p.id, deletedAt: null } });
+ok(`${ROUNDS} racing days fold to ${ROUNDS} closed entries`,
+   entries.length === ROUNDS && entries.every((s) => s.status === 'closed' && s.closeReason === 'manual'),
+   `${entries.length} entries: ${[...new Set(entries.map((s) => `${s.status}/${s.closeReason}`))].join(', ')}`);
 const events = await prisma.timeClockEvent.findMany({ where: { patrollerId: p.id } });
 ok('and every event is applied', events.every((e) => e.status === 'applied'),
    [...new Set(events.map((e) => e.status))].join(', '));

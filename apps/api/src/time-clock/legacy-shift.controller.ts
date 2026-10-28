@@ -8,32 +8,36 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
-import { ShiftService } from './shift.service';
-import { PatchShiftDto, ShiftListQueryDto } from '../contracts/time-clock.contracts';
+import { TimeEntryService } from './time-entry.service';
+import { PatchTimeEntryDto, TimeEntryListQueryDto } from '../contracts/time-clock.contracts';
 import { TIME_CLOCK_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
- * `@RequireDeviceRole` sits on the one route a terminal reads, not on the class:
- * `PermissionsGuard` passes a device on its role alone, so a class-wide role let a
- * terminal correct shifts. Routes that name no role refuse devices outright.
+ * Time entries under their old name, for iPads in the field (Plan 58 D3). Same
+ * routes, guards and answers as before the rename: a walk's page names its rows
+ * `shifts`. Retired once Health shows every terminal on a build that reads
+ * `time-clock/entries`.
  */
 @Controller('orgs/:orgId/time-clock/shifts')
 @UseGuards(OrDeviceAuthGuard, OrgContextGuard, ModuleEnabledGuard, PermissionsGuard)
 @RequireModule('time_tracking')
-export class ShiftController {
-  constructor(private readonly shiftService: ShiftService) {}
+export class LegacyShiftController {
+  constructor(private readonly timeEntryService: TimeEntryService) {}
 
   @Get()
   @RequireDeviceRole(...TIME_CLOCK_TABLET_ROLES)
   @RequirePermissions('time_tracking:report')
-  list(@Param('orgId') orgId: string, @Query() query: ShiftListQueryDto) {
-    return this.shiftService.list(orgId, query);
+  async list(@Param('orgId') orgId: string, @Query() query: TimeEntryListQueryDto) {
+    const result = await this.timeEntryService.list(orgId, query);
+    if (Array.isArray(result)) return result;
+    const { entries, ...rest } = result;
+    return { shifts: entries, ...rest };
   }
 
   @Get(':shiftId/history')
   @RequirePermissions('time_tracking:report')
   history(@Param('orgId') orgId: string, @Param('shiftId') shiftId: string) {
-    return this.shiftService.history(orgId, shiftId);
+    return this.timeEntryService.history(orgId, shiftId);
   }
 
   @Patch(':shiftId')
@@ -41,9 +45,9 @@ export class ShiftController {
   patch(
     @Param('orgId') orgId: string,
     @Param('shiftId') shiftId: string,
-    @Body() body: PatchShiftDto,
+    @Body() body: PatchTimeEntryDto,
     @Req() req: Request & { user?: AuthenticatedUser },
   ) {
-    return this.shiftService.patch(orgId, shiftId, req.user?.userId, body);
+    return this.timeEntryService.patch(orgId, shiftId, req.user?.userId, body);
   }
 }

@@ -14,7 +14,7 @@ import { MembershipTouchService } from '../common/identity/membership-touch.serv
 import { displayName, normalizeNamePart, normalizeNspId, normalizePhone } from '../common/util/person';
 import { unverifyChangedContacts } from '../common/identity/contact-verification';
 import { clearPinsMatching } from '../common/identity/clock-code';
-import { ShiftCloserService } from '../time-clock/shift-closer.service';
+import { ClockOutService } from '../time-clock/clock-out.service';
 import { parse } from 'csv-parse/sync';
 import type {
   MemberResponse,
@@ -44,7 +44,7 @@ export class MembersService {
     private readonly people: PersonService,
     private readonly touch: MembershipTouchService,
     private readonly mail: MailService,
-    private readonly shifts: ShiftCloserService,
+    private readonly entries: ClockOutService,
   ) {}
 
   // ─── Invite email ─────────────────────────────────────────────────────────
@@ -92,12 +92,12 @@ export class MembersService {
       include: MEMBER_INCLUDE,
       orderBy: { joinedAt: 'asc' },
     });
-    // Who is on shift now, so taking someone off the clock can warn first.
-    const openShifts = await this.prisma.timeClockShift.findMany({
+    // Who is on entry now, so taking someone off the clock can warn first.
+    const openEntries = await this.prisma.timeEntry.findMany({
       where: { orgId, status: 'open', deletedAt: null },
       select: { clockInAt: true, resort: { select: { name: true } }, patroller: { select: { membershipId: true } } },
     });
-    const onShift = new Map(openShifts.map((s) => [s.patroller.membershipId, { resortName: s.resort.name, since: s.clockInAt }]));
+    const clockedIn = new Map(openEntries.map((s) => [s.patroller.membershipId, { resortName: s.resort.name, since: s.clockInAt }]));
 
     // Activity from sessions: a sign-in or a renewal writes a refresh token,
     // and a renewal happens only when someone is using the app, so the newest
@@ -119,7 +119,7 @@ export class MembersService {
 
     return memberships.map((m) => ({
       ...toMemberResponse(m),
-      onShift: onShift.get(m.id) ?? null,
+      clockedIn: clockedIn.get(m.id) ?? null,
       lastActiveAt: lastBy.get(m.userId) ?? null,
       signedIn: openBy.has(m.userId),
     }));
@@ -283,7 +283,7 @@ export class MembersService {
         if (nspId) await clearPinsMatching(this.prisma, await this.memberOrgIds(user.id), nspId);
         if (inactive !== undefined) {
           await this.prisma.patrollerProfile.update({ where: { membershipId: membership.id }, data: { active: !inactive } });
-          if (inactive) await this.shifts.closeFor(orgId, membership.id, actorId);
+          if (inactive) await this.entries.closeFor(orgId, membership.id, actorId);
         }
         if (permKeys.length) await this.assignPermissions(membership.id, permKeys as PermissionKey[]);
         await this.touch.touchAllForUser(user.id);
@@ -337,7 +337,7 @@ export class MembersService {
     if (touchesPerson) await this.updatePerson(orgId, membership, data, actorUserId);
 
     if (data.removed !== undefined) {
-      if (data.removed) await this.shifts.closeFor(orgId, membership.id, actorUserId);
+      if (data.removed) await this.entries.closeFor(orgId, membership.id, actorUserId);
       await this.prisma.membership.update({
         where: { id: membership.id },
         data: { deletedAt: data.removed ? new Date() : null, updatedAt: new Date() },
@@ -413,7 +413,7 @@ export class MembersService {
       },
     });
     if (nspId) await clearPinsMatching(this.prisma, await this.memberOrgIds(u.id), nspId);
-    if (data.inactive === true) await this.shifts.closeFor(orgId, membership.id, actorId);
+    if (data.inactive === true) await this.entries.closeFor(orgId, membership.id, actorId);
 
     // Name, NSP ID and patrol level live on User, so every membership moves.
     await this.touch.touchAllForUser(u.id);
@@ -428,8 +428,8 @@ export class MembersService {
       where: { userId_orgId: { userId, orgId } },
     });
     if (!membership) throw new NotFoundException('Membership not found');
-    // No open shift outlives its member (D5).
-    await this.shifts.closeFor(orgId, membership.id, actorId);
+    // No open entry outlives its member (D5).
+    await this.entries.closeFor(orgId, membership.id, actorId);
     await this.audit(orgId, actorId, 'member.removed', userId, {});
 
     await this.prisma.membership.update({

@@ -8,11 +8,12 @@ import { TimeClockSettingsService } from './time-clock-settings.service';
 import { TimeClockSettingsController } from './time-clock-settings.controller';
 import { TimeClockEventService } from './event.service';
 import { TimeClockEventController } from './event.controller';
-import { ShiftService } from './shift.service';
-import { ShiftController } from './shift.controller';
+import { TimeEntryService } from './time-entry.service';
+import { TimeEntryController } from './time-entry.controller';
+import { LegacyShiftController } from './legacy-shift.controller';
 import { TimeClockReportService } from './report.service';
 import { TimeClockReportController } from './report.controller';
-import { ShiftCloserService } from './shift-closer.service';
+import { ClockOutService } from './clock-out.service';
 import { SeasonService } from './season.service';
 import { SeasonController } from './season.controller';
 import { TimeClockHealthService } from './health.service';
@@ -24,7 +25,8 @@ import { TimeClockHealthController } from './health.controller';
     PatrollerController,
     TimeClockSettingsController,
     TimeClockEventController,
-    ShiftController,
+    TimeEntryController,
+    LegacyShiftController,
     TimeClockReportController,
     SeasonController,
     TimeClockHealthController,
@@ -34,12 +36,12 @@ import { TimeClockHealthController } from './health.controller';
     PatrollerService,
     TimeClockSettingsService,
     TimeClockEventService,
-    ShiftService,
+    TimeEntryService,
     TimeClockReportService,
     SeasonService,
     TimeClockHealthService,
-    ShiftCloserService,
+    ClockOutService,
   ],
-  exports: [ShiftCloserService],
+  exports: [ClockOutService],
 })
 export class TimeClockModule {}

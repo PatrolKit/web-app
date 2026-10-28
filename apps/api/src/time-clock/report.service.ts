@@ -9,9 +9,9 @@ import type { HoursReportQuery, HoursReportRow } from '../contracts/time-clock.c
 export class TimeClockReportService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Closed shifts only — an open shift has no duration to report yet. */
+  /** Closed entries only — an open entry has no duration to report yet. */
   async hours(orgId: string, q: HoursReportQuery): Promise<HoursReportRow[]> {
-    const where: Prisma.TimeClockShiftWhereInput = {
+    const where: Prisma.TimeEntryWhereInput = {
       orgId,
       deletedAt: null,
       status: 'closed',
@@ -27,7 +27,7 @@ export class TimeClockReportService {
     }
     if (q.season !== undefined) where.AND = [await seasonWhere(this.prisma, orgId, q.season)];
 
-    const shifts = await this.prisma.timeClockShift.findMany({
+    const entries = await this.prisma.timeEntry.findMany({
       where,
       include: {
         patroller: { include: { membership: { select: { user: true } } } },
@@ -35,7 +35,7 @@ export class TimeClockReportService {
     });
 
     const byPatroller = new Map<string, HoursReportRow>();
-    for (const s of shifts) {
+    for (const s of entries) {
       if (!s.clockOutAt) continue;
       const minutes = Math.max(
         0,
@@ -49,14 +49,14 @@ export class TimeClockReportService {
           patrollerName: displayName(s.patroller.membership.user),
           nspId: s.patroller.membership.user.nspId ?? '',
           patrolLevel: s.patroller.membership.user.patrolLevel,
-          shiftCount: 0,
+          entryCount: 0,
           totalMinutes: 0,
           minutesByDutyType: {},
         };
         byPatroller.set(s.patrollerId, row);
       }
 
-      row.shiftCount += 1;
+      row.entryCount += 1;
       row.totalMinutes += minutes;
       row.minutesByDutyType[s.dutyType] = (row.minutesByDutyType[s.dutyType] ?? 0) + minutes;
     }
@@ -70,7 +70,7 @@ export class TimeClockReportService {
     const rows = await this.hours(orgId, q);
     const dutyTypes = [...new Set(rows.flatMap((r) => Object.keys(r.minutesByDutyType)))].sort();
 
-    const header = ['Patroller', 'NSP ID', 'Patrol level', 'Shifts', 'Total hours', ...dutyTypes.map((d) => `${d} hours`)];
+    const header = ['Patroller', 'NSP ID', 'Patrol level', 'Entries', 'Total hours', ...dutyTypes.map((d) => `${d} hours`)];
     const lines = [header.join(',')];
 
     for (const r of rows) {
@@ -79,7 +79,7 @@ export class TimeClockReportService {
           csvCell(r.patrollerName),
           csvCell(r.nspId),
           csvCell(r.patrolLevel ?? ''),
-          String(r.shiftCount),
+          String(r.entryCount),
           hours(r.totalMinutes),
           ...dutyTypes.map((d) => hours(r.minutesByDutyType[d] ?? 0)),
         ].join(','),

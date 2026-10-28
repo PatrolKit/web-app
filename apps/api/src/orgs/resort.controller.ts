@@ -20,7 +20,7 @@ export class ResortController {
   constructor(private readonly resortService: ResortService) {}
 
   /**
-   * No permission beyond active membership: the hours report and the shift
+   * No permission beyond active membership: the hours report and the entry
    * filters need the resort list, and those readers don't necessarily hold
    * `org:read`. OrgContextGuard already proved they belong to this org.
    */

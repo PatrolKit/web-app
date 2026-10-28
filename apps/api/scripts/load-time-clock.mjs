@@ -19,8 +19,8 @@ const prisma = new PrismaClient();
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:4001/api/v1';
 if (!/^http:\/\/(localhost|127\.0\.0\.1)/.test(BASE)) throw new Error('load-time-clock runs against a local API only');
 const PATROLLERS = 500;
-const SHIFTS_EACH = 5; // 10 events each: 5,000 in all
-const HEAVY_SHIFTS = 150; // a patroller who worked most days of a season
+const ENTRIES_EACH = 5; // 10 events each: 5,000 in all
+const HEAVY_ENTRIES = 150; // a patroller who worked most days of a season
 const BUDGET_MS = 1000;
 
 const unwrap = async (r) => { const b = await r.json(); return b && b.success && 'data' in b ? b.data : b; };
@@ -39,7 +39,7 @@ async function cleanup() {
   const profiles = await prisma.patrollerProfile.findMany({ where: { membership: { userId: { in: userIds } } }, select: { id: true } });
   const ids = profiles.map((p) => p.id);
   await prisma.timeClockEvent.deleteMany({ where: { patrollerId: { in: ids } } });
-  await prisma.timeClockShift.deleteMany({ where: { patrollerId: { in: ids } } });
+  await prisma.timeEntry.deleteMany({ where: { patrollerId: { in: ids } } });
   await prisma.patrollerProfile.deleteMany({ where: { id: { in: ids } } });
   await prisma.membership.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });
@@ -75,16 +75,16 @@ await prisma.patrollerProfile.createMany({
 });
 
 const dayStart = (daysAgo) => Date.now() - daysAgo * 24 * 3600_000;
-const eventsFor = (profileId, shifts) => Array.from({ length: shifts }).flatMap((_, d) => [
+const eventsFor = (profileId, entries) => Array.from({ length: entries }).flatMap((_, d) => [
   { id: randomUUID(), orgId: org.id, resortId: lodge.id, patrollerId: profileId, type: 'clock_in', dutyType: 'patrol',
-    occurredAt: new Date(dayStart(shifts + 2 - d)), source: 'device' },
+    occurredAt: new Date(dayStart(entries + 2 - d)), source: 'device' },
   { id: randomUUID(), orgId: org.id, resortId: lodge.id, patrollerId: profileId, type: 'clock_out',
-    occurredAt: new Date(dayStart(shifts + 2 - d) + 7 * 3600_000), source: 'device' },
+    occurredAt: new Date(dayStart(entries + 2 - d) + 7 * 3600_000), source: 'device' },
 ]);
 const heavy = people[PATROLLERS];
 const bulk = [
-  ...people.slice(0, PATROLLERS).flatMap((p) => eventsFor(p.profileId, SHIFTS_EACH)),
-  ...eventsFor(heavy.profileId, HEAVY_SHIFTS),
+  ...people.slice(0, PATROLLERS).flatMap((p) => eventsFor(p.profileId, ENTRIES_EACH)),
+  ...eventsFor(heavy.profileId, HEAVY_ENTRIES),
 ];
 for (let i = 0; i < bulk.length; i += 1000) await prisma.timeClockEvent.createMany({ data: bulk.slice(i, i + 1000) });
 console.log(`seeded ${PATROLLERS + 1} patrollers and ${bulk.length} events`);
@@ -112,21 +112,21 @@ const clockIn = (patrollerId) => ({
   id: randomUUID(), resortId: lodge.id, patrollerId, type: 'clock_in', dutyType: 'patrol', occurredAt: new Date(Date.now() - 3600_000).toISOString(),
 });
 
-// The first batch per patroller folds a log nothing has folded yet: every shift is new.
+// The first batch per patroller folds a log nothing has folded yet: every entry is new.
 const [firstMs] = await timed(() => submit([clockIn(heavy.profileId)]));
 await new Promise((r) => setTimeout(r, 20));
 const afterFirst = new Date();
 const [againMs, again] = await timed(() => submit([{
   id: randomUUID(), resortId: lodge.id, patrollerId: heavy.profileId, type: 'clock_out', occurredAt: new Date(Date.now() - 60_000).toISOString(),
 }]));
-ok(`one batch for a patroller with ${HEAVY_SHIFTS} shifts of history recomputes under ${BUDGET_MS} ms`,
+ok(`one batch for a patroller with ${HEAVY_ENTRIES} entries of history recomputes under ${BUDGET_MS} ms`,
    againMs < BUDGET_MS && again.results?.[0]?.status === 'applied',
    `${Math.round(againMs)} ms (first fold of the whole log: ${Math.round(firstMs)} ms)`);
 
-const touched = await prisma.timeClockShift.count({
+const touched = await prisma.timeEntry.count({
   where: { patrollerId: heavy.profileId, updatedAt: { gt: afterFirst } },
 });
-ok('and it rewrote only the shift it changed', touched === 1, `${touched} shifts written`);
+ok('and it rewrote only the entry it changed', touched === 1, `${touched} entries written`);
 
 // Everyone else folds on their first batch, in batches of 50 patrollers.
 const [crowdMs] = await timed(async () => {
@@ -148,19 +148,19 @@ const [rosterMs, roster] = await timed(async () => {
 ok(`a terminal walks a ${PATROLLERS}-person roster in under ${BUDGET_MS * 2} ms`, rosterMs < BUDGET_MS * 2 && roster >= PATROLLERS,
    `${Math.round(rosterMs)} ms, ${roster} rows`);
 
-const [shiftsMs, shiftCount] = await timed(async () => {
-  let page = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?walk=true`, { headers: D }).then(unwrap);
-  let n = page.shifts.length;
+const [entriesMs, entryCount] = await timed(async () => {
+  let page = await fetch(`${BASE}/orgs/${org.id}/time-clock/entries?walk=true`, { headers: D }).then(unwrap);
+  let n = page.entries.length;
   while (page.nextAfter) {
-    page = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?walk=true&after=${page.nextAfter}`, { headers: D }).then(unwrap);
-    n += page.shifts.length;
+    page = await fetch(`${BASE}/orgs/${org.id}/time-clock/entries?walk=true&after=${page.nextAfter}`, { headers: D }).then(unwrap);
+    n += page.entries.length;
   }
   return n;
 });
-console.log(`      a fresh terminal's first walk of every shift: ${Math.round(shiftsMs)} ms for ${shiftCount}`);
+console.log(`      a fresh terminal's first walk of every entry: ${Math.round(entriesMs)} ms for ${entryCount}`);
 
 const [hoursMs] = await timed(() => fetch(`${BASE}/orgs/${org.id}/time-clock/reports/hours`, { headers: H }).then(unwrap));
-ok(`the hours report over ${shiftCount} shifts answers in under ${BUDGET_MS * 2} ms`, hoursMs < BUDGET_MS * 2, `${Math.round(hoursMs)} ms`);
+ok(`the hours report over ${entryCount} entries answers in under ${BUDGET_MS * 2} ms`, hoursMs < BUDGET_MS * 2, `${Math.round(hoursMs)} ms`);
 
 await cleanup();
 await prisma.$disconnect();

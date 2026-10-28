@@ -1,6 +1,6 @@
 // Walks the time clock's pipeline end to end against a running API and a real
 // database (Plan 55): terminals submit clock events, the server folds them into
-// shifts, staff correct and reopen them, and what a terminal may not say is
+// entries, staff correct and reopen them, and what a terminal may not say is
 // refused.
 //
 //   PORT=4001 node apps/api/dist/src/main.js &
@@ -40,7 +40,7 @@ async function cleanup() {
   });
   const ids = profiles.map((p) => p.id);
   await prisma.timeClockEvent.deleteMany({ where: { patrollerId: { in: ids } } });
-  await prisma.timeClockShift.deleteMany({ where: { patrollerId: { in: ids } } });
+  await prisma.timeEntry.deleteMany({ where: { patrollerId: { in: ids } } });
   await prisma.patrollerProfile.deleteMany({ where: { id: { in: ids } } });
   await prisma.membership.deleteMany({ where: { userId: { in: users.map((u) => u.id) } } });
   await prisma.user.deleteMany({ where: { id: { in: users.map((u) => u.id) } } });
@@ -108,8 +108,8 @@ const clockOut = (p, at, opts = {}) => ({
 const submit = (term, events) => fetch(`${BASE}/orgs/${org.id}/time-clock/events`, {
   method: 'POST', headers: term.H, body: JSON.stringify({ events }),
 }).then(unwrap);
-const shiftsOf = (p) => prisma.timeClockShift.findMany({ where: { patrollerId: p.id }, orderBy: { clockInAt: 'asc' } });
-const patchShift = (id, body) => fetch(`${BASE}/orgs/${org.id}/time-clock/shifts/${id}`, {
+const entriesOf = (p) => prisma.timeEntry.findMany({ where: { patrollerId: p.id }, orderBy: { clockInAt: 'asc' } });
+const patchEntry = (id, body) => fetch(`${BASE}/orgs/${org.id}/time-clock/entries/${id}`, {
   method: 'PATCH', headers: H, body: JSON.stringify(body),
 });
 
@@ -122,11 +122,11 @@ ok('a clock-in and clock-out are both applied',
    first.results?.every((r) => r.status === 'applied'), JSON.stringify(first.results));
 const retry = await submit(termA, batch);
 ok('a retry of the same batch answers the same', JSON.stringify(retry.results) === JSON.stringify(first.results));
-const janeShifts = await shiftsOf(jane);
-ok('and leaves exactly one closed shift',
-   janeShifts.length === 1 && janeShifts[0].status === 'closed' && janeShifts[0].closeReason === 'manual',
-   JSON.stringify(janeShifts.map((s) => [s.status, s.closeReason])));
-ok('which knows the event that closed it (D1)', janeShifts[0]?.closeEventId === batch[1].id, janeShifts[0]?.closeEventId);
+const janeEntries = await entriesOf(jane);
+ok('and leaves exactly one closed entry',
+   janeEntries.length === 1 && janeEntries[0].status === 'closed' && janeEntries[0].closeReason === 'manual',
+   JSON.stringify(janeEntries.map((s) => [s.status, s.closeReason])));
+ok('which knows the event that closed it (D1)', janeEntries[0]?.closeEventId === batch[1].id, janeEntries[0]?.closeEventId);
 
 // ─── Out of order ────────────────────────────────────────────────────────────
 
@@ -137,13 +137,13 @@ const early = await submit(termB, [afternoon]);
 ok('an afternoon clock-out ahead of its clock-in is an orphan for now',
    early.results?.[0]?.status === 'orphan', JSON.stringify(early.results));
 await submit(termA, [morning]);
-const johnShifts = await shiftsOf(john);
+const johnEntries = await entriesOf(john);
 ok('and the morning clock-in arriving later closes the day anyway',
-   johnShifts.length === 1 && johnShifts[0].status === 'closed' && johnShifts[0].closeEventId === afternoon.id);
+   johnEntries.length === 1 && johnEntries[0].status === 'closed' && johnEntries[0].closeEventId === afternoon.id);
 const healed = await prisma.timeClockEvent.findUnique({ where: { id: afternoon.id } });
 ok('the clock-out is applied once the fold sees both', healed?.status === 'applied', healed?.status);
 
-// ─── D1: correcting an open shift moves nothing else ─────────────────────────
+// ─── D1: correcting an open entry moves nothing else ─────────────────────────
 
 const maria = await patroller('Maria');
 const yesterdayIn = clockIn(maria, hoursAgo(30));
@@ -151,27 +151,27 @@ const yesterdayOut = clockOut(maria, hoursAgo(24));
 const todayIn = clockIn(maria, hoursAgo(4));
 await submit(termA, [yesterdayIn, yesterdayOut, todayIn]);
 const fixAt = hoursAgo(1);
-const corrected = await patchShift(todayIn.id, { clockOutAt: fixAt });
-ok('staff can close an open shift', corrected.status === 200, String(corrected.status));
-const mariaShifts = await shiftsOf(maria);
-const [yesterday, today] = mariaShifts;
+const corrected = await patchEntry(todayIn.id, { clockOutAt: fixAt });
+ok('staff can close an open entry', corrected.status === 200, String(corrected.status));
+const mariaEntries = await entriesOf(maria);
+const [yesterday, today] = mariaEntries;
 ok("and yesterday's clock-out is where it was (the D1 regression)",
    yesterday?.clockOutAt?.toISOString() === yesterdayOut.occurredAt,
    `${yesterday?.clockOutAt?.toISOString()} vs ${yesterdayOut.occurredAt}`);
-ok("today's shift is closed by an admin, at the time given",
+ok("today's entry is closed by an admin, at the time given",
    today?.status === 'closed' && today?.closeReason === 'admin' && today?.clockOutAt?.toISOString() === fixAt,
    `${today?.closeReason} ${today?.clockOutAt?.toISOString()}`);
 
-// ─── D2: a reopened shift stays open ─────────────────────────────────────────
+// ─── D2: a reopened entry stays open ─────────────────────────────────────────
 
 const chen = await patroller('Chen');
 const chenIn = clockIn(chen, hoursAgo(10));
 const auto = clockOut(chen, hoursAgo(6), { id: `auto:${chenIn.id}`, source: 'device_auto' });
 await submit(termA, [chenIn, auto]);
-const autoClosed = (await shiftsOf(chen))[0];
+const autoClosed = (await entriesOf(chen))[0];
 ok('an automatic close is flagged', autoClosed?.closeReason === 'auto' && autoClosed?.flagged === true);
 
-const reopened = await patchShift(chenIn.id, { clockOutAt: null });
+const reopened = await patchEntry(chenIn.id, { clockOutAt: null });
 ok('staff can reopen it', reopened.status === 200, String(reopened.status));
 const voided = await prisma.timeClockEvent.findUnique({ where: { id: auto.id } });
 ok('which sets the close aside rather than deleting it', voided?.status === 'voided', voided?.status);
@@ -179,18 +179,18 @@ ok('which sets the close aside rather than deleting it', voided?.status === 'voi
 const late = await submit(termB, [auto]);
 ok("a second terminal's late auto close is answered as held",
    late.results?.[0]?.status === 'voided', JSON.stringify(late.results));
-const stillOpen = (await shiftsOf(chen))[0];
-ok('and the shift stays open', stillOpen?.status === 'open', stillOpen?.status);
+const stillOpen = (await entriesOf(chen))[0];
+ok('and the entry stays open', stillOpen?.status === 'open', stillOpen?.status);
 
-const closedAgain = await patchShift(chenIn.id, { clockOutAt: hoursAgo(5) });
-const reclosed = (await shiftsOf(chen))[0];
+const closedAgain = await patchEntry(chenIn.id, { clockOutAt: hoursAgo(5) });
+const reclosed = (await entriesOf(chen))[0];
 ok('closing it again is an admin close, not a revived auto one',
    closedAgain.status === 200 && reclosed?.status === 'closed' && reclosed?.closeEventId === `admin-close:${chenIn.id}`
      && reclosed?.flagged === false,
    `${reclosed?.status} ${reclosed?.closeEventId} flagged=${reclosed?.flagged}`);
-const reopenedTwice = await patchShift(chenIn.id, { clockOutAt: null });
-const closedThrice = await patchShift(chenIn.id, { clockOutAt: hoursAgo(4) });
-const third = (await shiftsOf(chen))[0];
+const reopenedTwice = await patchEntry(chenIn.id, { clockOutAt: null });
+const closedThrice = await patchEntry(chenIn.id, { clockOutAt: hoursAgo(4) });
+const third = (await entriesOf(chen))[0];
 ok('and a second reopen and close reuses that one rather than colliding with it',
    reopenedTwice.status === 200 && closedThrice.status === 200 && third?.closeEventId === `admin-close:${chenIn.id}`
      && third?.status === 'closed',
@@ -235,21 +235,21 @@ ok('and kept, so staff can see the clock', kept?.status === 'rejected', kept?.st
 
 // ─── D11: corrections and roster changes are on record ───────────────────────
 
-const history = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts/${todayIn.id}/history`, { headers: H }).then(unwrap);
-const correction = history.changes?.find((c) => c.action === 'time_clock.shift.corrected');
-ok("a shift's history lists the correction, with what it replaced",
+const history = await fetch(`${BASE}/orgs/${org.id}/time-clock/entries/${todayIn.id}/history`, { headers: H }).then(unwrap);
+const correction = history.changes?.find((c) => c.action === 'time_clock.entry.corrected');
+ok("an entry's history lists the correction, with what it replaced",
    correction?.before?.clockOutAt === null && correction?.after?.clockOutAt === fixAt && !!correction?.actorName,
    JSON.stringify(correction));
 ok('and the events behind it', history.events?.some((e) => e.id === `admin-close:${todayIn.id}` && e.source === 'admin'));
-const chenHistory = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts/${chenIn.id}/history`, { headers: H }).then(unwrap);
-ok('a reopened shift keeps the close it set aside in its history',
+const chenHistory = await fetch(`${BASE}/orgs/${org.id}/time-clock/entries/${chenIn.id}/history`, { headers: H }).then(unwrap);
+ok('a reopened entry keeps the close it set aside in its history',
    chenHistory.events?.some((e) => e.id === auto.id && e.status === 'voided')
-     && chenHistory.changes?.some((c) => c.action === 'time_clock.shift.reopened'));
+     && chenHistory.changes?.some((c) => c.action === 'time_clock.entry.reopened'));
 
-const listed = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?take=50`, { headers: H }).then(unwrap);
-const mariaToday = listed.shifts?.find((s) => s.id === todayIn.id);
-ok('a corrected shift reads as edited', mariaToday?.edited === true);
-ok('and no shift carries an NSP ID (D10)', listed.shifts?.length > 0 && listed.shifts.every((s) => !('nspId' in s)));
+const listed = await fetch(`${BASE}/orgs/${org.id}/time-clock/entries?take=50`, { headers: H }).then(unwrap);
+const mariaToday = listed.entries?.find((s) => s.id === todayIn.id);
+ok('a corrected entry reads as edited', mariaToday?.edited === true);
+ok('and no entry carries an NSP ID (D10)', listed.entries?.length > 0 && listed.entries.every((s) => !('nspId' in s)));
 
 await fetch(`${BASE}/orgs/${org.id}/members/${tom.userId}`, {
   method: 'PATCH', headers: H, body: JSON.stringify({ patrolLevel: 'Candidate' }),
@@ -263,9 +263,9 @@ ok('a member edit is audited with before and after',
 
 // ─── Corrections that would break the fold are refused ───────────────────────
 
-const overlap = await patchShift(yesterdayIn.id, { clockOutAt: hoursAgo(3) });
-ok("a correction running into the patroller's next shift is refused", overlap.status === 400, String(overlap.status));
-const badQuery = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?from=yesterday`, { headers: H });
+const overlap = await patchEntry(yesterdayIn.id, { clockOutAt: hoursAgo(3) });
+ok("a correction running into the patroller's next entry is refused", overlap.status === 400, String(overlap.status));
+const badQuery = await fetch(`${BASE}/orgs/${org.id}/time-clock/entries?from=yesterday`, { headers: H });
 ok('a list with a date that is not one is a 400, not a 500 (D9)', badQuery.status === 400, String(badQuery.status));
 const badStatus = await fetch(`${BASE}/orgs/${org.id}/time-clock/reports/hours?dutyType=napping`, { headers: H });
 ok('and so is a report for a duty type that does not exist', badStatus.status === 400, String(badStatus.status));
@@ -273,7 +273,7 @@ ok('and so is a report for a duty type that does not exist', badStatus.status ==
 // ─── D7: the walk ────────────────────────────────────────────────────────────
 
 const walk = (term, params) => fetch(
-  `${BASE}/orgs/${org.id}/time-clock/shifts?walk=true&${new URLSearchParams(params)}`, { headers: term.H },
+  `${BASE}/orgs/${org.id}/time-clock/entries?walk=true&${new URLSearchParams(params)}`, { headers: term.H },
 ).then(unwrap);
 
 const start = await walk(termA, {});
@@ -283,21 +283,21 @@ await new Promise((r) => setTimeout(r, 20));
 const janeAgain = clockIn(jane, hoursAgo(1));
 await submit(termA, [janeAgain]);
 const delta = await walk(termA, { updatedSince: cursor });
-ok("a delta after one clock-in carries that shift alone, not the patroller's history (D5)",
-   delta.shifts?.length === 1 && delta.shifts[0].id === janeAgain.id,
-   JSON.stringify(delta.shifts?.map((s) => s.id)));
+ok("a delta after one clock-in carries that entry alone, not the patroller's history (D5)",
+   delta.entries?.length === 1 && delta.entries[0].id === janeAgain.id,
+   JSON.stringify(delta.entries?.map((s) => s.id)));
 
 const seen = new Map();
 let page = await walk(termA, { take: 2 });
 let pages = 1;
 for (;;) {
-  for (const s of page.shifts) seen.set(s.id, (seen.get(s.id) ?? 0) + 1);
+  for (const s of page.entries) seen.set(s.id, (seen.get(s.id) ?? 0) + 1);
   if (!page.nextAfter) break;
   page = await walk(termA, { take: 2, after: page.nextAfter });
   pages++;
 }
-const live = await prisma.timeClockShift.count({ where: { orgId: org.id, deletedAt: null } });
-ok('a walk in pages of two returns every shift exactly once',
+const live = await prisma.timeEntry.count({ where: { orgId: org.id, deletedAt: null } });
+ok('a walk in pages of two returns every entry exactly once',
    pages > 1 && seen.size === live && [...seen.values()].every((n) => n === 1),
    `${pages} pages, ${seen.size} of ${live}`);
 
@@ -310,12 +310,12 @@ await new Promise((r) => setTimeout(r, 20));
 const earlier = clockIn(lucy, tie, { id: `smoke-a-${randomUUID()}` });
 await submit(termB, [earlier]);
 const tombstones = await walk(termA, { updatedSince: cursor });
-const gone = tombstones.shifts?.find((s) => s.id === later.id);
-ok('a shift the replay no longer produces arrives as a tombstone (D6)',
-   !!gone?.deletedAt && tombstones.shifts?.some((s) => s.id === earlier.id && !s.deletedAt),
-   JSON.stringify(tombstones.shifts?.map((s) => [s.id.slice(0, 10), s.deletedAt])));
-const screen = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?take=200`, { headers: H }).then(unwrap);
-ok('and never reaches a screen', !screen.shifts?.some((s) => s.id === later.id));
+const gone = tombstones.entries?.find((s) => s.id === later.id);
+ok('an entry the replay no longer produces arrives as a tombstone (D6)',
+   !!gone?.deletedAt && tombstones.entries?.some((s) => s.id === earlier.id && !s.deletedAt),
+   JSON.stringify(tombstones.entries?.map((s) => [s.id.slice(0, 10), s.deletedAt])));
+const screen = await fetch(`${BASE}/orgs/${org.id}/time-clock/entries?take=200`, { headers: H }).then(unwrap);
+ok('and never reaches a screen', !screen.entries?.some((s) => s.id === later.id));
 const legacy = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?updatedSince=${encodeURIComponent(cursor)}`, { headers: termA.H }).then(unwrap);
 ok('nor an older iPad, which still gets a bare array', Array.isArray(legacy) && !legacy.some((s) => s.id === later.id));
 
@@ -334,8 +334,8 @@ const refusedTo = async (label, method, path, body) => {
   // 403 where a route lets devices in and refuses this one; 401 where it takes people only.
   ok(`a terminal cannot ${label}`, r.status === 403 || r.status === 401, String(r.status));
 };
-await refusedTo('correct a shift', 'PATCH', `/time-clock/shifts/${janeAgain.id}`, { clockOutAt: hoursAgo(0.5) });
-await refusedTo('read a shift history', 'GET', `/time-clock/shifts/${janeAgain.id}/history`);
+await refusedTo('correct an entry', 'PATCH', `/time-clock/entries/${janeAgain.id}`, { clockOutAt: hoursAgo(0.5) });
+await refusedTo('read an entry history', 'GET', `/time-clock/entries/${janeAgain.id}/history`);
 await refusedTo('add a member', 'POST', '/members', { firstName: 'X', lastName: 'Y', nspId: 'NOPE1', permissions: [] });
 await refusedTo('edit one', 'PATCH', `/members/${tom.userId}`, { patrolLevel: 'Hacked' });
 await refusedTo('remove one', 'DELETE', `/members/${tom.userId}`);
@@ -369,10 +369,10 @@ ok('the current season is named by the years it spans',
    seasons.current?.label === `${startYear}–${startYear + 1}` && seasons.current?.startsOn === `${startYear}-07-01`
      && seasons.current?.endsOn === `${startYear + 1}-06-30`,
    JSON.stringify(seasons.current));
-const thisSeason = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?take=200&season=${startYear}`, { headers: H }).then(unwrap);
-const lastSeason = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?take=200&season=${startYear - 1}`, { headers: H }).then(unwrap);
-ok("this season's shifts are in this season", thisSeason.shifts?.some((s) => s.id === janeAgain.id));
-ok("and not in last season's", !lastSeason.shifts?.some((s) => s.id === janeAgain.id));
+const thisSeason = await fetch(`${BASE}/orgs/${org.id}/time-clock/entries?take=200&season=${startYear}`, { headers: H }).then(unwrap);
+const lastSeason = await fetch(`${BASE}/orgs/${org.id}/time-clock/entries?take=200&season=${startYear - 1}`, { headers: H }).then(unwrap);
+ok("this season's entries are in this season", thisSeason.entries?.some((s) => s.id === janeAgain.id));
+ok("and not in last season's", !lastSeason.entries?.some((s) => s.id === janeAgain.id));
 const hoursThisSeason = await fetch(`${BASE}/orgs/${org.id}/time-clock/reports/hours?season=${startYear}`, { headers: H }).then(unwrap);
 ok('the hours report takes a season', hoursThisSeason.some?.((r) => r.patrollerId === jane.id));
 
@@ -393,6 +393,24 @@ const cutoverAudit = await prisma.auditLog.findFirst({
 ok('and the change is audited', cutoverAudit?.metadata?.before === '07-01');
 await setCutover('07-01');
 
+// ─── Plan 58 D3: the old /shifts routes, for iPads in the field ──────────────
+
+const oldWalk = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?walk=true`, { headers: termA.H }).then(unwrap);
+ok('/shifts still walks, naming its rows shifts',
+   Array.isArray(oldWalk.shifts) && oldWalk.shifts.length > 0 && !('entries' in oldWalk) && !!oldWalk.syncedAt);
+const oldHistory = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts/${janeAgain.id}/history`, { headers: H }).then(unwrap);
+ok('and reads a history', Array.isArray(oldHistory.events) && oldHistory.events.some((e) => e.id === janeAgain.id));
+const oldPatch = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts/${janeAgain.id}`, {
+  method: 'PATCH', headers: H, body: JSON.stringify({ dutyType: 'training' }),
+});
+const oldPatchBody = await oldPatch.json();
+const oldPatched = oldPatch.ok ? oldPatchBody.data : null;
+ok('and corrects one', oldPatch.status === 200 && oldPatched?.dutyType === 'training', `${oldPatch.status} ${JSON.stringify(oldPatchBody).slice(0, 200)}`);
+await refusedTo('correct one through /shifts either', 'PATCH', `/time-clock/shifts/${janeAgain.id}`, { dutyType: 'patrol' });
+const entryAudit = await prisma.auditLog.findFirst({ where: { orgId: org.id, targetId: janeAgain.id }, orderBy: { createdAt: 'desc' } });
+ok('a correction is audited under its new name', entryAudit?.action === 'time_clock.entry.corrected' && entryAudit?.targetType === 'time_entry',
+   `${entryAudit?.action} ${entryAudit?.targetType}`);
+
 // ─── D13: Health ─────────────────────────────────────────────────────────────
 
 const health = await fetch(`${BASE}/orgs/${org.id}/time-clock/health`, { headers: H }).then(unwrap);
@@ -401,7 +419,7 @@ ok('and the close a reopen set aside', health.unapplied?.some((e) => e.id === au
 ok('and the event from a terminal bound elsewhere',
    health.mismatches?.some((e) => e.id === elsewhere.id && e.boundResortName === `${PREFIX} lodge` && e.resortName === `${PREFIX} summit`));
 ok('and every terminal', [`${PREFIX} A`, `${PREFIX} B`].every((n) => health.terminals?.some((t) => t.name === n && t.resortName === `${PREFIX} lodge`)));
-ok('and a count of shifts no device closed', typeof health.stillOpenPastSweep === 'number');
+ok('and a count of entries no device closed', typeof health.stillOpenPastSweep === 'number');
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
 await prisma.auditLog.deleteMany({

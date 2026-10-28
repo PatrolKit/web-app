@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { ItemController } from '../ski-swap/item.controller';
-import { ShiftController } from '../time-clock/shift.controller';
+import { TimeEntryController } from '../time-clock/time-entry.controller';
 import { TimeClockEventController } from '../time-clock/event.controller';
 import { StationService } from '../ski-swap/station.service';
 import { DevicesService } from './devices.service';
@@ -27,12 +27,12 @@ function guardFor(controller: object, method: string, principal: { device?: { ro
 describe('a tablet’s token', () => {
   it('reaches Ski Swap’s and Time Clock’s iPad routes', async () => {
     await expect(guardFor(ItemController.prototype, 'list', { device: { role: 'org.tablet' } })()).resolves.toBe(true);
-    await expect(guardFor(ShiftController.prototype, 'list', { device: { role: 'org.tablet' } })()).resolves.toBe(true);
+    await expect(guardFor(TimeEntryController.prototype, 'list', { device: { role: 'org.tablet' } })()).resolves.toBe(true);
   });
 
   it('leaves the legacy iPads where they were', async () => {
     await expect(guardFor(ItemController.prototype, 'list', { device: { role: 'ski_swap.staff_check_in' } })()).resolves.toBe(true);
-    await expect(guardFor(ShiftController.prototype, 'list', { device: { role: 'ski_swap.staff_check_in' } })()).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guardFor(TimeEntryController.prototype, 'list', { device: { role: 'ski_swap.staff_check_in' } })()).rejects.toBeInstanceOf(ForbiddenException);
     await expect(guardFor(ItemController.prototype, 'list', { device: { role: 'time_clock.terminal' } })()).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

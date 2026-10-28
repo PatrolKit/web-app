@@ -57,7 +57,7 @@ function harness(opts: { existing?: { id: string; nspId?: string | null } | null
       count: async () => (opts.isMember ? 1 : 0),
       update: async () => ({}),
     },
-    timeClockShift: { findMany: async () => [] },
+    timeEntry: { findMany: async () => [] },
     user: { update: async () => ({}) },
     patrollerProfile: { update: async () => ({}), updateMany: async () => ({ count: 0 }) },
     auditLog: { create: async () => ({}) },
@@ -71,8 +71,8 @@ function harness(opts: { existing?: { id: string; nspId?: string | null } | null
   const permissions = { invalidate: () => undefined };
   const touch = { touchAllForUser: async () => undefined, touch: async () => undefined };
   const mail = { sendMemberInvite: async (to: string, org: string) => { sent.push({ to, org }); return { status: 'sent' }; } };
-  const shifts = { closeFor: async () => null };
-  const svc = new MembersService(prisma as never, permissions as never, people as never, touch as never, mail as never, shifts as never);
+  const entries = { closeFor: async () => null };
+  const svc = new MembersService(prisma as never, permissions as never, people as never, touch as never, mail as never, entries as never);
   const internals = svc as unknown as { getMemberResponse: () => Promise<object>; assignPermissions: (id: string, keys: string[]) => Promise<void> };
   internals.getMemberResponse = async () => ({ permissions: [], removedAt: null });
   internals.assignPermissions = async (_id, keys) => { granted.push(keys); };

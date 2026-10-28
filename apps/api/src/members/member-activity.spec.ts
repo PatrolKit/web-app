@@ -13,7 +13,7 @@ describe('members’ activity', () => {
     const groupBys: Record<string, unknown>[] = [];
     const prisma = {
       membership: { findMany: async () => [member('dana'), member('sam'), member('lee')] },
-      timeClockShift: { findMany: async () => [] },
+      timeEntry: { findMany: async () => [] },
       refreshToken: {
         groupBy: async (args: Record<string, unknown>) => {
           groupBys.push(args);

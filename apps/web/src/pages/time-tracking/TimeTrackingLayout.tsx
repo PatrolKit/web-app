@@ -14,13 +14,13 @@ export default function TimeTrackingLayout() {
   const { orgId, perms } = useOutletContext<{ orgId: string; perms: Set<string> }>();
 
   /**
-   * Every page below needs a resort before it means anything: a shift belongs
-   * to one, the hours report and shift list filter by one, and a resort is
-   * where the IANA zone lives that the sweep and every shift's arithmetic are
+   * Every page below needs a resort before it means anything: an entry belongs
+   * to one, the hours report and entry list filter by one, and a resort is
+   * where the IANA zone lives that the sweep and every entry's arithmetic are
    * computed in. With none set up, the module renders empty tables that look
-   * like "nobody is on shift" rather than "this is not set up yet".
+   * like "nobody is clocked in" rather than "this is not set up yet".
    *
-   * Listing needs no permission beyond membership — the shift filters rely on
+   * Listing needs no permission beyond membership — the entry filters rely on
    * that — so this answers for everyone who can reach the module.
    */
   const { data: resorts, isLoading: resortsLoading } = useQuery({
@@ -58,8 +58,8 @@ export default function TimeTrackingLayout() {
         <div className="bg-surface-50 border border-gray-700 rounded-lg p-6 max-w-xl space-y-3">
           <p className="text-white font-medium">No resorts set up yet</p>
           <p className="text-sm text-gray-400">
-            Time tracking records shifts at a resort, and uses its address to know what
-            local time a shift started and when the day should be swept closed. Add one
+            Time tracking records time entries at a resort, and uses its address to know what
+            local time a time entry started and when the day should be swept closed. Add one
             before patrollers start clocking in.
           </p>
           {canManage ? (
@@ -84,8 +84,8 @@ export default function TimeTrackingLayout() {
       <h1 className="text-2xl font-bold text-white">Time Tracking</h1>
 
       <nav className="flex items-center gap-1 border-b border-gray-800 pb-1">
-        <NavLink to="" end className={navClass}>On Shift</NavLink>
-        <NavLink to="shifts" className={navClass}>Shifts</NavLink>
+        <NavLink to="" end className={navClass}>Clocked in</NavLink>
+        <NavLink to="entries" className={navClass}>Time entries</NavLink>
         <NavLink to="hours" className={navClass}>Hours</NavLink>
         <span className="mx-2 text-gray-700 select-none">|</span>
         {perms.has('time_tracking:manage') && <NavLink to="health" className={navClass}>Health</NavLink>}

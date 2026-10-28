@@ -131,7 +131,7 @@ model Organization {
 
   resorts           Resort[]
   timeClockEvents   TimeClockEvent[]
-  timeClockShifts   TimeClockShift[]
+  timeEntries       TimeEntry[]
   timeClockSettings TimeClockSettings?
 }
 
@@ -1085,8 +1085,8 @@ model Resort {
   updatedAt DateTime  @updatedAt
 
   org     Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  shifts  TimeClockShift[]
-  events  TimeClockEvent[]
+  timeEntries TimeEntry[]
+  events      TimeClockEvent[]
   /// The terminals standing at this resort. Several is normal.
   devices Device[]
 
@@ -1117,8 +1117,8 @@ model PatrollerProfile {
   updatedAt DateTime  @updatedAt
 
   membership Membership       @relation(fields: [membershipId], references: [id], onDelete: Cascade)
-  shifts     TimeClockShift[]
-  events     TimeClockEvent[]
+  timeEntries TimeEntry[]
+  events      TimeClockEvent[]
 }
 
 model TimeClockEvent {
@@ -1153,7 +1153,8 @@ model TimeClockEvent {
   @@index([resortId])
 }
 
-model TimeClockShift {
+/// One clock-in and its clock-out (Plan 58). "Shift" is kept for scheduling.
+model TimeEntry {
   id             String    @id
   orgId          String
   resortId       String
@@ -1186,6 +1187,8 @@ model TimeClockShift {
   @@index([orgId, patrollerId, status])
   @@index([resortId])
   @@index([patrollerId])
+
+  @@map("TimeClockShift")
 }
 
 model TimeClockSettings {

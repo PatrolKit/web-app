@@ -11,14 +11,14 @@ import {
 import type { Season, SeasonsResponse } from '../contracts/time-clock.contracts';
 
 /**
- * Shifts whose clock-in falls in the season (Plan 55 D12), each by its own resort's
+ * Entries whose clock-in falls in the season (Plan 55 D12), each by its own resort's
  * calendar: a season starts at local midnight, and the org's resorts need not share a zone.
  */
 export async function seasonWhere(
   prisma: PrismaService,
   orgId: string,
   season: number,
-): Promise<Prisma.TimeClockShiftWhereInput> {
+): Promise<Prisma.TimeEntryWhereInput> {
   const [org, resorts] = await Promise.all([
     prisma.organization.findUnique({ where: { id: orgId }, select: { seasonCutover: true } }),
     prisma.resort.findMany({ where: { orgId }, select: { id: true, timeZone: true } }),
@@ -38,7 +38,7 @@ export class SeasonService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * The seasons there is anything to pick: from the earliest shift's to today's, newest
+   * The seasons there is anything to pick: from the earliest entry's to today's, newest
    * first. "Today" is in the org's first resort's zone — a season turns over at midnight
    * there, and an org with resorts in two zones is a day's rounding either way.
    */
@@ -46,7 +46,7 @@ export class SeasonService {
     const [org, firstResort, earliest] = await Promise.all([
       this.prisma.organization.findUnique({ where: { id: orgId }, select: { seasonCutover: true } }),
       this.prisma.resort.findFirst({ where: { orgId, deletedAt: null }, orderBy: { createdAt: 'asc' } }),
-      this.prisma.timeClockShift.findFirst({
+      this.prisma.timeEntry.findFirst({
         where: { orgId, deletedAt: null },
         orderBy: { clockInAt: 'asc' },
         include: { resort: { select: { timeZone: true } } },

@@ -4,7 +4,7 @@ import { TimeClockFoldService } from './fold.service';
 import { isUniqueViolation } from '../common/util/prisma-errors';
 import type { ClockEventInput, EventResult } from '../contracts/time-clock.contracts';
 
-/** Anything dated further ahead than this is a broken device clock, not a shift (§5.7). */
+/** Anything dated further ahead than this is a broken device clock, not an entry (§5.7). */
 const FUTURE_TOLERANCE_MS = 24 * 3600_000;
 
 /** What a device may say about where an event came from. `admin` is the server's (D3). */

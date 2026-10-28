@@ -15,12 +15,12 @@ export const EventSourceSchema = z.enum(EVENT_SOURCES);
 
 /**
  * Set by the fold (§5.5), except `rejected` (refused on arrival) and `voided` (a close an
- * admin set aside by reopening its shift, Plan 55 D2). The iPad treats every status but
+ * admin set aside by reopening its entry, Plan 55 D2). The iPad treats every status but
  * `rejected` as accepted.
  */
 export const EVENT_STATUSES = ['applied', 'duplicate', 'orphan', 'anomalous', 'rejected', 'voided'] as const;
 
-export const SHIFT_CLOSE_REASONS = ['manual', 'auto', 'superseded', 'admin'] as const;
+export const ENTRY_CLOSE_REASONS = ['manual', 'auto', 'superseded', 'admin'] as const;
 
 // ─── Patrollers (the roster) ─────────────────────────────────────────────────
 
@@ -157,13 +157,13 @@ export class SubmitEventsDto extends createZodDto(SubmitEventsSchema) {}
 export type ClockEventInput = z.infer<typeof ClockEventSchema>;
 export type EventResult = z.infer<typeof EventResultSchema>;
 
-// ─── Shifts ──────────────────────────────────────────────────────────────────
+// ─── Entries ──────────────────────────────────────────────────────────────────
 
 /**
- * No `nspId` (Plan 55 D10): it is the clock-in verifier, and nothing that reads a shift
+ * No `nspId` (Plan 55 D10): it is the clock-in verifier, and nothing that reads an entry
  * needs it. The hours report, an admin export, keeps it.
  */
-export const ShiftResponseSchema = z.object({
+export const TimeEntryResponseSchema = z.object({
   id: z.string(),
   orgId: z.string(),
   resortId: z.string(),
@@ -185,12 +185,12 @@ export const ShiftResponseSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const SHIFT_STATUSES = ['open', 'closed'] as const;
+export const ENTRY_STATUSES = ['open', 'closed'] as const;
 
-export const ShiftListQuerySchema = z
+export const TimeEntryListQuerySchema = z
   .object({
     resortId: z.string().max(64).optional(),
-    status: z.enum(SHIFT_STATUSES).optional(),
+    status: z.enum(ENTRY_STATUSES).optional(),
     dutyType: DutyTypeSchema.optional(),
     from: instant.optional(),
     to: instant.optional(),
@@ -208,15 +208,15 @@ export const ShiftListQuerySchema = z
   .strict();
 
 /** `walk` or `take` (D7). Without either, the list is a bare array, for older iPads. */
-export const ShiftPageResponseSchema = z.object({
-  shifts: z.array(ShiftResponseSchema),
+export const TimeEntryPageResponseSchema = z.object({
+  entries: z.array(TimeEntryResponseSchema),
   total: z.number(),
   syncedAt: z.string(),
   nextAfter: z.string().optional(),
 });
 
-/** Everything that happened to one shift, oldest first (D11). */
-export const ShiftHistoryResponseSchema = z.object({
+/** Everything that happened to one entry, oldest first (D11). */
+export const TimeEntryHistoryResponseSchema = z.object({
   events: z.array(
     z.object({
       id: z.string(),
@@ -240,7 +240,7 @@ export const ShiftHistoryResponseSchema = z.object({
   ),
 });
 
-export const PatchShiftSchema = z
+export const PatchTimeEntrySchema = z
   .object({
     clockInAt: z.string().datetime({ offset: true }).optional(),
     clockOutAt: z.string().datetime({ offset: true }).nullable().optional(),
@@ -250,12 +250,12 @@ export const PatchShiftSchema = z
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field must be provided' });
 
-export class PatchShiftDto extends createZodDto(PatchShiftSchema) {}
-export class ShiftListQueryDto extends createZodDto(ShiftListQuerySchema) {}
-export type ShiftListQuery = z.infer<typeof ShiftListQuerySchema>;
-export type ShiftResponse = z.infer<typeof ShiftResponseSchema>;
-export type ShiftPageResponse = z.infer<typeof ShiftPageResponseSchema>;
-export type ShiftHistoryResponse = z.infer<typeof ShiftHistoryResponseSchema>;
+export class PatchTimeEntryDto extends createZodDto(PatchTimeEntrySchema) {}
+export class TimeEntryListQueryDto extends createZodDto(TimeEntryListQuerySchema) {}
+export type TimeEntryListQuery = z.infer<typeof TimeEntryListQuerySchema>;
+export type TimeEntryResponse = z.infer<typeof TimeEntryResponseSchema>;
+export type TimeEntryPageResponse = z.infer<typeof TimeEntryPageResponseSchema>;
+export type TimeEntryHistoryResponse = z.infer<typeof TimeEntryHistoryResponseSchema>;
 
 // ─── Reports ─────────────────────────────────────────────────────────────────
 
@@ -264,7 +264,7 @@ export const HoursReportRowSchema = z.object({
   patrollerName: z.string(),
   nspId: z.string(),
   patrolLevel: z.string().nullable(),
-  shiftCount: z.number(),
+  entryCount: z.number(),
   totalMinutes: z.number(),
   minutesByDutyType: z.record(z.string(), z.number()),
 });
@@ -296,7 +296,7 @@ export const SeasonSchema = z.object({
 export const SeasonsResponseSchema = z.object({
   cutover: z.string(),
   current: SeasonSchema,
-  /** From the earliest shift's season to the current one, newest first. */
+  /** From the earliest entry's season to the current one, newest first. */
   seasons: z.array(SeasonSchema),
 });
 

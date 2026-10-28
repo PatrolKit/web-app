@@ -34,7 +34,7 @@ export default function OrgResortsPage() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <p className="text-gray-400 text-sm max-w-2xl">
-          The places this organization patrols. Time tracking records every shift against a
+          The places this organization patrols. Time tracking records every time entry against a
           resort, and each resort's time zone — worked out from its address — is what the
           automatic clock-out sweep runs on.
         </p>
@@ -109,7 +109,7 @@ export default function OrgResortsPage() {
           <div className="bg-surface-50 border border-gray-700 rounded-lg p-6 max-w-sm w-full space-y-4">
             <h3 className="text-white font-semibold">Delete {confirmDelete.name}?</h3>
             <p className="text-gray-300 text-sm">
-              It will stop appearing anywhere you pick a resort. Shifts already recorded there
+              It will stop appearing anywhere you pick a resort. Time entries already recorded there
               stay in the hours report.
             </p>
             <div className="flex gap-3 justify-end">

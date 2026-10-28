@@ -10,8 +10,8 @@ import OrganizationsTab from './pages/admin/OrganizationsTab';
 import UsersTab from './pages/admin/UsersTab';
 import SkiSwapLayout from './pages/ski-swap/SkiSwapLayout';
 import TimeTrackingLayout from './pages/time-tracking/TimeTrackingLayout';
-import OnShiftPage from './pages/time-tracking/OnShiftPage';
-import ShiftsPage from './pages/time-tracking/ShiftsPage';
+import ClockedInPage from './pages/time-tracking/ClockedInPage';
+import TimeEntriesPage from './pages/time-tracking/TimeEntriesPage';
 import HoursReportPage from './pages/time-tracking/HoursReportPage';
 import TimeTrackingSettingsPage from './pages/time-tracking/SettingsPage';
 import DeviceSoftwareTab from './pages/admin/DeviceSoftwareTab';
@@ -189,8 +189,9 @@ export default function App() {
             <Route path="seller-profile" element={<SellerProfilePage />} />
           </Route>
           <Route path="time-tracking" element={<TimeTrackingLayout />}>
-            <Route index element={<OnShiftPage />} />
-            <Route path="shifts" element={<ShiftsPage />} />
+            <Route index element={<ClockedInPage />} />
+            <Route path="entries" element={<TimeEntriesPage />} />
+            <Route path="shifts" element={<Navigate to="../entries" replace />} />
             <Route path="hours" element={<HoursReportPage />} />
             <Route path="health" element={<TimeClockHealthPage />} />
             <Route path="settings" element={<TimeTrackingSettingsPage />} />

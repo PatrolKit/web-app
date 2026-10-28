@@ -61,6 +61,6 @@ describe('autoClockOutAt (the §5.6 table)', () => {
 
 describe('autoEventId', () => {
   it('derives the same id on every device, so duplicate closes are no-ops', () => {
-    expect(autoEventId('shift-abc')).toBe('auto:shift-abc');
+    expect(autoEventId('entry-abc')).toBe('auto:entry-abc');
   });
 });

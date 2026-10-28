@@ -76,8 +76,8 @@ ok('its mode is recorded', (await prisma.device.findUnique({ where: { id: tablet
 
 const swaps = await fetch(`${BASE}/orgs/${org.id}/ski-swap/swaps`, { headers: TH });
 ok('it reaches Ski Swap', swaps.status === 200, String(swaps.status));
-const shifts = await fetch(`${BASE}/orgs/${org.id}/time-clock/shifts?walk=true`, { headers: TH });
-ok('and Time Clock', shifts.status === 200, String(shifts.status));
+const entries = await fetch(`${BASE}/orgs/${org.id}/time-clock/entries?walk=true`, { headers: TH });
+ok('and Time Clock', entries.status === 200, String(entries.status));
 
 const event = { id: randomUUID(), resortId: lodge.id, patrollerId: 'no-such-patroller', type: 'clock_in', dutyType: 'patrol', occurredAt: new Date().toISOString() };
 const clocked = await fetch(`${BASE}/orgs/${org.id}/time-clock/events`, { method: 'POST', headers: TH, body: JSON.stringify({ events: [event] }) });

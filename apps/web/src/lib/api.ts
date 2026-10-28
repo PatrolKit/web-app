@@ -1658,8 +1658,8 @@ export const api = {
         method: 'PUT', body: JSON.stringify({ devicePin }),
       }),
 
-    // Shifts — always a page: the bare array is for older iPads (Plan 55 D7).
-    listShifts: (
+    // Entries — always a page: the bare array is for older iPads (Plan 55 D7).
+    listEntries: (
       orgId: string,
       params: {
         resortId?: string; status?: string; from?: string; to?: string; dutyType?: string;
@@ -1670,20 +1670,20 @@ export const api = {
       Object.entries(params).forEach(([k, v]) => {
         if (k !== 'take' && v !== undefined && v !== '' && v !== false) qs.set(k, String(v));
       });
-      return request<import('./api.types').ShiftPageResponse>(`/orgs/${orgId}/time-clock/shifts?${qs}`);
+      return request<import('./api.types').TimeEntryPageResponse>(`/orgs/${orgId}/time-clock/entries?${qs}`);
     },
-    shiftHistory: (orgId: string, shiftId: string) =>
-      request<import('./api.types').ShiftHistoryResponse>(`/orgs/${orgId}/time-clock/shifts/${shiftId}/history`),
+    entryHistory: (orgId: string, entryId: string) =>
+      request<import('./api.types').TimeEntryHistoryResponse>(`/orgs/${orgId}/time-clock/entries/${entryId}/history`),
     seasons: (orgId: string) =>
       request<import('./api.types').SeasonsResponse>(`/orgs/${orgId}/time-clock/seasons`),
     health: (orgId: string) =>
       request<import('./api.types').TimeClockHealthResponse>(`/orgs/${orgId}/time-clock/health`),
-    patchShift: (
+    patchEntry: (
       orgId: string,
-      shiftId: string,
+      entryId: string,
       data: { clockInAt?: string; clockOutAt?: string | null; dutyType?: string; dutyNote?: string | null },
     ) =>
-      request<import('./api.types').ShiftResponse>(`/orgs/${orgId}/time-clock/shifts/${shiftId}`, {
+      request<import('./api.types').TimeEntryResponse>(`/orgs/${orgId}/time-clock/entries/${entryId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
 

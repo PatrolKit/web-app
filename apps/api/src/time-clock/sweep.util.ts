@@ -2,7 +2,7 @@
  * Sweep-time arithmetic, mirrored by `AutoClockOutService` on iOS (§5.6).
  *
  * Devices, not the server, originate auto clock-outs. The server needs the same maths
- * only to answer "which open shifts should a device already have closed?" for the
+ * only to answer "which open entries should a device already have closed?" for the
  * admin "still open" view.
  */
 
@@ -67,7 +67,7 @@ export function localParts(instant: Date, timeZone: string): { year: number; mon
 /**
  * The nearest `HH:mm` in `timeZone` that FOLLOWS `clockInAt` (§5.6). "Following" is
  * load-bearing: the nearest 03:00 in absolute terms to an 08:00 clock-in is that same
- * morning's, five hours before the shift started.
+ * morning's, five hours before the entry started.
  */
 export function sweepAt(clockInAt: Date, timeZone: string, autoCloseLocalTime: string): Date {
   const [hh, mm] = autoCloseLocalTime.split(':').map(Number);
@@ -80,7 +80,7 @@ export function sweepAt(clockInAt: Date, timeZone: string, autoCloseLocalTime: s
   return new Date(clockInAt.getTime() + 24 * 3600_000);
 }
 
-/** What an auto clock-out would record for this shift: min(clockIn + Nh, sweepAt). */
+/** What an auto clock-out would record for this entry: min(clockIn + Nh, sweepAt). */
 export function autoClockOutAt(
   clockInAt: Date,
   timeZone: string,

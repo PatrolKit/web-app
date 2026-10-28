@@ -132,8 +132,8 @@ export interface MemberResponse {
   clockPinSet: boolean;
   /** Live, not inactive, and an NSP ID or a PIN to verify them by. */
   canClockIn: boolean;
-  /** Their open shift, so taking them off the clock can warn first. */
-  onShift?: { resortName: string; since: string } | null;
+  /** Their open entry, so taking them off the clock can warn first. */
+  clockedIn?: { resortName: string; since: string } | null;
   /** Last sign-in or session renewal, accurate to 15 minutes. Null ⇒ never. */
   lastActiveAt?: string | null;
   /** A session is still open on some device. */
@@ -1167,7 +1167,7 @@ export interface TimeClockSettingsResponse {
   updatedAt: string;
 }
 
-export interface ShiftResponse {
+export interface TimeEntryResponse {
   id: string;
   orgId: string;
   resortId: string;
@@ -1188,14 +1188,14 @@ export interface ShiftResponse {
   updatedAt: string;
 }
 
-export interface ShiftPageResponse {
-  shifts: ShiftResponse[];
+export interface TimeEntryPageResponse {
+  entries: TimeEntryResponse[];
   total: number;
   syncedAt: string;
   nextAfter?: string;
 }
 
-export interface ShiftHistoryResponse {
+export interface TimeEntryHistoryResponse {
   events: {
     id: string;
     type: string;
@@ -1267,7 +1267,7 @@ export interface HoursReportRow {
   patrollerName: string;
   nspId: string;
   patrolLevel: string | null;
-  shiftCount: number;
+  entryCount: number;
   totalMinutes: number;
   minutesByDutyType: Record<string, number>;
 }

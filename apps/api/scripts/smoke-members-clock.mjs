@@ -40,7 +40,7 @@ async function cleanup() {
   const profiles = await prisma.patrollerProfile.findMany({ where: { membership: { userId: { in: ids } } }, select: { id: true } });
   const pids = profiles.map((p) => p.id);
   await prisma.timeClockEvent.deleteMany({ where: { patrollerId: { in: pids } } });
-  await prisma.timeClockShift.deleteMany({ where: { patrollerId: { in: pids } } });
+  await prisma.timeEntry.deleteMany({ where: { patrollerId: { in: pids } } });
   await prisma.patrollerProfile.deleteMany({ where: { id: { in: pids } } });
   await prisma.sellerProfile.deleteMany({ where: { membership: { userId: { in: ids } } } });
   await prisma.contactChallenge.deleteMany({ where: { userId: { in: ids } } });
@@ -170,12 +170,12 @@ await fetch(`${BASE}/orgs/${org.id}/time-clock/events`, {
   method: 'POST', headers: D,
   body: JSON.stringify({ events: [{ id: randomUUID(), resortId: lodge.id, patrollerId: tomRecord.id, type: 'clock_in', dutyType: 'patrol', occurredAt: new Date(Date.now() - 3600_000).toISOString() }] }),
 });
-const onShift = (await members()).find((m) => m.userId === tom.userId);
-ok('Members shows who is on shift', onShift?.onShift?.resortName === `${PREFIX} lodge`, JSON.stringify(onShift?.onShift));
+const clockedIn = (await members()).find((m) => m.userId === tom.userId);
+ok('Members shows who is on entry', clockedIn?.clockedIn?.resortName === `${PREFIX} lodge`, JSON.stringify(clockedIn?.clockedIn));
 const inactive = await update(tom.userId, { inactive: true });
-const tomShift = await prisma.timeClockShift.findFirst({ where: { patrollerId: tomRecord.id }, orderBy: { clockInAt: 'desc' } });
-ok('making an on-shift member inactive clocks them out', inactive.status === 200 && tomShift?.status === 'closed' && tomShift?.closeReason === 'admin',
-   `${inactive.status} ${tomShift?.status}/${tomShift?.closeReason}`);
+const tomEntry = await prisma.timeEntry.findFirst({ where: { patrollerId: tomRecord.id }, orderBy: { clockInAt: 'desc' } });
+ok('making an on-entry member inactive clocks them out', inactive.status === 200 && tomEntry?.status === 'closed' && tomEntry?.closeReason === 'admin',
+   `${inactive.status} ${tomEntry?.status}/${tomEntry?.closeReason}`);
 ok('and takes them off the clock, still a member', (await roster()).find((p) => p.nspId === NSP(1))?.active === false
    && (await members()).some((m) => m.userId === tom.userId && m.inactive));
 await update(tom.userId, { inactive: false });

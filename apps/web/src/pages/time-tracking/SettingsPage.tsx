@@ -41,9 +41,9 @@ export default function SettingsPage() {
       <section className="space-y-3">
         <h2 className="text-white font-semibold">Automatic clock-out</h2>
         <p className="text-gray-400 text-sm max-w-2xl">
-          Each iPad sweeps its own resort at this local time and closes any shift still open,
-          recording the clock-out at the shift start plus the duration below — or at the sweep
-          time, whichever comes first. The server never closes a shift on its own.
+          Each iPad sweeps its own resort at this local time and closes any time entry still open,
+          recording the clock-out at the clock-in plus the duration below — or at the sweep
+          time, whichever comes first. The server never closes a time entry on its own.
         </p>
         <div className="bg-surface-100 rounded-lg p-4 flex flex-wrap gap-3 items-end">
           <label className="text-sm text-gray-300 space-y-1">
@@ -52,7 +52,7 @@ export default function SettingsPage() {
               onChange={(e) => setLocalTime(e.target.value)} />
           </label>
           <label className="text-sm text-gray-300 space-y-1">
-            <span className="block">Shift length recorded</span>
+            <span className="block">Clocked-in time recorded</span>
             <select className={inputClass} value={afterHours}
               onChange={(e) => setAfterHours(Number(e.target.value))}>
               {[2, 3, 4, 5, 6, 8, 10, 12].map((h) => <option key={h} value={h}>{h} hours</option>)}

@@ -58,7 +58,7 @@ export default function HoursReportPage() {
         <p className="text-gray-400 text-sm">Loading…</p>
       ) : rows.length === 0 ? (
         <p className="text-gray-500 text-sm py-8 text-center">
-          {period?.kind === 'season' ? 'No closed shifts this season.' : 'No closed shifts in this range.'}
+          {period?.kind === 'season' ? 'No closed time entries this season.' : 'No closed time entries in this range.'}
         </p>
       ) : (
         <table className="w-full text-sm">
@@ -66,7 +66,7 @@ export default function HoursReportPage() {
             <tr>
               <th className="text-left py-2 font-medium">Patroller</th>
               <th className="text-left py-2 font-medium">NSP ID</th>
-              <th className="text-right py-2 font-medium">Shifts</th>
+              <th className="text-right py-2 font-medium">Entries</th>
               <th className="text-right py-2 font-medium">Total</th>
               {DUTY_TYPES.map((d) => (
                 <th key={d} className="text-right py-2 font-medium capitalize">{d}</th>
@@ -81,7 +81,7 @@ export default function HoursReportPage() {
                   {row.patrolLevel && <span className="text-gray-500 text-xs ml-2">{row.patrolLevel}</span>}
                 </td>
                 <td className="py-2 text-gray-400 tabular-nums">{row.nspId}</td>
-                <td className="py-2 text-gray-300 text-right tabular-nums">{row.shiftCount}</td>
+                <td className="py-2 text-gray-300 text-right tabular-nums">{row.entryCount}</td>
                 <td className="py-2 text-white text-right tabular-nums">{hours(row.totalMinutes)}h</td>
                 {DUTY_TYPES.map((d) => (
                   <td key={d} className="py-2 text-gray-400 text-right tabular-nums">

@@ -58,8 +58,8 @@ export function MemberFormModal({
   const why = !identified
     ? 'Give an email, a phone number or an NSP ID.'
     : !ready ? 'Without an email, a first and last name are needed.' : null;
-  // Taking an on-shift member off the clock clocks them out; say so first.
-  const clocksOut = !!member?.onShift && draft.inactive && !member.inactive;
+  // Taking an on-entry member off the clock clocks them out; say so first.
+  const clocksOut = !!member?.clockedIn && draft.inactive && !member.inactive;
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
@@ -109,7 +109,7 @@ export function MemberFormModal({
             )}
             {clocksOut && (
               <p className="text-amber-400 text-sm">
-                {member.displayName} is on shift at {member.onShift!.resortName}. Saving clocks them out.
+                {member.displayName} is clocked in at {member.clockedIn!.resortName}. Saving clocks them out.
               </p>
             )}
           </div>

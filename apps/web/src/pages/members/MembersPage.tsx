@@ -268,8 +268,8 @@ export default function MembersPage() {
           <div role="dialog" aria-labelledby="remove-title" className="bg-surface-50 border border-gray-700 rounded-lg p-6 max-w-sm w-full mx-4 space-y-4">
             <h3 id="remove-title" className="text-white font-semibold">Remove {removing.displayName}?</h3>
             <p className="text-gray-300 text-sm">
-              They lose their permissions here and come off the iPads' clock-in list. Their shifts and history stay.
-              {removing.onShift && ` They're on shift at ${removing.onShift.resortName}; this clocks them out.`}
+              They lose their permissions here and come off the iPads' clock-in list. Their time entries and history stay.
+              {removing.clockedIn && ` They're clocked in at ${removing.clockedIn.resortName}; this clocks them out.`}
             </p>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setRemoving(null)} className="text-gray-400 hover:text-white text-sm px-3 py-1.5">Cancel</button>

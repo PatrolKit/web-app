@@ -24,7 +24,7 @@ export class TimeClockHealthService {
   /**
    * Time Tracking → Health (Plan 55 D13): what the server refused or could not place,
    * every terminal and when it last called in, events from a terminal bound somewhere
-   * else (D4), and how many shifts no device closed.
+   * else (D4), and how many entries no device closed.
    *
    * Terminals are read from `Device`, not from events, so one that has gone quiet still
    * shows — which is the case this exists to catch.
@@ -58,7 +58,7 @@ export class TimeClockHealthService {
         orderBy: { name: 'asc' },
       }),
       this.prisma.resort.findMany({ where: { orgId }, select: { id: true, name: true } }),
-      this.prisma.timeClockShift.findMany({
+      this.prisma.timeEntry.findMany({
         where: { orgId, status: 'open', deletedAt: null },
         select: { clockInAt: true, resort: { select: { timeZone: true } } },
       }),

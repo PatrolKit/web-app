@@ -31,9 +31,9 @@ export const MemberResponseSchema = z.object({
   clockPinSet: z.boolean(),
   /// Live, not inactive, and an NSP ID or a PIN to verify them by.
   canClockIn: z.boolean(),
-  /// Their open shift, so the page can warn before taking them off the clock.
+  /// Their open entry, so the page can warn before taking them off the clock.
   /// Only on the members list.
-  onShift: z.object({ resortName: z.string(), since: z.date() }).nullable().optional(),
+  clockedIn: z.object({ resortName: z.string(), since: z.date() }).nullable().optional(),
   /// When they last signed in or their session was renewed: about every 15
   /// minutes while they use the app, so accurate to 15 minutes. Null ⇒ never.
   /// Only on the members list.

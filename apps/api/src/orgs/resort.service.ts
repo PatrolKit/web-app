@@ -80,7 +80,7 @@ export class ResortService {
   }
 
   /**
-   * Soft delete: shifts and events keep pointing at the row so history and the
+   * Soft delete: entries and events keep pointing at the row so history and the
    * hours report stay intact, but the resort drops out of every list.
    */
   async remove(orgId: string, resortId: string): Promise<void> {

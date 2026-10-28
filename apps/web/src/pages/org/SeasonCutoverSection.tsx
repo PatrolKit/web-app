@@ -26,7 +26,7 @@ export function describeSeason(startYear: number, month: number, day: number): s
 }
 
 /**
- * Seasons split the year at one date (Plan 55 D12). Time Tracking groups shifts and
+ * Seasons split the year at one date (Plan 55 D12). Time Tracking groups entries and
  * hours by it; nothing is stored per season, so changing it regroups at once.
  */
 export function SeasonCutoverSection({
@@ -51,7 +51,7 @@ export function SeasonCutoverSection({
     <section className="space-y-3">
       <h2 className="text-white font-semibold">Season starts</h2>
       <p className="text-gray-400 text-sm">
-        Time Tracking groups shifts and hours into seasons that start on this day each year.
+        Time Tracking groups time entries and hours into seasons that start on this day each year.
       </p>
       <form
         onSubmit={(e) => { e.preventDefault(); if (changed) setConfirming(true); }}
@@ -99,7 +99,7 @@ export function SeasonCutoverSection({
           <div className="bg-surface-50 border border-gray-700 rounded-lg p-6 max-w-sm w-full mx-4 space-y-4">
             <h3 className="text-white font-semibold">Change when seasons start?</h3>
             <p className="text-gray-300 text-sm">
-              Seasons will start on {MONTHS[month - 1]} {day}. Shifts and hours are grouped by the
+              Seasons will start on {MONTHS[month - 1]} {day}. Time entries and hours are grouped by the
               new dates at once. Nothing is moved.
             </p>
             <div className="flex gap-3 justify-end">

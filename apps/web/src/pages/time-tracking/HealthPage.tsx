@@ -20,7 +20,7 @@ const STATUSES: Record<string, string> = {
   rejected: 'Refused',
   orphan: 'Clock-out with no clock-in',
   anomalous: 'Clock-out before its clock-in',
-  voided: 'Set aside when a shift was reopened',
+  voided: 'Set aside when a time entry was reopened',
 };
 
 /** What went wrong, and which terminals have gone quiet (Plan 55 D13). */
@@ -43,14 +43,14 @@ export default function HealthPage() {
   return (
     <div className="space-y-8">
       <section className="space-y-2">
-        <h2 className="text-white font-semibold">Shifts nobody closed</h2>
+        <h2 className="text-white font-semibold">Time entries nobody closed</h2>
         {data.stillOpenPastSweep === 0 ? (
-          <p className="text-gray-500 text-sm">None. Every shift past its automatic clock-out time was closed.</p>
+          <p className="text-gray-500 text-sm">None. Every time entry past its automatic clock-out time was closed.</p>
         ) : (
           <p className="text-sm text-yellow-300">
-            {data.stillOpenPastSweep} shift{data.stillOpenPastSweep === 1 ? ' is' : 's are'} still open past the
+            {data.stillOpenPastSweep} time entr{data.stillOpenPastSweep === 1 ? 'y is' : 'ies are'} still open past the
             automatic clock-out time.{' '}
-            <Link to="../shifts" className="underline hover:text-yellow-200">Review them on Shifts</Link>
+            <Link to="../entries" className="underline hover:text-yellow-200">Review them under Time entries</Link>
           </p>
         )}
       </section>

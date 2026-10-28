@@ -46,7 +46,7 @@ export class OrgsService {
           ...(data.seasonCutover !== undefined && { seasonCutover: data.seasonCutover }),
         },
       });
-      // Moving the cutover regroups every season's shifts and hours at once (Plan 55 D12).
+      // Moving the cutover regroups every season's entries and hours at once (Plan 55 D12).
       if (data.seasonCutover !== undefined && before && before.seasonCutover !== data.seasonCutover) {
         await this.prisma.auditLog.create({
           data: {

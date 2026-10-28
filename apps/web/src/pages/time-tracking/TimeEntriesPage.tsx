@@ -2,21 +2,21 @@ import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import type { ShiftResponse } from '../../lib/api.types';
+import type { TimeEntryResponse } from '../../lib/api.types';
 import type { TimeTrackingContext } from './TimeTrackingLayout';
 import {
   DutyBadge, PeriodPicker, elapsedLabel, formatDateTime, fromLocalInput, periodParams, toLocalInput,
   type Period,
 } from './shared';
-import { ShiftHistoryDialog } from './ShiftHistoryDialog';
+import { TimeEntryHistoryDialog } from './TimeEntryHistoryDialog';
 
 type View = 'stillOpen' | 'needsReview' | 'all';
 
 const DUTY_TYPES = ['patrol', 'training', 'instruction', 'other'];
 const PAGE = 100;
 
-/** Opens on "still open" — shifts whose sweep has passed and no device closed (§6.4). */
-export default function ShiftsPage() {
+/** Opens on "still open" — entries whose sweep has passed and no device closed (§6.4). */
+export default function TimeEntriesPage() {
   const { orgId, perms } = useOutletContext<TimeTrackingContext>();
   const queryClient = useQueryClient();
   const canEdit = perms.has('time_tracking:manage');
@@ -26,9 +26,9 @@ export default function ShiftsPage() {
   const [dutyType, setDutyType] = useState('');
   const [chosen, setChosen] = useState<Period | null>(null);
   const [page, setPage] = useState(0);
-  const [editing, setEditing] = useState<ShiftResponse | null>(null);
-  const [reopening, setReopening] = useState<ShiftResponse | null>(null);
-  const [historyOf, setHistoryOf] = useState<ShiftResponse | null>(null);
+  const [editing, setEditing] = useState<TimeEntryResponse | null>(null);
+  const [reopening, setReopening] = useState<TimeEntryResponse | null>(null);
+  const [historyOf, setHistoryOf] = useState<TimeEntryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const { data: resorts = [] } = useQuery({
@@ -41,7 +41,7 @@ export default function ShiftsPage() {
   });
 
   // The current season until someone picks something else (D12). "Still open" ignores the
-  // period: a shift nobody closed is worth seeing whenever it started.
+  // period: an entry nobody closed is worth seeing whenever it started.
   const period: Period | null =
     chosen ?? (seasons ? { kind: 'season', startYear: seasons.current.startYear } : null);
   const params = {
@@ -54,36 +54,36 @@ export default function ShiftsPage() {
   };
 
   const { data, isLoading } = useQuery({
-    queryKey: ['time-clock/shifts', orgId, view, params],
-    queryFn: () => api.timeClock.listShifts(orgId, params),
+    queryKey: ['time-clock/entries', orgId, view, params],
+    queryFn: () => api.timeClock.listEntries(orgId, params),
     enabled: view === 'stillOpen' || !!period,
   });
-  const shifts = data?.shifts ?? [];
+  const entries = data?.entries ?? [];
   const total = data?.total ?? 0;
 
   const reset = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPage(0); };
 
   const patchMutation = useMutation({
-    mutationFn: ({ shift, data }: { shift: ShiftResponse; data: Parameters<typeof api.timeClock.patchShift>[2] }) =>
-      api.timeClock.patchShift(orgId, shift.id, data),
+    mutationFn: ({ entry, data }: { entry: TimeEntryResponse; data: Parameters<typeof api.timeClock.patchEntry>[2] }) =>
+      api.timeClock.patchEntry(orgId, entry.id, data),
     onSuccess: () => {
       setEditing(null);
       setReopening(null);
       setError(null);
-      queryClient.invalidateQueries({ queryKey: ['time-clock/shifts', orgId] });
-      queryClient.invalidateQueries({ queryKey: ['time-clock/on-shift', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['time-clock/entries', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['time-clock/clocked-in', orgId] });
     },
     onError: (e: Error) => setError(e.message),
   });
 
-  function save(shift: ShiftResponse, edited: ShiftResponse) {
-    // Clearing the clock-out of a closed shift reopens it, which is worth a sentence first.
-    if (shift.clockOutAt && !edited.clockOutAt) {
+  function save(entry: TimeEntryResponse, edited: TimeEntryResponse) {
+    // Clearing the clock-out of a closed entry reopens it, which is worth a sentence first.
+    if (entry.clockOutAt && !edited.clockOutAt) {
       setReopening(edited);
       return;
     }
     patchMutation.mutate({
-      shift,
+      entry,
       data: {
         clockInAt: edited.clockInAt,
         clockOutAt: edited.clockOutAt,
@@ -101,7 +101,7 @@ export default function ShiftsPage() {
         {(['stillOpen', 'needsReview', 'all'] as View[]).map((v) => (
           <button key={v} onClick={() => reset(setView)(v)}
             className={`text-sm px-3 py-1.5 rounded ${view === v ? 'bg-surface-100 text-white' : 'text-gray-400 hover:text-white'}`}>
-            {v === 'stillOpen' ? 'Still open' : v === 'needsReview' ? 'Needs review' : 'All shifts'}
+            {v === 'stillOpen' ? 'Still open' : v === 'needsReview' ? 'Needs review' : 'All time entries'}
           </button>
         ))}
 
@@ -122,13 +122,13 @@ export default function ShiftsPage() {
 
       {view === 'stillOpen' && (
         <p className="text-gray-500 text-sm">
-          Shifts whose automatic clock-out time has passed with no device around to close them.
+          Entries whose automatic clock-out time has passed with no device around to close them.
         </p>
       )}
 
       {isLoading ? (
         <p className="text-gray-400 text-sm">Loading…</p>
-      ) : shifts.length === 0 ? (
+      ) : entries.length === 0 ? (
         <p className="text-gray-500 text-sm py-8 text-center">Nothing here.</p>
       ) : (
         <table className="w-full text-sm">
@@ -145,43 +145,43 @@ export default function ShiftsPage() {
             </tr>
           </thead>
           <tbody>
-            {shifts.map((shift) => {
-              const isEditing = editing?.id === shift.id;
+            {entries.map((entry) => {
+              const isEditing = editing?.id === entry.id;
               return (
-                <tr key={shift.id} className="border-b border-gray-900 align-top">
+                <tr key={entry.id} className="border-b border-gray-900 align-top">
                   <td className="py-2 text-white">
-                    {shift.patrollerName}
-                    {shift.flagged && <span className="ml-2 text-yellow-400 text-xs">needs review</span>}
-                    {shift.closeReason && shift.closeReason !== 'manual' && (
-                      <span className="ml-2 text-gray-500 text-xs">{shift.closeReason}</span>
+                    {entry.patrollerName}
+                    {entry.flagged && <span className="ml-2 text-yellow-400 text-xs">needs review</span>}
+                    {entry.closeReason && entry.closeReason !== 'manual' && (
+                      <span className="ml-2 text-gray-500 text-xs">{entry.closeReason}</span>
                     )}
-                    {shift.edited && (
-                      <button onClick={() => setHistoryOf(shift)}
+                    {entry.edited && (
+                      <button onClick={() => setHistoryOf(entry)}
                         className="ml-2 text-xs text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline">
                         Edited
                       </button>
                     )}
                   </td>
-                  <td className="py-2 text-gray-400">{shift.resortName}</td>
+                  <td className="py-2 text-gray-400">{entry.resortName}</td>
                   <td className="py-2">
                     {isEditing ? (
                       <select className={inputClass} value={editing.dutyType}
                         onChange={(e) => setEditing({ ...editing, dutyType: e.target.value })}>
                         {DUTY_TYPES.map((d) => <option key={d} value={d}>{d}</option>)}
                       </select>
-                    ) : <DutyBadge dutyType={shift.dutyType} />}
+                    ) : <DutyBadge dutyType={entry.dutyType} />}
                   </td>
                   <td className="py-2 text-gray-400 max-w-[16rem]">
                     {isEditing ? (
                       <input className={inputClass} value={editing.dutyNote ?? ''}
                         onChange={(e) => setEditing({ ...editing, dutyNote: e.target.value || null })} />
-                    ) : (shift.dutyNote ?? '—')}
+                    ) : (entry.dutyNote ?? '—')}
                   </td>
                   <td className="py-2 text-gray-300">
                     {isEditing ? (
                       <input type="datetime-local" className={inputClass} value={toLocalInput(editing.clockInAt)}
                         onChange={(e) => setEditing({ ...editing, clockInAt: fromLocalInput(e.target.value) })} />
-                    ) : formatDateTime(shift.clockInAt)}
+                    ) : formatDateTime(entry.clockInAt)}
                   </td>
                   <td className="py-2 text-gray-300">
                     {isEditing ? (
@@ -190,22 +190,22 @@ export default function ShiftsPage() {
                           ...editing,
                           clockOutAt: e.target.value ? fromLocalInput(e.target.value) : null,
                         })} />
-                    ) : shift.clockOutAt ? formatDateTime(shift.clockOutAt) : <span className="text-green-400">on shift</span>}
+                    ) : entry.clockOutAt ? formatDateTime(entry.clockOutAt) : <span className="text-green-400">clocked in</span>}
                   </td>
                   <td className="py-2 text-gray-400 tabular-nums">
-                    {elapsedLabel(shift.clockInAt, shift.clockOutAt)}
+                    {elapsedLabel(entry.clockInAt, entry.clockOutAt)}
                   </td>
                   {canEdit && (
                     <td className="py-2 text-right space-x-3 whitespace-nowrap">
                       {isEditing ? (
                         <>
-                          <button onClick={() => save(shift, editing)} className="text-green-400 text-xs">Save</button>
+                          <button onClick={() => save(entry, editing)} className="text-green-400 text-xs">Save</button>
                           <button onClick={() => setEditing(null)} className="text-gray-500 text-xs">Cancel</button>
                         </>
                       ) : (
                         <>
-                          <button onClick={() => setHistoryOf(shift)} className="text-gray-500 hover:text-white text-xs">History</button>
-                          <button onClick={() => setEditing(shift)} className="text-gray-400 hover:text-white text-xs">Edit</button>
+                          <button onClick={() => setHistoryOf(entry)} className="text-gray-500 hover:text-white text-xs">History</button>
+                          <button onClick={() => setEditing(entry)} className="text-gray-400 hover:text-white text-xs">Edit</button>
                         </>
                       )}
                     </td>
@@ -228,18 +228,18 @@ export default function ShiftsPage() {
       {reopening && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-surface-50 border border-gray-700 rounded-lg p-6 max-w-sm w-full mx-4 space-y-4">
-            <h3 className="text-white font-semibold">Reopen this shift?</h3>
+            <h3 className="text-white font-semibold">Reopen this time entry?</h3>
             <p className="text-gray-300 text-sm">
-              {reopening.patrollerName} will show as on shift again. The clock-out is set aside, not
-              deleted, and stays in the shift's history.
+              {reopening.patrollerName} will show as clocked in again. The clock-out is set aside, not
+              deleted, and stays in the time entry's history.
             </p>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setReopening(null)} className="text-gray-400 hover:text-white text-sm px-3 py-1.5">Cancel</button>
               <button
                 onClick={() => {
-                  const original = shifts.find((s) => s.id === reopening.id) ?? reopening;
+                  const original = entries.find((s) => s.id === reopening.id) ?? reopening;
                   patchMutation.mutate({
-                    shift: original,
+                    entry: original,
                     data: {
                       clockInAt: reopening.clockInAt,
                       clockOutAt: null,
@@ -257,7 +257,7 @@ export default function ShiftsPage() {
         </div>
       )}
 
-      {historyOf && <ShiftHistoryDialog orgId={orgId} shift={historyOf} onClose={() => setHistoryOf(null)} />}
+      {historyOf && <TimeEntryHistoryDialog orgId={orgId} entry={historyOf} onClose={() => setHistoryOf(null)} />}
     </div>
   );
 }
