@@ -1,6 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { HttpPayPalClient, PayPalError, existingPayoutBatchId, itemErrorText, paypalErrorInfo, type PayoutBatchResult } from './paypal.client';
-import { PayoutRunService } from './payout-run.service';
+import { PayoutRunService, refusedBatchReason } from './payout-run.service';
 
 /**
  * Send when PayPal doesn't simply say yes. The rule: a payment that may have
@@ -55,6 +55,13 @@ describe('the PayPal client', () => {
   it('reads the debug id from the body when the header is missing, and survives a body that isn’t JSON', () => {
     expect(paypalErrorInfo('{"debug_id":"abc"}', null).debugId).toBe('abc');
     expect(paypalErrorInfo('<html>Bad gateway</html>', null)).toEqual({ name: undefined, message: undefined, details: [], debugId: undefined, links: [] });
+  });
+
+  it('says what to fix when PayPal won’t let the app send at all', () => {
+    const forbidden = new PayPalError('PayPal POST /v1/payments/payouts failed: 403 AUTHORIZATION_ERROR: Authorization error occurred. [debug id 49aed1c45570d]', 403);
+    expect(refusedBatchReason(forbidden)).toMatch(/^PayPal refused the batch: .*debug id 49aed1c45570d\]\. PayPal isn’t letting this app send payouts/);
+    expect(refusedBatchReason(forbidden)).toContain('Test connection');
+    expect(refusedBatchReason(new PayPalError('PayPal POST /v1/payments/payouts failed: 422 INSUFFICIENT_FUNDS', 422))).toBe('PayPal refused the batch: PayPal POST /v1/payments/payouts failed: 422 INSUFFICIENT_FUNDS');
   });
 
   it('finds the existing payout a duplicate batch id points to', () => {

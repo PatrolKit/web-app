@@ -220,7 +220,10 @@ export default function PayoutRunPage() {
         {run.batch?.reason && !run.batch.id && !run.awaitingAnswer && (
           <p className="text-sm text-red-200 bg-red-900/25 border border-red-800/60 rounded px-3 py-2">Not sent: {run.batch.reason}. Nothing was paid.</p>
         )}
-        {result && <p className={`text-sm ${result.ok ? 'text-green-400' : 'text-red-300'}`}>{result.message}</p>}
+        {/* A refused Send is said once, by the run's own "Not sent" above. */}
+        {result && !(run.batch?.reason && result.message.startsWith(run.batch.reason)) && (
+          <p className={`text-sm ${result.ok ? 'text-green-400' : 'text-red-300'}`}>{result.message}</p>
+        )}
 
         {/* D19: Send went out and PayPal didn't answer. */}
         {run.awaitingAnswer && (

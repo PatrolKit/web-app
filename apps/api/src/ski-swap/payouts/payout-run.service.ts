@@ -601,7 +601,7 @@ export class PayoutRunService {
     if (err instanceof PayPalError && !err.retryable && !resend) {
       // D19: a first attempt refused outright. PayPal never had this batch id,
       // so nothing was queued: everyone goes back to approved, unfrozen.
-      const reason = `PayPal refused the batch: ${err.message}`;
+      const reason = refusedBatchReason(err);
       this.logger.error({ orgId, runId, senderBatchId, paypalSaid }, 'PayPal refused the payout batch; nothing was paid');
       await this.prisma.$transaction(async (tx) => {
         const sendingIds = (await tx.payoutLine.findMany({ where: { runId, status: 'SENDING' }, select: { id: true } })).map((l) => l.id);
@@ -1193,4 +1193,11 @@ function sellerInfo(s: Prisma.SellerProfileGetPayload<{ select: typeof SELLER_SE
     verifiedEmail: u.verifiedEmail,
     verifiedPhone: u.verifiedPhone,
   };
+}
+
+/** Why a first send was refused, as the run shows it. A 403 says what to fix. */
+export function refusedBatchReason(err: PayPalError): string {
+  const reason = `PayPal refused the batch: ${err.message}`;
+  if (err.status !== 403) return reason;
+  return `${reason}. PayPal isn’t letting this app send payouts: check that Payouts is enabled on the app in the PayPal developer dashboard and approved for the account, then press Test connection under Ski Swap → Administration`;
 }

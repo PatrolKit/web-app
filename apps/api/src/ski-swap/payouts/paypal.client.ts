@@ -87,14 +87,11 @@ export abstract class PayPalClient {
 }
 
 /**
- * A payout batch id that cannot exist, for asking PayPal whether this app may
- * read payouts at all. See `testConnection`.
- *
- * Letters and digits only, shaped like a real one. PayPal answers an id with a
- * hyphen in it with 400 — malformed — before it gets as far as saying whether
- * the app is allowed, which is the only thing this is for.
+ * The start of the batch id `testConnection` sends with no payments in it.
+ * Letters and digits only: PayPal rejects other ids as malformed before it says
+ * whether the app is allowed, which is the only thing the test is for.
  */
-const PROBE_BATCH_ID = 'PATROLKITPROBE0000';
+const PROBE_BATCH_PREFIX = 'PATROLKITPROBE';
 
 const HOSTS = {
   sandbox: 'https://api-m.sandbox.paypal.com',
@@ -201,8 +198,13 @@ export class HttpPayPalClient extends PayPalClient {
    * scope differently from its own documentation — a live app with Payouts on
    * is granted `https://uri.paypal.com/payments/payouts` — and a check that
    * matched the documented name told an org with Payouts enabled that it was
-   * not. So this looks up a payout batch that cannot exist: an app allowed to
-   * use Payouts is told it was not found, and one that is not is refused.
+   * not.
+   *
+   * And by trying to send, not to read. Looking up a batch was allowed for an
+   * app that PayPal then refused to let send (403 AUTHORIZATION_ERROR, on the
+   * first live run), so the test passed and the run failed. This sends a batch
+   * with no payments in it, which can't pay anyone: an app allowed to send is
+   * told the batch is invalid, and one that isn't is refused.
    *
    * Always with a fresh token, so a test straight after changing the app's
    * permissions answers about the app as it is now.
@@ -223,17 +225,26 @@ export class HttpPayPalClient extends PayPalClient {
     const where = host.includes('sandbox') ? 'sandbox' : 'live';
 
     // Fetched here rather than through `call`, which logs every non-2xx as a
-    // failure — and the answer this is hoping for is a 404.
+    // failure — and the answer this is hoping for is a 400.
     let status: number;
+    let text = '';
+    let debugId: string | null = null;
     try {
-      status = (await fetch(`${host}/v1/payments/payouts/${PROBE_BATCH_ID}`, {
-        headers: { authorization: `Bearer ${token}` },
-      })).status;
+      const res = await fetch(`${host}/v1/payments/payouts`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ sender_batch_header: { sender_batch_id: `${PROBE_BATCH_PREFIX}${Date.now()}` }, items: [] }),
+      });
+      status = res.status;
+      text = await res.text();
+      debugId = res.headers.get('paypal-debug-id');
     } catch {
       return { success: false, message: 'Could not reach PayPal' };
     }
+    const info = paypalErrorInfo(text, debugId);
+    this.logger.log({ orgId, status, name: info.name, debugId: info.debugId }, 'Payouts connection probe answered');
 
-    if (status === 404 || status === 200) {
+    if (status === 400 || status === 422) {
       return { success: true, message: `Connected to PayPal (${where}) with Payouts enabled` };
     }
     if (status === 401 || status === 403) {
@@ -242,7 +253,8 @@ export class HttpPayPalClient extends PayPalClient {
         message:
           `These credentials work, but PayPal refused to let this app use Payouts. ` +
           `Check that Payouts is enabled on the app in your PayPal developer dashboard, and that ` +
-          `PayPal has approved Payouts for this ${where} account, then test again.`,
+          `PayPal has approved Payouts for this ${where} account, then test again.` +
+          (info.debugId ? ` (PayPal debug id ${info.debugId})` : ''),
       };
     }
     this.logger.warn({ orgId, status }, 'Unexpected answer to the Payouts connection probe');
