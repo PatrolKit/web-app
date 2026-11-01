@@ -64,12 +64,25 @@ describe('testing a PayPal connection', () => {
     expect((probe.body as { sender_batch_header: { sender_batch_id: string } }).sender_batch_header.sender_batch_id).toMatch(/^PATROLKITPROBE\d+$/);
   });
 
-  it('fails when PayPal only lets the app look, not send — the first live run', async () => {
+  it('fails when PayPal only lets the app look, not send — the first live run, in PayPal’s review', async () => {
     const { client } = harness({ token: LIVE_TOKEN, probe: { status: 403, body: { name: 'AUTHORIZATION_ERROR', debug_id: '49aed1c45570d' } } });
     const result = await client.testConnection('org-1');
     expect(result.success).toBe(false);
-    expect(result.message).toMatch(/refused to let this app use Payouts/);
+    // The app has Payouts turned on, so it's the account that isn't approved yet.
+    expect(result.message).toMatch(/Payouts is turned on for this app, but PayPal hasn't approved Payouts for this live account yet/);
+    expect(result.message).toMatch(/nothing to change here/);
     expect(result.message).toMatch(/49aed1c45570d/);
+  });
+
+  it('says to turn Payouts on when the app doesn’t have it', async () => {
+    const { client } = harness({
+      token: { status: 200, body: { access_token: 't', expires_in: 32000, scope: 'openid https://uri.paypal.com/services/invoicing' } },
+      probe: { status: 403, body: { name: 'AUTHORIZATION_ERROR' } },
+    });
+    const result = await client.testConnection('org-1');
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/doesn't have Payouts turned on/);
+    expect(result.message).toMatch(/check Payouts under Features/);
   });
 
   it('does not pass on an answer it does not expect', async () => {
@@ -85,12 +98,6 @@ describe('testing a PayPal connection', () => {
     await expect(client.testConnection('org-1')).resolves.toMatchObject({ success: true });
   });
 
-  it('fails, saying why, when PayPal refuses the app Payouts', async () => {
-    const { client } = harness({ token: LIVE_TOKEN, probe: { status: 403 } });
-    const result = await client.testConnection('org-1');
-    expect(result.success).toBe(false);
-    expect(result.message).toMatch(/refused to let this app use Payouts/);
-  });
 
   it('says so plainly when the credentials themselves are wrong', async () => {
     const { client } = harness({ token: { status: 401 } });

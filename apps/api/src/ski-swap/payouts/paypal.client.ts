@@ -93,6 +93,12 @@ export abstract class PayPalClient {
  */
 const PROBE_BATCH_PREFIX = 'PATROLKITPROBE';
 
+/**
+ * The scope PayPal grants an app with Payouts turned on, as granted to
+ * BMBWAV's live app. PayPal's documentation names it differently.
+ */
+const PAYOUTS_SCOPE = 'https://uri.paypal.com/payments/payouts';
+
 const HOSTS = {
   sandbox: 'https://api-m.sandbox.paypal.com',
   live: 'https://api-m.paypal.com',
@@ -105,7 +111,7 @@ export class HttpPayPalClient extends PayPalClient {
    * Short-lived, and re-fetched rather than refreshed. Dropped when the org's
    * credentials change: a token outlives them by up to nine hours otherwise.
    */
-  private tokens = new Map<string, { token: string; expiresAt: number }>();
+  private tokens = new Map<string, { token: string; expiresAt: number; scope: string }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -214,8 +220,9 @@ export class HttpPayPalClient extends PayPalClient {
 
     let host: string;
     let token: string;
+    let scope: string;
     try {
-      ({ host, token } = await this.authorise(orgId));
+      ({ host, token, scope } = await this.authorise(orgId));
     } catch (err) {
       if (err instanceof PayPalError && err.status === 401) {
         return { success: false, message: 'PayPal did not accept this Client ID and Secret. Check both, and that the environment matches the app.' };
@@ -242,19 +249,26 @@ export class HttpPayPalClient extends PayPalClient {
       return { success: false, message: 'Could not reach PayPal' };
     }
     const info = paypalErrorInfo(text, debugId);
-    this.logger.log({ orgId, status, name: info.name, debugId: info.debugId }, 'Payouts connection probe answered');
+    // Whether the app has Payouts turned on. Not whether it may send: see below.
+    const payoutsOnApp = scope.split(/\s+/).includes(PAYOUTS_SCOPE);
+    this.logger.log({ orgId, status, name: info.name, debugId: info.debugId, payoutsOnApp }, 'Payouts connection probe answered');
 
     if (status === 400 || status === 422) {
       return { success: true, message: `Connected to PayPal (${where}) with Payouts enabled` };
     }
     if (status === 401 || status === 403) {
+      // PayPal has no call that says "in review". But an app with Payouts
+      // turned on is granted the Payouts scope, so a refusal despite it is the
+      // account not yet approved: PayPal's review, most likely. Without the
+      // scope, the app itself needs Payouts turned on.
+      const debug = info.debugId ? ` (PayPal debug id ${info.debugId})` : '';
       return {
         success: false,
-        message:
-          `These credentials work, but PayPal refused to let this app use Payouts. ` +
-          `Check that Payouts is enabled on the app in your PayPal developer dashboard, and that ` +
-          `PayPal has approved Payouts for this ${where} account, then test again.` +
-          (info.debugId ? ` (PayPal debug id ${info.debugId})` : ''),
+        message: payoutsOnApp
+          ? `These credentials work and Payouts is turned on for this app, but PayPal hasn't approved Payouts for this ${where} account yet. ` +
+            `That's most likely PayPal's Payouts review: there's nothing to change here. Test again once PayPal approves it.${debug}`
+          : `These credentials work, but PayPal refused to let this app use Payouts, and the app doesn't have Payouts turned on. ` +
+            `In the PayPal developer dashboard, open this app under Apps & Credentials (${where}), check Payouts under Features, save, then test again.${debug}`,
       };
     }
     this.logger.warn({ orgId, status }, 'Unexpected answer to the Payouts connection probe');
@@ -270,8 +284,9 @@ export class HttpPayPalClient extends PayPalClient {
   async getBalance(orgId: string): Promise<PayPalBalance> {
     let host: string;
     let token: string;
+    let scope: string;
     try {
-      ({ host, token } = await this.authorise(orgId));
+      ({ host, token, scope } = await this.authorise(orgId));
     } catch {
       return { availableCents: null, message: 'Couldn’t sign in to PayPal to read the balance.' };
     }
@@ -350,14 +365,14 @@ export class HttpPayPalClient extends PayPalClient {
     return text ? JSON.parse(text) : {};
   }
 
-  private async authorise(orgId: string): Promise<{ host: string; token: string }> {
+  private async authorise(orgId: string): Promise<{ host: string; token: string; scope: string }> {
     const config = await this.prisma.payPalConfig.findUnique({ where: { orgId } });
     if (!config) throw new PayPalError('PayPal is not configured for this organization', 412);
 
     const host = HOSTS[config.environment === 'live' ? 'live' : 'sandbox'];
     const cached = this.tokens.get(orgId);
     if (cached && cached.expiresAt > Date.now() + 30_000) {
-      return { host, token: cached.token };
+      return { host, token: cached.token, scope: cached.scope };
     }
 
     const secret = this.crypto.decrypt(config.clientSecretEnc);
@@ -373,12 +388,13 @@ export class HttpPayPalClient extends PayPalClient {
     if (!res.ok) {
       throw new PayPalError(`PayPal auth failed: ${res.status}`, res.status);
     }
-    const json = (await res.json()) as { access_token: string; expires_in: number };
+    const json = (await res.json()) as { access_token: string; expires_in: number; scope?: string };
     this.tokens.set(orgId, {
       token: json.access_token,
       expiresAt: Date.now() + json.expires_in * 1000,
+      scope: json.scope ?? '',
     });
-    return { host, token: json.access_token };
+    return { host, token: json.access_token, scope: json.scope ?? '' };
   }
 }
 
