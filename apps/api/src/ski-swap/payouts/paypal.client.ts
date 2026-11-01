@@ -87,13 +87,6 @@ export abstract class PayPalClient {
 }
 
 /**
- * The start of the batch id `testConnection` sends with no payments in it.
- * Letters and digits only: PayPal rejects other ids as malformed before it says
- * whether the app is allowed, which is the only thing the test is for.
- */
-const PROBE_BATCH_PREFIX = 'PATROLKITPROBE';
-
-/**
  * The scope PayPal grants an app with Payouts turned on, as granted to
  * BMBWAV's live app. PayPal's documentation names it differently.
  */
@@ -193,24 +186,18 @@ export class HttpPayPalClient extends PayPalClient {
   }
 
   /**
-   * Whether these credentials work, and whether they are allowed to pay people.
+   * Whether these credentials work, and whether the app has Payouts turned on.
    *
-   * Two different questions. A client id and secret from an app that was never
-   * granted Payouts will fetch a token quite happily and then fail at the only
-   * moment that matters, so it is asked here, while somebody is still looking at
-   * the settings screen.
+   * Not whether PayPal will let it send: nothing short of sending tells. On the
+   * first live run, with BMBWAV's account still in PayPal's Payouts review,
+   * PayPal let the app look up a payout batch (404) and validated a batch with
+   * no payments in it (400 VALIDATION_ERROR), then refused the real send with
+   * 403 AUTHORIZATION_ERROR. So this only says what can be known, and the first
+   * Send answers the rest; a refused Send pays nobody.
    *
-   * Asked by trying, not by reading the token's scopes. PayPal names the Payouts
-   * scope differently from its own documentation — a live app with Payouts on
-   * is granted `https://uri.paypal.com/payments/payouts` — and a check that
-   * matched the documented name told an org with Payouts enabled that it was
-   * not.
-   *
-   * And by trying to send, not to read. Looking up a batch was allowed for an
-   * app that PayPal then refused to let send (403 AUTHORIZATION_ERROR, on the
-   * first live run), so the test passed and the run failed. This sends a batch
-   * with no payments in it, which can't pay anyone: an app allowed to send is
-   * told the batch is invalid, and one that isn't is refused.
+   * Turned on is read from the token's scopes. PayPal names the Payouts scope
+   * differently from its own documentation: this matches the name it granted
+   * BMBWAV's live app, `https://uri.paypal.com/payments/payouts`.
    *
    * Always with a fresh token, so a test straight after changing the app's
    * permissions answers about the app as it is now.
@@ -219,10 +206,9 @@ export class HttpPayPalClient extends PayPalClient {
     this.forget(orgId);
 
     let host: string;
-    let token: string;
     let scope: string;
     try {
-      ({ host, token, scope } = await this.authorise(orgId));
+      ({ host, scope } = await this.authorise(orgId));
     } catch (err) {
       if (err instanceof PayPalError && err.status === 401) {
         return { success: false, message: 'PayPal did not accept this Client ID and Secret. Check both, and that the environment matches the app.' };
@@ -230,49 +216,23 @@ export class HttpPayPalClient extends PayPalClient {
       return { success: false, message: err instanceof Error ? err.message : 'Unknown error' };
     }
     const where = host.includes('sandbox') ? 'sandbox' : 'live';
-
-    // Fetched here rather than through `call`, which logs every non-2xx as a
-    // failure — and the answer this is hoping for is a 400.
-    let status: number;
-    let text = '';
-    let debugId: string | null = null;
-    try {
-      const res = await fetch(`${host}/v1/payments/payouts`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ sender_batch_header: { sender_batch_id: `${PROBE_BATCH_PREFIX}${Date.now()}` }, items: [] }),
-      });
-      status = res.status;
-      text = await res.text();
-      debugId = res.headers.get('paypal-debug-id');
-    } catch {
-      return { success: false, message: 'Could not reach PayPal' };
-    }
-    const info = paypalErrorInfo(text, debugId);
-    // Whether the app has Payouts turned on. Not whether it may send: see below.
     const payoutsOnApp = scope.split(/\s+/).includes(PAYOUTS_SCOPE);
-    this.logger.log({ orgId, status, name: info.name, debugId: info.debugId, payoutsOnApp }, 'Payouts connection probe answered');
+    this.logger.log({ orgId, payoutsOnApp }, 'PayPal connection tested');
 
-    if (status === 400 || status === 422) {
-      return { success: true, message: `Connected to PayPal (${where}) with Payouts enabled` };
-    }
-    if (status === 401 || status === 403) {
-      // PayPal has no call that says "in review". But an app with Payouts
-      // turned on is granted the Payouts scope, so a refusal despite it is the
-      // account not yet approved: PayPal's review, most likely. Without the
-      // scope, the app itself needs Payouts turned on.
-      const debug = info.debugId ? ` (PayPal debug id ${info.debugId})` : '';
+    if (!payoutsOnApp) {
       return {
         success: false,
-        message: payoutsOnApp
-          ? `These credentials work and Payouts is turned on for this app, but PayPal hasn't approved Payouts for this ${where} account yet. ` +
-            `That's most likely PayPal's Payouts review: there's nothing to change here. Test again once PayPal approves it.${debug}`
-          : `These credentials work, but PayPal refused to let this app use Payouts, and the app doesn't have Payouts turned on. ` +
-            `In the PayPal developer dashboard, open this app under Apps & Credentials (${where}), check Payouts under Features, save, then test again.${debug}`,
+        message:
+          `These credentials work, but Payouts isn't turned on for this app. In the PayPal developer dashboard, ` +
+          `open this app under Apps & Credentials (${where}), check Payouts under Features, save, then test again.`,
       };
     }
-    this.logger.warn({ orgId, status }, 'Unexpected answer to the Payouts connection probe');
-    return { success: false, message: `PayPal answered the Payouts check with HTTP ${status}. Try again in a minute.` };
+    return {
+      success: true,
+      message:
+        `Connected to PayPal (${where}), and Payouts is turned on for this app. PayPal doesn't say whether it has ` +
+        `approved Payouts for the account: if it hasn't yet, during its review for example, Send is refused and nobody is paid.`,
+    };
   }
 
   /**

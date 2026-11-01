@@ -532,7 +532,7 @@ function PayPalSetupGuide({ orgId }: { orgId: string }) {
 
       <GuideStep n={2} title="Save them here">
         <li>Enter the Client ID and Secret below, choose <strong className="text-white">Live</strong>, and save.</li>
-        <li>Press <strong className="text-white">Test connection</strong>. It checks that the app is allowed to send payouts, not just that the password works.</li>
+        <li>Press <strong className="text-white">Test connection</strong>. It checks the Client ID and Secret, and that Payouts is turned on for the app. Whether PayPal has approved Payouts for the business only shows on the first Send; a refused Send pays nobody.</li>
       </GuideStep>
 
       <GuideStep n={3} title="Register the webhook in the same PayPal app">

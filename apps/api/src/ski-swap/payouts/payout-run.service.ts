@@ -1199,5 +1199,5 @@ function sellerInfo(s: Prisma.SellerProfileGetPayload<{ select: typeof SELLER_SE
 export function refusedBatchReason(err: PayPalError): string {
   const reason = `PayPal refused the batch: ${err.message}`;
   if (err.status !== 403) return reason;
-  return `${reason}. PayPal isn’t letting this app send payouts: check that Payouts is enabled on the app in the PayPal developer dashboard and approved for the account, then press Test connection under Ski Swap → Administration`;
+  return `${reason}. PayPal isn’t letting this app send payouts yet. If Test connection (Ski Swap → Administration) says Payouts is turned on for the app, PayPal hasn’t approved it for the account: most likely its Payouts review, with nothing to change here. Otherwise, turn Payouts on for the app`;
 }
