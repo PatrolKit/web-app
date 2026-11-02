@@ -31,6 +31,9 @@ const smallButton = 'px-2.5 py-1 rounded border border-gray-600 bg-surface-100 h
 /** The Payouts page. Not `..`: this route is `payouts/:runId`, so `..` is the Ski Swap dashboard. */
 const PAYOUTS = '/dashboard/ski-swap/payouts';
 
+/** What a successful Send says, and how a Send in flight is told apart. */
+const SENT = 'Sent to PayPal.';
+
 export default function PayoutRunPage() {
   const { runId } = useParams();
   const { orgId, perms, selectedSwap } = useOutletContext<SkiSwapContext>();
@@ -77,6 +80,8 @@ export default function PayoutRunPage() {
     onError: (err) => { setResult({ ok: false, message: err instanceof ApiError ? err.message : 'That didn’t work. Try again.' }); refresh(); },
   });
   const run$ = (fn: () => Promise<unknown>, done?: string) => act.mutate({ fn, done });
+  /** A Send or Send again waiting on PayPal, which can take a while. */
+  const sending = act.isPending && act.variables?.done === SENT;
 
   if (!perms.has('ski_swap:report')) return <Navigate to="/dashboard/ski-swap" replace />;
   if (isLoading) return <p className="text-gray-400">Loading…</p>;
@@ -217,7 +222,13 @@ export default function PayoutRunPage() {
             🔒 Sending is locked on this server. Runs can be built and approved; nothing goes to PayPal until it’s unlocked.
           </p>
         )}
-        {run.batch?.reason && !run.batch.id && !run.awaitingAnswer && (
+        {sending && (
+          <p className="text-sm text-amber-200 bg-amber-900/20 border border-amber-800/60 rounded px-3 py-2" role="status">
+            Sending to PayPal… This can take up to a minute. Stay on this page until PayPal answers.
+          </p>
+        )}
+        {/* The last attempt's refusal, hidden while the next one is on its way. */}
+        {!sending && run.batch?.reason && !run.batch.id && !run.awaitingAnswer && (
           <p className="text-sm text-red-200 bg-red-900/25 border border-red-800/60 rounded px-3 py-2">Not sent: {run.batch.reason}. Nothing was paid.</p>
         )}
         {/* A refused Send is said once, by the run's own "Not sent" above. */}
@@ -253,8 +264,8 @@ export default function PayoutRunPage() {
             )}
             {paypal && run.awaitingAnswer && (
               <button type="button" disabled={run.sendingLocked || act.isPending}
-                onClick={() => run$(() => api.skiSwap.sendPayoutRun(orgId, run.id, 0), 'Sent to PayPal.')}
-                className="bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white px-3 py-2 rounded text-sm font-medium">Send again</button>
+                onClick={() => run$(() => api.skiSwap.sendPayoutRun(orgId, run.id, 0), SENT)}
+                className="bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white px-3 py-2 rounded text-sm font-medium">{sending ? 'Sending to PayPal…' : 'Send again'}</button>
             )}
             {buildable && approvable.length > 0 && (
               <button type="button" disabled={act.isPending} onClick={approveAll}
@@ -268,11 +279,11 @@ export default function PayoutRunPage() {
                 title={waiting ? 'Approve every seller in the run first' : run.sendingLocked ? 'Sending is locked on this server' : short ? 'PayPal doesn’t hold enough for the approved payments and their fees' : undefined}
                 onClick={() => {
                   if (confirm(`Send ${usd(sendable.toSellers)} to ${approved.length} ${approved.length === 1 ? 'seller' : 'sellers'} through PayPal, about ${usd(sendable.total)} with PayPal’s fees? This can’t be undone.`)) {
-                    run$(() => api.skiSwap.sendPayoutRun(orgId, run.id, approved.length), 'Sent to PayPal.');
+                    run$(() => api.skiSwap.sendPayoutRun(orgId, run.id, approved.length), SENT);
                   }
                 }}
                 className="bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white px-3 py-2 rounded text-sm font-medium">
-                Send to {approved.length} {approved.length === 1 ? 'seller' : 'sellers'}
+                {sending ? 'Sending to PayPal…' : `Send to ${approved.length} ${approved.length === 1 ? 'seller' : 'sellers'}`}
               </button>
             )}
             {!paypal && lines.length > 0 && (
