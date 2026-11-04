@@ -5,13 +5,13 @@ import PayoutsExport from './payouts/PayoutsExport';
 import MoneyCard from './payouts/MoneyCard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faLock, faTriangleExclamation } from '@fortawesome/pro-duotone-svg-icons';
+import { faCircleCheck, faCircleXmark, faTriangleExclamation } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import { usd } from '../../lib/money';
 import type { PayoutRunKind } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import NewTabLink from '../../components/NewTabLink';
-import { RUN_KIND_ICON, dayText, whenText } from './payouts/payoutView';
+import { RUN_KIND_ICON, dayText, runOutcome, whenText } from './payouts/payoutView';
 
 /**
  * A swap's payouts (Plan 52): "Before you pay" at the top, sellers missing
@@ -218,17 +218,17 @@ export default function PayoutsPage() {
             <ul className="space-y-2">
               {data.runs.map((r) => (
                 <li key={r.id}>
-                  <Link to={r.id} className={`flex items-center gap-3 border rounded-lg px-4 py-3 ${r.status === 'OPEN' ? 'border-gray-700 bg-surface-50 hover:bg-surface-100' : 'border-gray-800 bg-surface-50/40 hover:bg-surface-100/60 opacity-70'}`}>
+                  <Link to={r.id} className={`flex items-center gap-3 border rounded-lg px-4 py-3 ${r.status === 'OPEN' ? 'border-gray-700 bg-surface-50 hover:bg-surface-100' : 'border-gray-800 bg-surface-50/40 hover:bg-surface-100/60'}`}>
                     <span className={`text-xs px-2 py-0.5 rounded border shrink-0 ${r.kind === 'PAYPAL' ? 'border-blue-800/60 text-blue-300' : 'border-gray-600 text-gray-300'}`}>
                       <FontAwesomeIcon icon={RUN_KIND_ICON[r.kind].icon} className="mr-1.5" aria-hidden />{r.kind === 'PAYPAL' ? 'PayPal' : 'Checks'}
                     </span>
                     <span className="text-white text-sm">{whenText(r.createdAt)}</span>
                     <span className="text-gray-400 text-xs">{r.lineCount} {r.lineCount === 1 ? 'seller' : 'sellers'}{r.flaggedCount ? ` · ${r.flaggedCount} flagged` : ''}</span>
                     <span className="ml-auto text-white text-sm font-medium">{usd(r.totalNetCents)}</span>
-                    <span className="w-20 text-right shrink-0">
+                    <span className="w-28 text-right shrink-0">
                       {r.status === 'OPEN'
                         ? <span className="inline-flex items-center gap-1.5 text-xs text-green-400"><span className="h-1.5 w-1.5 rounded-full bg-green-500" aria-hidden />Open</span>
-                        : <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-200"><FontAwesomeIcon icon={faLock} className="h-2.5 w-2.5" aria-hidden />Closed</span>}
+                        : <ClosedBadge kind={r.kind} paid={r.paidCount} notPaid={r.notPaidCount} />}
                     </span>
                   </Link>
                 </li>
@@ -289,5 +289,18 @@ export default function PayoutsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** A closed run, as it ended: paid (or exported), partly paid, or not paid. */
+function ClosedBadge({ kind, paid, notPaid }: { kind: PayoutRunKind; paid: number; notPaid: number }) {
+  const o = runOutcome(kind, paid, notPaid);
+  const look = o.tone === 'red' ? { icon: faCircleXmark, cls: 'bg-red-900/40 text-red-200' }
+    : o.tone === 'amber' ? { icon: faTriangleExclamation, cls: 'bg-amber-900/40 text-amber-200' }
+      : { icon: faCircleCheck, cls: 'bg-green-900/40 text-green-300' };
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${look.cls}`} title={`${o.text} Closed.`}>
+      <FontAwesomeIcon icon={look.icon} className="h-2.5 w-2.5" aria-hidden />{o.label}
+    </span>
   );
 }

@@ -143,6 +143,8 @@ export class PayoutRunService {
         lineCount: its.length,
         flaggedCount: its.filter((l) => !l.frozenAt && this.flagsOf(snap, run.kind as PayoutRunKind, l.sellerId).length > 0).length,
         totalNetCents: its.reduce((n, l) => n + (l.frozenAt ? l.netCents ?? 0 : snap.lineBySeller.get(l.sellerId)?.netCents ?? 0), 0),
+        paidCount: its.filter((l) => l.status === 'SENT' || l.status === 'EXPORTED').length,
+        notPaidCount: its.filter((l) => notPaid(l.status)).length,
       };
     });
 

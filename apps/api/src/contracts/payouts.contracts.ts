@@ -216,6 +216,10 @@ export interface PayoutRunSummaryView {
   lineCount: number;
   flaggedCount: number;
   totalNetCents: number;
+  /** Payments that reached the seller: paid by PayPal, or exported to a check. */
+  paidCount: number;
+  /** Payments that ended without paying them: failed, returned or cancelled (D19). */
+  notPaidCount: number;
 }
 
 export interface PayoutSellerChoice {

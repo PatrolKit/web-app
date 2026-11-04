@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { batchStatusText, feeCents, feeRateText, fundingFor, percentText, sortSellers, statusView } from './payoutView';
+import { batchStatusText, feeCents, feeRateText, fundingFor, percentText, runOutcome, sortSellers, statusView } from './payoutView';
 
 const US = { flatCents: 25, bps: 0, capCents: 0 };
 
@@ -55,5 +55,22 @@ describe('status words (D18, D19)', () => {
 describe('a share as a percentage', () => {
   it('rounds to a tenth, and drops a trailing zero', () => {
     expect([percentText(0.2), percentText(0.1234), percentText(-0.045), percentText(0)]).toEqual(['20%', '12.3%', '−4.5%', '0%']);
+  });
+});
+
+describe('how a closed run ended (D15, D19)', () => {
+  it('a PayPal run that paid everyone is paid, with the amount', () => {
+    expect(runOutcome('PAYPAL', 1, 0, 1600)).toEqual({ label: 'Paid', tone: 'green', text: 'Everyone was paid: 1 payment, $16.00.' });
+  });
+  it('some paid and some not is partly paid', () => {
+    const o = runOutcome('PAYPAL', 3, 1);
+    expect([o.label, o.tone]).toEqual(['Partly paid', 'amber']);
+    expect(o.text).toMatch(/^3 of 4 payments paid; 1 not\. /);
+  });
+  it('nobody paid is not paid', () => {
+    expect(runOutcome('PAYPAL', 0, 2)).toMatchObject({ label: 'Not paid', tone: 'red' });
+  });
+  it('a closed check run is exported', () => {
+    expect(runOutcome('CHECK', 2, 0, 5000)).toEqual({ label: 'Exported', tone: 'green', text: '2 checks, $50.00, to write from the spreadsheet.' });
   });
 });

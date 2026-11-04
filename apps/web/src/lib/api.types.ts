@@ -963,6 +963,10 @@ export interface PayoutRunSummary {
   lineCount: number;
   flaggedCount: number;
   totalNetCents: number;
+  /** Payments that reached the seller: paid by PayPal, or exported to a check. */
+  paidCount: number;
+  /** Payments that ended without paying them: failed, returned or cancelled. */
+  notPaidCount: number;
 }
 
 /** A seller a run can take (D3), for "Add sellers". */

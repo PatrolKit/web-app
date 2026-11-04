@@ -4,7 +4,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import PayoutsExport from './payouts/PayoutsExport';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faArrowsRotate, faChevronDown, faChevronRight, faLock, faLockOpen } from '@fortawesome/pro-duotone-svg-icons';
+import {
+  faArrowLeft, faArrowsRotate, faChevronDown, faChevronRight, faCircleCheck, faCircleXmark, faLockOpen, faTriangleExclamation,
+} from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import { usd } from '../../lib/money';
 import type { PayoutLine, PayoutRun } from '../../lib/api.types';
@@ -13,8 +15,8 @@ import NewTabLink from '../../components/NewTabLink';
 import AddSellersDialog from './payouts/AddSellersDialog';
 import { compReasonLabel } from './comps/compView';
 import {
-  NOT_PAID, RUN_KIND_ICON, TONE, batchStatusText, dayText, feeRateText, fundingFor, methodLabel, soldAtText, sortSellers,
-  statusView, whenText, type SortKey,
+  NOT_PAID, RUN_KIND_ICON, TONE, batchStatusText, dayText, feeRateText, fundingFor, methodLabel, runOutcome, soldAtText, sortSellers,
+  statusView, whenText, type SortKey, type Tone,
 } from './payouts/payoutView';
 
 /**
@@ -30,6 +32,13 @@ const SORT_KEY = 'patrolkit:payout-sort';
 const smallButton = 'px-2.5 py-1 rounded border border-gray-600 bg-surface-100 hover:bg-surface-200 text-gray-200 disabled:opacity-40';
 /** The Payouts page. Not `..`: this route is `payouts/:runId`, so `..` is the Ski Swap dashboard. */
 const PAYOUTS = '/dashboard/ski-swap/payouts';
+
+/** A closed run's banner, in the tone of how it ended. */
+const CLOSED_BANNER: Partial<Record<Tone, { box: string; icon: typeof faCircleCheck; iconColor: string; title: string }>> = {
+  green: { box: 'bg-green-900/25 border-green-900/60', icon: faCircleCheck, iconColor: 'text-green-400', title: 'text-green-300' },
+  amber: { box: 'bg-amber-900/20 border-amber-800/60', icon: faTriangleExclamation, iconColor: 'text-amber-400', title: 'text-amber-300' },
+  red: { box: 'bg-red-900/25 border-red-800/60', icon: faCircleXmark, iconColor: 'text-red-400', title: 'text-red-300' },
+};
 
 /** What a successful Send says, and how a Send in flight is told apart. */
 const SENT = 'Sent to PayPal.';
@@ -110,6 +119,10 @@ export default function PayoutRunPage() {
     });
   };
   const exported = lines.filter((l) => l.status === 'EXPORTED');
+  const paidLines = lines.filter((l) => l.status === 'SENT' || l.status === 'EXPORTED');
+  const outcome = runOutcome(run.kind, paidLines.length, lines.filter((l) => NOT_PAID.includes(l.status)).length,
+    paidLines.reduce((n, l) => n + (l.approvedNetCents ?? l.totals.netCents), 0));
+  const banner = CLOSED_BANNER[outcome.tone] ?? CLOSED_BANNER.green!;
   const flaggedCount = lines.filter((l) => l.flags.length).length;
   const changedCount = lines.filter((l) => l.changedSincePaidCents !== 0).length;
   // PayPal must hold what the sellers get plus each payment's fee (an estimate at the rate in settings).
@@ -152,7 +165,7 @@ export default function PayoutRunPage() {
 
       {/* D13: the header. */}
       <div className="bg-surface-50 border border-gray-700 rounded-lg p-5 space-y-4">
-        {/* The run's state comes first: open, and what's left to do; or closed, and nothing in it changes (D15). */}
+        {/* The run's state comes first: open, and what's left to do; or closed, and how it ended (D15). */}
         {isOpen ? (
           <div className="-mx-5 -mt-5 px-5 py-2.5 rounded-t-lg bg-green-900/25 border-b border-green-900/60 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-200">
             <FontAwesomeIcon icon={faLockOpen} className="text-green-400" aria-hidden />
@@ -164,10 +177,10 @@ export default function PayoutRunPage() {
             </span>
           </div>
         ) : (
-          <div className="-mx-5 -mt-5 px-5 py-2.5 rounded-t-lg bg-gray-700/40 border-b border-gray-700 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-200">
-            <FontAwesomeIcon icon={faLock} className="text-gray-400" aria-hidden />
-            <span><strong className="text-white">Closed</strong>{run.closedAt && ` ${whenText(run.closedAt)}`}.</span>
-            <span className="text-gray-400">Sellers can’t be added, removed or approved.</span>
+          <div className={`-mx-5 -mt-5 px-5 py-2.5 rounded-t-lg border-b flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-200 ${banner.box}`}>
+            <FontAwesomeIcon icon={banner.icon} className={banner.iconColor} aria-hidden />
+            <span><strong className={banner.title}>{outcome.label}</strong> and closed{run.closedAt && ` ${whenText(run.closedAt)}`}.</span>
+            <span className="text-gray-300">{outcome.text}</span>
           </div>
         )}
 

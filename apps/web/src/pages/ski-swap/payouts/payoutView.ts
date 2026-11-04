@@ -1,6 +1,7 @@
 import { faMoneyCheckDollarPen } from '@fortawesome/pro-duotone-svg-icons';
 import { faPaypal } from '@awesome.me/kit-9b475e388e/icons/classic/brands';
 import type { PayoutLineStatus, PayoutMethod, PayoutRunKind, PayPalFeeRate } from '../../../lib/api.types';
+import { usd } from '../../../lib/money';
 
 /**
  * The payout run screens' rules, as they show them (Plan 52). Pure, and tested.
@@ -22,7 +23,6 @@ export function feeCents(netCents: number, rate: PayPalFeeRate): number {
 
 /** "$0.25 a payment", or "2% of each payment, at most $1.00", as the rate stands. */
 export function feeRateText(rate: PayPalFeeRate): string {
-  const usd = (c: number) => `$${(c / 100).toFixed(2)}`;
   const pct = rate.bps ? `${rate.bps / 100}% of each payment${rate.capCents ? `, at most ${usd(rate.capCents)}` : ''}` : '';
   return [rate.flatCents ? `${usd(rate.flatCents)} a payment` : '', pct].filter(Boolean).join(' plus ') || 'no fee';
 }
@@ -83,6 +83,20 @@ export function statusView(status: PayoutLineStatus, kind: PayoutRunKind): { lab
 
 /** A payment that ended without paying them (D19). */
 export const NOT_PAID: PayoutLineStatus[] = ['FAILED', 'RETURNED', 'CANCELLED'];
+
+/**
+ * How a closed run ended, from how many of its payments reached the seller and
+ * how many didn't (D15, D19): a short label, its tone, and a sentence. With
+ * `paidCents`, the sentence says how much reached them.
+ */
+export function runOutcome(kind: PayoutRunKind, paid: number, notPaid: number, paidCents?: number): { label: string; tone: Tone; text: string } {
+  const payments = (n: number) => `${n} ${n === 1 ? 'payment' : 'payments'}`;
+  const amount = paidCents === undefined ? '' : `, ${usd(paidCents)}`;
+  if (kind === 'CHECK') return { label: 'Exported', tone: 'green', text: `${paid} ${paid === 1 ? 'check' : 'checks'}${amount}, to write from the spreadsheet.` };
+  if (notPaid === 0) return { label: 'Paid', tone: 'green', text: `Everyone was paid: ${payments(paid)}${amount}.` };
+  if (paid === 0) return { label: 'Not paid', tone: 'red', text: `Nobody was paid: ${payments(notPaid)} failed, returned or cancelled. ${ELSEWHERE}` };
+  return { label: 'Partly paid', tone: 'amber', text: `${paid} of ${payments(paid + notPaid)} paid${amount}; ${notPaid} not. ${ELSEWHERE}` };
+}
 
 /** PayPal's batch status in plain words (D18). */
 export function batchStatusText(status: string | null): string {
