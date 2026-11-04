@@ -989,6 +989,8 @@ export interface PayoutsSummary {
   /** Incoming, outgoing and profit (the money card); null when Square couldn't be read. */
   money: import('@patrolkit/contracts/payouts.contracts').PayoutsSummaryView['money'];
   runs: PayoutRunSummary[];
+  /** How far payouts have got, by seller; null when Square couldn't be read. */
+  progress: import('@patrolkit/contracts/payouts.contracts').PayoutsSummaryView['progress'];
   missingDetails: { sellerId: string; name: string; key: string; problem: string; fix: string }[];
   salesCheck: {
     bySeller: { sellerId: string; name: string; sku: string | null; text: string }[];

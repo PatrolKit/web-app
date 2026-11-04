@@ -26,6 +26,7 @@ import {
   activeKeyOf, allFinal, flagsFor, gapsForPayout, issuesBySeller, kindOf, notPaid,
   type PayoutMethodChoice, type SellerIssue,
 } from './payout-flags';
+import { payoutProgress } from './payout-progress';
 import {
   TERMINAL_PAYOUT_STATUSES,
   type PayoutFlag, type PayoutLineStatus, type PayoutLineView, type PayoutRunKind, type PayoutRunView,
@@ -197,6 +198,10 @@ export class PayoutRunService {
       ready,
       comps: [...snap.comps.values()].filter((c) => c.live).reduce((t, c) => ({ count: t.count + c.units, totalCents: t.totalCents + c.units * c.priceCents }), { count: 0, totalCents: 0 }),
       money: snap.money,
+      progress: snap.salesError ? null : payoutProgress(
+        [...snap.lineBySeller.values()].map((b) => ({ sellerId: b.sellerId, netCents: b.netCents, donated: b.method === 'DONATE' })),
+        lines,
+      ),
     };
   }
 

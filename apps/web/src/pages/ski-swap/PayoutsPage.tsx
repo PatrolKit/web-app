@@ -169,7 +169,7 @@ export default function PayoutsPage() {
       )}
 
       {/* The swap's money: incoming, outgoing, profit. */}
-      {data?.money && <MoneyCard money={data.money} />}
+      {data?.money && <MoneyCard money={data.money} progress={data.progress} />}
 
       {/* D1: a run is checks or PayPal, and starts empty. */}
       {data && (

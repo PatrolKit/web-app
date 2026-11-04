@@ -253,6 +253,11 @@ export interface PayoutsSummaryView {
     profitShare: number | null;
   } | null;
   runs: PayoutRunSummaryView[];
+  /**
+   * How far payouts have got, by seller: paid (PayPal or an exported check), in
+   * a run on their way, and the rest not in one yet. Null when Square couldn't be read.
+   */
+  progress: { sellers: number; paid: number; inRun: number; paidCents: number; owedCents: number } | null;
   /** D16: sellers with sales whose details stop their own payout method. */
   missingDetails: { sellerId: string; name: string; key: string; problem: string; fix: string }[];
   /** D14: open Sales check issues by seller, and sales that matched no ticket. */
