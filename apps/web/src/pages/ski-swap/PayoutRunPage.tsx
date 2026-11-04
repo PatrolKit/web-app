@@ -5,7 +5,7 @@ import PayoutsExport from './payouts/PayoutsExport';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faArrowLeft, faArrowsRotate, faChevronDown, faChevronRight, faCircleCheck, faCircleXmark, faLockOpen, faTriangleExclamation,
+  faArrowLeft, faArrowsRotate, faChevronDown, faChevronRight, faLock, faLockOpen,
 } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import { usd } from '../../lib/money';
@@ -33,11 +33,11 @@ const smallButton = 'px-2.5 py-1 rounded border border-gray-600 bg-surface-100 h
 /** The Payouts page. Not `..`: this route is `payouts/:runId`, so `..` is the Ski Swap dashboard. */
 const PAYOUTS = '/dashboard/ski-swap/payouts';
 
-/** A closed run's banner, in the tone of how it ended. */
-const CLOSED_BANNER: Partial<Record<Tone, { box: string; icon: typeof faCircleCheck; iconColor: string; title: string }>> = {
-  green: { box: 'bg-green-900/25 border-green-900/60', icon: faCircleCheck, iconColor: 'text-green-400', title: 'text-green-300' },
-  amber: { box: 'bg-amber-900/20 border-amber-800/60', icon: faTriangleExclamation, iconColor: 'text-amber-400', title: 'text-amber-300' },
-  red: { box: 'bg-red-900/25 border-red-800/60', icon: faCircleXmark, iconColor: 'text-red-400', title: 'text-red-300' },
+/** A closed run's banner, in the tone of how it ended. The lock says closed; the color says how. */
+const CLOSED_BANNER: Partial<Record<Tone, { box: string; iconColor: string; title: string }>> = {
+  green: { box: 'bg-green-900/25 border-green-900/60', iconColor: 'text-green-400', title: 'text-green-300' },
+  amber: { box: 'bg-amber-900/20 border-amber-800/60', iconColor: 'text-amber-400', title: 'text-amber-300' },
+  red: { box: 'bg-red-900/25 border-red-800/60', iconColor: 'text-red-400', title: 'text-red-300' },
 };
 
 /** What a successful Send says, and how a Send in flight is told apart. */
@@ -178,7 +178,7 @@ export default function PayoutRunPage() {
           </div>
         ) : (
           <div className={`-mx-5 -mt-5 px-5 py-2.5 rounded-t-lg border-b flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-200 ${banner.box}`}>
-            <FontAwesomeIcon icon={banner.icon} className={banner.iconColor} aria-hidden />
+            <FontAwesomeIcon icon={faLock} className={banner.iconColor} aria-hidden />
             <span><strong className={banner.title}>{outcome.label}</strong> and closed{run.closedAt && ` ${whenText(run.closedAt)}`}.</span>
             <span className="text-gray-300">{outcome.text}</span>
           </div>

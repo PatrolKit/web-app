@@ -5,7 +5,7 @@ import PayoutsExport from './payouts/PayoutsExport';
 import MoneyCard from './payouts/MoneyCard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCircleCheck, faCircleXmark, faTriangleExclamation } from '@fortawesome/pro-duotone-svg-icons';
+import { faLock, faTriangleExclamation } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import { usd } from '../../lib/money';
 import type { PayoutRunKind } from '../../lib/api.types';
@@ -295,12 +295,10 @@ export default function PayoutsPage() {
 /** A closed run, as it ended: paid (or exported), partly paid, or not paid. */
 function ClosedBadge({ kind, paid, notPaid }: { kind: PayoutRunKind; paid: number; notPaid: number }) {
   const o = runOutcome(kind, paid, notPaid);
-  const look = o.tone === 'red' ? { icon: faCircleXmark, cls: 'bg-red-900/40 text-red-200' }
-    : o.tone === 'amber' ? { icon: faTriangleExclamation, cls: 'bg-amber-900/40 text-amber-200' }
-      : { icon: faCircleCheck, cls: 'bg-green-900/40 text-green-300' };
+  const cls = o.tone === 'red' ? 'bg-red-900/40 text-red-200' : o.tone === 'amber' ? 'bg-amber-900/40 text-amber-200' : 'bg-green-900/40 text-green-300';
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${look.cls}`} title={`${o.text} Closed.`}>
-      <FontAwesomeIcon icon={look.icon} className="h-2.5 w-2.5" aria-hidden />{o.label}
+    <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${cls}`} title={`Closed. ${o.text}`}>
+      <FontAwesomeIcon icon={faLock} className="h-2.5 w-2.5" aria-hidden />{o.label}
     </span>
   );
 }
