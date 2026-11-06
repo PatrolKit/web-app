@@ -95,6 +95,7 @@ Each phase ships alone and leaves production working.
 
 - **Install** the Phase 3 build on every iPad. The Tablets tab's build column confirms it.
 - **Run the D11 data migration** (for the user's OK first). Spot-check that a converted iPad still syncs its station and can switch to Time Clock.
+  - **Done 2026-11-06, early:** the user converted all 12 production iPads (every one `ski_swap.staff_check_in`) while none had been seen for 20 days, rather than waiting for each to update. A one-off script did it in one transaction, with a `device.role_converted` audit row per device recording the old role. iPads still on 0.1.0 show their fallback screen until they update.
 - **Then:** provisioning stops offering the legacy roles. They stay accepted by the guards, so a forgotten iPad still works; a later plan removes them once none are left.
 
 ## Interplay
