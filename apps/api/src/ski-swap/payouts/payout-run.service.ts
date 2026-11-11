@@ -146,6 +146,8 @@ export class PayoutRunService {
         totalNetCents: its.reduce((n, l) => n + (l.frozenAt ? l.netCents ?? 0 : snap.lineBySeller.get(l.sellerId)?.netCents ?? 0), 0),
         paidCount: its.filter((l) => l.status === 'SENT' || l.status === 'EXPORTED').length,
         notPaidCount: its.filter((l) => notPaid(l.status)).length,
+        unclaimedCount: its.filter((l) => l.status === 'UNCLAIMED').length,
+        unclaimedCents: its.filter((l) => l.status === 'UNCLAIMED').reduce((n, l) => n + (l.approvedNetCents ?? l.netCents ?? 0), 0),
       };
     });
 

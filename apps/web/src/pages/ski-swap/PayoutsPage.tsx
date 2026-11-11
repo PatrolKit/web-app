@@ -224,6 +224,11 @@ export default function PayoutsPage() {
                     </span>
                     <span className="text-white text-sm">{whenText(r.createdAt)}</span>
                     <span className="text-gray-400 text-xs">{r.lineCount} {r.lineCount === 1 ? 'seller' : 'sellers'}{r.flaggedCount ? ` · ${r.flaggedCount} flagged` : ''}</span>
+                    {r.unclaimedCount > 0 && (
+                      <span className="text-amber-300 text-xs" title="Waiting for the seller to claim it. PayPal returns it after 30 days if they don’t.">
+                        {r.unclaimedCount} unclaimed · {usd(r.unclaimedCents)}
+                      </span>
+                    )}
                     <span className="ml-auto text-white text-sm font-medium">{usd(r.totalNetCents)}</span>
                     <span className="w-28 text-right shrink-0">
                       {r.status === 'OPEN'

@@ -967,6 +967,9 @@ export interface PayoutRunSummary {
   paidCount: number;
   /** Payments that ended without paying them: failed, returned or cancelled. */
   notPaidCount: number;
+  /** PayPal payments waiting for the seller to claim them, and how much. */
+  unclaimedCount: number;
+  unclaimedCents: number;
 }
 
 /** A seller a run can take (D3), for "Add sellers". */

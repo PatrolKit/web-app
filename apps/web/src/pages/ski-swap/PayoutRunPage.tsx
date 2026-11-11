@@ -376,7 +376,8 @@ function BatchBox({ run }: { run: PayoutRun }) {
   const b = run.batch!;
   const sent = run.lines.filter((l) => l.frozen);
   const paidN = sent.filter((l) => l.status === 'SENT').length;
-  const waitingN = sent.filter((l) => ['SENDING', 'UNCLAIMED', 'ONHOLD'].includes(l.status)).length;
+  const waitingN = sent.filter((l) => ['SENDING', 'ONHOLD'].includes(l.status)).length;
+  const unclaimed = sent.filter((l) => l.status === 'UNCLAIMED');
   const notPaidN = sent.filter((l) => NOT_PAID.includes(l.status)).length;
   return (
     <div className="text-sm border border-gray-800 rounded px-3 py-2 space-y-1">
@@ -390,6 +391,9 @@ function BatchBox({ run }: { run: PayoutRun }) {
       <p className="text-gray-300">
         <span className="text-green-400">{paidN} paid</span>
         {waitingN > 0 && <span className="text-amber-300"> · {waitingN} waiting</span>}
+        {unclaimed.length > 0 && (
+          <span className="text-amber-300"> · {unclaimed.length} unclaimed, {usd(unclaimed.reduce((n, l) => n + (l.approvedNetCents ?? l.totals.netCents), 0))}</span>
+        )}
         {notPaidN > 0 && <span className="text-red-300"> · {notPaidN} not paid</span>}
         <span className="text-gray-500"> of {sent.length}</span>
       </p>

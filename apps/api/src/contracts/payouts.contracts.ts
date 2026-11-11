@@ -220,6 +220,9 @@ export interface PayoutRunSummaryView {
   paidCount: number;
   /** Payments that ended without paying them: failed, returned or cancelled (D19). */
   notPaidCount: number;
+  /** PayPal payments waiting for the seller to claim them, and how much. */
+  unclaimedCount: number;
+  unclaimedCents: number;
 }
 
 export interface PayoutSellerChoice {
