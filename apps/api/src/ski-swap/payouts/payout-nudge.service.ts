@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { createId } from '@paralleldrive/cuid2';
@@ -23,6 +23,14 @@ import { formatCents } from './money';
 /** Day 7 and day 21. Two nudges, then PayPal returns it at thirty. */
 export const NUDGE_DAY_MARKS = [7, 21] as const;
 
+/**
+ * How often the server looks for nudges that have come due: hourly, so a day
+ * mark is an hour late at most. Also a minute after it starts, because a deploy
+ * restarts it and deploys can come more often than hourly.
+ */
+const SWEEP_EVERY_MS = 60 * 60 * 1000;
+const SWEEP_AFTER_START_MS = 60 * 1000;
+
 const LINE_INCLUDE = {
   notices: { select: { dayMark: true } },
   run: { select: { orgId: true, swap: { select: { title: true } } } },
@@ -41,8 +49,10 @@ const LINE_INCLUDE = {
 type NudgeLine = Prisma.PayoutLineGetPayload<{ include: typeof LINE_INCLUDE }>;
 
 @Injectable()
-export class PayoutNudgeService {
+export class PayoutNudgeService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PayoutNudgeService.name);
+  private timers: NodeJS.Timeout[] = [];
+  private sweeping = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -51,6 +61,37 @@ export class PayoutNudgeService {
     private readonly paypal: PayPalClient,
     private readonly config: ConfigService,
   ) {}
+
+  onModuleInit(): void {
+    this.timers = [setTimeout(() => void this.sweepLive(), SWEEP_AFTER_START_MS), setInterval(() => void this.sweepLive(), SWEEP_EVERY_MS)];
+    // Never the reason a process stays up.
+    for (const t of this.timers) t.unref();
+  }
+
+  onModuleDestroy(): void {
+    for (const t of this.timers) clearTimeout(t);
+  }
+
+  /**
+   * The scheduled sweep: every org paying through live PayPal. A sandbox payment
+   * pays nobody, so its seller is never told money is waiting. Failures are
+   * logged; the next hour tries again.
+   */
+  async sweepLive() {
+    if (this.sweeping) return;
+    this.sweeping = true;
+    try {
+      const orgs = await this.prisma.payPalConfig.findMany({ where: { environment: 'live' }, select: { orgId: true } });
+      for (const { orgId } of orgs) {
+        const results = await this.sweep(orgId);
+        if (results.sent || results.failed || results.suppressed) this.logger.log({ orgId, ...results }, 'Unclaimed payout nudges sent');
+      }
+    } catch (err) {
+      this.logger.error({ err }, 'Unclaimed payout nudge sweep failed');
+    } finally {
+      this.sweeping = false;
+    }
+  }
 
   /**
    * Sends whichever nudges are due across an org.

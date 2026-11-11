@@ -749,7 +749,15 @@ export class PayoutRunService {
         continue;
       }
       const ended = notPaid(mapped.status);
-      const before = await this.prisma.payoutLine.findUnique({ where: { id: item.senderItemId }, select: { status: true, runId: true, frozenAt: true } });
+      const before = await this.prisma.payoutLine.findUnique({
+        where: { id: item.senderItemId },
+        select: { status: true, runId: true, frozenAt: true, payoutItemId: true, transactionId: true },
+      });
+      // Nothing new: the same status, with nothing to fill in. Left untouched,
+      // because `updatedAt` is when an unclaimed payment went unclaimed, and the
+      // reminders count their days from it.
+      if (before && before.status === mapped.status
+        && (!item.payoutItemId || before.payoutItemId) && (!item.transactionId || before.transactionId)) continue;
       const res = await this.prisma.payoutLine.updateMany({
         // Never overwrite a line that has already arrived somewhere final. A
         // late webhook must not walk SENT backwards.
