@@ -134,11 +134,22 @@ describe('who the Members page is for', () => {
     await svc.listMembers('org-1');
     expect(listed()).toMatchObject({
       orgId: 'org-1',
-      OR: [
-        { patrollerProfile: { is: { deletedAt: null } } },
-        { permissions: { some: {} } },
+      AND: [
+        {
+          OR: [
+            { patrollerProfile: { is: { deletedAt: null } } },
+            { permissions: { some: {} } },
+          ],
+        },
+        expect.anything(),
       ],
     });
+  });
+
+  it('leaves super admins off, whatever memberships they hold (iPad Plan 42)', async () => {
+    const { svc, listed } = harness();
+    await svc.listMembers('org-1');
+    expect(listed()).toMatchObject({ AND: [expect.anything(), { user: { isSuperAdmin: false } }] });
   });
 
   it('makes a seller a member by adding them', async () => {

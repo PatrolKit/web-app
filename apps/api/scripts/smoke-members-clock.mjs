@@ -122,6 +122,28 @@ await prisma.sellerProfile.create({ data: { id: randomUUID(), membershipId: tom.
 ok('a member who starts selling at the swap stays a member', (await members()).some((m) => m.userId === tom.userId));
 ok('and stays on the clock', (await roster()).some((p) => p.nspId === NSP(1) && p.active));
 
+// ─── iPad Plan 42: super admins are on neither list ─────────────────────────
+
+const walkSince = (since) => fetch(`${BASE}/orgs/${org.id}/time-clock/patrollers?walk=true&updatedSince=${since}`, { headers: D }).then(unwrap);
+const beforeAdmin = new Date().toISOString();
+// As if they had created the org: a membership with a permission, and the
+// member record a grant makes.
+const admin = await prisma.user.create({ data: { id: createId(), email: MAIL('superadmin'), firstName: 'Sue', lastName: 'SuperAdmin', isSuperAdmin: true } });
+const adminMembership = await prisma.membership.create({ data: { id: createId(), userId: admin.id, orgId: org.id, updatedAt: new Date() } });
+const anyPermission = await prisma.permission.findFirst({ select: { id: true } });
+await prisma.membershipPermission.create({ data: { membershipId: adminMembership.id, permissionId: anyPermission.id } });
+await prisma.patrollerProfile.create({ data: { id: createId(), membershipId: adminMembership.id, updatedAt: new Date() } });
+
+ok('a super admin with a membership is not on Members', !(await members()).some((m) => m.userId === admin.id));
+const adminRow = (await walkSince(beforeAdmin)).patrollers.find((p) => p.lastName === 'SuperAdmin');
+ok('and reaches the iPads only as a tombstone', !!adminRow && adminRow.deletedAt !== null && adminRow.active === false,
+   JSON.stringify(adminRow ?? null).slice(0, 160));
+ok('so the clock-in roster never offers them', !(await roster()).some((p) => p.lastName === 'SuperAdmin' && p.deletedAt === null));
+await prisma.patrollerProfile.update({ where: { membershipId: adminMembership.id }, data: { deletedAt: new Date() } });
+await roster();
+ok('a removed member record is not mended back to life for them',
+   (await prisma.patrollerProfile.findUnique({ where: { membershipId: adminMembership.id } }))?.deletedAt !== null);
+
 // ─── D7, D8: PINs ───────────────────────────────────────────────────────────
 
 const patUser = await prisma.user.findUnique({ where: { id: pat.userId } });

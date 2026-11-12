@@ -69,7 +69,7 @@ export class TimeClockHealthService {
         deletedAt: null,
         active: true,
         clockPin: null,
-        membership: { orgId, deletedAt: null, user: { nspId: null } },
+        membership: { orgId, deletedAt: null, user: { nspId: null, isSuperAdmin: false } },
       },
     });
 

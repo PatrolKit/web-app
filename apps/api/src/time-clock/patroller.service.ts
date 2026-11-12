@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PersonService } from '../common/identity/person.service';
-import { IS_MEMBER } from '../common/identity/membership-kinds';
+import { IS_LISTED_MEMBER } from '../common/identity/membership-kinds';
 import { displayName } from '../common/util/person';
 import type { DevicePatrollerResponse, PatrollerResponse } from '../contracts/time-clock.contracts';
 import { decodeCursor, encodeCursor } from '../common/util/cursor';
@@ -14,6 +14,9 @@ import { decodeCursor, encodeCursor } from '../common/util/cursor';
  * A roster row is assembled from three tables: the person (`User`), their
  * membership, and the member record. `Membership.updatedAt` is the watermark
  * offline devices poll, and every write that changes a row bumps it.
+ *
+ * A super admin isn't on it (iPad Plan 42), but a row an iPad already holds
+ * leaves only as a tombstone, so theirs is sent as one rather than left out.
  */
 const ROSTER_INCLUDE = {
   membership: { include: { user: true } },
@@ -29,6 +32,7 @@ type RosterRow = {
     updatedAt: Date;
     deletedAt: Date | null;
     user: {
+      isSuperAdmin: boolean;
       firstName: string | null; lastName: string | null;
       nspId: string | null; patrolLevel: string | null;
       email: string | null; phone: string | null;
@@ -40,8 +44,9 @@ type RosterRow = {
 function toResponse(p: RosterRow): PatrollerResponse {
   const u = p.membership.user;
   // A membership tombstone removes the person from the roster just as surely
-  // as a record tombstone does.
-  const deletedAt = p.deletedAt ?? p.membership.deletedAt;
+  // as a record tombstone does, and so does being a super admin, dated by the
+  // membership bump that carries it to the devices.
+  const deletedAt = p.deletedAt ?? p.membership.deletedAt ?? (u.isSuperAdmin ? p.membership.updatedAt : null);
   return {
     id: p.id,
     orgId: p.membership.orgId,
@@ -148,7 +153,7 @@ export class PatrollerService {
         orgId,
         deletedAt: null,
         AND: [
-          IS_MEMBER,
+          IS_LISTED_MEMBER,
           { OR: [{ patrollerProfile: { is: null } }, { patrollerProfile: { is: { deletedAt: { not: null } } } }] },
         ],
       },

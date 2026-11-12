@@ -20,3 +20,20 @@ export const IS_MEMBER: Prisma.MembershipWhereInput = {
     { permissions: { some: {} } },
   ],
 };
+
+/**
+ * The members a list of people shows: everyone `IS_MEMBER`, except super admins
+ * (iPad Plan 42). A super admin's way into an org is the flag on their user, not
+ * the membership; a membership they hold, from creating the org say, would
+ * otherwise put the platform's operator on Members and the clock-in roster.
+ *
+ * Only lists read this. Sign-in and the account's own org list keep `IS_MEMBER`,
+ * so a super admin still reaches the orgs they belong to, and their permissions
+ * stay, taking effect again if the flag is ever cleared.
+ *
+ * Nothing in the app sets the flag. Whoever flips it by hand must bump the
+ * user's memberships' `updatedAt`, so iPads hear of it on their next delta.
+ */
+export const IS_LISTED_MEMBER: Prisma.MembershipWhereInput = {
+  AND: [IS_MEMBER, { user: { isSuperAdmin: false } }],
+};

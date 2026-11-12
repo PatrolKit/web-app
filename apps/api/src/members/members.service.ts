@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { IS_MEMBER } from '../common/identity/membership-kinds';
+import { IS_LISTED_MEMBER, IS_MEMBER } from '../common/identity/membership-kinds';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PersonService } from '../common/identity/person.service';
@@ -88,7 +88,7 @@ export class MembersService {
 
   async listMembers(orgId: string): Promise<MemberResponse[]> {
     const memberships = await this.prisma.membership.findMany({
-      where: { orgId, deletedAt: null, ...IS_MEMBER },
+      where: { orgId, deletedAt: null, ...IS_LISTED_MEMBER },
       include: MEMBER_INCLUDE,
       orderBy: { joinedAt: 'asc' },
     });
