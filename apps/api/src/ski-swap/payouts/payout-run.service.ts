@@ -532,7 +532,7 @@ export class PayoutRunService {
       if (balance.availableCents !== null) {
         const needed = approved.reduce((n, l) => n + l.approvedNetCents! + feeCents(l.approvedNetCents!, snap.feeRate), 0);
         if (balance.availableCents < needed) {
-          throw new BadRequestException(`PayPal holds ${formatCents(balance.availableCents)}, short of the ${formatCents(needed)} this run needs. Add money to PayPal first.`);
+          throw new BadRequestException(`PayPal holds ${formatCents(balance.availableCents)}, short of the ${formatCents(needed)} this run needs. Add money to PayPal first. PayPal’s balance can run up to 3 hours behind, so money added recently may not show yet.`);
         }
       }
 

@@ -215,15 +215,25 @@ export default function PayoutRunPage() {
               {usd(funding.total)}
             </span>
           );
+          // PayPal's balance API can run up to 3 hours behind (its docs, "List all balances").
+          const lagNote = (
+            <p className="text-xs text-gray-500">* PayPal’s balance can run up to 3 hours behind. Money added recently may not show yet.</p>
+          );
           return available === null ? (
             <p className="text-sm text-gray-300">
               ? Make sure PayPal has {needed}.{' '}
               <span className="text-gray-500">{balanceLoading ? 'Reading the balance…' : balance?.message ?? 'PatrolKit can’t read the balance.'}</span>
             </p>
           ) : available >= funding.total ? (
-            <p className="text-sm text-green-400">✓ PayPal covers this run: {needed} needed, {usd(available)} available.</p>
+            <div>
+              <p className="text-sm text-green-400">✓ PayPal covers this run: {needed} needed, {usd(available)}* available.</p>
+              {lagNote}
+            </div>
           ) : (
-            <p className="text-sm text-amber-300">✗ PayPal is {usd(funding.total - available)} short: {needed} needed, {usd(available)} available.</p>
+            <div>
+              <p className="text-sm text-amber-300">✗ PayPal is {usd(funding.total - available)} short: {needed} needed, {usd(available)}* available.</p>
+              {lagNote}
+            </div>
           );
         })()}
         {!paypal && isOpen && toPay.length > 0 && (
