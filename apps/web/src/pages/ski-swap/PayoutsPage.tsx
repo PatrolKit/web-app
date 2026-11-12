@@ -8,10 +8,10 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLock, faTriangleExclamation } from '@fortawesome/pro-duotone-svg-icons';
 import { api, ApiError } from '../../lib/api';
 import { usd } from '../../lib/money';
-import type { PayoutRunKind } from '../../lib/api.types';
+import type { PayoutRunKind, PayoutRunSummary } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import NewTabLink from '../../components/NewTabLink';
-import { RUN_KIND_ICON, dayText, runOutcome, whenText } from './payouts/payoutView';
+import { RUN_KIND_ICON, TONE, dayText, runPaidText, runStage, whenText } from './payouts/payoutView';
 
 /**
  * A swap's payouts (Plan 52): "Before you pay" at the top, sellers missing
@@ -216,25 +216,30 @@ export default function PayoutsPage() {
             <p className="text-sm text-gray-500">No runs yet.</p>
           ) : (
             <ul className="space-y-2">
+              <li className="flex gap-2 lg:gap-3 px-4 text-xs text-gray-500" aria-hidden>
+                <span className="ml-auto w-24 text-right">Amount</span>
+                <span className="w-20 text-right">Paid</span>
+                <span className="w-20 text-right">Status</span>
+              </li>
               {data.runs.map((r) => (
                 <li key={r.id}>
-                  <Link to={r.id} className={`flex items-center gap-3 border rounded-lg px-4 py-3 ${r.status === 'OPEN' ? 'border-gray-700 bg-surface-50 hover:bg-surface-100' : 'border-gray-800 bg-surface-50/40 hover:bg-surface-100/60'}`}>
-                    <span className={`text-xs px-2 py-0.5 rounded border shrink-0 ${r.kind === 'PAYPAL' ? 'border-blue-800/60 text-blue-300' : 'border-gray-600 text-gray-300'}`}>
-                      <FontAwesomeIcon icon={RUN_KIND_ICON[r.kind].icon} className="mr-1.5" aria-hidden />{r.kind === 'PAYPAL' ? 'PayPal' : 'Checks'}
-                    </span>
-                    <span className="text-white text-sm">{whenText(r.createdAt)}</span>
-                    <span className="text-gray-400 text-xs">{r.lineCount} {r.lineCount === 1 ? 'seller' : 'sellers'}{r.flaggedCount ? ` · ${r.flaggedCount} flagged` : ''}</span>
-                    {r.unclaimedCount > 0 && (
-                      <span className="text-amber-300 text-xs" title="Waiting for the seller to claim it. PayPal returns it after 30 days if they don’t.">
-                        {r.unclaimedCount} unclaimed · {usd(r.unclaimedCents)}
+                  <Link to={r.id} className={`flex items-center gap-2 lg:gap-3 border rounded-lg px-4 py-3 ${r.status === 'OPEN' ? 'border-gray-700 bg-surface-50 hover:bg-surface-100' : 'border-gray-800 bg-surface-50/40 hover:bg-surface-100/60'}`}>
+                    {/* Stacked on a narrow screen (an iPad upright) so the columns keep their room. */}
+                    <span className="flex flex-col items-start gap-0.5 lg:flex-row lg:items-center lg:gap-3">
+                      <span className={`text-xs px-2 py-0.5 rounded border shrink-0 ${r.kind === 'PAYPAL' ? 'border-blue-800/60 text-blue-300' : 'border-gray-600 text-gray-300'}`}>
+                        <FontAwesomeIcon icon={RUN_KIND_ICON[r.kind].icon} className="mr-1.5" aria-hidden />{r.kind === 'PAYPAL' ? 'PayPal' : 'Checks'}
                       </span>
-                    )}
-                    <span className="ml-auto text-white text-sm font-medium">{usd(r.totalNetCents)}</span>
-                    <span className="w-28 text-right shrink-0">
-                      {r.status === 'OPEN'
-                        ? <span className="inline-flex items-center gap-1.5 text-xs text-green-400"><span className="h-1.5 w-1.5 rounded-full bg-green-500" aria-hidden />Open</span>
-                        : <ClosedBadge kind={r.kind} paid={r.paidCount} notPaid={r.notPaidCount} />}
+                      <span className="text-white text-sm whitespace-nowrap">{whenText(r.createdAt)}</span>
+                      <span className="text-gray-400 text-xs whitespace-nowrap">{r.lineCount} {r.lineCount === 1 ? 'seller' : 'sellers'}{r.flaggedCount ? ` · ${r.flaggedCount} flagged` : ''}</span>
+                      {r.unclaimedCount > 0 && (
+                        <span className="text-amber-300 text-xs" title="Waiting for the seller to claim it. PayPal returns it after 30 days if they don’t.">
+                          {r.unclaimedCount} unclaimed · {usd(r.unclaimedCents)}
+                        </span>
+                      )}
                     </span>
+                    <span className="ml-auto w-24 text-right shrink-0 text-white text-sm font-medium">{usd(r.totalNetCents)}</span>
+                    <RunPaid run={r} />
+                    <RunStatus run={r} />
                   </Link>
                 </li>
               ))}
@@ -297,13 +302,33 @@ export default function PayoutsPage() {
   );
 }
 
-/** A closed run, as it ended: paid (or exported), partly paid, or not paid. */
-function ClosedBadge({ kind, paid, notPaid }: { kind: PayoutRunKind; paid: number; notPaid: number }) {
-  const o = runOutcome(kind, paid, notPaid);
-  const cls = o.tone === 'red' ? 'bg-red-900/40 text-red-200' : o.tone === 'amber' ? 'bg-amber-900/40 text-amber-200' : 'bg-green-900/40 text-green-300';
+/** Who in a run got paid. ⚠ when someone wasn't and isn't in another run yet. */
+function RunPaid({ run }: { run: PayoutRunSummary }) {
+  const p = runPaidText(run);
+  const waiting = run.unresolvedNames;
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${cls}`} title={`Closed. ${o.text}`}>
-      <FontAwesomeIcon icon={faLock} className="h-2.5 w-2.5" aria-hidden />{o.label}
+    <span className={`w-20 text-right shrink-0 text-xs whitespace-nowrap ${waiting.length ? 'text-amber-300' : p.tone === 'gray' ? 'text-gray-300' : TONE[p.tone].text}`}
+      title={waiting.length ? `Not paid, and not in another run: ${waiting.join(', ')}. Add them to a run to pay them.` : undefined}>
+      {waiting.length > 0 && <FontAwesomeIcon icon={faTriangleExclamation} className="mr-1" aria-label="Someone here still needs paying" />}
+      {p.text}
+    </span>
+  );
+}
+
+/** Open while it's built, Processing once sent until PayPal finishes, then Closed. */
+function RunStatus({ run }: { run: PayoutRunSummary }) {
+  const stage = runStage(run);
+  return (
+    <span className="w-20 text-right shrink-0 text-xs whitespace-nowrap">
+      {stage === 'Closed' ? (
+        <span className="inline-flex items-center gap-1.5 text-gray-400"><FontAwesomeIcon icon={faLock} className="h-2.5 w-2.5" aria-hidden />Closed</span>
+      ) : stage === 'Processing' ? (
+        <span className="inline-flex items-center gap-1.5 text-blue-300" title="Sent. Waiting on PayPal to finish every payment.">
+          <span className="h-1.5 w-1.5 rounded-full bg-blue-400" aria-hidden />Processing
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 text-green-400"><span className="h-1.5 w-1.5 rounded-full bg-green-500" aria-hidden />Open</span>
+      )}
     </span>
   );
 }

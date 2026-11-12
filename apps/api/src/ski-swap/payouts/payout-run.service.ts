@@ -148,6 +148,9 @@ export class PayoutRunService {
         notPaidCount: its.filter((l) => notPaid(l.status)).length,
         unclaimedCount: its.filter((l) => l.status === 'UNCLAIMED').length,
         unclaimedCents: its.filter((l) => l.status === 'UNCLAIMED').reduce((n, l) => n + (l.approvedNetCents ?? l.netCents ?? 0), 0),
+        sent: !!run.payoutBatchId,
+        // A seller paid or in a run since holds an active line, so this is who's still waiting on staff.
+        unresolvedNames: its.filter((l) => notPaid(l.status) && !active.has(l.sellerId)).map((l) => name(l.sellerId)),
       };
     });
 

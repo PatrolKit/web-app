@@ -98,6 +98,21 @@ export function runOutcome(kind: PayoutRunKind, paid: number, notPaid: number, p
   return { label: 'Partly paid', tone: 'amber', text: `${paid} of ${payments(paid + notPaid)} paid${amount}; ${notPaid} not. ${ELSEWHERE}` };
 }
 
+type RunRow = { kind: PayoutRunKind; status: 'OPEN' | 'CLOSED'; sent: boolean; lineCount: number; paidCount: number };
+
+/** Where a run is: being built, sent and waiting on PayPal, or closed. Check runs aren't sent. */
+export function runStage(r: RunRow): 'Open' | 'Processing' | 'Closed' {
+  return r.status === 'CLOSED' ? 'Closed' : r.sent ? 'Processing' : 'Open';
+}
+
+/** The runs list's Paid column: "Paid", "Exported", "99 of 100", or nothing before it's sent. */
+export function runPaidText(r: RunRow): { text: string; tone: Tone } {
+  if (r.kind === 'CHECK') return r.status === 'CLOSED' ? { text: 'Exported', tone: 'green' } : { text: '—', tone: 'gray' };
+  if (!r.sent) return { text: '—', tone: 'gray' };
+  if (r.lineCount > 0 && r.paidCount === r.lineCount) return { text: 'Paid', tone: 'green' };
+  return { text: `${r.paidCount} of ${r.lineCount}`, tone: 'gray' };
+}
+
 /** PayPal's batch status in plain words (D18). */
 export function batchStatusText(status: string | null): string {
   switch (status) {

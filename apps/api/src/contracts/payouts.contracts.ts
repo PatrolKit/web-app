@@ -223,6 +223,10 @@ export interface PayoutRunSummaryView {
   /** PayPal payments waiting for the seller to claim them, and how much. */
   unclaimedCount: number;
   unclaimedCents: number;
+  /** Sent to PayPal: an open run that's sent is waiting on PayPal to finish. */
+  sent: boolean;
+  /** Sellers here who weren't paid and aren't in another run since: someone has to act. */
+  unresolvedNames: string[];
 }
 
 export interface PayoutSellerChoice {

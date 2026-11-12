@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { batchStatusText, feeCents, feeRateText, fundingFor, percentText, runOutcome, sortSellers, statusView } from './payoutView';
+import { batchStatusText, feeCents, feeRateText, fundingFor, percentText, runOutcome, runPaidText, runStage, sortSellers, statusView } from './payoutView';
 
 const US = { flatCents: 25, bps: 0, capCents: 0 };
 
@@ -72,5 +72,26 @@ describe('how a closed run ended (D15, D19)', () => {
   });
   it('a closed check run is exported', () => {
     expect(runOutcome('CHECK', 2, 0, 5000)).toEqual({ label: 'Exported', tone: 'green', text: '2 checks, $50.00, to write from the spreadsheet.' });
+  });
+});
+
+describe('the runs list', () => {
+  const run = { kind: 'PAYPAL' as const, status: 'OPEN' as const, sent: false, lineCount: 50, paidCount: 0 };
+  it('an open run is open until sent, then processing until closed', () => {
+    expect(runStage(run)).toBe('Open');
+    expect(runStage({ ...run, sent: true })).toBe('Processing');
+    expect(runStage({ ...run, sent: true, status: 'CLOSED' })).toBe('Closed');
+    expect(runStage({ ...run, kind: 'CHECK', status: 'CLOSED' })).toBe('Closed');
+  });
+  it('says nothing about paying before a run is sent', () => {
+    expect(runPaidText(run)).toEqual({ text: '—', tone: 'gray' });
+    expect(runPaidText({ ...run, kind: 'CHECK' })).toEqual({ text: '—', tone: 'gray' });
+  });
+  it('counts who was paid, and says Paid when everyone was', () => {
+    expect(runPaidText({ ...run, sent: true, paidCount: 49 })).toEqual({ text: '49 of 50', tone: 'gray' });
+    expect(runPaidText({ ...run, sent: true, status: 'CLOSED', paidCount: 50 })).toEqual({ text: 'Paid', tone: 'green' });
+  });
+  it('a closed check run is exported', () => {
+    expect(runPaidText({ ...run, kind: 'CHECK', status: 'CLOSED', paidCount: 50 })).toEqual({ text: 'Exported', tone: 'green' });
   });
 });
