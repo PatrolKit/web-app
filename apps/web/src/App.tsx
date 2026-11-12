@@ -10,7 +10,7 @@ import OrganizationsTab from './pages/admin/OrganizationsTab';
 import UsersTab from './pages/admin/UsersTab';
 import SkiSwapLayout from './pages/ski-swap/SkiSwapLayout';
 import TimeTrackingLayout from './pages/time-tracking/TimeTrackingLayout';
-import ClockedInPage from './pages/time-tracking/ClockedInPage';
+import OverviewPage from './pages/time-tracking/OverviewPage';
 import TimeEntriesPage from './pages/time-tracking/TimeEntriesPage';
 import HoursReportPage from './pages/time-tracking/HoursReportPage';
 import TimeTrackingSettingsPage from './pages/time-tracking/SettingsPage';
@@ -189,7 +189,7 @@ export default function App() {
             <Route path="seller-profile" element={<SellerProfilePage />} />
           </Route>
           <Route path="time-tracking" element={<TimeTrackingLayout />}>
-            <Route index element={<ClockedInPage />} />
+            <Route index element={<OverviewPage />} />
             <Route path="entries" element={<TimeEntriesPage />} />
             <Route path="shifts" element={<Navigate to="../entries" replace />} />
             <Route path="hours" element={<HoursReportPage />} />

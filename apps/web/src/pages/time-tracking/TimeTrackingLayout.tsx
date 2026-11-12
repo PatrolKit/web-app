@@ -84,7 +84,7 @@ export default function TimeTrackingLayout() {
       <h1 className="text-2xl font-bold text-white">Time Tracking</h1>
 
       <nav className="flex items-center gap-1 border-b border-gray-800 pb-1">
-        <NavLink to="" end className={navClass}>Clocked in</NavLink>
+        <NavLink to="" end className={navClass}>Overview</NavLink>
         <NavLink to="entries" className={navClass}>Time entries</NavLink>
         <NavLink to="hours" className={navClass}>Hours</NavLink>
         <span className="mx-2 text-gray-700 select-none">|</span>
