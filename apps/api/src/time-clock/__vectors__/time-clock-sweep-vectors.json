@@ -1,0 +1,239 @@
+{
+  "about": "Generated from the server's foldEvents and sweep.util.ts (iOS Plan 43 §4.4). Both repos keep this file byte for byte; regenerate, do not hand-edit.",
+  "cases": [
+    {
+      "name": "daytime (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-01-12T13:00:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-13T08:00:00Z",
+      "clockOutAt": "2026-01-12T17:00:00Z"
+    },
+    {
+      "name": "late evening, the 4h rule (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-01-13T03:30:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-13T08:00:00Z",
+      "clockOutAt": "2026-01-13T07:30:00Z"
+    },
+    {
+      "name": "late evening, the sweep time (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-01-13T04:30:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-13T08:00:00Z",
+      "clockOutAt": "2026-01-13T08:00:00Z"
+    },
+    {
+      "name": "after midnight (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-01-13T05:45:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-13T08:00:00Z",
+      "clockOutAt": "2026-01-13T08:00:00Z"
+    },
+    {
+      "name": "a minute before the sweep (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-01-13T07:59:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-13T08:00:00Z",
+      "clockOutAt": "2026-01-13T08:00:00Z"
+    },
+    {
+      "name": "the sweep instant (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-01-13T08:00:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-14T08:00:00Z",
+      "clockOutAt": "2026-01-13T12:00:00Z"
+    },
+    {
+      "name": "just after the sweep (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-01-13T08:00:30Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-14T08:00:00Z",
+      "clockOutAt": "2026-01-13T12:00:30Z"
+    },
+    {
+      "name": "the day before spring-forward (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-03-07T13:00:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-03-08T07:00:00Z",
+      "clockOutAt": "2026-03-07T17:00:00Z"
+    },
+    {
+      "name": "the evening before spring-forward (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-03-08T04:30:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-03-08T07:00:00Z",
+      "clockOutAt": "2026-03-08T07:00:00Z"
+    },
+    {
+      "name": "the day before fall-back (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-10-31T12:00:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-11-01T08:00:00Z",
+      "clockOutAt": "2026-10-31T16:00:00Z"
+    },
+    {
+      "name": "the evening before fall-back (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-11-01T03:30:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-11-01T08:00:00Z",
+      "clockOutAt": "2026-11-01T07:30:00Z"
+    },
+    {
+      "name": "a 02:00 / 6h policy, daytime (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-01-12T13:00:00Z",
+      "autoCloseLocalTime": "02:00",
+      "autoCloseAfterHours": 6,
+      "sweepAt": "2026-01-13T07:00:00Z",
+      "clockOutAt": "2026-01-12T19:00:00Z"
+    },
+    {
+      "name": "a 02:00 / 6h policy, evening (America/New_York)",
+      "timeZone": "America/New_York",
+      "clockInAt": "2026-01-13T02:00:00Z",
+      "autoCloseLocalTime": "02:00",
+      "autoCloseAfterHours": 6,
+      "sweepAt": "2026-01-13T07:00:00Z",
+      "clockOutAt": "2026-01-13T07:00:00Z"
+    },
+    {
+      "name": "daytime (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-01-12T15:00:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-13T10:00:00Z",
+      "clockOutAt": "2026-01-12T19:00:00Z"
+    },
+    {
+      "name": "late evening, the 4h rule (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-01-13T05:30:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-13T10:00:00Z",
+      "clockOutAt": "2026-01-13T09:30:00Z"
+    },
+    {
+      "name": "late evening, the sweep time (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-01-13T06:30:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-13T10:00:00Z",
+      "clockOutAt": "2026-01-13T10:00:00Z"
+    },
+    {
+      "name": "after midnight (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-01-13T07:45:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-13T10:00:00Z",
+      "clockOutAt": "2026-01-13T10:00:00Z"
+    },
+    {
+      "name": "a minute before the sweep (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-01-13T09:59:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-13T10:00:00Z",
+      "clockOutAt": "2026-01-13T10:00:00Z"
+    },
+    {
+      "name": "the sweep instant (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-01-13T10:00:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-14T10:00:00Z",
+      "clockOutAt": "2026-01-13T14:00:00Z"
+    },
+    {
+      "name": "just after the sweep (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-01-13T10:00:30Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-01-14T10:00:00Z",
+      "clockOutAt": "2026-01-13T14:00:30Z"
+    },
+    {
+      "name": "the day before spring-forward (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-03-07T15:00:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-03-08T09:00:00Z",
+      "clockOutAt": "2026-03-07T19:00:00Z"
+    },
+    {
+      "name": "the evening before spring-forward (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-03-08T06:30:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-03-08T09:00:00Z",
+      "clockOutAt": "2026-03-08T09:00:00Z"
+    },
+    {
+      "name": "the day before fall-back (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-10-31T14:00:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-11-01T10:00:00Z",
+      "clockOutAt": "2026-10-31T18:00:00Z"
+    },
+    {
+      "name": "the evening before fall-back (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-11-01T05:30:00Z",
+      "autoCloseLocalTime": "03:00",
+      "autoCloseAfterHours": 4,
+      "sweepAt": "2026-11-01T10:00:00Z",
+      "clockOutAt": "2026-11-01T09:30:00Z"
+    },
+    {
+      "name": "a 02:00 / 6h policy, daytime (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-01-12T15:00:00Z",
+      "autoCloseLocalTime": "02:00",
+      "autoCloseAfterHours": 6,
+      "sweepAt": "2026-01-13T09:00:00Z",
+      "clockOutAt": "2026-01-12T21:00:00Z"
+    },
+    {
+      "name": "a 02:00 / 6h policy, evening (America/Denver)",
+      "timeZone": "America/Denver",
+      "clockInAt": "2026-01-13T04:00:00Z",
+      "autoCloseLocalTime": "02:00",
+      "autoCloseAfterHours": 6,
+      "sweepAt": "2026-01-13T09:00:00Z",
+      "clockOutAt": "2026-01-13T09:00:00Z"
+    }
+  ]
+}

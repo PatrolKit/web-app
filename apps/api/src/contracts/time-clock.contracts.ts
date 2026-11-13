@@ -240,6 +240,31 @@ export const TimeEntryHistoryResponseSchema = z.object({
   ),
 });
 
+/**
+ * One patroller's whole clock log, as the fold last left it (iOS Plan 43): every event
+ * with its fold status, and every entry, removed ones included. Per-entry history can't
+ * show an orphaned or rejected clock-out, which never belonged to an entry.
+ */
+export const PatrollerLogResponseSchema = z.object({
+  patrollerId: z.string(),
+  events: z.array(
+    z.object({
+      id: z.string(),
+      resortId: z.string(),
+      type: z.string(),
+      dutyType: z.string().nullable(),
+      dutyNote: z.string().nullable(),
+      source: z.string(),
+      status: z.string(),
+      statusNote: z.string().nullable(),
+      occurredAt: z.string(),
+      recordedAt: z.string(),
+      deviceId: z.string().nullable(),
+    }),
+  ),
+  entries: z.array(TimeEntryResponseSchema),
+});
+
 export const PatchTimeEntrySchema = z
   .object({
     clockInAt: z.string().datetime({ offset: true }).optional(),
@@ -256,6 +281,7 @@ export type TimeEntryListQuery = z.infer<typeof TimeEntryListQuerySchema>;
 export type TimeEntryResponse = z.infer<typeof TimeEntryResponseSchema>;
 export type TimeEntryPageResponse = z.infer<typeof TimeEntryPageResponseSchema>;
 export type TimeEntryHistoryResponse = z.infer<typeof TimeEntryHistoryResponseSchema>;
+export type PatrollerLogResponse = z.infer<typeof PatrollerLogResponseSchema>;
 
 // ─── Reports ─────────────────────────────────────────────────────────────────
 

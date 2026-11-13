@@ -1,0 +1,840 @@
+{
+  "about": "Generated from the server's foldEvents and sweep.util.ts (iOS Plan 43 §4.4). Both repos keep this file byte for byte; regenerate, do not hand-edit.",
+  "cases": [
+    {
+      "name": "lone clock-in opens an entry",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": null,
+          "status": "open",
+          "closeReason": null,
+          "flagged": false,
+          "closeEventId": null
+        }
+      ],
+      "eventStatus": {
+        "a": "applied"
+      }
+    },
+    {
+      "name": "a clock-out closes it",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "b",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T19:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T19:00:00Z",
+          "status": "closed",
+          "closeReason": "manual",
+          "flagged": false,
+          "closeEventId": "b"
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "b": "applied"
+      }
+    },
+    {
+      "name": "duty type and note carry over",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "other",
+          "dutyNote": "Helping with the race",
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "other",
+          "dutyNote": "Helping with the race",
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": null,
+          "status": "open",
+          "closeReason": null,
+          "flagged": false,
+          "closeEventId": null
+        }
+      ],
+      "eventStatus": {
+        "a": "applied"
+      }
+    },
+    {
+      "name": "arrival order does not matter",
+      "events": [
+        {
+          "id": "b",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T19:00:00Z"
+        },
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T19:00:00Z",
+          "status": "closed",
+          "closeReason": "manual",
+          "flagged": false,
+          "closeEventId": "b"
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "b": "applied"
+      }
+    },
+    {
+      "name": "a clock-in elsewhere supersedes",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "b",
+          "resortId": "resort-2",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T15:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T15:00:00Z",
+          "status": "closed",
+          "closeReason": "superseded",
+          "flagged": true,
+          "closeEventId": null
+        },
+        {
+          "id": "b",
+          "resortId": "resort-2",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T15:00:00Z",
+          "clockOutAt": null,
+          "status": "open",
+          "closeReason": null,
+          "flagged": false,
+          "closeEventId": null
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "b": "applied"
+      }
+    },
+    {
+      "name": "a clock-in at the same instant is a duplicate",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "b",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": null,
+          "status": "open",
+          "closeReason": null,
+          "flagged": false,
+          "closeEventId": null
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "b": "duplicate"
+      }
+    },
+    {
+      "name": "an auto close is flagged",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "auto:a",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device_auto",
+          "occurredAt": "2026-01-10T17:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T17:00:00Z",
+          "status": "closed",
+          "closeReason": "auto",
+          "flagged": true,
+          "closeEventId": "auto:a"
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "auto:a": "applied"
+      }
+    },
+    {
+      "name": "an admin close is not flagged",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "admin-close:a",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "admin",
+          "occurredAt": "2026-01-10T17:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T17:00:00Z",
+          "status": "closed",
+          "closeReason": "admin",
+          "flagged": false,
+          "closeEventId": "admin-close:a"
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "admin-close:a": "applied"
+      }
+    },
+    {
+      "name": "a clock-out with nothing open is an orphan",
+      "events": [
+        {
+          "id": "b",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T19:00:00Z"
+        }
+      ],
+      "entries": [],
+      "eventStatus": {
+        "b": "orphan"
+      }
+    },
+    {
+      "name": "a clock-out before its clock-in does not close it",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "b",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T12:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": null,
+          "status": "open",
+          "closeReason": null,
+          "flagged": false,
+          "closeEventId": null
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "b": "orphan"
+      }
+    },
+    {
+      "name": "a multi-day log",
+      "events": [
+        {
+          "id": "d1",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "d1x",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T21:00:00Z"
+        },
+        {
+          "id": "d2",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-11T13:30:00Z"
+        },
+        {
+          "id": "d2x",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-11T20:00:00Z"
+        },
+        {
+          "id": "d3",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-12T14:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "d1",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T21:00:00Z",
+          "status": "closed",
+          "closeReason": "manual",
+          "flagged": false,
+          "closeEventId": "d1x"
+        },
+        {
+          "id": "d2",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-11T13:30:00Z",
+          "clockOutAt": "2026-01-11T20:00:00Z",
+          "status": "closed",
+          "closeReason": "manual",
+          "flagged": false,
+          "closeEventId": "d2x"
+        },
+        {
+          "id": "d3",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-12T14:00:00Z",
+          "clockOutAt": null,
+          "status": "open",
+          "closeReason": null,
+          "flagged": false,
+          "closeEventId": null
+        }
+      ],
+      "eventStatus": {
+        "d1": "applied",
+        "d1x": "applied",
+        "d2": "applied",
+        "d2x": "applied",
+        "d3": "applied"
+      }
+    },
+    {
+      "name": "the closing event is recorded",
+      "events": [
+        {
+          "id": "d1",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "d1x",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T21:00:00Z"
+        },
+        {
+          "id": "d2",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-11T13:30:00Z"
+        },
+        {
+          "id": "d3",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-11T15:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "d1",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T21:00:00Z",
+          "status": "closed",
+          "closeReason": "manual",
+          "flagged": false,
+          "closeEventId": "d1x"
+        },
+        {
+          "id": "d2",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-11T13:30:00Z",
+          "clockOutAt": "2026-01-11T15:00:00Z",
+          "status": "closed",
+          "closeReason": "superseded",
+          "flagged": true,
+          "closeEventId": null
+        },
+        {
+          "id": "d3",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-11T15:00:00Z",
+          "clockOutAt": null,
+          "status": "open",
+          "closeReason": null,
+          "flagged": false,
+          "closeEventId": null
+        }
+      ],
+      "eventStatus": {
+        "d1": "applied",
+        "d1x": "applied",
+        "d2": "applied",
+        "d3": "applied"
+      }
+    },
+    {
+      "name": "ties break by id",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "x",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T19:00:00Z"
+        },
+        {
+          "id": "w",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T19:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T19:00:00Z",
+          "status": "closed",
+          "closeReason": "manual",
+          "flagged": false,
+          "closeEventId": "w"
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "w": "applied",
+        "x": "orphan"
+      }
+    },
+    {
+      "name": "a late auto close after a manual clock-out",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "m",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T21:00:00Z"
+        },
+        {
+          "id": "auto:a",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device_auto",
+          "occurredAt": "2026-01-10T17:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T17:00:00Z",
+          "status": "closed",
+          "closeReason": "auto",
+          "flagged": true,
+          "closeEventId": "auto:a"
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "auto:a": "applied",
+        "m": "orphan"
+      }
+    },
+    {
+      "name": "a late auto close after an admin close",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "admin-close:a",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "admin",
+          "occurredAt": "2026-01-10T21:00:00Z"
+        },
+        {
+          "id": "auto:a",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device_auto",
+          "occurredAt": "2026-01-10T17:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T17:00:00Z",
+          "status": "closed",
+          "closeReason": "auto",
+          "flagged": true,
+          "closeEventId": "auto:a"
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "admin-close:a": "orphan",
+        "auto:a": "applied"
+      }
+    },
+    {
+      "name": "an auto close after its shift was superseded",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "b",
+          "resortId": "resort-2",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T15:00:00Z"
+        },
+        {
+          "id": "bx",
+          "resortId": "resort-2",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T21:00:00Z"
+        },
+        {
+          "id": "auto:a",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device_auto",
+          "occurredAt": "2026-01-10T17:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T15:00:00Z",
+          "status": "closed",
+          "closeReason": "superseded",
+          "flagged": true,
+          "closeEventId": null
+        },
+        {
+          "id": "b",
+          "resortId": "resort-2",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T15:00:00Z",
+          "clockOutAt": "2026-01-10T17:00:00Z",
+          "status": "closed",
+          "closeReason": "auto",
+          "flagged": true,
+          "closeEventId": "auto:a"
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "auto:a": "applied",
+        "b": "applied",
+        "bx": "orphan"
+      }
+    },
+    {
+      "name": "the same auto close twice",
+      "events": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "type": "clock_in",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "source": "device",
+          "occurredAt": "2026-01-10T13:00:00Z"
+        },
+        {
+          "id": "auto:a",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device_auto",
+          "occurredAt": "2026-01-10T17:00:00Z"
+        },
+        {
+          "id": "auto:a",
+          "resortId": "resort-1",
+          "type": "clock_out",
+          "dutyType": null,
+          "dutyNote": null,
+          "source": "device_auto",
+          "occurredAt": "2026-01-10T17:00:00Z"
+        }
+      ],
+      "entries": [
+        {
+          "id": "a",
+          "resortId": "resort-1",
+          "dutyType": "patrol",
+          "dutyNote": null,
+          "clockInAt": "2026-01-10T13:00:00Z",
+          "clockOutAt": "2026-01-10T17:00:00Z",
+          "status": "closed",
+          "closeReason": "auto",
+          "flagged": true,
+          "closeEventId": "auto:a"
+        }
+      ],
+      "eventStatus": {
+        "a": "applied",
+        "auto:a": "orphan"
+      }
+    }
+  ]
+}

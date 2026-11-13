@@ -7,6 +7,7 @@ import { displayName } from '../common/util/person';
 import { afterCursor, decodeCursor, encodeCursor } from '../common/util/cursor';
 import { seasonWhere } from './season.service';
 import type {
+  PatrollerLogResponse,
   TimeEntryHistoryResponse,
   TimeEntryListQuery,
   TimeEntryPageResponse,
@@ -344,6 +345,49 @@ export class TimeEntryService {
   }
 
   /** The entry's events and every recorded change to it, oldest first (D11). */
+  /**
+   * A patroller's events and entries, oldest first, for checking what the fold made of
+   * them (iOS Plan 43). Removed entries are included, since a scenario may expect one.
+   */
+  async patrollerLog(orgId: string, patrollerId: string): Promise<PatrollerLogResponse> {
+    const patroller = await this.prisma.patrollerProfile.findFirst({
+      where: { id: patrollerId, membership: { orgId } },
+      select: { id: true },
+    });
+    if (!patroller) throw new NotFoundException('Patroller not found');
+
+    const [events, entries] = await Promise.all([
+      this.prisma.timeClockEvent.findMany({
+        where: { orgId, patrollerId },
+        orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+        take: LEGACY_CAP,
+      }),
+      this.prisma.timeEntry.findMany({
+        where: { orgId, patrollerId },
+        include: ENTRY_INCLUDE,
+        orderBy: [{ clockInAt: 'asc' }, { id: 'asc' }],
+        take: LEGACY_CAP,
+      }),
+    ]);
+    return {
+      patrollerId,
+      events: events.map((e) => ({
+        id: e.id,
+        resortId: e.resortId,
+        type: e.type,
+        dutyType: e.dutyType,
+        dutyNote: e.dutyNote,
+        source: e.source,
+        status: e.status,
+        statusNote: e.statusNote,
+        occurredAt: e.occurredAt.toISOString(),
+        recordedAt: e.recordedAt.toISOString(),
+        deviceId: e.deviceId,
+      })),
+      entries: entries.map(toResponse),
+    };
+  }
+
   async history(orgId: string, entryId: string): Promise<TimeEntryHistoryResponse> {
     const entry = await this.prisma.timeEntry.findFirst({ where: { id: entryId, orgId } });
     if (!entry) throw new NotFoundException('Time entry not found');
