@@ -53,7 +53,7 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div role="tablist" aria-label="Resorts" className="flex flex-wrap gap-2">
+      <div role="tablist" aria-label="Resorts" className="flex flex-wrap justify-center gap-2">
         {tabs.map((tab) => {
           const active = tab.id === selected?.id;
           const busy = tab.entries.length > 0;
