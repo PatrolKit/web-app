@@ -9,8 +9,9 @@ import { displayName, normalizeNamePart, normalizePhone, splitName } from '../co
 import { createId } from '@paralleldrive/cuid2';
 import { parse as parseCsv } from 'csv-parse/sync';
 import { SmsService } from '../sms/sms.service';
-import type { PersonSearchResult, SellerResponse } from '../contracts/ski-swap.contracts';
+import type { PayoutChangeView, PersonSearchResult, SellerResponse } from '../contracts/ski-swap.contracts';
 import { unverifyChangedContacts } from '../common/identity/contact-verification';
+import { PAYOUT_CHANGED, payoutChange, type PayoutActor, type PayoutFields } from './payout-history';
 
 // ─── Address normalisation ────────────────────────────────────────────────────
 
@@ -313,6 +314,25 @@ export class SellerService {
     return this.respond(await this.findOrThrow(orgId, sellerId));
   }
 
+  /** Every change to how this seller is paid, newest first (see payout-history.ts). */
+  async payoutHistory(orgId: string, sellerId: string): Promise<PayoutChangeView[]> {
+    await this.findOrThrow(orgId, sellerId);
+    const rows = await this.prisma.auditLog.findMany({
+      where: { orgId, action: PAYOUT_CHANGED, targetType: 'seller', targetId: sellerId },
+      orderBy: { createdAt: 'desc' },
+    });
+    const ids = (type: string) => [...new Set(rows.filter((r) => r.actorType === type && r.actorId).map((r) => r.actorId!))];
+    const [users, devices] = await Promise.all([
+      this.prisma.user.findMany({ where: { id: { in: ids('user') } }, select: { id: true, firstName: true, lastName: true, email: true, phone: true } }),
+      this.prisma.device.findMany({ where: { id: { in: ids('device') }, orgId }, select: { id: true, name: true } }),
+    ]);
+    const names = new Map<string, string>([...users.map((u) => [u.id, displayName(u)] as const), ...devices.map((d) => [d.id, d.name] as const)]);
+    return rows.map((r) => {
+      const m = r.metadata as Pick<PayoutChangeView, 'via' | 'from' | 'to'>;
+      return { at: r.createdAt.toISOString(), via: m.via, by: (r.actorId && names.get(r.actorId)) ?? null, from: m.from ?? null, to: m.to };
+    });
+  }
+
   /**
    * Name-only cross-org lookup. Disclosing anything more before staff confirm
    * identity with the person in front of them would leak another org's data.
@@ -362,6 +382,7 @@ export class SellerService {
       payoutHandleSource?: 'SCAN';
     },
     idempotencyKey?: string,
+    actor?: PayoutActor,
   ): Promise<SellerResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(`seller-create:${orgId}`, idempotencyKey);
@@ -385,13 +406,14 @@ export class SellerService {
       lastName: data.lastName,
     });
 
-    await this.writeUserFields(user.id, data);
+    const change = await this.writeUserFields(user.id, data);
     const membership = await this.people.upsertMembership(user.id, orgId);
     const profile = await this.upsertSellerProfile(
       membership.id,
       data.businessName ?? null,
       data.id,
     );
+    await this.recordPayoutChange(orgId, profile.id, change, actor);
 
     const response = await this.respond(await this.findByIdOrThrow(profile.id));
 
@@ -418,6 +440,7 @@ export class SellerService {
       baseUpdatedAt?: string;
     },
     idempotencyKey?: string,
+    actor?: PayoutActor,
   ): Promise<SellerResponse> {
     if (idempotencyKey) {
       const cached = await this.idempotency.getCached(`seller-patch:${orgId}`, idempotencyKey);
@@ -455,7 +478,8 @@ export class SellerService {
       }
     }
 
-    await this.writeUserFields(existing.membership.userId, data, { overwrite: true });
+    const change = await this.writeUserFields(existing.membership.userId, data, { overwrite: true });
+    await this.recordPayoutChange(orgId, sellerId, change, actor);
 
     if (data.businessName !== undefined) {
       await this.prisma.sellerProfile.update({
@@ -697,7 +721,7 @@ export class SellerService {
       payoutHandleSource?: 'SCAN';
     },
     opts: { overwrite?: boolean } = {},
-  ): Promise<void> {
+  ): Promise<ReturnType<typeof payoutChange>> {
     const current = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const keep = <T>(incoming: T | null | undefined, existing: T | null): T | null | undefined => {
       if (incoming === undefined) return undefined;
@@ -736,7 +760,7 @@ export class SellerService {
           }),
     };
 
-    if (Object.keys(update).length === 0) return;
+    if (Object.keys(update).length === 0) return null;
 
     const unverify = unverifyChangedContacts(current, {
       email: update.email as string | null | undefined,
@@ -776,6 +800,20 @@ export class SellerService {
       data: { ...update, ...unverify, ...(scanned !== undefined ? { payoutHandleScannedAt: scanned } : {}) },
     });
     await this.touch.touchAllForUser(userId);
+    return payoutChange(current, { ...current, ...(update as Partial<PayoutFields>) });
+  }
+
+  /** One audit row per payout change, under the seller it was made for (see payout-history.ts). */
+  private async recordPayoutChange(orgId: string, sellerId: string, change: ReturnType<typeof payoutChange>, actor?: PayoutActor) {
+    if (!change || !actor) return;
+    await this.prisma.auditLog.create({
+      data: {
+        actorType: actor.actorType, actorId: actor.actorId, orgId,
+        action: PAYOUT_CHANGED,
+        targetType: 'seller', targetId: sellerId,
+        metadata: { via: actor.via, from: change.from, to: change.to } as never,
+      },
+    });
   }
 }
 

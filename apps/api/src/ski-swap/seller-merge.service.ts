@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { PAYOUT_CHANGED, payoutChange, type PayoutFields } from './payout-history';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembershipTouchService } from '../common/identity/membership-touch.service';
@@ -181,6 +182,18 @@ export class SellerMergeService {
         });
       }
       if (Object.keys(userData).length) await tx.user.update({ where: { id: keepUser.id }, data: userData });
+      // The kept seller's payout history says it came from the merge.
+      const payoutMoved = payoutChange(keepUser, { ...keepUser, ...(userData as Partial<PayoutFields>) });
+      if (payoutMoved) {
+        await tx.auditLog.create({
+          data: {
+            actorType: 'user', actorId, orgId,
+            action: PAYOUT_CHANGED,
+            targetType: 'seller', targetId: keep.id,
+            metadata: { via: 'merge', from: payoutMoved.from, to: payoutMoved.to } as never,
+          },
+        });
+      }
       if (choices.businessName !== 'keep') {
         await tx.sellerProfile.update({
           where: { id: keep.id },

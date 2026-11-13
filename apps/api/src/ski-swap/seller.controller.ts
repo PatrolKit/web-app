@@ -26,6 +26,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { RequireDeviceRole } from '../common/decorators/require-device-role.decorator';
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { SellerService } from './seller.service';
+import type { PayoutActor } from './payout-history';
 import { ContactChallengeService } from '../auth/contact-challenge.service';
 import { NOT_NORTH_AMERICAN, SMS_OFF, SmsService } from '../sms/sms.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -137,16 +138,24 @@ export class SellerController {
     @Param('orgId') orgId: string,
     @Body() body: CreateSellerDto,
     @CurrentDevice() device: AuthenticatedDevice | undefined,
+    @CurrentUser() user: AuthenticatedUser | undefined,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     assertScanFromDevice(body, device);
-    return this.sellerService.create(orgId, body, idempotencyKey);
+    return this.sellerService.create(orgId, body, idempotencyKey, payoutActor(device, user));
   }
 
   @Get(':sellerId')
   @RequirePermissions('ski_swap:report')
   get(@Param('orgId') orgId: string, @Param('sellerId') sellerId: string) {
     return this.sellerService.get(orgId, sellerId);
+  }
+
+  /** Who changed how this seller is paid, when, and from what. */
+  @Get(':sellerId/payout-history')
+  @RequirePermissions('ski_swap:report')
+  payoutHistory(@Param('orgId') orgId: string, @Param('sellerId') sellerId: string) {
+    return this.sellerService.payoutHistory(orgId, sellerId);
   }
 
   // ─── Merging (Plan 57) ─────────────────────────────────────────────────────
@@ -184,10 +193,11 @@ export class SellerController {
     // The offline queue retries, and a retried patch is a retried conflict
     // once `baseUpdatedAt` is in play: the first attempt moves the watermark,
     // so the second would be refused for having been overtaken by itself.
+    @CurrentUser() user: AuthenticatedUser | undefined,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     assertScanFromDevice(body, device);
-    return this.sellerService.patch(orgId, sellerId, body, idempotencyKey);
+    return this.sellerService.patch(orgId, sellerId, body, idempotencyKey, payoutActor(device, user));
   }
 
   @Delete(':sellerId')
@@ -306,4 +316,11 @@ export function assertScanFromDevice(body: { payoutHandleSource?: 'SCAN' }, devi
 /** The query string's filters as the export takes them. */
 function filtersOf(q: SellerExportFiltersDto): SellerFilters {
   return { ...q, incomplete: q.incomplete === 'true' };
+}
+
+/** Who a seller write is from, for its payout history: a counter iPad, or staff signed in. */
+function payoutActor(device: AuthenticatedDevice | undefined, user: AuthenticatedUser | undefined): PayoutActor | undefined {
+  if (device) return { via: 'tablet', actorType: 'device', actorId: device.deviceId };
+  if (user) return { via: 'staff', actorType: 'user', actorId: user.userId };
+  return undefined;
 }

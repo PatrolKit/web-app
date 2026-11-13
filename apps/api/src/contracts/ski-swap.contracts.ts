@@ -336,6 +336,18 @@ export class AddSellerFromPersonDto extends createZodDto(AddSellerFromPersonSche
 export type SellerResponse = z.infer<typeof SellerResponseSchema>;
 export type PersonSearchResult = z.infer<typeof PersonSearchResultSchema>;
 
+/** One change to how a seller is paid, or where the money goes, newest first. */
+export interface PayoutChangeView {
+  at: string;
+  /** Staff on the web, a counter iPad, the seller themself, or a merge. */
+  via: 'staff' | 'tablet' | 'seller' | 'merge';
+  /** The staff member's or iPad's name; null when they're gone. */
+  by: string | null;
+  /** Null when no payout was chosen before. */
+  from: { method: string | null; destination: string | null } | null;
+  to: { method: string | null; destination: string | null };
+}
+
 // ─── Items ────────────────────────────────────────────────────────────────────
 
 /**

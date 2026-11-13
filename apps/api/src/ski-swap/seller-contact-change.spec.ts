@@ -38,7 +38,8 @@ describe('a seller’s contact changed by staff', () => {
 
   it('isn’t refused for a PayPal payout already pointed at that email', async () => {
     const { write } = build(dana);
-    await expect(write({ email: 'dana@new.example' })).resolves.toBeUndefined();
+    // Not refused, and the payout's new address goes in its history.
+    await expect(write({ email: 'dana@new.example' })).resolves.toMatchObject({ to: { method: 'PAYPAL', destination: 'dana@new.example' } });
   });
 
   it('can’t point a payout at the new, unproven email in the same breath', async () => {

@@ -886,6 +886,9 @@ export const api = {
       request<import('./api.types').SellerResponse>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, {
         method: 'PATCH', body: JSON.stringify(data),
       }),
+    /** Who changed how this seller is paid, when, and from what. */
+    sellerPayoutHistory: (orgId: string, sellerId: string) =>
+      request<import('./api.types').PayoutChangeView[]>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}/payout-history`),
     deleteSeller: (orgId: string, sellerId: string) =>
       request<void>(`/orgs/${orgId}/ski-swap/sellers/${sellerId}`, { method: 'DELETE' }),
     /** What merging `otherId` into `keepId` would do (Plan 57). Nothing changes. */

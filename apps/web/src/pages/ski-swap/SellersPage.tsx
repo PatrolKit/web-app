@@ -8,6 +8,7 @@ import type { SellerResponse } from '../../lib/api.types';
 import type { SkiSwapContext } from './SkiSwapLayout';
 import SellerImportModal from './SellerImportModal';
 import SellerTicketSource from './SellerTicketSource';
+import SellerPayoutHistory from './SellerPayoutHistory';
 import IssueTicketRangeModal from './IssueTicketRangeModal';
 import PickupItemsModal from './PickupItemsModal';
 import { useFeatures } from '../../lib/features';
@@ -667,6 +668,7 @@ export default function SellersPage() {
                         </p>
                       )}
                     </div>
+                    {editSeller && <SellerPayoutHistory orgId={orgId} sellerId={editSeller.id} />}
                   </div>
                 </>
               )}

@@ -52,7 +52,7 @@ export class SellerSelfService {
     }
     // A business seller may not rename their own business; staff own that field.
     const { businessName: _ignored, ...safe } = data;
-    return this.sellerService.patch(orgId, existing.id, safe);
+    return this.sellerService.patch(orgId, existing.id, safe, undefined, { via: 'seller', actorType: 'user', actorId: userId });
   }
 
   // ─── Active swaps (for swap selector) ────────────────────────────────────
