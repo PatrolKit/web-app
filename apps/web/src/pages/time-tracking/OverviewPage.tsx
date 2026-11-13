@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { TimeEntryResponse } from '../../lib/api.types';
 import type { TimeTrackingContext } from './TimeTrackingLayout';
@@ -13,8 +14,12 @@ type ResortTab = { id: string; name: string; entries: TimeEntryResponse[] };
  * everyone" before a resort is opened.
  */
 export default function OverviewPage() {
-  const { orgId } = useOutletContext<TimeTrackingContext>();
+  const { orgId, perms } = useOutletContext<TimeTrackingContext>();
   const [params, setParams] = useSearchParams();
+  const queryClient = useQueryClient();
+  const canEdit = perms.has('time_tracking:manage');
+  const [clockingOut, setClockingOut] = useState<TimeEntryResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // The layout has already loaded these; this reads its cache.
   const { data: resorts } = useQuery({
@@ -26,6 +31,22 @@ export default function OverviewPage() {
     queryKey: ['time-clock/clocked-in', orgId],
     queryFn: () => api.timeClock.listEntries(orgId, { status: 'open', take: 500 }),
     refetchInterval: 30_000,
+  });
+
+  // The same correction Time Entries makes, with the clock-out at the moment of confirming.
+  const clockOut = useMutation({
+    mutationFn: (entry: TimeEntryResponse) =>
+      api.timeClock.patchEntry(orgId, entry.id, { clockOutAt: new Date().toISOString() }),
+    onSuccess: () => {
+      setClockingOut(null);
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ['time-clock/clocked-in', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['time-clock/entries', orgId] });
+    },
+    onError: (e: Error) => {
+      setClockingOut(null);
+      setError(e.message);
+    },
   });
 
   if (isLoading || !resorts) return <p className="text-gray-400 text-sm">Loading…</p>;
@@ -53,6 +74,8 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6">
+      {error && <p className="text-red-400 text-sm" role="alert">{error}</p>}
+
       <div role="tablist" aria-label="Resorts" className="flex flex-wrap justify-center gap-2">
         {tabs.map((tab) => {
           const active = tab.id === selected?.id;
@@ -98,6 +121,7 @@ export default function OverviewPage() {
                   <th className="text-left py-2 font-medium">Note</th>
                   <th className="text-left py-2 font-medium">In</th>
                   <th className="text-right py-2 font-medium">Time on</th>
+                  {canEdit && <th className="py-2"><span className="sr-only">Actions</span></th>}
                 </tr>
               </thead>
               <tbody>
@@ -111,6 +135,17 @@ export default function OverviewPage() {
                     <td className="py-2 text-gray-400 max-w-xs truncate">{entry.dutyNote}</td>
                     <td className="py-2 text-gray-400">{formatTime(entry.clockInAt)}</td>
                     <td className="py-2 text-right text-gray-300 tabular-nums">{elapsedLabel(entry.clockInAt)}</td>
+                    {canEdit && (
+                      <td className="py-2 pl-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setClockingOut(entry)}
+                          className="text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 rounded px-2 py-1"
+                        >
+                          Clock out
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -118,6 +153,34 @@ export default function OverviewPage() {
           </div>
         )}
       </div>
+
+      {clockingOut && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div role="dialog" aria-modal="true" className="bg-surface-50 border border-gray-700 rounded-lg p-6 max-w-sm w-full mx-4 space-y-4">
+            <h3 className="text-white font-semibold">Clock out {clockingOut.patrollerName}?</h3>
+            <p className="text-gray-300 text-sm">
+              Their time entry at {clockingOut.resortName ?? selected?.name} closes now, after{' '}
+              {elapsedLabel(clockingOut.clockInAt)}. You can change the time later on Time Entries.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setClockingOut(null)}
+                disabled={clockOut.isPending}
+                className="text-gray-400 hover:text-white text-sm px-3 py-1.5"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => clockOut.mutate(clockingOut)}
+                disabled={clockOut.isPending}
+                className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-4 py-1.5 rounded text-sm"
+              >
+                {clockOut.isPending ? 'Clocking out…' : 'Clock out'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
