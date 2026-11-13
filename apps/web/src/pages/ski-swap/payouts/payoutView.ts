@@ -84,18 +84,43 @@ export function statusView(status: PayoutLineStatus, kind: PayoutRunKind): { lab
 /** A payment that ended without paying them (D19). */
 export const NOT_PAID: PayoutLineStatus[] = ['FAILED', 'RETURNED', 'CANCELLED'];
 
+/** "Ann", "Ann and Bo", "Ann, Bo and Cy", or the first five "and 3 more". */
+export function namesText(names: string[]): string {
+  const shown = names.length > 6 ? [...names.slice(0, 5), `${names.length - 5} more`] : names;
+  return shown.length < 2 ? (shown[0] ?? '') : `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
+}
+
+/** A seller here who wasn't paid, and whether they're left waiting on staff (not paid or in a run since). */
+export type UnpaidSeller = { name: string; unresolved: boolean };
+
 /**
  * How a closed run ended, from how many of its payments reached the seller and
- * how many didn't (D15, D19): a short label, its tone, and a sentence. With
- * `paidCents`, the sentence says how much reached them.
+ * who wasn't paid (D15, D19): a short label, its tone, and a sentence. Only a
+ * seller left waiting on staff makes it a warning; one in another run since is
+ * taken care of, as the runs list says. With `paidCents`, the sentence says how
+ * much reached them.
  */
-export function runOutcome(kind: PayoutRunKind, paid: number, notPaid: number, paidCents?: number): { label: string; tone: Tone; text: string } {
+export function runOutcome(kind: PayoutRunKind, paid: number, unpaid: UnpaidSeller[], paidCents?: number): { label: string; tone: Tone; text: string } {
   const payments = (n: number) => `${n} ${n === 1 ? 'payment' : 'payments'}`;
   const amount = paidCents === undefined ? '' : `, ${usd(paidCents)}`;
   if (kind === 'CHECK') return { label: 'Exported', tone: 'green', text: `${paid} ${paid === 1 ? 'check' : 'checks'}${amount}, to write from the spreadsheet.` };
-  if (notPaid === 0) return { label: 'Paid', tone: 'green', text: `Everyone was paid: ${payments(paid)}${amount}.` };
-  if (paid === 0) return { label: 'Not paid', tone: 'red', text: `Nobody was paid: ${payments(notPaid)} failed, returned or cancelled. ${ELSEWHERE}` };
-  return { label: 'Partly paid', tone: 'amber', text: `${paid} of ${payments(paid + notPaid)} paid${amount}; ${notPaid} not. ${ELSEWHERE}` };
+  if (unpaid.length === 0) return { label: 'Paid', tone: 'green', text: `Everyone was paid: ${payments(paid)}${amount}.` };
+
+  const waiting = unpaid.filter((u) => u.unresolved).map((u) => u.name);
+  const moved = unpaid.filter((u) => !u.unresolved).map((u) => u.name);
+  const movedText = moved.length ? `${namesText(moved)} ${moved.length === 1 ? 'is' : 'are'} in another run.` : '';
+  const paidText = paid === 0
+    ? `Nobody was paid: ${payments(unpaid.length)} failed, returned or cancelled.`
+    : `${paid} of ${payments(paid + unpaid.length)} paid${amount}.`;
+  if (waiting.length === 0) {
+    return { label: `${paid} of ${paid + unpaid.length} paid`, tone: 'gray', text: `${paidText} ${movedText} Nothing’s left to do here.` };
+  }
+  const waitingText = `Not paid, and not in another run: ${namesText(waiting)}. Add them to another run to pay them.`;
+  return {
+    label: paid === 0 ? 'Not paid' : 'Partly paid',
+    tone: paid === 0 ? 'red' : 'amber',
+    text: [paidText, waitingText, movedText].filter(Boolean).join(' '),
+  };
 }
 
 type RunRow = { kind: PayoutRunKind; status: 'OPEN' | 'CLOSED'; sent: boolean; lineCount: number; paidCount: number };

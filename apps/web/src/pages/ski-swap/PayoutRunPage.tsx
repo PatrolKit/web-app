@@ -38,6 +38,7 @@ const CLOSED_BANNER: Partial<Record<Tone, { box: string; iconColor: string; titl
   green: { box: 'bg-green-900/25 border-green-900/60', iconColor: 'text-green-400', title: 'text-green-300' },
   amber: { box: 'bg-amber-900/20 border-amber-800/60', iconColor: 'text-amber-400', title: 'text-amber-300' },
   red: { box: 'bg-red-900/25 border-red-800/60', iconColor: 'text-red-400', title: 'text-red-300' },
+  gray: { box: 'bg-gray-800/40 border-gray-700', iconColor: 'text-gray-400', title: 'text-gray-100' },
 };
 
 /** What a successful Send says, and how a Send in flight is told apart. */
@@ -120,7 +121,9 @@ export default function PayoutRunPage() {
   };
   const exported = lines.filter((l) => l.status === 'EXPORTED');
   const paidLines = lines.filter((l) => l.status === 'SENT' || l.status === 'EXPORTED');
-  const outcome = runOutcome(run.kind, paidLines.length, lines.filter((l) => NOT_PAID.includes(l.status)).length,
+  const unpaid = lines.filter((l) => NOT_PAID.includes(l.status))
+    .map((l) => ({ name: l.sellerName, unresolved: run.unresolvedSellerIds.includes(l.sellerId) }));
+  const outcome = runOutcome(run.kind, paidLines.length, unpaid,
     paidLines.reduce((n, l) => n + (l.approvedNetCents ?? l.totals.netCents), 0));
   const banner = CLOSED_BANNER[outcome.tone] ?? CLOSED_BANNER.green!;
   const flaggedCount = lines.filter((l) => l.flags.length).length;

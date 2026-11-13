@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { batchStatusText, feeCents, feeRateText, fundingFor, percentText, runOutcome, runPaidText, runStage, sortSellers, statusView } from './payoutView';
+import { batchStatusText, feeCents, feeRateText, fundingFor, namesText, percentText, runOutcome, runPaidText, runStage, sortSellers, statusView } from './payoutView';
 
 const US = { flatCents: 25, bps: 0, capCents: 0 };
 
@@ -59,19 +59,35 @@ describe('a share as a percentage', () => {
 });
 
 describe('how a closed run ended (D15, D19)', () => {
+  const waiting = (name: string) => ({ name, unresolved: true });
+  const moved = (name: string) => ({ name, unresolved: false });
   it('a PayPal run that paid everyone is paid, with the amount', () => {
-    expect(runOutcome('PAYPAL', 1, 0, 1600)).toEqual({ label: 'Paid', tone: 'green', text: 'Everyone was paid: 1 payment, $16.00.' });
+    expect(runOutcome('PAYPAL', 1, [], 1600)).toEqual({ label: 'Paid', tone: 'green', text: 'Everyone was paid: 1 payment, $16.00.' });
   });
-  it('some paid and some not is partly paid', () => {
-    const o = runOutcome('PAYPAL', 3, 1);
+  it('someone not paid and not in another run is a warning that names them', () => {
+    const o = runOutcome('PAYPAL', 3, [waiting('Dana Reyes')]);
     expect([o.label, o.tone]).toEqual(['Partly paid', 'amber']);
-    expect(o.text).toMatch(/^3 of 4 payments paid; 1 not\. /);
+    expect(o.text).toBe('3 of 4 payments paid. Not paid, and not in another run: Dana Reyes. Add them to another run to pay them.');
   });
-  it('nobody paid is not paid', () => {
-    expect(runOutcome('PAYPAL', 0, 2)).toMatchObject({ label: 'Not paid', tone: 'red' });
+  it('nobody paid, and nobody in another run, is not paid', () => {
+    expect(runOutcome('PAYPAL', 0, [waiting('A'), waiting('B')])).toMatchObject({ label: 'Not paid', tone: 'red' });
+  });
+  it('everyone not paid being in another run is no warning: nothing is left to do', () => {
+    expect(runOutcome('PAYPAL', 49, [moved('Jared Fleet')], 1600)).toEqual({
+      label: '49 of 50 paid', tone: 'gray', text: '49 of 50 payments paid, $16.00. Jared Fleet is in another run. Nothing’s left to do here.',
+    });
+  });
+  it('a warning still says who is in another run', () => {
+    expect(runOutcome('PAYPAL', 2, [waiting('A'), moved('B'), moved('C')]).text).toBe(
+      '2 of 5 payments paid. Not paid, and not in another run: A. Add them to another run to pay them. B and C are in another run.',
+    );
   });
   it('a closed check run is exported', () => {
-    expect(runOutcome('CHECK', 2, 0, 5000)).toEqual({ label: 'Exported', tone: 'green', text: '2 checks, $50.00, to write from the spreadsheet.' });
+    expect(runOutcome('CHECK', 2, [], 5000)).toEqual({ label: 'Exported', tone: 'green', text: '2 checks, $50.00, to write from the spreadsheet.' });
+  });
+  it('names read as a list, and a long one is cut short', () => {
+    expect([namesText(['A']), namesText(['A', 'B']), namesText(['A', 'B', 'C'])]).toEqual(['A', 'A and B', 'A, B and C']);
+    expect(namesText(['A', 'B', 'C', 'D', 'E', 'F', 'G'])).toBe('A, B, C, D, E and 2 more');
   });
 });
 

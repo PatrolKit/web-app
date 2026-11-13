@@ -950,6 +950,8 @@ export interface PayoutRun {
   feeRate: PayPalFeeRate;
   salesError: string | null;
   lines: PayoutLine[];
+  /** Sellers here who weren't paid and aren't in another run since: someone has to act. */
+  unresolvedSellerIds: string[];
 }
 
 export interface PayPalFeeRate { flatCents: number; bps: number; capCents: number }

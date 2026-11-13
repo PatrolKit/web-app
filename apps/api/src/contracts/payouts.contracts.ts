@@ -205,6 +205,8 @@ export interface PayoutRunView {
   /** Sales couldn't be read: lines show no live amounts. */
   salesError: string | null;
   lines: PayoutLineView[];
+  /** Sellers here who weren't paid and aren't in another run since: someone has to act. */
+  unresolvedSellerIds: string[];
 }
 
 export interface PayoutRunSummaryView {

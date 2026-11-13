@@ -324,6 +324,8 @@ export class PayoutRunService {
     const lines = run.lines.map((l) => this.lineView(run.kind as PayoutRunKind, l, snap, others.filter((o) => o.sellerId === l.sellerId)));
     lines.sort((a, b) => a.sellerName.localeCompare(b.sellerName));
     const sending = run.lines.some((l) => l.status === 'SENDING');
+    // A seller paid or in a run since holds an active line, so this is who's still waiting on staff.
+    const active = await this.activeSellers(run.swapId);
 
     return {
       id: run.id,
@@ -341,6 +343,7 @@ export class PayoutRunService {
       feeRate: snap.feeRate,
       salesError: snap.salesError,
       lines,
+      unresolvedSellerIds: run.lines.filter((l) => notPaid(l.status) && !active.has(l.sellerId)).map((l) => l.sellerId),
     };
   }
 
