@@ -1,4 +1,4 @@
-import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { TimeEntryResponse } from '../../lib/api.types';
@@ -87,12 +87,6 @@ export default function OverviewPage() {
           <div className="py-12 text-center space-y-2">
             <p className="text-lg font-semibold text-gray-300">No one is clocked in at {selected?.name}</p>
             <p className="text-gray-500 text-sm">Clock-ins from any iPad appear here within a minute.</p>
-            {entries.length === 0 && (
-              <p className="text-gray-500 text-sm">
-                Every member can clock in. People are added and edited under{' '}
-                <Link to="/dashboard/members" className="text-brand-500 hover:underline">Members</Link>.
-              </p>
-            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
