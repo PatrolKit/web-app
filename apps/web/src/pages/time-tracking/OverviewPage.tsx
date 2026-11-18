@@ -137,23 +137,12 @@ export default function OverviewPage() {
 
       <div role="tabpanel" className="space-y-4">
         {selectedConnection === 'offline' && (
-          <div className="bg-amber-500/10 border border-amber-700 rounded-lg px-4 py-3 text-sm" role="status">
-            <p className="text-amber-200 font-medium">
-              {selected?.name}'s iPads are offline
-              {selectedStatus?.lastSeenAt
-                ? `. One last checked in ${timeAgo(selectedStatus.lastSeenAt)} (${formatDateTime(selectedStatus.lastSeenAt)})`
-                : ' and have never checked in'}
-              .
-            </p>
-            <p className="text-amber-200/70 mt-1">
-              This is who they last reported as clocked in. Clock-ins and clock-outs since then reach
-              here when an iPad reconnects.
-            </p>
-          </div>
-        )}
-        {selectedConnection === 'none' && status && (
-          <p className="text-gray-500 text-sm">
-            No time clock iPad is set up at {selected?.name}, so nobody clocks in or out here.
+          <p
+            className="bg-amber-500/10 border border-amber-700 rounded-lg px-4 py-2 text-sm text-amber-200"
+            role="status"
+            title={selectedStatus?.lastSeenAt ? `Last checked in ${formatDateTime(selectedStatus.lastSeenAt)}` : undefined}
+          >
+            iPads are offline. Data may be stale.
           </p>
         )}
         {rows.length === 0 ? (
