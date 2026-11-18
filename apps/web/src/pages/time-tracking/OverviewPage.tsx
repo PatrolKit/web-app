@@ -138,7 +138,7 @@ export default function OverviewPage() {
       <div role="tabpanel" className="space-y-4">
         {selectedConnection === 'offline' && (
           <p
-            className="bg-amber-500/10 border border-amber-700 rounded-lg px-4 py-2 text-sm text-amber-200"
+            className="w-fit mx-auto bg-amber-500/10 border border-amber-700 rounded-lg px-4 py-2 text-sm text-amber-200"
             role="status"
             title={selectedStatus?.lastSeenAt ? `Last checked in ${formatDateTime(selectedStatus.lastSeenAt)}` : undefined}
           >
