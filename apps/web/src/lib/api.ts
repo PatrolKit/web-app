@@ -1681,6 +1681,8 @@ export const api = {
       request<import('./api.types').SeasonsResponse>(`/orgs/${orgId}/time-clock/seasons`),
     health: (orgId: string) =>
       request<import('./api.types').TimeClockHealthResponse>(`/orgs/${orgId}/time-clock/health`),
+    resortStatus: (orgId: string) =>
+      request<import('./api.types').ResortClockStatusResponse>(`/orgs/${orgId}/time-clock/health/resorts`),
     patchEntry: (
       orgId: string,
       entryId: string,

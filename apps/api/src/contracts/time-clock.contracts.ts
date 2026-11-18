@@ -373,3 +373,27 @@ export const TimeClockHealthResponseSchema = z.object({
 });
 
 export type TimeClockHealthResponse = z.infer<typeof TimeClockHealthResponseSchema>;
+
+/**
+ * Whether each resort's iPads are reachable, for Overview. An iPad running the time clock
+ * checks in on every sync, about once a minute, so one heard from within
+ * `onlineWithinSec` is online. While none at a resort is, what the server holds for it is
+ * only what was last sent: clock-ins and clock-outs since may be waiting on the iPad.
+ */
+export const ResortClockStatusResponseSchema = z.object({
+  onlineWithinSec: z.number(),
+  resorts: z.array(
+    z.object({
+      resortId: z.string(),
+      /** Time clock iPads bound to the resort. */
+      iPads: z.number(),
+      online: z.number(),
+      /** The latest any of them checked in; null when none ever has. */
+      lastSeenAt: z.string().nullable(),
+    }),
+  ),
+  /** Open entries whose auto clock-out has passed with no iPad closing them. */
+  pastAutoClockOut: z.array(z.string()),
+});
+
+export type ResortClockStatusResponse = z.infer<typeof ResortClockStatusResponseSchema>;

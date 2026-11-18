@@ -2,16 +2,29 @@ import { useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import type { TimeEntryResponse } from '../../lib/api.types';
+import type { ResortClockStatusResponse, TimeEntryResponse } from '../../lib/api.types';
+import { timeAgo } from '../../lib/timeAgo';
 import type { TimeTrackingContext } from './TimeTrackingLayout';
-import { DutyBadge, elapsedLabel, formatTime } from './shared';
+import { DutyBadge, elapsedLabel, formatDateTime, formatTime } from './shared';
 
 type ResortTab = { id: string; name: string; entries: TimeEntryResponse[] };
+type IpadStatus = ResortClockStatusResponse['resorts'][number];
+
+/** No iPad bound, every one offline, or at least one reachable. */
+function connection(status: IpadStatus | undefined): 'none' | 'offline' | 'online' {
+  if (!status || status.iPads === 0) return 'none';
+  return status.online > 0 ? 'online' : 'offline';
+}
 
 /**
  * Who is clocked in, one resort at a time. Each resort's tab is green while
  * anyone is clocked in there, so a glance across the top answers "where is
  * everyone" before a resort is opened.
+ *
+ * The iPads clock people in and out, auto clock-outs included (Plan 5 D4), so the
+ * server only knows what they have sent. Each tab says whether its iPads are
+ * reachable; while they aren't, the list is what they last sent, and is shown as
+ * such. An entry past its auto clock-out is one no iPad has closed yet.
  */
 export default function OverviewPage() {
   const { orgId, perms } = useOutletContext<TimeTrackingContext>();
@@ -32,6 +45,13 @@ export default function OverviewPage() {
     queryFn: () => api.timeClock.listEntries(orgId, { status: 'open', take: 500 }),
     refetchInterval: 30_000,
   });
+  const { data: status } = useQuery({
+    queryKey: ['time-clock/resort-status', orgId],
+    queryFn: () => api.timeClock.resortStatus(orgId),
+    refetchInterval: 30_000,
+  });
+  const statusOf = new Map((status?.resorts ?? []).map((s) => [s.resortId, s]));
+  const pastAuto = new Set(status?.pastAutoClockOut ?? []);
 
   // The same correction Time Entries makes, with the clock-out at the moment of confirming.
   const clockOut = useMutation({
@@ -42,6 +62,7 @@ export default function OverviewPage() {
       setError(null);
       queryClient.invalidateQueries({ queryKey: ['time-clock/clocked-in', orgId] });
       queryClient.invalidateQueries({ queryKey: ['time-clock/entries', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['time-clock/resort-status', orgId] });
     },
     onError: (e: Error) => {
       setClockingOut(null);
@@ -68,6 +89,8 @@ export default function OverviewPage() {
 
   const asked = params.get('resort');
   const selected = (asked && byId.get(asked)) || tabs.find((t) => t.entries.length > 0) || tabs[0];
+  const selectedStatus = selected ? statusOf.get(selected.id) : undefined;
+  const selectedConnection = connection(selectedStatus);
   const rows = (selected?.entries ?? [])
     .slice()
     .sort((a, b) => (a.patrollerName ?? '').localeCompare(b.patrollerName ?? ''));
@@ -80,7 +103,13 @@ export default function OverviewPage() {
         {tabs.map((tab) => {
           const active = tab.id === selected?.id;
           const busy = tab.entries.length > 0;
-          const tone = busy
+          const link = connection(statusOf.get(tab.id));
+          // People shown as clocked in at a resort nobody can hear from is the case to notice.
+          const tone = busy && link === 'offline'
+            ? active
+              ? 'bg-amber-600/25 border-amber-500 text-amber-200'
+              : 'bg-amber-600/10 border-amber-700 text-amber-300 hover:bg-amber-600/20'
+            : busy
             ? active
               ? 'bg-green-600/25 border-green-500 text-green-200'
               : 'bg-green-600/10 border-green-700 text-green-300 hover:bg-green-600/20'
@@ -100,12 +129,33 @@ export default function OverviewPage() {
               <span className={`block text-xs ${busy ? '' : 'text-gray-500'}`}>
                 {busy ? `${tab.entries.length} clocked in` : 'No one clocked in'}
               </span>
+              {status && <IpadLine status={statusOf.get(tab.id)} />}
             </button>
           );
         })}
       </div>
 
-      <div role="tabpanel">
+      <div role="tabpanel" className="space-y-4">
+        {selectedConnection === 'offline' && (
+          <div className="bg-amber-500/10 border border-amber-700 rounded-lg px-4 py-3 text-sm" role="status">
+            <p className="text-amber-200 font-medium">
+              {selected?.name}'s iPads are offline
+              {selectedStatus?.lastSeenAt
+                ? `. One last checked in ${timeAgo(selectedStatus.lastSeenAt)} (${formatDateTime(selectedStatus.lastSeenAt)})`
+                : ' and have never checked in'}
+              .
+            </p>
+            <p className="text-amber-200/70 mt-1">
+              This is who they last reported as clocked in. Clock-ins and clock-outs since then reach
+              here when an iPad reconnects.
+            </p>
+          </div>
+        )}
+        {selectedConnection === 'none' && status && (
+          <p className="text-gray-500 text-sm">
+            No time clock iPad is set up at {selected?.name}, so nobody clocks in or out here.
+          </p>
+        )}
         {rows.length === 0 ? (
           <div className="py-12 text-center space-y-2">
             <p className="text-lg font-semibold text-gray-300">No one is clocked in at {selected?.name}</p>
@@ -116,7 +166,9 @@ export default function OverviewPage() {
             <table className="w-full text-sm">
               <thead className="text-gray-500 border-b border-gray-800">
                 <tr>
-                  <th className="text-left py-2 font-medium">Patroller</th>
+                  <th className="text-left py-2 font-medium">
+                    Patroller{selectedConnection === 'offline' && <span className="text-amber-400/80 font-normal"> · last known</span>}
+                  </th>
                   <th className="text-left py-2 font-medium">Duty</th>
                   <th className="text-left py-2 font-medium">Note</th>
                   <th className="text-left py-2 font-medium">In</th>
@@ -126,15 +178,30 @@ export default function OverviewPage() {
               </thead>
               <tbody>
                 {rows.map((entry) => (
-                  <tr key={entry.id} className="border-b border-gray-900">
+                  <tr key={entry.id} className={`border-b border-gray-900 ${selectedConnection === 'offline' ? 'opacity-60' : ''}`}>
                     <td className="py-2">
                       <span className="text-white">{entry.patrollerName}</span>
                       {entry.patrolLevel && <span className="text-gray-500 text-xs ml-2">{entry.patrolLevel}</span>}
                     </td>
                     <td className="py-2"><DutyBadge dutyType={entry.dutyType} /></td>
                     <td className="py-2 text-gray-400 max-w-xs truncate">{entry.dutyNote}</td>
-                    <td className="py-2 text-gray-400">{formatTime(entry.clockInAt)}</td>
-                    <td className="py-2 text-right text-gray-300 tabular-nums">{elapsedLabel(entry.clockInAt)}</td>
+                    <td className="py-2 text-gray-400">
+                      {/* A clock-in from another day says which: "9:35 AM" alone reads as this morning. */}
+                      {new Date(entry.clockInAt).toDateString() === new Date().toDateString()
+                        ? formatTime(entry.clockInAt)
+                        : formatDateTime(entry.clockInAt)}
+                    </td>
+                    <td className="py-2 text-right text-gray-300 tabular-nums">
+                      {pastAuto.has(entry.id) && (
+                        <span
+                          className="inline-block mr-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-700 rounded px-1.5 py-0.5"
+                          title="The auto clock-out time has passed and no iPad has closed this entry. Clock out sets the time."
+                        >
+                          Past auto clock-out
+                        </span>
+                      )}
+                      {elapsedLabel(entry.clockInAt)}
+                    </td>
                     {canEdit && (
                       <td className="py-2 pl-4 text-right">
                         <button
@@ -182,5 +249,27 @@ export default function OverviewPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** A tab's third line: whether anyone at the resort can hear from its iPads. */
+function IpadLine({ status }: { status: IpadStatus | undefined }) {
+  const link = connection(status);
+  const [dot, text] =
+    link === 'online'
+      ? [
+          'bg-green-400',
+          status!.online === status!.iPads
+            ? status!.iPads === 1 ? 'iPad online' : `${status!.iPads} iPads online`
+            : `${status!.online} of ${status!.iPads} iPads online`,
+        ]
+      : link === 'offline'
+        ? ['bg-amber-400', `iPad${status!.iPads === 1 ? '' : 's'} offline${status!.lastSeenAt ? ` · ${timeAgo(status!.lastSeenAt)}` : ''}`]
+        : ['bg-gray-600', 'No iPad'];
+  return (
+    <span className="flex items-center gap-1.5 mt-1 text-xs text-gray-400">
+      <span className={`inline-block w-1.5 h-1.5 rounded-full ${dot}`} aria-hidden="true" />
+      {text}
+    </span>
   );
 }

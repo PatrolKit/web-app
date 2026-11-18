@@ -19,4 +19,11 @@ export class TimeClockHealthController {
   get(@Param('orgId') orgId: string) {
     return this.healthService.get(orgId);
   }
+
+  /** For Overview, which anyone in the module can read. */
+  @Get('resorts')
+  @RequirePermissions('time_tracking:report')
+  resorts(@Param('orgId') orgId: string) {
+    return this.healthService.resortStatus(orgId);
+  }
 }

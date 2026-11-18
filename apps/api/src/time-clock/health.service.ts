@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { displayName } from '../common/util/person';
 import { sweepAt } from './sweep.util';
-import type { TimeClockHealthResponse } from '../contracts/time-clock.contracts';
+import type { ResortClockStatusResponse, TimeClockHealthResponse } from '../contracts/time-clock.contracts';
 import { TABLET_ROLE } from '../contracts/devices.contracts';
 
 /** How far back Health looks. A season's problems are found in days, not months. */
@@ -12,6 +12,37 @@ const LIMIT = 200;
 /** What the fold did not apply. `duplicate` is a double tap, and harmless. */
 const UNAPPLIED = ['rejected', 'orphan', 'anomalous', 'voided'];
 
+/** A time clock iPad syncs about once a minute, so three missed syncs is offline. */
+export const ONLINE_WITHIN_MS = 3 * 60_000;
+
+/** The iPads that clock people in: terminals, and tablets running Time Clock or placed at a resort (Plan 56). */
+const timeClockIpads = (orgId: string) => ({
+  orgId,
+  OR: [
+    { role: 'time_clock.terminal' },
+    { role: TABLET_ROLE, OR: [{ appMode: 'time_clock' }, { resortId: { not: null } }] },
+  ],
+});
+
+/** Each resort's iPads, counted and dated. Exported for unit tests. */
+export function resortStatuses(
+  resortIds: string[],
+  ipads: { resortId: string | null; lastSeenAt: Date | null }[],
+  now: number,
+): ResortClockStatusResponse['resorts'] {
+  return resortIds.map((resortId) => {
+    const here = ipads.filter((d) => d.resortId === resortId);
+    const seen = here.map((d) => d.lastSeenAt?.getTime() ?? 0).filter((t) => t > 0);
+    const last = seen.length ? Math.max(...seen) : null;
+    return {
+      resortId,
+      iPads: here.length,
+      online: seen.filter((t) => now - t <= ONLINE_WITHIN_MS).length,
+      lastSeenAt: last === null ? null : new Date(last).toISOString(),
+    };
+  });
+}
+
 const EVENT_INCLUDE = {
   resort: { select: { name: true } },
   patroller: { include: { membership: { select: { user: true } } } },
@@ -20,6 +51,34 @@ const EVENT_INCLUDE = {
 @Injectable()
 export class TimeClockHealthService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Overview's view of each resort: are its iPads reachable, and which open entries have
+   * outlived their auto clock-out. The iPads own clocking out (Plan 5 D4), so an entry past
+   * its sweep is one no iPad has closed yet, not one the server will.
+   */
+  async resortStatus(orgId: string): Promise<ResortClockStatusResponse> {
+    const [resorts, ipads, open, settings] = await Promise.all([
+      this.prisma.resort.findMany({ where: { orgId }, select: { id: true } }),
+      this.prisma.device.findMany({ where: timeClockIpads(orgId), select: { resortId: true, lastSeenAt: true } }),
+      this.prisma.timeEntry.findMany({
+        where: { orgId, status: 'open', deletedAt: null },
+        select: { id: true, resortId: true, clockInAt: true, resort: { select: { timeZone: true } } },
+      }),
+      this.prisma.timeClockSettings.findUnique({ where: { orgId } }),
+    ]);
+    const now = Date.now();
+    const localTime = settings?.autoCloseLocalTime ?? '03:00';
+    // An entry at a resort no longer listed still gets a status, as Overview gives it a tab.
+    const resortIds = [...new Set([...resorts.map((r) => r.id), ...open.map((e) => e.resortId)])];
+    return {
+      onlineWithinSec: ONLINE_WITHIN_MS / 1000,
+      resorts: resortStatuses(resortIds, ipads, now),
+      pastAutoClockOut: open
+        .filter((e) => sweepAt(e.clockInAt, e.resort.timeZone, localTime).getTime() < now)
+        .map((e) => e.id),
+    };
+  }
 
   /**
    * Time Tracking → Health (Plan 55 D13): what the server refused or could not place,
@@ -46,14 +105,7 @@ export class TimeClockHealthService {
         orderBy: { recordedAt: 'desc' },
       }),
       this.prisma.device.findMany({
-        // Terminals, and tablets running Time Clock or placed at a resort (Plan 56).
-        where: {
-          orgId,
-          OR: [
-            { role: 'time_clock.terminal' },
-            { role: TABLET_ROLE, OR: [{ appMode: 'time_clock' }, { resortId: { not: null } }] },
-          ],
-        },
+        where: timeClockIpads(orgId),
         include: { resort: { select: { name: true } } },
         orderBy: { name: 'asc' },
       }),

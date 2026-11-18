@@ -1277,6 +1277,20 @@ export interface TimeClockHealthResponse {
   membersCantClockIn: number;
 }
 
+/** Whether each resort's iPads are reachable, for Overview. */
+export interface ResortClockStatusResponse {
+  onlineWithinSec: number;
+  resorts: {
+    resortId: string;
+    /** Time clock iPads bound to the resort. */
+    iPads: number;
+    online: number;
+    lastSeenAt: string | null;
+  }[];
+  /** Open entries whose auto clock-out has passed with no iPad closing them. */
+  pastAutoClockOut: string[];
+}
+
 export interface HoursReportRow {
   patrollerId: string;
   patrollerName: string;
