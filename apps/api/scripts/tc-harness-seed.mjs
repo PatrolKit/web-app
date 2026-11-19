@@ -12,6 +12,11 @@
 //   SMOKE_BASE=https://patrolkit.io/api/v1 node tc-harness-seed.mjs --test-org
 //   SMOKE_BASE=https://patrolkit.io/api/v1 node tc-harness-seed.mjs --test-org --cleanup <runId>
 //
+// --sim seeds the simulator run's fixture instead (iOS Plan 43 L4): one resort, Ann and
+// Ben, and two iPads whose setup codes are printed. It stays until --cleanup removes it.
+//
+//   SMOKE_BASE=https://patrolkit.io/api/v1 node tc-harness-seed.mjs --test-org --sim
+//
 // Without --test-org it refuses any database that isn't on this machine.
 
 import { PrismaClient } from '@prisma/client';
@@ -25,6 +30,7 @@ const LOCAL_SLUG_PREFIX = 'tc-harness-';
 
 const args = process.argv.slice(2);
 const testOrg = args.includes('--test-org');
+const sim = args.includes('--sim');
 const cleanupAt = args.indexOf('--cleanup');
 const cleanupRun = cleanupAt >= 0 ? args[cleanupAt + 1] : null;
 if (cleanupAt >= 0 && !/^[a-z0-9]{6,12}$/.test(cleanupRun ?? '')) fail('--cleanup needs the runId a seed printed.');
@@ -165,10 +171,13 @@ try {
   const resort = (name, timeZone) =>
     prisma.resort.create({ data: { id: createId(), orgId: org.id, name: `${tag(runId)} ${name}`, timeZone, updatedAt: new Date() } });
   const lodge = await resort('Lodge', 'America/New_York');
-  const summit = await resort('Summit', 'America/Denver');
+  const summit = sim ? null : await resort('Summit', 'America/Denver');
 
   const devices = [];
-  for (const [name, r] of [['Lodge 1', lodge], ['Lodge 2', lodge], ['Summit 1', summit], ['Summit 2', summit]]) {
+  const ipads = sim
+    ? [['Harness A', lodge], ['Harness B', lodge]]
+    : [['Lodge 1', lodge], ['Lodge 2', lodge], ['Summit 1', summit], ['Summit 2', summit]];
+  for (const [name, r] of ipads) {
     const d = await api('/devices', { name: `${tag(runId)} ${name}`, role: 'org.tablet', resortId: r.id });
     devices.push({ id: d.id, name: d.name, resortId: r.id, clientId: d.clientId, clientSecret: d.clientSecret });
   }
@@ -189,6 +198,36 @@ try {
   }
   const ann = await member('Ann', `TCA${NSP}`);
   const ben = await member('Ben', `TCB${NSP}`);
+
+  if (sim) {
+    // The default policy, whatever earlier runs left it at.
+    await prisma.timeClockSettings.upsert({
+      where: { orgId: org.id },
+      update: { autoCloseLocalTime: '03:00', autoCloseAfterHours: 4 },
+      create: { id: createId(), orgId: org.id },
+    });
+    // The fixture outlives this script, so the staff account keeps nothing it could act with.
+    await grant(staffMembership.id, []);
+    await prisma.refreshToken.deleteMany({ where: { userId: staffUser.id } });
+
+    const [a, b] = devices;
+    // What the Tablets page shows as a pairing code: valid until the iPad is deleted or reissued.
+    const code = (d) => JSON.stringify({ v: 1, cid: d.clientId, sec: d.clientSecret, api: BASE });
+    process.stdout.write(JSON.stringify({
+      runId,
+      apiBase: BASE,
+      org: { id: org.id, slug: org.slug },
+      resort: { id: lodge.id, name: lodge.name, timeZone: lodge.timeZone },
+      devices: devices.map(({ clientSecret: _s, ...d }) => d),
+      patrollers: { ann: ann.id, ben: ben.id },
+      provision: { A: code(a), B: code(b) },
+      cleanup: `node apps/api/scripts/tc-harness-seed.mjs${testOrg ? ' --test-org' : ''} --cleanup ${runId}`,
+    }, null, 2) + '\n');
+    log(`seeded simulator fixture ${runId} in ${org.slug}`);
+    await prisma.$disconnect();
+    process.exit(0);
+  }
+
   const cy = await member('Cy', null);
 
   // Cy chooses a PIN as My account would: unique in the org, never anyone's NSP ID there.
