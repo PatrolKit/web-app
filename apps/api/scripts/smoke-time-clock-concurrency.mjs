@@ -90,7 +90,7 @@ for (let n = 0; n < ROUNDS; n++) {
   const inId = randomUUID();
   const [a, b] = await Promise.all([
     submit(A, [{ id: inId, resortId: lodge.id, patrollerId: p.id, type: 'clock_in', dutyType: 'patrol', occurredAt: day(n, 8) }]),
-    submit(B, [{ id: randomUUID(), resortId: lodge.id, patrollerId: p.id, type: 'clock_out', occurredAt: day(n, 16) }]),
+    submit(B, [{ id: randomUUID(), resortId: lodge.id, patrollerId: p.id, type: 'clock_out', occurredAt: day(n, 16), entryId: inId }]),
   ]);
   if (a.status >= 500 || b.status >= 500) statusErrors++;
 }

@@ -137,6 +137,10 @@ export class DevicesService {
     data: ProvisionDeviceRequest,
   ): Promise<ProvisionDeviceResponse> {
     await this.assertMayManage(orgId, actorUserId, data.role);
+    // Plan 59 R11: a tablet's resort is chosen on the iPad, at first setup.
+    if (data.role === TABLET_ROLE && data.resortId !== undefined) {
+      throw new BadRequestException('A tablet’s resort is chosen on the iPad, at first setup');
+    }
     if (data.resortId !== undefined) {
       await this.assertResortBindable(orgId, data.role, data.resortId);
     } else if (RESORT_BOUND[data.role]?.required) {

@@ -17,7 +17,12 @@ const iso = (d: Date | null) => (d ? d.toISOString().replace('.000Z', 'Z') : nul
 describe('time clock vectors shared with the iPad', () => {
   describe.each(foldVectors.cases)('fold: $name', (c) => {
     it('folds to the recorded entries and event statuses', () => {
-      const { entries, eventStatus } = foldEvents(c.events.map((e) => ({ ...e, occurredAt: new Date(e.occurredAt) })));
+      const { entries, eventStatus } = foldEvents(
+        c.events.map((e) => {
+          const { sweepAt, ...rest } = e as typeof e & { sweepAt?: string };
+          return { ...rest, occurredAt: new Date(e.occurredAt), sweepAt: sweepAt ? new Date(sweepAt) : null };
+        }),
+      );
 
       expect(
         entries.map((e) => ({

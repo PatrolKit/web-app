@@ -7,12 +7,17 @@ const ACTIONS: Record<string, string> = {
   'time_clock.entry.corrected': 'Corrected',
   'time_clock.entry.reopened': 'Reopened',
   'time_clock.entry.closed_by_roster': 'Closed when they were made inactive or removed',
+  'time_clock.entry.closed_by_disable': 'Closed when Time Clock was switched off',
+  'time_clock.entry.added': 'Added by staff',
 };
 
 const SOURCES: Record<string, string> = {
   device: 'on the iPad',
-  device_auto: 'automatically',
+  // Only the server sweeps (Plan 59 R5); an iPad's own is kept and ignored.
+  device_auto: 'by the iPad, ignored',
+  member: 'by the patroller',
   admin: 'by staff',
+  auto: 'automatically',
 };
 
 const FIELDS: Record<string, string> = {

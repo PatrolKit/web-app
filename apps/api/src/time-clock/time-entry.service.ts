@@ -1,12 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { createId } from '@paralleldrive/cuid2';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { TimeClockFoldService, writeAdminClose } from './fold.service';
+import { NOTE, TimeClockFoldService, writeAdminClose } from './fold.service';
+import { TimeClockSweepService } from './sweep.service';
 import { sweepAt } from './sweep.util';
 import { displayName } from '../common/util/person';
 import { afterCursor, decodeCursor, encodeCursor } from '../common/util/cursor';
 import { seasonWhere } from './season.service';
 import type {
+  AddShift,
   PatrollerLogResponse,
   TimeEntryHistoryResponse,
   TimeEntryListQuery,
@@ -14,7 +17,7 @@ import type {
   TimeEntryResponse,
 } from '../contracts/time-clock.contracts';
 
-const ENTRY_INCLUDE = {
+export const ENTRY_INCLUDE = {
   resort: { select: { name: true, timeZone: true } },
   patroller: { include: { membership: { select: { user: true } } } },
 } as const;
@@ -38,6 +41,7 @@ export class TimeEntryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly foldService: TimeClockFoldService,
+    private readonly sweepService: TimeClockSweepService,
   ) {}
 
   /**
@@ -202,7 +206,7 @@ export class TimeEntryService {
     });
     if (!entry) throw new NotFoundException('Time entry not found');
     // An entry folded before the fold recorded its close (D1) learns it from one replay.
-    if (entry.status === 'closed' && !entry.closeEventId && entry.closeReason !== 'superseded') {
+    if (entry.status === 'closed' && !entry.closeEventId) {
       await this.foldService.recomputeForPatroller(orgId, entry.patrollerId);
       entry = await this.prisma.timeEntry.findFirstOrThrow({ where: { id: entryId } });
     }
@@ -225,9 +229,7 @@ export class TimeEntryService {
     }
     await this.assertNoOverlap(entry, newClockIn, newClockOut);
 
-    // The close side moves only when the correction names it, and a superseded entry's
-    // "close" is the next entry's clock-in: saving it unchanged must not invent a
-    // clock-out at that instant, which would close the next entry instead.
+    // The close side moves only when the correction names it.
     const closeChanged = data.clockOutAt !== undefined && !sameInstant(newClockOut, entry.clockOutAt);
     const touchClose =
       data.clockOutAt !== undefined && (closeChanged || (newClockOut !== null && entry.closeEventId !== null));
@@ -236,6 +238,7 @@ export class TimeEntryService {
     const before = snapshot(entry);
     await this.prisma.$transaction(
       async (tx) => {
+        await keepDuplicates(tx, entry);
         // The entry id is its clock-in event id (§5.6). Re-sourced only when the clock-in
         // itself changed, so a corrected clock-out still says the iPad recorded the start.
         const inChanged =
@@ -260,13 +263,21 @@ export class TimeEntryService {
                 orgId,
                 resortId: entry.resortId,
                 patrollerId: entry.patrollerId,
+                entryId: entry.id,
                 occurredAt: newClockOut,
                 statusNote: userId ? `Closed by user ${userId}` : 'Closed by an administrator',
               });
             }
-          } else if (entry.closeEventId) {
-            await tx.timeClockEvent.update({
-              where: { id: entry.closeEventId },
+          } else {
+            // Every close of it, not only the one that won: a close it lost to would
+            // otherwise close it again on the replay (Plan 59 E5, E11).
+            await tx.timeClockEvent.updateMany({
+              where: {
+                orgId,
+                type: 'clock_out',
+                status: { notIn: ['voided', 'rejected'] },
+                OR: [{ entryId: entry.id }, ...(entry.closeEventId ? [{ id: entry.closeEventId }] : [])],
+              },
               data: {
                 status: 'voided',
                 statusNote: userId
@@ -302,6 +313,135 @@ export class TimeEntryService {
       include: ENTRY_INCLUDE,
     });
     return toResponse(updated);
+  }
+
+  /**
+   * Removes a shift (Plan 59 R8, E7): every event of it is set aside, its duplicates
+   * included, so the replay drops it and nothing of it comes back.
+   */
+  async remove(orgId: string, entryId: string, userId: string | undefined): Promise<void> {
+    const entry = await this.prisma.timeEntry.findFirst({ where: { id: entryId, orgId, deletedAt: null } });
+    if (!entry) throw new NotFoundException('Time entry not found');
+    const before = snapshot(entry);
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.timeClockEvent.updateMany({
+          where: {
+            orgId,
+            patrollerId: entry.patrollerId,
+            status: { not: 'rejected' },
+            OR: [{ id: entry.id }, { entryId: entry.id }, ...(entry.closeEventId ? [{ id: entry.closeEventId }] : [])],
+          },
+          data: { status: 'voided', statusNote: userId ? `Removed by user ${userId}` : 'Removed by an administrator' },
+        });
+        await this.foldService.recomputeForPatroller(orgId, entry.patrollerId, tx);
+        await tx.auditLog.create({
+          data: {
+            actorType: 'user',
+            actorId: userId ?? null,
+            orgId,
+            action: 'time_clock.entry.removed',
+            targetType: 'time_entry',
+            targetId: entry.id,
+            metadata: { before } as Prisma.InputJsonValue,
+          },
+        });
+      },
+      { timeout: 20_000 },
+    );
+  }
+
+  /**
+   * Staff add a whole shift (Plan 59 R8). It can't overlap another of hers (E7), and needs
+   * its clock-out once its sweep moment has passed (E6).
+   */
+  async addShift(orgId: string, patrollerId: string, userId: string | undefined, body: AddShift): Promise<TimeEntryResponse> {
+    const [patroller, resort, settings] = await Promise.all([
+      this.prisma.patrollerProfile.findFirst({ where: { id: patrollerId, membership: { orgId } }, select: { id: true } }),
+      this.prisma.resort.findFirst({ where: { id: body.resortId, orgId, deletedAt: null }, select: { id: true, timeZone: true } }),
+      this.prisma.timeClockSettings.findUnique({ where: { orgId } }),
+    ]);
+    if (!patroller) throw new NotFoundException('Patroller not found');
+    if (!resort) throw new NotFoundException('Resort not found');
+
+    const clockIn = new Date(body.clockInAt);
+    const clockOut = body.clockOutAt ? new Date(body.clockOutAt) : null;
+    const latest = Date.now() + 5 * 60_000;
+    if (clockIn.getTime() > latest || (clockOut && clockOut.getTime() > latest)) {
+      throw new BadRequestException('A shift can’t be in the future.');
+    }
+    if (clockOut && clockOut.getTime() <= clockIn.getTime()) {
+      throw new BadRequestException('Clock-out must be after clock-in.');
+    }
+    if (!clockOut && sweepAt(clockIn, resort.timeZone, settings?.autoCloseLocalTime ?? '03:00').getTime() <= Date.now()) {
+      throw new BadRequestException({ message: 'Enter the whole shift: this one needs a clock-out.', code: 'needs_clock_out' });
+    }
+
+    await this.sweepService.sweep({ orgId, patrollerId });
+    const overlap = await this.prisma.timeEntry.findFirst({
+      where: {
+        orgId,
+        patrollerId,
+        deletedAt: null,
+        ...(clockOut ? { clockInAt: { lt: clockOut } } : {}),
+        OR: [{ clockOutAt: null }, { clockOutAt: { gt: clockIn } }],
+      },
+      include: ENTRY_INCLUDE,
+    });
+    if (overlap) {
+      throw new ConflictException({
+        message: 'That overlaps another of her shifts. Correct or remove that one instead.',
+        code: 'overlaps',
+        details: { entry: toResponse(overlap) },
+      });
+    }
+
+    const id = `admin-in:${createId()}`;
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.timeClockEvent.create({
+          data: {
+            id,
+            orgId,
+            resortId: resort.id,
+            patrollerId,
+            type: 'clock_in',
+            dutyType: body.dutyType,
+            dutyNote: body.dutyNote ?? null,
+            source: 'admin',
+            occurredAt: clockIn,
+            statusNote: userId ? `Added by user ${userId}` : 'Added by an administrator',
+          },
+        });
+        if (clockOut) {
+          await writeAdminClose(tx, {
+            id: `admin-close:${id}`,
+            orgId,
+            resortId: resort.id,
+            patrollerId,
+            entryId: id,
+            occurredAt: clockOut,
+            statusNote: userId ? `Closed by user ${userId}` : 'Closed by an administrator',
+          });
+        }
+        await this.foldService.recomputeForPatroller(orgId, patrollerId, tx);
+        const after = await tx.timeEntry.update({ where: { id }, data: { editedByUserId: userId ?? null } });
+        await tx.auditLog.create({
+          data: {
+            actorType: 'user',
+            actorId: userId ?? null,
+            orgId,
+            action: 'time_clock.entry.added',
+            targetType: 'time_entry',
+            targetId: id,
+            metadata: { after: snapshot(after) } as Prisma.InputJsonValue,
+          },
+        });
+      },
+      { timeout: 20_000 },
+    );
+    const entry = await this.prisma.timeEntry.findFirstOrThrow({ where: { id }, include: ENTRY_INCLUDE });
+    return toResponse(entry);
   }
 
   /**
@@ -383,6 +523,9 @@ export class TimeEntryService {
         occurredAt: e.occurredAt.toISOString(),
         recordedAt: e.recordedAt.toISOString(),
         deviceId: e.deviceId,
+        entryId: e.entryId,
+        sweepAt: e.sweepAt?.toISOString() ?? null,
+        location: e.latitude !== null && e.longitude !== null ? { lat: e.latitude, lon: e.longitude, accuracyM: e.accuracyM } : null,
       })),
       entries: entries.map(toResponse),
     };
@@ -402,6 +545,7 @@ export class TimeEntryService {
           orgId,
           OR: [
             { id: { in: [...new Set(knownIds)] } },
+            { entryId: entry.id },
             {
               patrollerId: entry.patrollerId,
               type: 'clock_out',
@@ -451,6 +595,20 @@ export class TimeEntryService {
   }
 }
 
+/**
+ * A staff edit keeps a shift's duplicate clock-ins duplicates (Plan 59 R2, E26): set aside,
+ * still naming the shift, so the replay can't turn one into a shift of its own.
+ */
+async function keepDuplicates(
+  tx: Prisma.TransactionClient,
+  entry: { id: string; orgId: string; patrollerId: string },
+): Promise<void> {
+  await tx.timeClockEvent.updateMany({
+    where: { orgId: entry.orgId, patrollerId: entry.patrollerId, type: 'clock_in', status: 'duplicate', entryId: entry.id },
+    data: { status: 'voided', statusNote: NOTE.keptDuplicate },
+  });
+}
+
 /** What an audit row keeps of an entry: enough to say what a correction replaced. */
 function snapshot(s: {
   clockInAt: Date; clockOutAt: Date | null; dutyType: string; dutyNote: string | null;
@@ -475,7 +633,7 @@ function asArray<T>(v: T | T[] | undefined): T[] {
   return v === undefined ? [] : Array.isArray(v) ? v : [v];
 }
 
-function toResponse(s: EntryWithRelations): TimeEntryResponse {
+export function toResponse(s: EntryWithRelations): TimeEntryResponse {
   return {
     id: s.id,
     orgId: s.orgId,

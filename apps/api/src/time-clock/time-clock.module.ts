@@ -18,6 +18,9 @@ import { SeasonService } from './season.service';
 import { SeasonController } from './season.controller';
 import { TimeClockHealthService } from './health.service';
 import { TimeClockHealthController } from './health.controller';
+import { TimeClockSweepService } from './sweep.service';
+import { MemberClockService } from './member-clock.service';
+import { MemberClockController } from './member-clock.controller';
 
 @Module({
   imports: [AuthModule, PermissionsModule],
@@ -30,6 +33,7 @@ import { TimeClockHealthController } from './health.controller';
     TimeClockReportController,
     SeasonController,
     TimeClockHealthController,
+    MemberClockController,
   ],
   providers: [
     TimeClockFoldService,
@@ -41,7 +45,9 @@ import { TimeClockHealthController } from './health.controller';
     SeasonService,
     TimeClockHealthService,
     ClockOutService,
+    TimeClockSweepService,
+    MemberClockService,
   ],
-  exports: [ClockOutService],
+  exports: [ClockOutService, TimeClockSweepService],
 })
 export class TimeClockModule {}

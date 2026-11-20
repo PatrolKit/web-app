@@ -60,6 +60,15 @@ const lodge = await prisma.resort.create({
 const summit = await prisma.resort.create({
   data: { id: createId(), orgId: org.id, name: `${PREFIX} summit`, timeZone: 'America/New_York', updatedAt: new Date() },
 });
+// The server sweeps (Plan 59 R5). Its sweep time is put 12 hours from now, so the last 12
+// hours' clock-ins are never swept, and older ones are, whatever time the smoke runs.
+const sweepTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  .format(new Date(Date.now() + 12 * 3600_000));
+await prisma.timeClockSettings.upsert({
+  where: { orgId: org.id },
+  update: { autoCloseLocalTime: sweepTime, autoCloseAfterHours: 4 },
+  create: { id: createId(), orgId: org.id, autoCloseLocalTime: sweepTime, autoCloseAfterHours: 4 },
+});
 
 const { user: staff } = await smokeStaff(prisma, org, [
   'time_tracking:report', 'time_tracking:manage', 'time_tracking:admin', 'ski_swap:admin', 'org:manage',
@@ -102,8 +111,9 @@ const hoursAgo = (h) => new Date(Date.now() - h * 3600_000).toISOString();
 const clockIn = (p, at, opts = {}) => ({
   id: randomUUID(), resortId: lodge.id, patrollerId: p.id, type: 'clock_in', dutyType: 'patrol', occurredAt: at, ...opts,
 });
-const clockOut = (p, at, opts = {}) => ({
-  id: randomUUID(), resortId: lodge.id, patrollerId: p.id, type: 'clock_out', occurredAt: at, ...opts,
+// Every clock-out names its shift (Plan 59 R3).
+const clockOut = (p, at, entryId, opts = {}) => ({
+  id: randomUUID(), resortId: lodge.id, patrollerId: p.id, type: 'clock_out', occurredAt: at, entryId, ...opts,
 });
 const submit = (term, events) => fetch(`${BASE}/orgs/${org.id}/time-clock/events`, {
   method: 'POST', headers: term.H, body: JSON.stringify({ events }),
@@ -116,7 +126,8 @@ const patchEntry = (id, body) => fetch(`${BASE}/orgs/${org.id}/time-clock/entrie
 // ─── Clock in, clock out, and retry ──────────────────────────────────────────
 
 const jane = await patroller('Jane');
-const batch = [clockIn(jane, hoursAgo(8)), clockOut(jane, hoursAgo(2))];
+const janeIn = clockIn(jane, hoursAgo(8));
+const batch = [janeIn, clockOut(jane, hoursAgo(2), janeIn.id)];
 const first = await submit(termA, batch);
 ok('a clock-in and clock-out are both applied',
    first.results?.every((r) => r.status === 'applied'), JSON.stringify(first.results));
@@ -132,7 +143,7 @@ ok('which knows the event that closed it (D1)', janeEntries[0]?.closeEventId ===
 
 const john = await patroller('John');
 const morning = clockIn(john, hoursAgo(9));
-const afternoon = clockOut(john, hoursAgo(3));
+const afternoon = clockOut(john, hoursAgo(3), morning.id);
 const early = await submit(termB, [afternoon]);
 ok('an afternoon clock-out ahead of its clock-in is an orphan for now',
    early.results?.[0]?.status === 'orphan', JSON.stringify(early.results));
@@ -147,7 +158,7 @@ ok('the clock-out is applied once the fold sees both', healed?.status === 'appli
 
 const maria = await patroller('Maria');
 const yesterdayIn = clockIn(maria, hoursAgo(30));
-const yesterdayOut = clockOut(maria, hoursAgo(24));
+const yesterdayOut = clockOut(maria, hoursAgo(24), yesterdayIn.id);
 const todayIn = clockIn(maria, hoursAgo(4));
 await submit(termA, [yesterdayIn, yesterdayOut, todayIn]);
 const fixAt = hoursAgo(1);
@@ -162,21 +173,28 @@ ok("today's entry is closed by an admin, at the time given",
    today?.status === 'closed' && today?.closeReason === 'admin' && today?.clockOutAt?.toISOString() === fixAt,
    `${today?.closeReason} ${today?.clockOutAt?.toISOString()}`);
 
-// ─── D2: a reopened entry stays open ─────────────────────────────────────────
+// ─── D2: a reopened entry stays open; only the server sweeps (Plan 59 R5) ────
 
 const chen = await patroller('Chen');
-const chenIn = clockIn(chen, hoursAgo(10));
-const auto = clockOut(chen, hoursAgo(6), { id: `auto:${chenIn.id}`, source: 'device_auto' });
-await submit(termA, [chenIn, auto]);
+// Long enough ago that its sweep moment has passed, wherever the server's clock is.
+const chenIn = clockIn(chen, hoursAgo(30));
+const deviceAuto = clockOut(chen, hoursAgo(26), chenIn.id, { id: `auto:${chenIn.id}`, source: 'device_auto' });
+const autoSent = await submit(termA, [chenIn, deviceAuto]);
+ok("an iPad's own auto clock-out is kept and changes nothing",
+   autoSent.results?.[1]?.status === 'orphan' && autoSent.results?.[1]?.note === 'server_sweeps', JSON.stringify(autoSent.results));
+const auto = { id: `sweep:${chenIn.id}:1` };
 const autoClosed = (await entriesOf(chen))[0];
-ok('an automatic close is flagged', autoClosed?.closeReason === 'auto' && autoClosed?.flagged === true);
+ok('the server sweeps the forgotten shift, flagged',
+   autoClosed?.closeReason === 'auto' && autoClosed?.flagged === true && autoClosed?.closeEventId === auto.id,
+   `${autoClosed?.closeReason} ${autoClosed?.closeEventId}`);
 
 const reopened = await patchEntry(chenIn.id, { clockOutAt: null });
 ok('staff can reopen it', reopened.status === 200, String(reopened.status));
 const voided = await prisma.timeClockEvent.findUnique({ where: { id: auto.id } });
 ok('which sets the close aside rather than deleting it', voided?.status === 'voided', voided?.status);
 
-const late = await submit(termB, [auto]);
+const late = await submit(termB, [deviceAuto]);
+// Reopening set aside every close of the shift, the iPad's ignored one included.
 ok("a second terminal's late auto close is answered as held",
    late.results?.[0]?.status === 'voided', JSON.stringify(late.results));
 const stillOpen = (await entriesOf(chen))[0];
@@ -212,7 +230,7 @@ const spoofed = await prisma.timeClockEvent.findUnique({ where: { id: spoof.id }
 ok("a device's claim to be another device is ignored", spoofed?.deviceId === termA.id, spoofed?.deviceId);
 ok('and where it stood is recorded (D4)', spoofed?.deviceResortId === lodge.id, spoofed?.deviceResortId);
 
-const elsewhere = clockOut(aisha, hoursAgo(1), { resortId: summit.id });
+const elsewhere = clockOut(aisha, hoursAgo(1), spoof.id, { resortId: summit.id });
 await submit(termA, [elsewhere]);
 const mismatch = await prisma.timeClockEvent.findUnique({ where: { id: elsewhere.id } });
 ok('an event for another resort is accepted, with the mismatch on record',

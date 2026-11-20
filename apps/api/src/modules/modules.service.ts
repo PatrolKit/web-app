@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { createId } from '@paralleldrive/cuid2';
+import { ClockOutService } from '../time-clock/clock-out.service';
 export interface ModuleResponse {
   key: string;
   name: string;
@@ -12,7 +13,10 @@ export interface ModuleResponse {
 
 @Injectable()
 export class ModulesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clockOut: ClockOutService,
+  ) {}
 
   async listModules(orgId: string): Promise<ModuleResponse[]> {
     const catalog = await this.prisma.moduleCatalog.findMany({ orderBy: { key: 'asc' } });
@@ -58,6 +62,9 @@ export class ModulesService {
         enabledBy: enabled ? actorUserId : null,
       },
     });
+
+    // Clock events are refused from here on, so nobody can stay clocked in (Plan 59 R10).
+    if (moduleKey === 'time_tracking' && !enabled) await this.clockOut.closeAllFor(orgId, actorUserId);
 
     const om = await this.prisma.orgModule.findUniqueOrThrow({
       where: { orgId_moduleKey: { orgId, moduleKey } },

@@ -1143,6 +1143,15 @@ model TimeClockEvent {
   /// D4). Recorded, never enforced: an event queued before a terminal moved is
   /// still a real clock-in.
   deviceResortId String?
+  /// The shift a clock-out names (Plan 59 R3), and the shift a duplicate
+  /// clock-in kept by a staff edit still belongs to (R2, E26).
+  entryId     String?
+  /// A server sweep's sweep moment: where the fold places it (Plan 59 R4).
+  sweepAt     DateTime?
+  /// Where a patroller's own event was sent from (iOS Plan 44 D8). Never required.
+  latitude    Float?
+  longitude   Float?
+  accuracyM   Float?
 
   org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   resort    Resort           @relation(fields: [resortId], references: [id])

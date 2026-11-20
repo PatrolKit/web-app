@@ -77,7 +77,8 @@ the same way.
 | Clock-outs | `ClockEventSchema` requires `entryId` on a clock-out and refuses it on a clock-in. The schema is `.strict()`, so send `entryId` only after the server deploys (T8) |
 | Open shifts everywhere | `GET orgs/:orgId/time-clock/entries?status=open` without `resortId` (already allowed) |
 | An iPad's auto | Accepted (not `rejected`), stored as `orphan`, noted `server_sweeps`; changes nothing |
-| Server sweeps | Ids `sweep:<entryId>:<n>`, source `auto`; they reach the iPad like any other close |
+| Server sweeps | Ids `sweep:<entryId>:<n>`, source `auto`; they reach the iPad like any other close. The server also sweeps a batch's patrollers right after it lands |
+| Reopening | Staff reopening a shift sets aside every close of it, the iPad's included; a resend of one answers `voided` |
 | Duplicates | Status `duplicate`; a later clock-out naming the duplicate's id closes the shift |
 | A shift's id changing (E20) | The phone's shift is tombstoned and the earlier clock-in's shift replaces it, through the usual delta |
 | Inactive or removed | Accepted, noted `inactive_patroller`, shift flagged |
@@ -85,6 +86,7 @@ the same way.
 | Resort | `PATCH devices/me/resort` is the only way to set it. Creating a time clock iPad no longer takes a resort |
 | Removal or reissue | The old credentials stop working; nothing new on the wire |
 | Validation | Unchanged: one malformed event fails the batch (400); unknown resort or patroller, a disallowed source and an implausible clock are `rejected` per event |
+| A patroller's own clock | `GET me/orgs/:orgId/time-clock/shift` → `{ entry }`; `POST …/events`; 409 `on_shift` carries the shift in `details.entry`. For the harness, acting as her phone |
 | Harness | `tc-harness-seed.mjs` adds `members: { ann, ben }` sessions (access and refresh tokens) for acting as their phones, locally and with `--test-org`; devices are bound through `devices/me/resort`; `--sim` the same |
 | Shared vectors | `scripts/tc-vectors.cjs` (server T2): standard flows, the SERVER_REQUEST cases updated, duplicates, aliases, earliest close, daylight saving, E26 |
 
@@ -129,7 +131,8 @@ phone); the phone with no signal (E30); inactive or removed patrollers (E16, E24
 
 ## 6. Tests
 
-- **Shared vectors:** copy `scripts/tc-vectors.cjs`'s output once server T2 lands, and have
+- **Shared vectors:** copy `apps/api/src/time-clock/__vectors__/` (both files, from
+  `apps/api/scripts/tc-vectors.cjs`; 29 fold cases), and have
   `ReferenceFold` and the fake server follow Plan 59 §3 and §4.
 - **Scenarios from the edge cases:** E1, E8, E11, E16–E20, E22, E24, E25, E28, E29.
 - **Expectations that change:**
@@ -145,7 +148,7 @@ phone); the phone with no signal (E30); inactive or removed patrollers (E16, E24
 ## 7. Sequencing
 
 - **Can be built now:** the planning and IR1–IR9.
-- **After server T2:** the vectors and `ReferenceFold`.
+- **Now (server T2 is built):** the vectors and `ReferenceFold`.
 - **After server T8 (deployed):** ship. A build that sends `entryId` (IR1, IR3) is refused
   by today's server. Then the scenarios and the live L runs.
 

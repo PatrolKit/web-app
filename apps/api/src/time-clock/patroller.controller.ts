@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 import type { Request } from 'express';
 import type { AuthenticatedDevice } from '../common/guards/device-auth.guard';
 import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
@@ -10,7 +11,7 @@ import { RequireDeviceRole } from '../common/decorators/require-device-role.deco
 import { RequireModule } from '../common/decorators/require-module.decorator';
 import { PatrollerService } from './patroller.service';
 import { TimeEntryService } from './time-entry.service';
-import { PatrollerListQueryDto } from '../contracts/time-clock.contracts';
+import { AddShiftDto, PatrollerListQueryDto } from '../contracts/time-clock.contracts';
 import { TIME_CLOCK_TABLET_ROLES } from '../contracts/devices.contracts';
 
 /**
@@ -43,5 +44,17 @@ export class PatrollerController {
   @RequirePermissions('time_tracking:report')
   log(@Param('orgId') orgId: string, @Param('patrollerId') patrollerId: string) {
     return this.timeEntryService.patrollerLog(orgId, patrollerId);
+  }
+
+  /** Staff add a whole shift for someone (Plan 59 R8). */
+  @Post(':patrollerId/shifts')
+  @RequirePermissions('time_tracking:manage')
+  addShift(
+    @Param('orgId') orgId: string,
+    @Param('patrollerId') patrollerId: string,
+    @Body() body: AddShiftDto,
+    @Req() req: Request & { user?: AuthenticatedUser },
+  ) {
+    return this.timeEntryService.addShift(orgId, patrollerId, req.user?.userId, body);
   }
 }

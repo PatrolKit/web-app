@@ -113,11 +113,13 @@ const clockIn = (patrollerId) => ({
 });
 
 // The first batch per patroller folds a log nothing has folded yet: every entry is new.
-const [firstMs] = await timed(() => submit([clockIn(heavy.profileId)]));
+const opening = clockIn(heavy.profileId);
+const [firstMs] = await timed(() => submit([opening]));
 await new Promise((r) => setTimeout(r, 20));
 const afterFirst = new Date();
 const [againMs, again] = await timed(() => submit([{
   id: randomUUID(), resortId: lodge.id, patrollerId: heavy.profileId, type: 'clock_out', occurredAt: new Date(Date.now() - 60_000).toISOString(),
+  entryId: opening.id,
 }]));
 ok(`one batch for a patroller with ${HEAVY_ENTRIES} entries of history recomputes under ${BUDGET_MS} ms`,
    againMs < BUDGET_MS && again.results?.[0]?.status === 'applied',

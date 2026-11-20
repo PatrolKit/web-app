@@ -83,7 +83,12 @@ Voided events are skipped, except that a voided duplicate still counts as its sh
 2. **Clock-in, a shift open:** `duplicate`. The shift keeps its id as an alias (R2).
 3. **Clock-out naming the open shift or an alias:** closes it, at its `occurredAt`. `admin`
    gives `admin`, `auto` gives `auto` (flagged), and anything else gives `manual`.
-4. **Any other clock-out:** `orphan`. That includes every iPad auto (`server_sweeps`).
+4. **Any other clock-out:** `orphan`. That includes every iPad auto (`server_sweeps`), and a
+   clock-out dated before its clock-in.
+
+The fold records each duplicate's shift as its `entryId`, so a staff edit can find the
+shift's duplicates. A clock-out stored before Plan 59, naming nothing, closes whatever is
+open.
 
 **A shift's id can change (E20).** When an iPad's earlier clock-in arrives late, the replay
 opens the shift at that clock-in and tombstones the shift the phone saw. Clients follow the
@@ -118,9 +123,10 @@ server's shift, and a clock-out naming the old id still closes it through the al
 
 **The sweep (R5):** one function, `sweep(orgId, patrollerId?)`.
 - **When:** at startup, then every 5 minutes, one run at a time, from a timer started in
-  `onModuleInit` (no scheduler library). The patroller and staff routes also call it for
-  that patroller before handling an event, so nothing reaches her log ahead of a due sweep
-  (E2, E12).
+  `onModuleInit` (no scheduler library). The patroller routes and the staff shift route
+  also call it for that patroller before handling an event, so nothing reaches her log ahead
+  of a due sweep (E2, E12). An iPad batch is followed by a sweep of its patrollers, so an old
+  clock-in arriving late is closed at once.
 - **What:** every shift open now whose sweep moment has passed, reopened ones included (E5,
   E11).
 - **Writes:** `sweep:<entryId>:<n>`, source `auto`, with `entryId` and `sweepAt`, timed
@@ -128,8 +134,9 @@ server's shift, and a clock-out naming the old id still closes it through the al
 - **Overview:** the "Past auto clock-out" tag now shows for minutes at most, as the sign that
   the sweep is behind.
 
-**Switching Time Clock off (R10):** in the same transaction as the switch, every open shift
-gets `admin-disable:<entryId>` dated now, through `ClockOutService` as deactivation does.
+**Switching Time Clock off (R10):** right after the switch, every open shift gets
+`admin-disable:<entryId>` dated now, through `ClockOutService` as deactivation does. Events
+are already refused by then, so nothing slips in between.
 `devices/me` already reports which modules are on, so an iPad learns it without sending
 anything. Turning it back on starts clean.
 
@@ -143,7 +150,7 @@ On the roster, active, and Time Clock on; otherwise 403 (R9).
 
 | Route | Does |
 |---|---|
-| `GET shift` | My open shift, or null |
+| `GET shift` | `{ entry }`: my open shift, or null |
 | `POST events` `{ id, type: "clock_in", resortId, dutyType, dutyNote?, location? }` | Clocks me in, or 409 `on_shift` with my open shift (R6) |
 | `POST events` `{ id, type: "clock_out", entryId, chosenAt?, location? }` | Clocks me out of that shift |
 | `GET entries?take=` | My recent shifts, newest first |
@@ -166,7 +173,9 @@ On the roster, active, and Time Clock on; otherwise 403 (R9).
   moment has passed (400 `needs_clock_out`).
 - **Corrections** (close, reopen, correct, through `PATCH entries/:entryId`) work as today,
   except that each first voids the shift's duplicate clock-ins, noted `kept_duplicate`, so
-  the replay can't turn one into a shift of its own (R2, E26).
+  the replay can't turn one into a shift of its own (R2, E26). Reopening sets aside every
+  close of the shift, not only the one that won, so a close it lost to can't close it again
+  on the replay; the sweep then closes it with the next id (E5, E11).
 - **Removing a shift** (new, `DELETE entries/:entryId`, E7): voids every event of that
   shift, its duplicates included, audits it, and re-folds.
 
@@ -175,7 +184,8 @@ On the roster, active, and Time Clock on; otherwise 403 (R9).
 - **Resort only from the iPad:** `PATCH orgs/:orgId/devices/:id/resort` refuses time clock
   iPads, and creating one no longer takes a resort; `PATCH devices/me/resort` is the only
   way. Signage displays keep the website route.
-- **No out-of-service state:** clearing a time clock iPad's resort goes away.
+- **No out-of-service state:** a tablet's resort can't be cleared from the website. The
+  legacy `time_clock.terminal` role, which no production iPad uses, keeps its old route.
 - **Removing or reissuing:** the website shows when the iPad was last online and that
   anything it hasn't sent since will be lost, and staff tick that they understand. The server
   needs nothing new: the old credentials stop working.

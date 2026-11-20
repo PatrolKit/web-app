@@ -10,7 +10,12 @@ export type DutyType = z.infer<typeof DutyTypeSchema>;
 export const CLOCK_EVENT_TYPES = ['clock_in', 'clock_out'] as const;
 export const ClockEventTypeSchema = z.enum(CLOCK_EVENT_TYPES);
 
-export const EVENT_SOURCES = ['device', 'device_auto', 'admin'] as const;
+/**
+ * Where an event came from (Plan 59 R1): an iPad (`device`, and `device_auto` for its own
+ * sweep, which the server ignores), the patroller on a phone or the web (`member`), staff
+ * (`admin`) and the server's sweep (`auto`).
+ */
+export const EVENT_SOURCES = ['device', 'device_auto', 'member', 'admin', 'auto'] as const;
 export const EventSourceSchema = z.enum(EVENT_SOURCES);
 
 /**
@@ -20,7 +25,8 @@ export const EventSourceSchema = z.enum(EVENT_SOURCES);
  */
 export const EVENT_STATUSES = ['applied', 'duplicate', 'orphan', 'anomalous', 'rejected', 'voided'] as const;
 
-export const ENTRY_CLOSE_REASONS = ['manual', 'auto', 'superseded', 'admin'] as const;
+/** `superseded` is gone (Plan 59 R2): a second clock-in is a duplicate. */
+export const ENTRY_CLOSE_REASONS = ['manual', 'auto', 'admin'] as const;
 
 // ─── Patrollers (the roster) ─────────────────────────────────────────────────
 
@@ -125,9 +131,17 @@ export const ClockEventSchema = z
     source: EventSourceSchema.default('device'),
     occurredAt: z.string().datetime({ offset: true }),
     clockSkewMs: z.number().int().nullable().optional(),
+    /// The shift a clock-out closes (Plan 59 R3): required on a clock-out, refused on a clock-in.
+    entryId: z.string().min(1).max(120).optional(),
   })
   .strict()
   .superRefine((v, ctx) => {
+    if (v.type === 'clock_out' && !v.entryId) {
+      ctx.addIssue({ code: 'custom', message: 'clock_out requires an entryId', path: ['entryId'] });
+    }
+    if (v.type === 'clock_in' && v.entryId) {
+      ctx.addIssue({ code: 'custom', message: 'clock_in must not carry an entryId', path: ['entryId'] });
+    }
     if (v.type === 'clock_in' && !v.dutyType) {
       ctx.addIssue({ code: 'custom', message: 'clock_in requires a dutyType', path: ['dutyType'] });
     }
@@ -260,10 +274,87 @@ export const PatrollerLogResponseSchema = z.object({
       occurredAt: z.string(),
       recordedAt: z.string(),
       deviceId: z.string().nullable(),
+      entryId: z.string().nullable(),
+      sweepAt: z.string().nullable(),
+      location: z.object({ lat: z.number(), lon: z.number(), accuracyM: z.number().nullable() }).nullable(),
     }),
   ),
   entries: z.array(TimeEntryResponseSchema),
 });
+
+// ─── A patroller's own clock (Plan 59 §5) ────────────────────────────────────
+
+export const LocationSchema = z
+  .object({
+    lat: z.number().min(-90).max(90),
+    lon: z.number().min(-180).max(180),
+    accuracyM: z.number().min(0).max(100_000).nullable().optional(),
+  })
+  .strict();
+
+/** A patroller's clock-in or clock-out (R6, R7): no time of its own but a chosen clock-out. */
+export const MemberClockEventSchema = z
+  .object({
+    id: z.string().min(1).max(120),
+    type: ClockEventTypeSchema,
+    /// A clock-in's resort and duty.
+    resortId: z.string().min(1).max(64).optional(),
+    dutyType: DutyTypeSchema.optional(),
+    dutyNote: z.string().max(120).nullable().optional(),
+    /// The shift a clock-out closes.
+    entryId: z.string().min(1).max(120).optional(),
+    /// A clock-out time she chose, between the shift's clock-in and now (R6).
+    chosenAt: instant.optional(),
+    location: LocationSchema.optional(),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    const issue = (path: string, message: string) => ctx.addIssue({ code: 'custom', message, path: [path] });
+    if (v.type === 'clock_in') {
+      if (!v.resortId) issue('resortId', 'clock_in requires a resortId');
+      if (!v.dutyType) issue('dutyType', 'clock_in requires a dutyType');
+      if (v.entryId) issue('entryId', 'clock_in must not carry an entryId');
+      if (v.chosenAt) issue('chosenAt', 'clock_in must not carry a chosenAt');
+    } else {
+      if (!v.entryId) issue('entryId', 'clock_out requires an entryId');
+      if (v.resortId || v.dutyType || v.dutyNote) issue('type', 'clock_out carries no resort or duty');
+    }
+    if (v.dutyNote && v.dutyType !== 'other') issue('dutyNote', "dutyNote is only allowed when dutyType is 'other'");
+  });
+
+export const MemberClockResultSchema = z.object({
+  event: EventResultSchema,
+  /** The shift as it stands after this event; null when she has none to show. */
+  entry: TimeEntryResponseSchema.nullable(),
+});
+
+export const MyEntriesQuerySchema = z
+  .object({ take: z.coerce.number().int().min(1).max(100).optional() })
+  .strict();
+
+export class MemberClockEventDto extends createZodDto(MemberClockEventSchema) {}
+export class MyEntriesQueryDto extends createZodDto(MyEntriesQuerySchema) {}
+export type MemberClockEvent = z.infer<typeof MemberClockEventSchema>;
+export type MemberClockResult = z.infer<typeof MemberClockResultSchema>;
+
+// ─── Staff add a shift (Plan 59 R8) ──────────────────────────────────────────
+
+export const AddShiftSchema = z
+  .object({
+    resortId: z.string().min(1).max(64),
+    dutyType: DutyTypeSchema,
+    dutyNote: z.string().max(120).nullable().optional(),
+    clockInAt: instant,
+    clockOutAt: instant.optional(),
+  })
+  .strict()
+  .refine((v) => !v.dutyNote || v.dutyType === 'other', {
+    message: "dutyNote is only allowed when dutyType is 'other'",
+    path: ['dutyNote'],
+  });
+
+export class AddShiftDto extends createZodDto(AddShiftSchema) {}
+export type AddShift = z.infer<typeof AddShiftSchema>;
 
 export const PatchTimeEntrySchema = z
   .object({

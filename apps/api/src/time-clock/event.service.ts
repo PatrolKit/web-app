@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TimeClockFoldService } from './fold.service';
+import { NOTE, TimeClockFoldService } from './fold.service';
 import { isUniqueViolation } from '../common/util/prisma-errors';
+import { TimeClockSweepService } from './sweep.service';
 import type { ClockEventInput, EventResult } from '../contracts/time-clock.contracts';
 
 /** Anything dated further ahead than this is a broken device clock, not an entry (§5.7). */
@@ -17,6 +18,7 @@ export class TimeClockEventService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly foldService: TimeClockFoldService,
+    private readonly sweepService: TimeClockSweepService,
   ) {}
 
   /**
@@ -38,7 +40,10 @@ export class TimeClockEventService {
 
     const [resorts, patrollers, device, stored] = await Promise.all([
       this.prisma.resort.findMany({ where: { orgId }, select: { id: true } }),
-      this.prisma.patrollerProfile.findMany({ where: { membership: { orgId } }, select: { id: true } }),
+      this.prisma.patrollerProfile.findMany({
+        where: { membership: { orgId } },
+        select: { id: true, active: true, deletedAt: true, membership: { select: { deletedAt: true } } },
+      }),
       this.prisma.device.findUnique({ where: { id: deviceId }, select: { resortId: true } }),
       this.prisma.timeClockEvent.findMany({
         where: { id: { in: events.map((e) => e.id) } },
@@ -47,6 +52,10 @@ export class TimeClockEventService {
     ]);
     const resortIds = new Set(resorts.map((r) => r.id));
     const patrollerIds = new Set(patrollers.map((p) => p.id));
+    // Inactive or removed, but a clock-in an iPad took was real (Plan 59 R9, E16, E24).
+    const offRoster = new Set(
+      patrollers.filter((p) => !p.active || p.deletedAt || p.membership.deletedAt).map((p) => p.id),
+    );
     const held = new Map(stored.map((s) => [s.id, s]));
     // Where the terminal stood on arrival (D4): recorded, never enforced.
     const deviceResortId = device?.resortId ?? null;
@@ -77,6 +86,13 @@ export class TimeClockEventService {
 
       const occurredAt = new Date(event.occurredAt);
       const implausible = occurredAt.getTime() > now + FUTURE_TOLERANCE_MS;
+      // Only the server sweeps (R5): an iPad's own auto is kept, and changes nothing.
+      const note =
+        event.source === 'device_auto'
+          ? NOTE.serverSweeps
+          : event.type === 'clock_in' && offRoster.has(event.patrollerId)
+            ? NOTE.inactivePatroller
+            : null;
       try {
         // Implausible events are kept, not dropped, so an admin can see the bad clock.
         await this.prisma.timeClockEvent.create({
@@ -93,7 +109,8 @@ export class TimeClockEventService {
             source: event.source,
             occurredAt,
             clockSkewMs: event.clockSkewMs ?? null,
-            ...(implausible ? { status: 'rejected', statusNote: 'clock_implausible' } : {}),
+            entryId: event.entryId ?? null,
+            ...(implausible ? { status: 'rejected', statusNote: 'clock_implausible' } : note ? { statusNote: note } : {}),
           },
         });
       } catch (err) {
@@ -112,8 +129,11 @@ export class TimeClockEventService {
     }
 
     // Recompute per patroller, each in its own transaction (§5.5).
+    // Then sweep them, so an old clock-in that arrives late is closed now, not at the next
+    // run (Plan 59 R5).
     for (const patrollerId of affected) {
       await this.foldService.recomputeForPatroller(orgId, patrollerId);
+      await this.sweepService.sweep({ orgId, patrollerId });
     }
 
     // Report the status the fold actually assigned to the newly accepted events.

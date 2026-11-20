@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { OrDeviceAuthGuard } from '../common/guards/or-device-auth.guard';
 import { OrgContextGuard } from '../common/guards/org-context.guard';
@@ -45,5 +45,17 @@ export class TimeEntryController {
     @Req() req: Request & { user?: AuthenticatedUser },
   ) {
     return this.timeEntryService.patch(orgId, entryId, req.user?.userId, body);
+  }
+
+  /** Plan 59 R8, E7: a shift staff remove entirely. */
+  @Delete(':entryId')
+  @HttpCode(204)
+  @RequirePermissions('time_tracking:manage')
+  remove(
+    @Param('orgId') orgId: string,
+    @Param('entryId') entryId: string,
+    @Req() req: Request & { user?: AuthenticatedUser },
+  ) {
+    return this.timeEntryService.remove(orgId, entryId, req.user?.userId);
   }
 }

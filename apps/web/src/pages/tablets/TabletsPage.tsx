@@ -159,10 +159,13 @@ export default function TabletsPage() {
                     tablet={t}
                     busy={newCode.isPending || rename.isPending || remove.isPending}
                     onRename={(name) => rename.mutate({ id: t.id, name })}
-                    onNewCode={() => newCode.mutate(t)}
+                    onNewCode={() => {
+                      // An unused tablet has nothing to lose (Plan 59 R12).
+                      if (!t.lastTokenAt || window.confirm(`New code for ${t.name}? ${lossWarning(t)}`)) newCode.mutate(t);
+                    }}
                     onRemove={() => {
                       const where = t.stationName ? ` It leaves ${t.stationName} waiting for another tablet.` : '';
-                      if (window.confirm(`Remove ${t.name}? It stops working at once and has to be added again from scratch.${where}`)) {
+                      if (window.confirm(`Remove ${t.name}? ${lossWarning(t)}${where}`)) {
                         remove.mutate(t.id);
                       }
                     }}
@@ -299,4 +302,13 @@ function statusOf(t: DeviceItem): HardwareStatus {
     return { icon: faPlugCircleXmarkDuo, label: 'Offline', tone: 'bad', title: lastSeenTitle(t.lastSeenAt) };
   }
   return { icon: faCircleCheckDuo, label: 'Online', tone: 'ok', title: lastSeenTitle(t.lastSeenAt) };
+}
+
+/**
+ * What staff acknowledge before a tablet's code stops working (Plan 59 R12): it deletes
+ * everything on it, including anything it hasn't sent.
+ */
+function lossWarning(t: DeviceItem): string {
+  const seen = t.lastSeenAt ? `last online ${timeAgo(t.lastSeenAt)}` : 'never online';
+  return `Its code stops working at once, and it deletes anything it hasn't sent (${seen}).`;
 }

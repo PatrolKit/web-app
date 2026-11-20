@@ -1,5 +1,5 @@
 {
-  "about": "Generated from the server's foldEvents and sweep.util.ts (iOS Plan 43 §4.4). Both repos keep this file byte for byte; regenerate, do not hand-edit.",
+  "about": "Generated from the server's foldEvents and sweep.util.ts (iOS Plan 43 §4.4, server Plan 59 §3). Both repos keep this file byte for byte; regenerate, do not hand-edit.",
   "cases": [
     {
       "name": "daytime (America/New_York)",

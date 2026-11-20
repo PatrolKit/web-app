@@ -178,7 +178,17 @@ try {
     ? [['Harness A', lodge], ['Harness B', lodge]]
     : [['Lodge 1', lodge], ['Lodge 2', lodge], ['Summit 1', summit], ['Summit 2', summit]];
   for (const [name, r] of ipads) {
-    const d = await api('/devices', { name: `${tag(runId)} ${name}`, role: 'org.tablet', resortId: r.id });
+    // A tablet's resort is chosen on the iPad (Plan 59 R11), so each binds itself with its own token.
+    const d = await api('/devices', { name: `${tag(runId)} ${name}`, role: 'org.tablet' });
+    const tok = await fetch(`${BASE}/auth/device/token`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ clientId: d.clientId, clientSecret: d.clientSecret }),
+    }).then(unwrap);
+    const bound = await fetch(`${BASE}/devices/me/resort`, {
+      method: 'PATCH', headers: { authorization: `Bearer ${tok.accessToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ resortId: r.id }),
+    });
+    if (!bound.ok) fail(`could not bind ${name} to ${r.name}: ${bound.status} ${await bound.text()}`);
     devices.push({ id: d.id, name: d.name, resortId: r.id, clientId: d.clientId, clientSecret: d.clientSecret });
   }
 
@@ -242,6 +252,13 @@ try {
   await prisma.membership.update({ where: { id: cy.membershipId }, data: { updatedAt: new Date() } });
   cy.pin = pin;
 
+  // Ann's and Ben's own sessions, so the harness can act as their phones (Plan 59 §6).
+  const members = {};
+  for (const p of [ann, ben]) {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: p.userId } });
+    members[p.name.toLowerCase()] = await signIn(user);
+  }
+
   // The harness keeps only what it acts with. The server caches permissions for five
   // seconds, so the narrower set is waited for rather than raced.
   await grant(staffMembership.id, HARNESS);
@@ -262,6 +279,8 @@ try {
     resorts: [lodge, summit].map((r) => ({ id: r.id, name: r.name, timeZone: r.timeZone })),
     devices,
     patrollers: [ann, ben, cy].map(strip),
+    /** Ann's and Ben's own sessions, as their phones: the same shape as `staff`'s tokens. */
+    members,
     cleanup: `node apps/api/scripts/tc-harness-seed.mjs${testOrg ? ' --test-org' : ''} --cleanup ${runId}`,
   }, null, 2) + '\n');
   log(`seeded run ${runId} in ${org.slug}`);

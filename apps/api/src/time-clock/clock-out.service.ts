@@ -39,6 +39,7 @@ export class ClockOutService {
         orgId,
         resortId: open.resortId,
         patrollerId: open.patrollerId,
+        entryId: open.id,
         occurredAt,
         statusNote: 'Closed automatically when the member was made inactive or removed',
       });
@@ -57,5 +58,41 @@ export class ClockOutService {
       });
     });
     return open.id;
+  }
+
+  /**
+   * Switching Time Clock off clocks everyone out at that moment (Plan 59 R10, E18). Each
+   * open shift gets `admin-disable:<entryId>`; turning it back on starts clean.
+   */
+  async closeAllFor(orgId: string, actorId?: string): Promise<number> {
+    const open = await this.prisma.timeEntry.findMany({ where: { orgId, status: 'open', deletedAt: null } });
+    const now = new Date();
+    for (const entry of open) {
+      const occurredAt = now.getTime() > entry.clockInAt.getTime() ? now : entry.clockInAt;
+      await this.prisma.$transaction(async (tx) => {
+        await writeAdminClose(tx, {
+          id: `admin-disable:${entry.id}`,
+          orgId,
+          resortId: entry.resortId,
+          patrollerId: entry.patrollerId,
+          entryId: entry.id,
+          occurredAt,
+          statusNote: 'Closed automatically when Time Clock was switched off',
+        });
+        await this.foldService.recomputeForPatroller(orgId, entry.patrollerId, tx);
+        await tx.auditLog.create({
+          data: {
+            actorType: 'user',
+            actorId: actorId ?? null,
+            orgId,
+            action: 'time_clock.entry.closed_by_disable',
+            targetType: 'time_entry',
+            targetId: entry.id,
+            metadata: { closedAt: occurredAt.toISOString() },
+          },
+        });
+      });
+    }
+    return open.length;
   }
 }
