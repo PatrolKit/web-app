@@ -75,7 +75,7 @@ the same way.
 | Need | Server (Plan 59) |
 |---|---|
 | Clock-outs | `ClockEventSchema` requires `entryId` on a clock-out and refuses it on a clock-in. Live on patrolkit.io since 2026-11-20 (build 0344e76) |
-| Open shifts everywhere | `GET orgs/:orgId/time-clock/entries?status=open` without `resortId` (already allowed) |
+| Open shifts everywhere | The entries walk without `resortId` (already the iPad's delta) |
 | An iPad's auto | Accepted (not `rejected`), stored as `orphan`, noted `server_sweeps`; changes nothing |
 | Server sweeps | Ids `sweep:<entryId>:<n>`, source `auto`; they reach the iPad like any other close. The server also sweeps a batch's patrollers right after it lands |
 | Reopening | Staff reopening a shift sets aside every close of it, the iPad's included; a resend of one answers `voided` |
@@ -97,7 +97,7 @@ the same way.
 | # | Requirement | Cases |
 |---|---|---|
 | IR1 | **`entryId` on every clock-out**, from the row: the server's shift id, or a local clock-in's event id if it isn't confirmed yet. No fallback for old builds. | E10 |
-| IR2 | **Keep every open shift in the org**, not just this resort's, by dropping `resortId` from the open-shifts fetch. | E25 |
+| IR2 | **Keep every open shift in the org**, not just this resort's: the entries walk with no `resortId` already does. | E25 |
 | IR3 | **No second clock-in.** Someone on shift at this resort gets only a clock-out. Someone on shift elsewhere is asked to close that shift first, at a time she chooses between its clock-in and now; the iPad writes a `device` clock-out naming that shift, dated at the chosen time, and then lets her clock in. This replaces Plan 44 D4 and its "clocking in here ends it" caption. `ShiftProjection` must stop letting a newer local clock-in replace an open shift. | E1, E8, E25, E29 |
 | IR4 | **Follow the server's shift.** When the server's shift for a patroller has a different id or start than the local row (E20), show the server's. A local clock-in the server calls `duplicate` folds into her open shift, not a second row. | E17, E19, E20 |
 | IR5 | **The server owns the sweep.** The iPad may keep sweeping locally so its board is right offline, but the server's sweep is the answer. Sending iPad autos is optional, since the server ignores them. Choose whichever is less code. Drop D7's prune clause. | E5, E11, E14 |

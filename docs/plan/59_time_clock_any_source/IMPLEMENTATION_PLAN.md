@@ -213,7 +213,7 @@ These are the iOS session's tasks.
 | D5: the iPad sweeps; the server's answer agrees | The iPad sweeps only for its own screen. The server ignores its autos and sends its own sweep back (R5) |
 | D7: a reopened shift is never swept again | Dropped: the server sweeps it again (R5) |
 | D10–D12 | Unchanged |
-| (new) | Keep every open shift in the org: fetch `entries?status=open` without `resortId`, which the route already allows (R6, E25) |
+| (new) | Keep every open shift in the org: the entries walk without `resortId`, which the iPad already does (R6, E25) |
 | (new) | Show the server's shift when its id or start changes (E20) |
 | (new) | Time Clock off: discard pending events and show "Time Clock isn't turned on for this organization." (R10) |
 | (new) | Ask for the resort at first setup; none from the website (R11) |
