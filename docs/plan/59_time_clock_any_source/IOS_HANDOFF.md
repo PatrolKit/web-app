@@ -74,7 +74,7 @@ the same way.
 
 | Need | Server (Plan 59) |
 |---|---|
-| Clock-outs | `ClockEventSchema` requires `entryId` on a clock-out and refuses it on a clock-in. The schema is `.strict()`, so send `entryId` only after the server deploys (T8) |
+| Clock-outs | `ClockEventSchema` requires `entryId` on a clock-out and refuses it on a clock-in. Live on patrolkit.io since 2026-11-20 (build 0344e76) |
 | Open shifts everywhere | `GET orgs/:orgId/time-clock/entries?status=open` without `resortId` (already allowed) |
 | An iPad's auto | Accepted (not `rejected`), stored as `orphan`, noted `server_sweeps`; changes nothing |
 | Server sweeps | Ids `sweep:<entryId>:<n>`, source `auto`; they reach the iPad like any other close. The server also sweeps a batch's patrollers right after it lands |
@@ -147,10 +147,8 @@ phone); the phone with no signal (E30); inactive or removed patrollers (E16, E24
 
 ## 7. Sequencing
 
-- **Can be built now:** the planning and IR1–IR9.
-- **Now (server T2 is built):** the vectors and `ReferenceFold`.
-- **After server T8 (deployed):** ship. A build that sends `entryId` (IR1, IR3) is refused
-  by today's server. Then the scenarios and the live L runs.
+The server is done and live on patrolkit.io (build 0344e76, 2026-11-20), so everything can
+start now: the plan, IR1–IR9, the vectors and `ReferenceFold`, the scenarios, and the live L
+runs.
 
-Please reply with the new plan's path and any questions. The server work starts on the user's
-go-ahead.
+Please reply with the new plan's path and any questions.
